@@ -7,7 +7,7 @@ import pytest
 from _r import nns_stack_factor_predictor, nns_stack_mixed_factor_predictor, nns_stack_numeric
 from _tolerances import COMPOUND
 
-from pynns import nns_stack
+from nns import nns_stack
 
 
 @pytest.mark.parity

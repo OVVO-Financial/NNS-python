@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import causal_matrix, nns_causation
+from nns import causal_matrix, nns_causation
 
 
 def test_nns_causation_identical_self_case() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import nns_m_reg, nns_reg, nns_stack
+from nns import nns_m_reg, nns_reg, nns_stack
 
 
 def main() -> None:

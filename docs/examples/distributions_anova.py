@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import nns_anova, nns_cdf
+from nns import nns_anova, nns_cdf
 
 
 def main() -> None:

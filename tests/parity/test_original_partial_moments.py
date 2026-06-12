@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import co_lpm, co_upm, d_lpm, d_upm, lpm, lpm_ratio, nns_cdf, pm_matrix, upm, upm_ratio
+from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, lpm_ratio, nns_cdf, pm_matrix, upm, upm_ratio
 
 from ._original import expected, r_vector
 

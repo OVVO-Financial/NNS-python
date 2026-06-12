@@ -7,7 +7,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import kurt_pm, mean_pm, nns_moments, skew_pm, var_pm
+from nns import kurt_pm, mean_pm, nns_moments, skew_pm, var_pm
 
 
 @pytest.mark.parity

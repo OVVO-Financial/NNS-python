@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_cdf
+from nns import nns_cdf
 
 finite_floats = st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False)
 

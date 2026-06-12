@@ -1,9 +1,10 @@
-# PyNNS
+# NNS Python
 
 Python port of the R NNS 12.1 beta package.
 
-- PyPI package: `nns-pm`
-- Import name: `pynns`
+- Distribution package: `NNS`
+- Import package: `nns` (`import nns`)
+- Native extension: `nns._nnscore`
 - Runtime dependencies: NumPy, SciPy
 - R required for normal use: no
 - Status: alpha, parity-focused
@@ -12,14 +13,14 @@ Python port of the R NNS 12.1 beta package.
 ## Install
 
 ```bash
-pip install nns-pm
+pip install NNS
 ```
 
 ## Quick Use
 
 ```python
 import numpy as np
-from pynns import lpm, nns_dep, nns_reg
+from nns import lpm, nns_dep, nns_reg
 
 x = np.array([-2.0, -1.0, 0.5, 3.0])
 downside = lpm(2, 0.0, x)
@@ -47,7 +48,7 @@ uv run ruff check .
 uv run mypy
 ```
 
-R and the R `NNS` package are only needed to regenerate parity fixtures.
+CI parity is cache-backed through committed fixtures and does not require `Rscript`. `Rscript` and the R `NNS` package are only needed for local cache regeneration. The parity claim is bounded by committed fixtures and cache entries; full R package parity is not claimed, and plot artifacts are intentionally out of scope.
 
 ## Attribution
 

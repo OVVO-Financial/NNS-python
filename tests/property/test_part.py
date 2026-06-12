@@ -7,8 +7,8 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_part
-from pynns.part import NoiseReduction
+from nns import nns_part
+from nns.part import NoiseReduction
 
 finite_arrays = arrays(
     dtype=np.float64,

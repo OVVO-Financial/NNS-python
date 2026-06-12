@@ -7,7 +7,7 @@ import pytest
 from _r import nns_cdf_custom
 from _tolerances import COMPOUND, EXACT
 
-from pynns import nns_cdf
+from nns import nns_cdf
 
 
 @pytest.mark.parity

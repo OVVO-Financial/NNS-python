@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import nns_norm
+from nns import nns_norm
 
 
 def test_nns_norm_shape_matches_input() -> None:

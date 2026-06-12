@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import nns_arma, nns_arma_optim, nns_seas, nns_var
+from nns import nns_arma, nns_arma_optim, nns_seas, nns_var
 
 
 def main() -> None:

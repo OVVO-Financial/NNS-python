@@ -9,7 +9,7 @@ from _tolerances import EXACT
 from conftest import EdgeCase
 from numpy.typing import NDArray
 
-from pynns import co_lpm, co_upm, d_lpm, d_upm
+from nns import co_lpm, co_upm, d_lpm, d_upm
 
 DEGREES = [0.0, 0.5, 1.0, 2.0, 3.0]
 RHO_VALUES = [-0.7, 0.0, 0.7]

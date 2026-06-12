@@ -5,8 +5,8 @@ import warnings
 import numpy as np
 import pytest
 
-from pynns import nns_arma, nns_arma_optim, nns_var
-from pynns.arma import _default_arma_optim_objective, _numeric_seasonal_weights
+from nns import nns_arma, nns_arma_optim, nns_var
+from nns.arma import _default_arma_optim_objective, _numeric_seasonal_weights
 
 
 def test_nns_arma_output_length_matches_h() -> None:

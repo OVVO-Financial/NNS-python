@@ -14,7 +14,7 @@ from _finance_fixture import (
 )
 from numpy.typing import NDArray
 
-from pynns import co_lpm, nns_reg, pm_matrix
+from nns import co_lpm, nns_reg, pm_matrix
 
 _BENCHMARK_ROWS = 252
 _FULL_HISTORY_ROWS = 1257

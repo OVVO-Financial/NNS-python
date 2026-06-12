@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from _r import nns
 
-from pynns.var import (
+from nns.var import (
     _lag_mtx,
     _var_interpolate_and_extrapolate,
     _var_multivariate_stack_stage,

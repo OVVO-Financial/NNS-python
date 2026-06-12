@@ -1,9 +1,9 @@
-# PyNNS API Status
+# NNS Python API Status
 
-This page summarizes the public PyNNS API surface, known gaps, guarded paths,
+This page summarizes the public NNS Python API surface, known gaps, guarded paths,
 and design boundaries.
 
-PyNNS is an alpha, parity-focused Python port of installed R NNS 12.1 beta,
+NNS Python is an alpha, parity-focused Python port of installed R NNS 12.1 beta,
 implemented natively in Python on top of NumPy and SciPy. It does not
 wrap R, call the R package at runtime, or depend on compiled R/C++ shims. The
 goal is public input/output compatibility where R behavior is stable,
@@ -17,7 +17,7 @@ largest remaining API work is now mostly ergonomic: categorical predictor
 preparation is explicit through `prepare_factor_predictors(...)`, while direct
 raw-factor `nns_m_reg(..., factor_2_dummy=True)` remains guarded because the
 installed R internal path errors. Named R data-frame factor ordering quirks are
-documented as outside PyNNS' positional-column API boundary. Performance gaps
+documented as outside NNS Python' positional-column API boundary. Performance gaps
 remain mostly in large stochastic-dominance workloads where R uses compiled
 kernels.
 
@@ -57,7 +57,7 @@ invariant, and property coverage.
 | Nowcast panel: `nns_nowcast_panel` | implemented | medium | Python-native deterministic monthly panel helper backed by `nns_var`. R NNS 12.1 beta removed `NNS.nowcast`, so this is no longer an R-export parity target. |
 | Providers: `CsvNowcastProvider` | implemented | medium | Produces explicit local/offline payloads for `nns_nowcast_panel`. |
 | Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
-| Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use PyNNS RNG. |
+| Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
 | ANOVA: `nns_anova` | implemented | high | Binary, multi-group, pairwise, and degenerate `NaN` conventions are covered. |
 | Normalization: `nns_norm` | implemented | high | Numeric matrix path is implemented. |
 | Categorical helpers: `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` | implemented | high | Explicit `levels=` / `factor_levels=` should be used to reproduce R factor ordering. `prepare_factor_predictors(...)` exposes the regression-ready full-rank design matrix path. |
@@ -69,24 +69,24 @@ invariant, and property coverage.
 | Area | Path | Current behavior | Reason / next action |
 |---|---|---|---|
 | Multivariate regression | direct `factor_2_dummy=True` raw predictor path | Guarded with `NotImplementedError` in direct `nns_m_reg(..., factor_2_dummy=True)`. | Installed R direct `NNS.M.reg` raw factor input errors. Use `prepare_factor_predictors(...)` first, or use the public `nns_reg(..., factor_2_dummy=True, factor_levels=...)` expansion path. |
-| Boost | `threshold` on the `n_features > 10` stochastic path | Guarded with `NotImplementedError` on the high-feature stochastic epoch path. | Installed R errors because `test.features` is never built. PyNNS keeps this explicit. |
-| Boost/factor predictors | named data-frame factor predictor ordering | Deferred, not represented as a named-column API. | PyNNS uses positional `X1`, `X2`, ... semantics. Installed R named data frames can reorder columns alphabetically before `data.matrix`. |
+| Boost | `threshold` on the `n_features > 10` stochastic path | Guarded with `NotImplementedError` on the high-feature stochastic epoch path. | Installed R errors because `test.features` is never built. NNS Python keeps this explicit. |
+| Boost/factor predictors | named data-frame factor predictor ordering | Deferred, not represented as a named-column API. | NNS Python uses positional `X1`, `X2`, ... semantics. Installed R named data frames can reorder columns alphabetically before `data.matrix`. |
 
 ## Intentional Design Boundaries
 
 - No hidden network fetching happens by default.
-- PyNNS does not export `nns_nowcast`; R NNS 12.1 beta removed `NNS.nowcast`.
+- NNS Python does not export `nns_nowcast`; R NNS 12.1 beta removed `NNS.nowcast`.
 - Nowcast providers are payload builders for `nns_nowcast_panel`, not implicit
   public forecast wrappers.
 - `CsvNowcastProvider` is local/offline.
 - Library code does not auto-load `.env` files.
 - External data clients and dataframe libraries are not dependencies.
-- PyNNS uses explicit Python errors for some cases where R silently truncates,
+- NNS Python uses explicit Python errors for some cases where R silently truncates,
   coerces, warns, or returns unusable values. Important divergences are recorded
   in `docs/conventions.md`.
 - Stochastic exact stream parity is not expected. Stochastic paths use NumPy RNG
   and are tested structurally/statistically.
-- Plotting side effects from R APIs are generally ignored; PyNNS returns data.
+- Plotting side effects from R APIs are generally ignored; NNS Python returns data.
 - Stochastic-dominance performance work stays pure NumPy for alpha. The current
   implementation mirrors R's sorted-column/prefix-sum algorithm and adds
   Python-specific guard pruning, kept-only active-set scans for degree 2/3 and
@@ -100,15 +100,15 @@ Nowcast provider support is explicit. Providers return payloads; callers pass
 the payload to `nns_nowcast_panel`:
 
 ```python
-from pynns import nns_nowcast_panel
-from pynns.providers import CsvNowcastProvider
+from nns import nns_nowcast_panel
+from nns.providers import CsvNowcastProvider
 
 provider = CsvNowcastProvider("monthly_panel.csv")
 payload = provider.fetch((), "2000-01-03")
 result = nns_nowcast_panel(payload["series"], h=2, tau=12, dates=payload["dates"])
 ```
 
-PyNNS does not ship a default Yahoo, FRED, or other live-data workflow hidden
+NNS Python does not ship a default Yahoo, FRED, or other live-data workflow hidden
 behind a public nowcast wrapper.
 
 ## Intentional Divergences And Caveats
@@ -120,7 +120,7 @@ examples include:
 - Co-moment length mismatches raise `ValueError`; R warns, truncates, and divides
   by the longer length.
 - Factor and class labels are explicit. R factor levels become numeric codes;
-  PyNNS callers should pass `levels=` or `class_levels=` when ordering matters.
+  NNS Python callers should pass `levels=` or `class_levels=` when ordering matters.
 - Public outputs use NumPy arrays and plain dictionaries instead of R
   `data.table` objects.
 - Some installed-R quirks are intentionally matched when they affect stable
@@ -131,14 +131,14 @@ examples include:
   stage. Strict xfails track current installed-R deviations in the Iris
   classification vignette, the documented ARMA numeric multi-lag weighting
   divergence, and VAR's ARMA-derived univariate/ensemble outputs. The Iris
-  classification xfail mixes two different issues: PyNNS stack predicts the
+  classification xfail mixes two different issues: NNS Python stack predicts the
   correct held-out class where installed R NNS 12.1 rounds the same borderline
   estimate down, while boost remains a true output disparity whose installed-R
-  and PyNNS balanced predictions both miss the held-out class.
+  and NNS Python balanced predictions both miss the held-out class.
 
 ## Release-Relevant Caveats
 
-- PyNNS is alpha. The public API is parity-focused but not declared stable.
+- NNS Python is alpha. The public API is parity-focused but not declared stable.
 - This is not full R parity yet.
 - `dy_d` scalar and vectorized point/distribution modes are covered on focused
   fixtures. Multi-row mixed derivative point matrices intentionally use
@@ -150,11 +150,11 @@ examples include:
 ## Internal Or Out Of Scope
 
 Some R NNS helper names are implementation details or lower-level surfaces in
-the R package rather than APIs PyNNS should expose one-for-one. Examples include
+the R package rather than APIs NNS Python should expose one-for-one. Examples include
 `NNS.ANOVA.bin`, `Uni.caus`, compiled `*_cpp` shims, sampling helpers, and
 generated-vector helpers.
 
-PyNNS implements the corresponding behavior natively in Python where it is
+NNS Python implements the corresponding behavior natively in Python where it is
 needed by public APIs. It does not mirror every R helper name as a top-level
 Python export. Matrix-style public behavior is exposed where supported through
 Python names such as `causal_matrix`; not exposing an exact R helper name does

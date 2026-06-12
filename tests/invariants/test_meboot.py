@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_meboot
+from nns import nns_meboot
 
 pytestmark = pytest.mark.stochastic
 

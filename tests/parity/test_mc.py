@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from _r import RValue, nns_mc_grid, nns_mc_stat_summary
 
-from pynns import nns_mc
-from pynns.mc import _format_r_number, _generate_mc_rhos
+from nns import nns_mc
+from nns.mc import _format_r_number, _generate_mc_rhos
 
 
 @pytest.mark.parity

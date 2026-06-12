@@ -5,8 +5,8 @@ import warnings
 import numpy as np
 import pytest
 
-from pynns import nns_stack
-from pynns.stack import (
+from nns import nns_stack
+from nns.stack import (
     _cv_split,
     _distance_bulk_prediction,
     _distance_path_predictions,

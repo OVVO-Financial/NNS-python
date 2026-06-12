@@ -6,7 +6,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_meboot
+from nns import nns_meboot
 
 pytestmark = pytest.mark.stochastic
 

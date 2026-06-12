@@ -123,7 +123,7 @@ baseline so Python/R comparisons remain visible when R has not been rerun.
 Run only the realistic Python benchmarks with:
 
 ```bash
-PYNNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \
+NNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \
   --benchmark-json=docs/benchmark_reports/realistic_sd_python_latest.json \
   tests/benchmarks/test_stochastic_dominance_realistic.py \
   tests/benchmarks/test_finance_sd_rolling.py \
@@ -195,5 +195,5 @@ Interpretation:
 - The implementation deliberately follows R's C++ SD algorithmic structure:
   sorted columns, prefix sums, pair-threshold dominance checks, exact guards, and
   no tolerance-based shortcuts.
-- Full-fixture PyNNS runs are feasible for research iteration, but R's C++ SD
+- Full-fixture NNS Python runs are feasible for research iteration, but R's C++ SD
   core remains materially faster on the largest cluster cases.

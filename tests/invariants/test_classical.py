@@ -5,7 +5,7 @@ import pytest
 from _tolerances import EXACT
 from scipy import stats  # type: ignore[import-untyped]
 
-from pynns import ecdf_pm, kurt_pm, mean_pm, skew_pm, var_pm
+from nns import ecdf_pm, kurt_pm, mean_pm, skew_pm, var_pm
 
 
 def test_mean_pm_matches_numpy_mean() -> None:

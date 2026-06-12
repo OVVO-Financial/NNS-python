@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_seas
+from nns import nns_seas
 
 finite_arrays = arrays(
     dtype=np.float64,

@@ -7,7 +7,7 @@ import pytest
 from _r import nns
 from _tolerances import COMPOUND
 
-from pynns import nns_seas
+from nns import nns_seas
 
 
 @pytest.mark.parity

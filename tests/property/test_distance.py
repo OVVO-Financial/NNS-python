@@ -5,7 +5,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_distance, nns_distance_bulk
+from nns import nns_distance, nns_distance_bulk
 
 feature_matrices = arrays(
     dtype=np.float64,

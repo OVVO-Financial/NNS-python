@@ -5,7 +5,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_causation
+from nns import nns_causation
 
 finite_arrays = arrays(
     dtype=np.float64,

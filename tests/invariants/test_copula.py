@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_copula
+from nns import nns_copula
 
 
 def test_nns_copula_is_bounded() -> None:

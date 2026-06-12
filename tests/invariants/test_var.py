@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from pynns.var import _var_interpolate_and_extrapolate, _var_multivariate_stack_stage
+from nns.var import _var_interpolate_and_extrapolate, _var_multivariate_stack_stage
 
 
 def test_var_interpolate_and_extrapolate_shape_and_names() -> None:

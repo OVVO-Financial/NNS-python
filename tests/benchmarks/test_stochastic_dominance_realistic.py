@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from pynns import co_lpm, nns_sd_cluster, pm_matrix, sd_efficient_set
+from nns import co_lpm, nns_sd_cluster, pm_matrix, sd_efficient_set
 
 _FIXTURE = Path(__file__).parents[1] / "fixtures" / "finance" / "sp500_daily_returns_2019_2023.csv"
 _BENCHMARK_ROWS = 252

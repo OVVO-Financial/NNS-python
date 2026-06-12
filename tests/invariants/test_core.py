@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from _tolerances import EXACT
 
-from pynns import lpm, lpm_ratio, upm, upm_ratio
+from nns import lpm, lpm_ratio, upm, upm_ratio
 
 
 def test_mean_decomposes_into_upm_minus_lpm() -> None:

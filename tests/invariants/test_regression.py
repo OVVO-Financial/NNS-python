@@ -5,8 +5,8 @@ import warnings
 import numpy as np
 import pytest
 
-from pynns import nns_m_reg, nns_reg, prepare_factor_predictors
-from pynns.regression import _coefficients
+from nns import nns_m_reg, nns_reg, prepare_factor_predictors
+from nns.regression import _coefficients
 
 
 def test_nns_reg_shapes_and_bounds() -> None:

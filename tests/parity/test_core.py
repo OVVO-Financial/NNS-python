@@ -11,7 +11,7 @@ from _tolerances import EXACT
 from conftest import EdgeCase
 from numpy.typing import NDArray
 
-from pynns import lpm, lpm_ratio, upm
+from nns import lpm, lpm_ratio, upm
 
 DEGREES = [0.0, 0.5, 1.0, 2.0, 3.0]
 SIZES = [10, 100, 1000]
@@ -123,7 +123,10 @@ def test_edge_cases_match_r_category(
         return
 
     if not np.all(np.isfinite(edge_case.values)) and (
-        os.environ.get("PYNNS_OFFLINE") == "1" or os.environ.get("PYNNS_R_CACHE_ONLY") == "1"
+        os.environ.get("NNS_OFFLINE") == "1"
+        or os.environ.get("PYNNS_OFFLINE") == "1"
+        or os.environ.get("NNS_R_CACHE_ONLY") == "1"
+        or os.environ.get("PYNNS_R_CACHE_ONLY") == "1"
     ):
         result = function(degree, target, edge_case.values)
         if edge_case.name == "contains-nan":

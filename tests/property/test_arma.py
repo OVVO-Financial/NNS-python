@@ -6,8 +6,8 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_arma
-from pynns.arma import _numeric_seasonal_weights
+from nns import nns_arma
+from nns.arma import _numeric_seasonal_weights
 
 finite_arrays = arrays(
     dtype=np.float64,

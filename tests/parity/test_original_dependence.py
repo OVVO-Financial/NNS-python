@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_copula
+from nns import nns_copula
 
 from ._original import expected, r_vector
 

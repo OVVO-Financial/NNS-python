@@ -6,7 +6,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import ecdf_pm, kurt_pm, mean_pm, skew_pm, var_pm
+from nns import ecdf_pm, kurt_pm, mean_pm, skew_pm, var_pm
 
 
 @given(

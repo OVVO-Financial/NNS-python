@@ -5,7 +5,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import pm_matrix
+from nns import pm_matrix
 
 
 @given(

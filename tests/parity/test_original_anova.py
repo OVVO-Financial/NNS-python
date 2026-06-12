@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_anova
+from nns import nns_anova
 
 from ._original import expected, r_vector
 

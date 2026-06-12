@@ -4,7 +4,7 @@ from typing import cast
 
 import numpy as np
 
-from pynns import nns_cdf
+from nns import nns_cdf
 
 
 def test_nns_cdf_return_keys_and_empty_target_value() -> None:

@@ -7,7 +7,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import co_lpm_nd, co_upm_nd, dpm_nd, nns_gravity
+from nns import co_lpm_nd, co_upm_nd, dpm_nd, nns_gravity
 
 
 @pytest.mark.parity

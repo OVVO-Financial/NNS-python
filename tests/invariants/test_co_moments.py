@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from _tolerances import EXACT
 
-from pynns import co_lpm, co_upm, d_lpm, d_upm, lpm, upm
+from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, upm
 
 
 def test_co_lpm_self_equals_lpm_with_doubled_degree() -> None:

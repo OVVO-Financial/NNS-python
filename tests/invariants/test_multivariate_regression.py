@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_m_reg
+from nns import nns_m_reg
 
 
 def test_nns_m_reg_shapes_and_bounds() -> None:

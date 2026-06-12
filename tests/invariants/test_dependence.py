@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from _tolerances import EXACT
 
-from pynns import nns_dep
+from nns import nns_dep
 
 
 def test_nns_dep_identical_has_unit_dependence() -> None:

@@ -5,8 +5,8 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 
-from pynns import nns_nowcast_panel
-from pynns.providers import CsvNowcastProvider
+from nns import nns_nowcast_panel
+from nns.providers import CsvNowcastProvider
 
 
 def main() -> None:

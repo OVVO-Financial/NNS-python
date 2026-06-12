@@ -7,7 +7,7 @@ import pytest
 from _r import nns, nns_distance_bulk_custom
 from _tolerances import EXACT
 
-from pynns import nns_distance, nns_distance_bulk
+from nns import nns_distance, nns_distance_bulk
 
 
 @pytest.mark.parity

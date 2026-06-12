@@ -5,7 +5,7 @@ from _tolerances import COMPOUND
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pynns import co_lpm, co_upm, d_lpm, d_upm
+from nns import co_lpm, co_upm, d_lpm, d_upm
 
 finite_values = st.lists(
     st.floats(

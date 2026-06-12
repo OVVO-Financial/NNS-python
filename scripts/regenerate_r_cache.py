@@ -14,7 +14,13 @@ import sys
 
 def main() -> int:
     env = os.environ.copy()
-    for name in ("PYNNS_R_CACHE_ONLY", "PYNNS_OFFLINE", "CI"):
+    for name in (
+        "NNS_R_CACHE_ONLY",
+        "PYNNS_R_CACHE_ONLY",
+        "NNS_OFFLINE",
+        "PYNNS_OFFLINE",
+        "CI",
+    ):
         env.pop(name, None)
 
     args = sys.argv[1:]

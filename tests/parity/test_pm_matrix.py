@@ -9,7 +9,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import pm_matrix
+from nns import pm_matrix
 
 PMTarget: TypeAlias = float | Literal["mean"] | np.ndarray | None
 

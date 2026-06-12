@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns.categorical import _balance_class_training, _down_sample_rows, _up_sample_rows
+from nns.categorical import _balance_class_training, _down_sample_rows, _up_sample_rows
 
 
 def test_down_and_up_sample_match_r_class_counts_and_grouping() -> None:

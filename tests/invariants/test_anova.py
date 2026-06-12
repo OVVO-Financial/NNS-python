@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_anova
+from nns import nns_anova
 
 
 def test_nns_anova_identical_degenerate_groups_match_r_nan_convention() -> None:

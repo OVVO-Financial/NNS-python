@@ -8,7 +8,7 @@ import pytest
 from _finance_fixture import MAX_COLUMN_COUNT, load_constituent_returns, load_dates
 from numpy.typing import NDArray
 
-from pynns import nns_sd_cluster, sd_efficient_set
+from nns import nns_sd_cluster, sd_efficient_set
 
 
 @pytest.mark.benchmark
