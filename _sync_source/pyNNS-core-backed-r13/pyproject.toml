@@ -1,0 +1,98 @@
+[project]
+name = "nns-pm"
+version = "0.2.0"
+description = "Python port of nonlinear nonparametric statistics from R NNS"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-only"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+keywords = [
+    "statistics",
+    "nonparametric",
+    "partial moments",
+    "regression",
+    "forecasting",
+    "nns",
+]
+urls = { "Homepage" = "https://github.com/gitRasheed/pyNNS", "Repository" = "https://github.com/gitRasheed/pyNNS", "Issues" = "https://github.com/gitRasheed/pyNNS/issues", "Source" = "https://github.com/gitRasheed/pyNNS", "Project" = "https://github.com/gitRasheed/pyNNS" }
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis",
+    "mypy",
+    "pytest",
+    "pytest-benchmark",
+    "pytest-cov",
+    "pytest-xdist>=3.8.0",
+    "ruff",
+]
+
+[build-system]
+requires = ["scikit-build-core", "nanobind"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+wheel.packages = ["src/pynns"]
+sdist.include = [
+    "/CMakeLists.txt",
+    "/LICENSE",
+    "/README.md",
+    "/docs/api_status.md",
+    "/docs/benchmarks.md",
+    "/docs/conventions.md",
+    "/docs/parity_plan.md",
+    "/docs/parity_status.md",
+    "/docs/examples",
+    "/extern/NNS-core",
+    "/pyproject.toml",
+    "/src",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra -m 'not benchmark' --benchmark-disable -n 4"
+pythonpath = ["tests"]
+testpaths = ["tests"]
+markers = [
+    "benchmark: performance benchmarks excluded from the default test run",
+    "parity: tests comparing pynns behavior to the reference R NNS package",
+    "practical: end-to-end practical example parity checks against installed R NNS",
+    "invariant: tests for mathematical or API invariants",
+    "property: property-based tests",
+    "stochastic: stochastic structural/statistical tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess" = { msg = "Do not call subprocess from pynns implementation code. Keep R parity calls in tests/_r.py." }
+"rpy2" = { msg = "Do not use rpy2 from pynns implementation code. Keep R parity calls outside the package." }
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["TID251"]
+"scripts/regenerate_r_cache.py" = ["TID251"]
+"scripts/install_local_r_nns.py" = ["TID251"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/pynns", "tests"]
+mypy_path = ["tests"]

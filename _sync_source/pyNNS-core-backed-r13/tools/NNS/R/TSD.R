@@ -1,0 +1,61 @@
+#' NNS TSD Test
+#'
+#' Bi-directional test of third degree stochastic dominance using lower partial moments.
+#'
+#' @param x a numeric vector.
+#' @param y a numeric vector.
+#' @param plot logical; \code{TRUE} (default) plots the TSD test.
+#' @return Returns one of the following TSD results: \code{"X TSD Y"}, \code{"Y TSD X"}, or \code{"NO TSD EXISTS"}.
+#' @author Fred Viole, OVVO Financial Systems
+#' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+#' @examples
+#' \dontrun{
+#' set.seed(123)
+#' x <- rnorm(100) ; y <- rnorm(100)
+#' NNS.TSD(x, y)
+#' }
+#' @export
+
+NNS.TSD <- function(x, y, plot = TRUE){
+
+  to_numeric_vector <- function(v, arg_name){
+    if(any(class(v)%in%c("tbl","data.table")) || is.data.frame(v) || is.matrix(v) || any(class(v) %in% c("xts", "zoo"))){
+      if(!is.null(dim(v)) && ncol(v) > 1){
+        stop(sprintf("%s must be a single-column object or numeric vector.", arg_name))
+      }
+      v <- as.vector(unlist(v, use.names = FALSE))
+    }
+    
+    as.numeric(v)
+  }
+  
+  x <- to_numeric_vector(x, "x")
+  y <- to_numeric_vector(y, "y")
+    
+  if(anyNA(cbind(x,y))) stop("You have some missing values, please address.")
+
+  Combined_sort <- sort(c(x, y), decreasing = FALSE)
+
+  LPM_x_sort <- LPM(2, Combined_sort, x)
+  LPM_y_sort <- LPM(2, Combined_sort, y)
+    
+  x.tsd.y <- any(LPM_x_sort > LPM_y_sort)
+  y.tsd.x <- any(LPM_y_sort > LPM_x_sort)
+
+
+  if(plot){
+    plot(LPM_x_sort, type = "l", lwd = 3, col = "red", main = "TSD", ylab = "Area of Cumulative Distribution",
+         ylim = c(min(c(LPM_y_sort, LPM_x_sort)), max(c(LPM_y_sort, LPM_x_sort))))
+
+    lines(LPM_y_sort, type = "l", lwd =3,col = "steelblue")
+    legend("topleft", c("X","Y"), lwd = 10, col=c("red","steelblue"))
+  }
+    
+  ifelse (!x.tsd.y && min(x) >= min(y) && mean(x) >= mean(y) && !identical(LPM_x_sort, LPM_y_sort),
+          "X TSD Y",
+          ifelse (!y.tsd.x && min(y) >= min(x) && mean(y) >= mean(x) && !identical(LPM_x_sort, LPM_y_sort),
+                  "Y TSD X",
+                  "NO TSD EXISTS"))
+
+}
+
