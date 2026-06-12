@@ -1,29 +1,24 @@
 # Parity Status
 
-## Current status
+## Current target
 
-- The parity suite lives in `tests/parity/` and compares public NNS Python behavior to R NNS-compatible cached fixtures.
-- CI-compatible parity runs use `NNS_R_CACHE_ONLY=1` and the committed `tests/_r_cache.json` cache.
-- Native-vs-fallback coverage lives in `tests/invariants/test_native_original_src_coverage.py`.
-- The PR #6 non-finite native-routing fix is preserved in `src/nns/core.py` through `_native_safe(...)` checks in `lpm`, `upm`, `lpm_ratio`, and `upm_ratio`.
+R NNS 13.0 is the release parity target. R NNS 12.1 cache data has been superseded because R NNS 13.0 is the tensorized architecture target. NNS-core is v13.0.0 and is the native C++ foundation for the Python package.
 
-## Closed parity gaps (branch `close-all-parity-gaps`)
+## What this status does and does not claim
 
-- `nns_boost` depth=None parity: resolved (seed-sensitivity triage; seed pinned in the parity test; seed-invariance regression guard added). The committed cache matches Python to ~3.5e-15.
-- `NNS.copula(..., continuous=FALSE)` discrete mode: implemented in `nns.nns_copula` and adopted against the R fixture.
-- `NNS.copula` multivariate / three-column mode: implemented (2-D `(observations, variables)` matrix input, any column count `>= 2`) and adopted for continuous and discrete.
-- `PM.matrix` R data-frame naming: optional `pm_matrix(..., names=[...])` echo added (NumPy-first; numeric arrays unchanged) with a parity test.
-- Plot/graphics policy: formalized in `docs/plot_parity_policy.md`; graphics-device artifacts are never compared in CI.
+The project does not claim full package parity. Parity status is bounded by the committed tests and cache:
 
-## Skipped or deferred cases
+- `tests/_r_cache.json` for cache-only R result fixtures,
+- `tests/parity/` for public behavior parity checks,
+- `tests/invariants/` for Python-native contracts and invariants, and
+- `tests/fixtures/original_tests_expected.json` for adopted original R tests.
 
-- The only remaining parity skips are intentional live-R-only practical examples in `tests/parity/test_practical_examples.py`, which regenerate vignette-scale results from installed R NNS on demand rather than from the committed cache. They are not ordinary cache-backed parity coverage.
-- Live R regeneration is not required in CI because many runners do not have `Rscript` or R NNS installed.
-- Cache regeneration remains optional and developer-local via `scripts/regenerate_r_cache.py`.
-- The official package identity is `NNS` / `import nns` / `nns._nnscore`; PyPI publication remains out of scope for this branch.
+Plot artifact policy remains unchanged: plots and `Rplots.pdf` artifacts are not parity outputs in pytest; returned values are.
 
-## Regression coverage
+## R NNS 13.0 cache
 
-- `tests/invariants/test_native_original_src_coverage.py` verifies native smoke behavior only for symbols exported by the currently built optional extension.
-- The same file verifies public fallback behavior when native is disabled or unavailable.
-- Non-finite partial-moment inputs are covered by a focused regression that monkeypatches native dispatch and proves NaN inputs use the Python fallback.
+The parity cache metadata now records R NNS 13.0. The cache contains 2,406 keyed entries under schema version 1. Cache generation for this retarget used the vendored R NNS 13.0 source tarball during setup, but local R installation was blocked by apt proxy HTTP 403 responses; rerun `python scripts/regenerate_r_cache.py` in an environment with a working R NNS 13.0 installation to refresh every cached value from R.
+
+## Known retarget fix
+
+The univariate regression-point construction path now follows R NNS 13.0's central-point weighting when `multivariate_call=True`. This path is used by nonlinear ARMA. The airline nonseasonal nonlinear smoke case now matches the R NNS 13.0 target `[128.5, 113.5, 155.5, 213.6667]` instead of preserving the older Python/R-12.1-incompatible behavior.

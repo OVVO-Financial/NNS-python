@@ -200,16 +200,36 @@ def _nns_reg_univariate_core(
 
     rp = part_map["regression.points"]
     rp_x, rp_y = _initial_regression_points(rp["x"], rp["y"], x_values)
+    central_point: tuple[float, float] | None = None
     if not class_mode:
-        rp_x, rp_y = _add_central_point(rp_x, rp_y, x_values, y_values)
-    rp_x, rp_y = _add_endpoint_points(
-        rp_x,
-        rp_y,
-        x_values,
-        y_values,
-        dependence,
-        class_mode=class_mode,
-    )
+        central_point = _central_point(rp_x, rp_y, x_values, y_values)
+        rp_x, rp_y = _append_and_consolidate_point(rp_x, rp_y, central_point)
+    if central_point is None:
+        rp_x, rp_y = _add_endpoint_points(
+            rp_x,
+            rp_y,
+            x_values,
+            y_values,
+            dependence,
+            class_mode=class_mode,
+        )
+    else:
+        min_y, max_y = _endpoint_y_values(
+            rp_x,
+            x_values,
+            y_values,
+            dependence,
+            class_mode=class_mode,
+        )
+        rp_x, rp_y = _consolidate_points(
+            np.concatenate(
+                (
+                    rp_x,
+                    np.array([float(np.min(x_values)), float(np.max(x_values)), central_point[0]]),
+                )
+            ),
+            np.concatenate((rp_y, np.array([min_y, max_y, central_point[1]]))),
+        )
     rp_x = np.minimum(np.max(x_values), np.maximum(np.min(x_values), rp_x))
     rp_y = np.minimum(np.max(y_values), np.maximum(np.min(y_values), rp_y))
 
@@ -940,6 +960,15 @@ def _add_central_point(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    return _append_and_consolidate_point(rp_x, rp_y, _central_point(rp_x, rp_y, x, y))
+
+
+def _central_point(
+    rp_x: NDArray[np.float64],
+    rp_y: NDArray[np.float64],
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+) -> tuple[float, float]:
     n_points = rp_x.size
     row_positions = np.arange(1, n_points + 1)
     rows = np.array(
@@ -953,9 +982,17 @@ def _add_central_point(
     else:
         central_y = float(rp_y[rows[0] - 1])
     central_x = _gravity(central_x_values)
+    return float(central_x), float(central_y)
+
+
+def _append_and_consolidate_point(
+    rp_x: NDArray[np.float64],
+    rp_y: NDArray[np.float64],
+    point: tuple[float, float],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     return _consolidate_points(
-        np.concatenate((rp_x, np.array([central_x], dtype=np.float64))),
-        np.concatenate((rp_y, np.array([central_y], dtype=np.float64))),
+        np.concatenate((rp_x, np.array([point[0]], dtype=np.float64))),
+        np.concatenate((rp_y, np.array([point[1]], dtype=np.float64))),
     )
 
 
@@ -968,16 +1005,28 @@ def _add_endpoint_points(
     *,
     class_mode: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    min_y, max_y = _endpoint_y_values(rp_x, x, y, dependence, class_mode=class_mode)
+    return _consolidate_points(
+        np.concatenate((rp_x, np.array([float(np.min(x)), float(np.max(x))]))),
+        np.concatenate((rp_y, np.array([min_y, max_y]))),
+    )
+
+
+def _endpoint_y_values(
+    rp_x: NDArray[np.float64],
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    dependence: float,
+    *,
+    class_mode: bool,
+) -> tuple[float, float]:
     if dependence >= 1.0 and not class_mode:
         min_y = float(y[np.flatnonzero(x == np.min(x))[0]])
         max_y = float(y[np.flatnonzero(x == np.max(x))[0]])
     else:
         min_y = _endpoint_y(x, y, rp_x, low=True, dependence=dependence, class_mode=class_mode)
         max_y = _endpoint_y(x, y, rp_x, low=False, dependence=dependence, class_mode=class_mode)
-    return _consolidate_points(
-        np.concatenate((rp_x, np.array([float(np.min(x)), float(np.max(x))]))),
-        np.concatenate((rp_y, np.array([min_y, max_y]))),
-    )
+    return min_y, max_y
 
 
 def _endpoint_y(

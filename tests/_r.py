@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 _CACHE_PATH = Path(__file__).with_name("_r_cache.json")
 _LOCK_PATH = _CACHE_PATH.with_suffix(".lock")
 _SCHEMA_VERSION = 1
-_NNS_VERSION = "12.1"
+_NNS_VERSION = "13.0"
 
 JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
 RValue: TypeAlias = (
@@ -1811,7 +1811,8 @@ def _call_r_cdf_custom(args: dict[str, Any]) -> RValue:
 
 def _r_env() -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("R_LIBS_USER", str(Path.home() / "R" / "library"))
+    if os.name != "nt":
+        env.setdefault("R_LIBS_USER", str(Path.home() / "R" / "library"))
     return env
 
 

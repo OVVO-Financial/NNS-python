@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 
 _BENCHMARK_BASELINE_PATH = Path(__file__).parent / "benchmarks" / "_r_baseline.json"
 _BENCHMARK_SCHEMA_VERSION = 1
-_NNS_VERSION = "12.1"
+_NNS_VERSION = "13.0"
 
 JsonValue: TypeAlias = float | int | str | list["JsonValue"] | dict[str, "JsonValue"]
 BenchmarkBaseline: TypeAlias = dict[str, JsonValue]

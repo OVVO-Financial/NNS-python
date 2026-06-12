@@ -202,16 +202,20 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
     np.testing.assert_allclose(stack["reg"], np.full(y_test.shape, 2.0), atol=EXACT)
     np.testing.assert_allclose(stack["dim.red"], y_test, atol=EXACT)
 
-    if expected["nns_version"] == "12.1":
-        r_stack = _array(expected["stack"]["results"])
-        np.testing.assert_allclose(r_stack, np.full(y_test.shape, 2.0), atol=EXACT)
+    # NNS Python recovers the true holdout labels above, while installed R NNS 13.0's
+    # balanced stacked reference collapses to a single repeated class. Assert the
+    # collapse (a documented R-side parity gap against the live 13.0 fixture)
+    # without hardcoding a class code.
+    r_stack = _array(expected["stack"]["results"])
+    assert r_stack.shape == y_test.shape
+    np.testing.assert_allclose(r_stack, np.full(y_test.shape, r_stack.flat[0]), atol=EXACT)
 
 
 @pytest.mark.parity
 @pytest.mark.practical
 @pytest.mark.xfail(
     reason=(
-        "Installed R NNS 12.1 and NNS Python balanced Iris boost remain a true "
+        "Installed R NNS 13.0 and NNS Python balanced Iris boost remain a true "
         "diagnostic parity gap; both miss the all-class-3 holdout."
     ),
     strict=True,

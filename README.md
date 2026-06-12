@@ -1,6 +1,6 @@
 # NNS Python
 
-Python port of the R NNS 12.1 beta package.
+Python port of the R NNS 13.0 package.
 
 - Distribution package: `NNS`
 - Import package: `nns` (`import nns`)
