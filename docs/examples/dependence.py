@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import causal_matrix, nns_causation, nns_copula, nns_cor, nns_dep
+from nns import causal_matrix, nns_causation, nns_copula, nns_cor, nns_dep
 
 
 def main() -> None:

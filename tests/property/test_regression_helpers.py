@@ -5,7 +5,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import lpm_var, nns_mode, nns_rescale, upm_var
+from nns import lpm_var, nns_mode, nns_rescale, upm_var
 
 finite_arrays = arrays(
     dtype=np.float64,

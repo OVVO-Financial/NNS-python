@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_part
+from nns import nns_part
 
 
 def test_nns_part_return_shape_and_quadrant_lengths() -> None:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from _tolerances import EXACT
 
-from pynns import pm_matrix
+from nns import pm_matrix
 
 
 def test_pm_matrix_reconstructs_cov_matrix() -> None:

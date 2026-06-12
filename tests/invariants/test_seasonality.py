@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from pynns import nns_seas
+from nns import nns_seas
 
 
 def test_nns_seas_shapes_and_period_bounds() -> None:

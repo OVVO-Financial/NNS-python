@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import fsd, ssd, tsd
+from nns import fsd, ssd, tsd
 
 
 def test_sd_antisymmetry() -> None:

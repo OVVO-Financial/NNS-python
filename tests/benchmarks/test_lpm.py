@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pynns import (
+from nns import (
     dy_d,
     dy_dx,
     lpm,

@@ -5,7 +5,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import nns_norm
+from nns import nns_norm
 
 SIZES = [50, 200, 1000]
 

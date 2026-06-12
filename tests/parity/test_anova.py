@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from _r import RValue, nns_anova_custom
 
-from pynns import nns_anova
+from nns import nns_anova
 
 ANOVA_PARITY = 3e-5
 SIZES = [30, 100, 500]

@@ -32,13 +32,13 @@ jobs:
         run: python -m pip install -e .
 
       - name: Run native import smoke test
-        run: python -c "import pynns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+        run: python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
 
       - name: Run invariants without Rscript
         run: python -m pytest -q tests/invariants
 
       - name: Run parity from committed R cache
-        run: PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
       - name: Run ruff
         run: ruff check .

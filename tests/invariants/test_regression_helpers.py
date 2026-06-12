@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import lpm_var, nns_mode, nns_rescale, upm_var
-from pynns._helpers import _fast_lm, _is_fcl
+from nns import lpm_var, nns_mode, nns_rescale, upm_var
+from nns._helpers import _fast_lm, _is_fcl
 
 
 @pytest.mark.invariant

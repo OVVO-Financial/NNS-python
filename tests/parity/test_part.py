@@ -8,8 +8,8 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import nns_part
-from pynns.part import NoiseReduction
+from nns import nns_part
+from nns.part import NoiseReduction
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]

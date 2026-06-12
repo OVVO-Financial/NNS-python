@@ -7,7 +7,7 @@ import pytest
 from _r import RValue, nns, nns_arma_optim_custom, nns_arma_pred_int
 from _tolerances import COMPOUND
 
-from pynns import nns_arma, nns_arma_optim
+from nns import nns_arma, nns_arma_optim
 
 
 @pytest.mark.parity

@@ -5,7 +5,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT, STOCHASTIC
 
-from pynns import lpm_var, nns_mode, nns_rescale, upm_var
+from nns import lpm_var, nns_mode, nns_rescale, upm_var
 
 MODE_CASES = [
     np.array([1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]),

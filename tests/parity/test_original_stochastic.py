@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import fsd, fsd_uni, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
+from nns import fsd, fsd_uni, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
 
 from ._original import expected, r_vector
 

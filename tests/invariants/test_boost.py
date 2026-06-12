@@ -5,8 +5,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-import pynns.boost as boost_module
-from pynns import nns_boost
+import nns.boost as boost_module
+from nns import nns_boost
 
 
 def test_nns_boost_shapes_and_feature_weights() -> None:

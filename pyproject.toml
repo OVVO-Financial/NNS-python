@@ -1,6 +1,6 @@
 [project]
-name = "nns-pm"
-version = "0.2.0"
+name = "NNS"
+version = "1.0.0a0"
 description = "Python port of nonlinear nonparametric statistics from R NNS"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ keywords = [
     "forecasting",
     "nns",
 ]
-urls = { "Homepage" = "https://github.com/gitRasheed/pyNNS", "Repository" = "https://github.com/gitRasheed/pyNNS", "Issues" = "https://github.com/gitRasheed/pyNNS/issues", "Source" = "https://github.com/gitRasheed/pyNNS", "Project" = "https://github.com/gitRasheed/pyNNS" }
+urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Project" = "https://github.com/OVVO-Financial/NNS-python" }
 dependencies = [
     "numpy",
     "scipy",
@@ -45,7 +45,7 @@ requires = ["scikit-build-core", "nanobind"]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-wheel.packages = ["src/pynns"]
+wheel.packages = ["src/nns"]
 sdist.include = [
     "/CMakeLists.txt",
     "/LICENSE",
@@ -53,10 +53,17 @@ sdist.include = [
     "/docs/api_status.md",
     "/docs/benchmarks.md",
     "/docs/conventions.md",
+    "/docs/native_original_src_coverage.md",
+    "/docs/original_tests_adoption.md",
     "/docs/parity_plan.md",
+    "/docs/parity_results.md",
     "/docs/parity_status.md",
+    "/docs/plot_parity_policy.md",
     "/docs/examples",
     "/extern/NNS-core",
+    "/original_tests",
+    "/tests/_r_cache.json",
+    "/tests/fixtures/original_tests_expected.json",
     "/pyproject.toml",
     "/src",
 ]
@@ -67,7 +74,7 @@ pythonpath = ["tests"]
 testpaths = ["tests"]
 markers = [
     "benchmark: performance benchmarks excluded from the default test run",
-    "parity: tests comparing pynns behavior to the reference R NNS package",
+    "parity: tests comparing nns behavior to the reference R NNS package",
     "practical: end-to-end practical example parity checks against installed R NNS",
     "invariant: tests for mathematical or API invariants",
     "property: property-based tests",
@@ -83,8 +90,8 @@ extend-exclude = ["*.ipynb"]
 select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"subprocess" = { msg = "Do not call subprocess from pynns implementation code. Keep R parity calls in tests/_r.py." }
-"rpy2" = { msg = "Do not use rpy2 from pynns implementation code. Keep R parity calls outside the package." }
+"subprocess" = { msg = "Do not call subprocess from nns implementation code. Keep R parity calls in tests/_r.py." }
+"rpy2" = { msg = "Do not use rpy2 from nns implementation code. Keep R parity calls outside the package." }
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["TID251"]
@@ -93,5 +100,5 @@ select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src/pynns", "tests"]
+files = ["src/nns", "tests"]
 mypy_path = ["tests"]

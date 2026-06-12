@@ -7,9 +7,9 @@ import pytest
 from _r import nns, nns_reg_factor_dimred, nns_reg_factor_predictor
 from _tolerances import COMPOUND
 
-from pynns import nns_reg
-from pynns.part import NoiseReduction
-from pynns.regression import Order
+from nns import nns_reg
+from nns.part import NoiseReduction
+from nns.regression import Order
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(pynns_native LANGUAGES CXX)
+project(nns_native LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,7 +18,7 @@ add_subdirectory(extern/NNS-core)
 # it can be linked into the nanobind module on ELF platforms.
 set_target_properties(nnscore PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-nanobind_add_module(_nnscore src/pynns/_nnscore_bindings.cpp)
+nanobind_add_module(_nnscore src/nns/_nnscore_bindings.cpp)
 target_link_libraries(_nnscore PRIVATE nnscore)
 target_compile_features(_nnscore PRIVATE cxx_std_17)
-install(TARGETS _nnscore LIBRARY DESTINATION pynns)
+install(TARGETS _nnscore LIBRARY DESTINATION nns)

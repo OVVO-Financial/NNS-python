@@ -6,7 +6,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import lpm, upm
+from nns import lpm, upm
 
 finite_arrays = arrays(
     dtype=np.float64,

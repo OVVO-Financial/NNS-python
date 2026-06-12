@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import dy_d, dy_dx, nns_diff
+from nns import dy_d, dy_dx, nns_diff
 
 
 def test_nns_diff_constant_derivative_is_zero() -> None:

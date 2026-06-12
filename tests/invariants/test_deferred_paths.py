@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src" / "pynns"
+SRC = ROOT / "src" / "nns"
 API_STATUS = ROOT / "docs" / "api_status.md"
 
 

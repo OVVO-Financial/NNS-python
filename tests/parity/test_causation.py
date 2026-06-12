@@ -5,7 +5,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import causal_matrix, nns_causation
+from nns import causal_matrix, nns_causation
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "independent", "quadratic", "sin", "asymmetric"]

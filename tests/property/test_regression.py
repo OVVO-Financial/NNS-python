@@ -7,9 +7,9 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_reg
-from pynns.part import NoiseReduction
-from pynns.regression import Order
+from nns import nns_reg
+from nns.part import NoiseReduction
+from nns.regression import Order
 
 finite_arrays = arrays(
     dtype=np.float64,

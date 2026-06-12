@@ -2,9 +2,9 @@
 
 ## Executive summary
 
-The current prototype has strong fixture-backed parity coverage for the core partial-moment machinery and several original R test areas, plus broad cache-backed parity coverage. Remaining gaps are documented and should be closed before final NNS-python migration.
+The official NNS Python package has strong fixture-backed parity coverage for the core partial-moment machinery and several original R test areas, plus broad cache-backed parity coverage. The distribution package is `NNS`, the import package is `nns`, and the native extension is `nns._nnscore`.
 
-This report consolidates the merged-state parity evidence from `docs/parity_status.md`, `docs/original_tests_adoption.md`, `tests/parity/`, `tests/fixtures/original_tests_expected.json`, `tests/_r_cache.json`, and `tests/invariants/test_native_original_src_coverage.py`. It does **not** claim full package parity. It also does not introduce native routing, rename `pynns`, touch NNS-python, or move the project toward publication.
+This report consolidates the merged-state parity evidence from `docs/parity_status.md`, `docs/original_tests_adoption.md`, `tests/parity/`, `tests/fixtures/original_tests_expected.json`, `tests/_r_cache.json`, and `tests/invariants/test_native_original_src_coverage.py`. It does **not** claim full R package parity. Parity is bounded by the committed fixtures and cache entries, and plot artifacts are intentionally out of scope. CI parity is cache-backed and does not require `Rscript`; `Rscript` is only needed for local cache regeneration. This evidence does not imply PyPI publication.
 
 ## Test commands
 
@@ -12,8 +12,8 @@ The expected verification commands for this state are:
 
 ```bash
 python -m pytest -q tests/invariants
-PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
-PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*
+NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*
 ruff check .
 mypy
 python -m build
@@ -26,11 +26,11 @@ python -m build
 Verification on the `close-all-parity-gaps` branch on 2026-06-12, using the repository virtual environment, observed:
 
 - `python -m pytest -q tests/invariants` produced `314 passed`.
-- `PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` produced `1778 passed, 11 skipped` (no failures). The previously reported `test_nns_boost_ivs_test_none_matches_r` failure no longer occurs (see "Gap closure summary" below).
-- `PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*` produced `12 passed` (up from `9`; three new copula parity tests added).
+- `NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` produced `1778 passed, 11 skipped` (no failures). The previously reported `test_nns_boost_ivs_test_none_matches_r` failure no longer occurs (see "Gap closure summary" below).
+- `NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*` produced `12 passed` (up from `9`; three new copula parity tests added).
 - `ruff check .` passed.
 - `mypy` passed.
-- `python -m build` succeeded (built `nns_pm-0.2.0.tar.gz` and the `cp311` wheel, including the native `_nnscore` extension). CI also runs `python -m build` as a workflow step.
+- `python -m build` succeeded (built the `NNS` source distribution and wheel, including the native `nns._nnscore` extension). CI also runs `python -m build` as a workflow step.
 
 The 11 skips are all intentional live-R-only practical examples in `tests/parity/test_practical_examples.py`; they are not cache-backed parity coverage gaps.
 
@@ -41,7 +41,7 @@ The earlier consolidation-branch snapshot recorded `1 failed, 1773 passed, 11 sk
 Historical known results from PR #7:
 
 - `python -m pytest -q tests/invariants` produced `314 passed`.
-- `PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` produced `1765 passed, 11 skipped`.
+- `NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` produced `1765 passed, 11 skipped`.
 - `ruff check .` passed.
 - `mypy` passed.
 - `python -m build` was blocked locally by a missing `build` module / network limits.
@@ -49,7 +49,7 @@ Historical known results from PR #7:
 Historical known results from PR #8:
 
 - `python -m pytest -q tests/invariants` produced `314 passed`.
-- `PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*` produced `9 passed`.
+- `NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity/test_original_*` produced `9 passed`.
 - Original test adoption added fixture-backed parity tests for ANOVA, dependence/copula partial coverage, partial moments, partition, stochastic dominance, SD efficient set, and univariate SD routines.
 
 ## Native-vs-fallback coverage
@@ -68,11 +68,11 @@ This is not a full native-backend claim. Some C++ functions are intentionally un
 
 ## R-cache parity coverage
 
-The committed cache in `tests/_r_cache.json` is the offline parity source used by `PYNNS_R_CACHE_ONLY=1`. The cache currently records schema version `1`, R NNS version `12.1`, and 2,406 keyed R result entries.
+The committed cache in `tests/_r_cache.json` is the offline parity source used by `NNS_R_CACHE_ONLY=1`. The cache currently records schema version `1`, R NNS version `12.1`, and 2,406 keyed R result entries.
 
 Cache-backed parity covers broad public API behavior across `tests/parity/`, including ANOVA, ARMA, boosting, categorical wrappers, causation, CDF, classical helpers, co-moments, copula bivariate coverage, core partial moments, dependence, differences, distance, Monte Carlo helpers, meboot, multivariate regression, normalization, partitioning, PM matrix, practical examples, public wrappers, regression, regression helpers, SD clustering, seasonality, stack, stochastic dominance, stochastic superiority, and variance helpers.
 
-When `PYNNS_R_CACHE_ONLY=1` is set, missing cache entries remain blocked unless the cache is regenerated in an environment with `Rscript` and R NNS installed. Any such cache miss is a parity-data gap, not evidence that Python and R match.
+When `NNS_R_CACHE_ONLY=1` is set, missing cache entries remain blocked unless the cache is regenerated in an environment with `Rscript` and R NNS installed. Any such cache miss is a parity-data gap, not evidence that Python and R match.
 
 ## Original R tests adoption coverage
 
@@ -95,11 +95,11 @@ The original-test fixture file contains expected values for seven original R tes
 
 The following areas are fully adopted relative to the original R tests currently represented in pytest:
 
-- `NNS.ANOVA` / `pynns.nns_anova` for original certainty and pairwise matrix behavior.
-- `NNS.part` / `pynns.nns_part` for the original partition map case.
-- `NNS.FSD`, `NNS.SSD`, and `NNS.TSD` / `pynns.fsd`, `pynns.ssd`, and `pynns.tsd` for original dominance-label cases.
-- `NNS.SD.efficient.set` / `pynns.sd_efficient_set` for original efficient-set name and order cases.
-- `NNS.FSD.uni`, `NNS.SSD.uni`, and `NNS.TSD.uni` / `pynns.fsd_uni`, `pynns.ssd_uni`, and `pynns.tsd_uni` for original unidirectional dominance cases.
+- `NNS.ANOVA` / `nns.nns_anova` for original certainty and pairwise matrix behavior.
+- `NNS.part` / `nns.nns_part` for the original partition map case.
+- `NNS.FSD`, `NNS.SSD`, and `NNS.TSD` / `nns.fsd`, `nns.ssd`, and `nns.tsd` for original dominance-label cases.
+- `NNS.SD.efficient.set` / `nns.sd_efficient_set` for original efficient-set name and order cases.
+- `NNS.FSD.uni`, `NNS.SSD.uni`, and `NNS.TSD.uni` / `nns.fsd_uni`, `nns.ssd_uni`, and `nns.tsd_uni` for original unidirectional dominance cases.
 
 These are full adoptions of the current original-test fixtures, not claims that every parameter combination or every R package behavior is complete.
 
@@ -112,8 +112,8 @@ The following areas are partially adopted and should remain clearly documented:
 
 ## Newly adopted on this branch
 
-- `NNS.copula` / `pynns.nns_copula`: bivariate continuous, bivariate discrete (`continuous=False`), and three-column continuous/discrete (matrix input) are all adopted against the R fixtures.
-- `PM.matrix` / `pynns.pm_matrix`: covariance output parity is adopted, and R data-frame naming is exposed via an optional `names` echo that does not change the numeric NumPy arrays (parity-unaffected, proven by test).
+- `NNS.copula` / `nns.nns_copula`: bivariate continuous, bivariate discrete (`continuous=False`), and three-column continuous/discrete (matrix input) are all adopted against the R fixtures.
+- `PM.matrix` / `nns.pm_matrix`: covariance output parity is adopted, and R data-frame naming is exposed via an optional `names` echo that does not change the numeric NumPy arrays (parity-unaffected, proven by test).
 
 ## Intentional divergences and remaining offline limitations
 
@@ -121,7 +121,7 @@ These are documented intentional divergences or environment limitations, **not**
 
 - R plot artifacts, including `Rplots.pdf`, are intentionally not adopted because CI parity compares returned values and never creates or compares graphics-device artifacts. Policy: `docs/plot_parity_policy.md`.
 - `PM.matrix` returns NumPy-first arrays; R data-frame dimnames are exposed only via the optional `names` echo. This is a documented API difference, not a numeric-parity gap.
-- Any parity test requiring a missing `tests/_r_cache.json` entry would block under `PYNNS_R_CACHE_ONLY=1` when `Rscript` is unavailable; the committed cache currently covers the full offline parity suite with no such misses.
+- Any parity test requiring a missing `tests/_r_cache.json` entry would block under `NNS_R_CACHE_ONLY=1` when `Rscript` is unavailable; the committed cache currently covers the full offline parity suite with no such misses.
 - The only suite skips are intentional live-R-only practical examples (see above).
 
 ## Known gaps
@@ -151,7 +151,7 @@ The discrete and multivariate copula gaps and the `PM.matrix` naming gap recorde
 | FSD/SSD/TSD labels | `fsd`, `ssd`, `tsd` | `NNS.FSD`, `NNS.SSD`, `NNS.TSD`, `test_FSD_SSD_TSD.R` | No | Yes | Yes | No | fixture-complete | Original dominance labels are adopted for represented cases. |
 | Univariate SD routines | `fsd_uni`, `ssd_uni`, `tsd_uni` | `NNS.FSD.uni`, `NNS.SSD.uni`, `NNS.TSD.uni`, `test_Uni_SD_Routines.R` | No | Yes | Yes | No | fixture-complete | Original unidirectional cases are adopted. |
 | SD efficient set | `sd_efficient_set` | `NNS.SD.efficient.set`, `test_SD_efficient_Set.R` | No | Yes | Yes | No | fixture-complete | Python indices are mapped back to original R names for parity. |
-| Broad cached parity suite | Many public `pynns` APIs | Installed R NNS via test harness | Mixed | Yes | Mixed | Mixed | partial | `tests/parity/` is broad and cache-backed, but not full package parity. The full cache-only suite now passes with no failures (`1778 passed, 11 skipped`). |
+| Broad cached parity suite | Many public `nns` APIs | Installed R NNS via test harness | Mixed | Yes | Mixed | Mixed | partial | `tests/parity/` is broad and cache-backed, but not full R package parity. The full cache-only suite now passes with no failures (`1778 passed, 11 skipped`). |
 | Native original-source smoke coverage | Optional `_nnscore` routes and helpers | Vendored NNS-core C++ | Yes, where bound | No | No | Yes | native-complete | Covers currently exported native symbols and public fallback behavior. |
 | R plot artifact | No Python API | `Rplots.pdf` and plot flags | No | No | No | No | intentional-divergence | CI intentionally compares returned values, never graphics-device artifacts. Policy in `docs/plot_parity_policy.md`. Not a migration blocker. |
 | R testthat harness | pytest invocation | `testthat.R` | No | No | No | No | no-python-equivalent | Python uses pytest rather than R testthat. |
@@ -173,11 +173,11 @@ Positive signals:
 
 Release blockers or cautions:
 
-- The parity claim is bounded by committed fixtures and cache entries; full package parity is not claimed.
+- The parity claim is bounded by committed fixtures and cache entries; full R package parity is not claimed.
 - R plotting behavior and artifacts remain intentionally unported (documented policy).
 - Some native original-source functions remain private-only or unbound.
 
-## What remains before NNS-python migration
+## Ongoing maintenance notes
 
 The previously enumerated pre-migration gaps are now closed or formally resolved:
 
@@ -190,19 +190,19 @@ Ongoing discipline (not blockers):
 
 5. Expand original R test adoption where additional upstream tests or stable public examples are available.
 6. Keep native routing limited to verified public behavior and avoid adding new routes without parity and fallback tests.
-7. Maintain the `pynns` package name until a separate migration plan explicitly covers NNS-python naming, compatibility, packaging, and publication.
+7. Keep PyPI publication and release tagging out of this migration PR.
 
 ## Gap closure summary (final status)
 
-This section is the clean, current status summary for the `close-all-parity-gaps` branch.
+This section is the clean, current status summary for the official NNS-python identity migration.
 
-- **Full-suite parity failures:** none. `PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` → `1778 passed, 11 skipped`.
+- **Full-suite parity failures:** none. `NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity` → `1778 passed, 11 skipped`.
 - **Remaining skips:** intentional and documented only — 11 live-R-only practical examples in `tests/parity/test_practical_examples.py` that regenerate vignette-scale results from installed R NNS on demand. They are not cache-backed parity coverage gaps.
 - **`nns_boost` cache parity:** resolved. The previously reported `test_nns_boost_ivs_test_none_matches_r` failure was triaged as CV-split seed-sensitivity on an unseeded call. The boosted result is empirically seed-invariant and matches the committed R cache to ~3.5e-15. The parity test now pins a seed, and `test_nns_boost_ivs_test_none_is_seed_invariant` guards against regression. No tolerance was loosened.
 - **Copula discrete status:** implemented and adopted. `nns_copula(x, y, continuous=False)` matches R `NNS.copula(A, continuous=FALSE)` = 0.4472136 to `1e-5`.
 - **Copula multivariate status:** implemented and adopted. `nns_copula(Z)` and `nns_copula(Z, continuous=False)` match R `NNS.copula(Z, continuous=TRUE/FALSE)` = 0.2519783 / 0.2725541 to `1e-5`. Matrix orientation: rows are observations, columns are variables; any column count `>= 2` is supported; per-column targets default to column means and can be overridden via `target`.
 - **PM.matrix naming status:** resolved as an optional NumPy-first `names` echo. Numeric covariance parity is unchanged; a parity test proves names match R's data-frame dimname behavior while the numeric arrays are byte-for-byte identical.
 - **Plot policy status:** formalized in `docs/plot_parity_policy.md`. Graphics-device artifacts (including `original_tests/testthat/Rplots.pdf`) are inventoried but never compared in CI; parity compares returned values only.
-- **Build status:** `python -m build` succeeds locally (sdist + `cp311` wheel with the native `_nnscore` extension) and runs as a CI workflow step.
-- **Native routing:** no new native routing was added; the `pm_matrix` `names` echo is attached in Python after any native call and does not change native dispatch.
-- **Migration verdict:** the NNS-python migration **remains out of scope** and is **blocked** until this PR is merged and green. No `pynns` → `nns` rename, no publication, and no NNS-python changes are part of this work.
+- **Build status:** `python -m build` succeeds locally (sdist + `cp311` wheel with the native `nns._nnscore` extension) and runs as a CI workflow step.
+- **Native routing:** the native module is installed as `nns._nnscore`; no NNS-core behavior changes are part of the identity migration.
+- **Publication verdict:** no PyPI publication and no release tag are part of this PR.

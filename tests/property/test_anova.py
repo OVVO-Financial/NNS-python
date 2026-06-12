@@ -6,7 +6,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_anova
+from nns import nns_anova
 
 MIN_MEANINGFUL_RANGE = np.finfo(np.float64).tiny
 

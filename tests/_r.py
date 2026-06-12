@@ -38,7 +38,8 @@ def nns(function: str, *args: Any) -> RValue:
     if _offline():
         raise RuntimeError(
             f"R cache miss for NNS::{function} with key {key}. "
-            f"Run without CI/PYNNS_R_CACHE_ONLY/PYNNS_OFFLINE to populate {_CACHE_PATH}."
+            "Run without CI/NNS_R_CACHE_ONLY/PYNNS_R_CACHE_ONLY/"
+            f"NNS_OFFLINE/PYNNS_OFFLINE to populate {_CACHE_PATH}."
         )
 
     return _uncached_nns(function, args, key, refresh)
@@ -934,7 +935,9 @@ def _cache_lock() -> Iterator[None]:
 def _offline() -> bool:
     return (
         os.environ.get("CI") == "true"
+        or os.environ.get("NNS_R_CACHE_ONLY") == "1"
         or os.environ.get("PYNNS_R_CACHE_ONLY") == "1"
+        or os.environ.get("NNS_OFFLINE") == "1"
         or os.environ.get("PYNNS_OFFLINE") == "1"
     )
 

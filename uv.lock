@@ -328,8 +328,8 @@ wheels = [
 ]
 
 [[package]]
-name = "nns-pm"
-version = "0.2.0"
+name = "nns"
+version = "1.0.0a0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },

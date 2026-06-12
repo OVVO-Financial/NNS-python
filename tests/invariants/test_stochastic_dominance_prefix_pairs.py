@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_sd_cluster, sd_efficient_set
-from pynns import stochastic_dominance as sd
+from nns import nns_sd_cluster, sd_efficient_set
+from nns import stochastic_dominance as sd
 
 
 @pytest.mark.parametrize(

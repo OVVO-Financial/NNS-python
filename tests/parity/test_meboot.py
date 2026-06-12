@@ -7,7 +7,7 @@ import pytest
 from _r import RValue, nns_meboot_diagnostics, nns_meboot_stat_summary
 from _tolerances import COMPOUND
 
-from pynns import nns_meboot
+from nns import nns_meboot
 
 
 def _diagnostic_series() -> list[np.ndarray]:

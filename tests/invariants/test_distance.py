@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import nns_distance, nns_distance_bulk
+from nns import nns_distance, nns_distance_bulk
 
 
 def test_nns_distance_self_target_returns_nearest_y_hat() -> None:

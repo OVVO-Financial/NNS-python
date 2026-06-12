@@ -7,8 +7,8 @@ import pytest
 from _r import nns_boost_factor_predictor, nns_boost_multi_factor_predictor, nns_boost_numeric
 from _tolerances import COMPOUND
 
-from pynns import nns_boost
-from pynns.boost import _accuracy, _all_feature_sets, _learner_scores, _sse
+from nns import nns_boost
+from nns.boost import _accuracy, _all_feature_sets, _learner_scores, _sse
 
 
 @pytest.mark.parity

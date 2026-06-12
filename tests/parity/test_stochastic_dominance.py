@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from _r import RValue, nns
 
-from pynns import fsd, fsd_uni, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
+from nns import fsd, fsd_uni, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
 
 SIZES = [50, 200, 1000]
 

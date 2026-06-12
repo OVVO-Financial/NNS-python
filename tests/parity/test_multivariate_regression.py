@@ -7,9 +7,9 @@ import pytest
 from _r import nns
 from _tolerances import COMPOUND
 
-from pynns import nns_m_reg, nns_reg
-from pynns.part import NoiseReduction
-from pynns.regression import Order
+from nns import nns_m_reg, nns_reg
+from nns.part import NoiseReduction
+from nns.regression import Order
 
 
 @pytest.mark.parity

@@ -5,7 +5,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from pynns import nns_norm
+from nns import nns_norm
 
 finite_matrices = arrays(
     dtype=np.float64,

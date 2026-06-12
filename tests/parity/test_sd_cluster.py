@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from _r import RValue, nns, nns_sd_cluster_dendrogram
 
-from pynns import nns_sd_cluster
+from nns import nns_sd_cluster
 
 
 @pytest.mark.parity

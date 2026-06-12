@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from pynns import (
+from nns import (
     co_lpm,
     co_upm,
     d_lpm,
@@ -20,13 +20,13 @@ from pynns import (
     upm_ratio,
 )
 
-core_module = importlib.import_module("pynns.core")
-co_moments_module = importlib.import_module("pynns.co_moments")
-pm_matrix_module = importlib.import_module("pynns.pm_matrix")
+core_module = importlib.import_module("nns.core")
+co_moments_module = importlib.import_module("nns.co_moments")
+pm_matrix_module = importlib.import_module("nns.pm_matrix")
 
 
 def _native() -> ModuleType:
-    return cast(ModuleType, pytest.importorskip("pynns._nnscore"))
+    return cast(ModuleType, pytest.importorskip("nns._nnscore"))
 
 
 pytestmark = pytest.mark.invariant
@@ -34,7 +34,7 @@ pytestmark = pytest.mark.invariant
 
 @pytest.fixture()
 def native() -> ModuleType:
-    return cast(ModuleType, pytest.importorskip("pynns._nnscore"))
+    return cast(ModuleType, pytest.importorskip("nns._nnscore"))
 
 
 @pytest.fixture()

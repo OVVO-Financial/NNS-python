@@ -7,7 +7,7 @@ import pytest
 from _r import dy_d_scalar, dy_d_scalar_mixed, dy_dx_numeric, dy_dx_overall, nns_diff_custom
 from _tolerances import EXACT
 
-from pynns import dy_d, dy_dx, nns_diff
+from nns import dy_d, dy_dx, nns_diff
 
 DIFF_PARITY = 1e-5
 DY_D_PARITY = 1e-3

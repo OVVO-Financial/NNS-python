@@ -1,4 +1,4 @@
-# PyNNS Examples
+# NNS Python Examples
 
 These examples are Python-native companions to the upstream R NNS documentation,
 not one-for-one copies of the R reports. Each script is runnable,
@@ -13,7 +13,7 @@ The upstream R repository contains several kinds of material:
   studies.
 
 Use those upstream files as conceptual references. Use the examples here when
-you want short Python call patterns that are kept in sync with PyNNS.
+you want short Python call patterns that are kept in sync with NNS Python.
 
 ## Runnable Examples
 

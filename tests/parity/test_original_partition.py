@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_part
+from nns import nns_part
 
 from ._original import expected, r_string_vector_assignment, r_vector
 

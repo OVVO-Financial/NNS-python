@@ -5,7 +5,7 @@ import pytest
 from _r import factor_dummy_custom
 from _tolerances import EXACT
 
-from pynns import encode_factor_codes, factor_2_dummy, factor_2_dummy_fr
+from nns import encode_factor_codes, factor_2_dummy, factor_2_dummy_fr
 
 
 @pytest.mark.parity

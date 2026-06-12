@@ -5,7 +5,7 @@ import pytest
 from _r import nns
 from _tolerances import EXACT
 
-from pynns import nns_cor, nns_dep
+from nns import nns_cor, nns_dep
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "independent", "quadratic", "sin", "noise"]

@@ -4,7 +4,7 @@ import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pynns import nns_diff
+from nns import nns_diff
 
 
 @given(st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False))

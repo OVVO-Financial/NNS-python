@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from _tolerances import COMPOUND, EXACT
 
-from pynns import (
+from nns import (
     co_lpm,
     co_upm,
     d_lpm,
@@ -130,7 +130,7 @@ def test_boston_housing_factor_path_matches_installed_r_example() -> None:
         },
         "params": {
             "n_best": float(actual_result["NNS.reg.n.best"]),
-            # R returns the winning rounded grid threshold, while PyNNS keeps the
+            # R returns the winning rounded grid threshold, while NNS Python keeps the
             # equivalent objective threshold that produced the same stack surface.
             "threshold": float(expected["metrics"]["params"]["threshold"]),
         },
@@ -211,7 +211,7 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
 @pytest.mark.practical
 @pytest.mark.xfail(
     reason=(
-        "Installed R NNS 12.1 and PyNNS balanced Iris boost remain a true "
+        "Installed R NNS 12.1 and NNS Python balanced Iris boost remain a true "
         "diagnostic parity gap; both miss the all-class-3 holdout."
     ),
     strict=True,
@@ -243,7 +243,7 @@ def test_iris_boost_classification_vignette_gap_is_explicit() -> None:
     reason=(
         "Intentional ARMA weighting divergence: installed R weights numeric "
         "multi-lag seasonal factors using reverse steps 1:length(lags), while "
-        "PyNNS weights each candidate using its actual lag."
+        "NNS Python weights each candidate using its actual lag."
     ),
     strict=True,
 )
@@ -257,7 +257,7 @@ def test_sunspots_arma_example_matches_installed_r() -> None:
     )
 
     # This documents the installed-R compatibility delta, not a target fix.
-    # PyNNS uses the actual seasonal factors when estimating lag strength;
+    # NNS Python uses the actual seasonal factors when estimating lag strength;
     # installed R uses the seasonal factor's position in the input vector.
     np.testing.assert_allclose(actual, _array(expected["estimates"]), atol=COMPOUND)
 

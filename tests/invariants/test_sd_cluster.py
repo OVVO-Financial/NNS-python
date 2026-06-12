@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pynns import nns_sd_cluster
+from nns import nns_sd_cluster
 
 
 def test_nns_sd_cluster_covers_columns_once_and_is_deterministic() -> None:

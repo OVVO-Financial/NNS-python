@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pynns import (
+from nns import (
     co_lpm,
     co_upm,
     d_lpm,

@@ -7,8 +7,8 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from pynns import nns_nowcast_panel, nns_var
-from pynns.providers import CsvNowcastProvider
+from nns import nns_nowcast_panel, nns_var
+from nns.providers import CsvNowcastProvider
 
 
 def _panel() -> np.ndarray:
