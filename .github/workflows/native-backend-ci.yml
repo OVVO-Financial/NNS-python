@@ -1,0 +1,50 @@
+name: Native backend CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  native-backend:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
+
+      - name: Install package editable
+        run: python -m pip install -e .
+
+      - name: Run native import smoke test
+        run: python -c "import pynns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+
+      - name: Run invariants without Rscript
+        run: python -m pytest -q tests/invariants
+
+      - name: Run parity from committed R cache
+        run: PYNNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run ruff
+        run: ruff check .
+
+      - name: Run mypy
+        run: mypy
+
+      - name: Build distributions
+        run: python -m build
