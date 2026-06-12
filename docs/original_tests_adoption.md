@@ -42,6 +42,6 @@
 - `PM.matrix` matrices remain NumPy-first arrays without R-style dimnames;
   labels are available only via the optional `names` echo described above.
 
-## Scope notes
+## Out of scope
 
-The official package identity is now the `NNS` distribution with `import nns` and native extension `nns._nnscore`. Full R package parity is not claimed; parity remains bounded by the committed fixtures and cache entries, and plot artifacts remain intentionally out of scope.
+The NNS-python migration remains out of scope. The `nns` package name is unchanged.

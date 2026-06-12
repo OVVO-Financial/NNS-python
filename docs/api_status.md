@@ -3,7 +3,7 @@
 This page summarizes the public NNS Python API surface, known gaps, guarded paths,
 and design boundaries.
 
-NNS Python is an alpha, parity-focused Python port of installed R NNS 12.1 beta,
+NNS Python is an alpha, parity-focused Python port of installed R NNS 13.0,
 implemented natively in Python on top of NumPy and SciPy. It does not
 wrap R, call the R package at runtime, or depend on compiled R/C++ shims. The
 goal is public input/output compatibility where R behavior is stable,
@@ -54,7 +54,7 @@ invariant, and property coverage.
 | Boost: `nns_boost` | partial | medium | Deterministic and stochastic structures are implemented; one high-feature threshold path remains guarded to match installed-R failure behavior. |
 | Seasonality: `nns_seas` | implemented | high | Non-plotting installed-R path is implemented and cached defensively. |
 | ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and supported VAR dimension-reduction paths are implemented on focused fixtures. Explicit numeric multi-lag ARMA uses actual-lag weighting instead of installed R's position-based weighting quirk. VAR's multivariate stack stage matches R's effective time-series holdout sizing; the remaining macro-like VAR strict xfail is inherited from ARMA optimizer period selection. Stochastic interval streams are structural/statistical parity only. |
-| Nowcast panel: `nns_nowcast_panel` | implemented | medium | Python-native deterministic monthly panel helper backed by `nns_var`. R NNS 12.1 beta removed `NNS.nowcast`, so this is no longer an R-export parity target. |
+| Nowcast panel: `nns_nowcast_panel` | implemented | medium | Python-native deterministic monthly panel helper backed by `nns_var`. R NNS 13.0 does not export `NNS.nowcast`, so this is no longer an R-export parity target. |
 | Providers: `CsvNowcastProvider` | implemented | medium | Produces explicit local/offline payloads for `nns_nowcast_panel`. |
 | Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
 | Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
@@ -75,7 +75,7 @@ invariant, and property coverage.
 ## Intentional Design Boundaries
 
 - No hidden network fetching happens by default.
-- NNS Python does not export `nns_nowcast`; R NNS 12.1 beta removed `NNS.nowcast`.
+- NNS Python does not export `nns_nowcast`; R NNS 13.0 does not export `NNS.nowcast`.
 - Nowcast providers are payload builders for `nns_nowcast_panel`, not implicit
   public forecast wrappers.
 - `CsvNowcastProvider` is local/offline.
@@ -132,7 +132,7 @@ examples include:
   classification vignette, the documented ARMA numeric multi-lag weighting
   divergence, and VAR's ARMA-derived univariate/ensemble outputs. The Iris
   classification xfail mixes two different issues: NNS Python stack predicts the
-  correct held-out class where installed R NNS 12.1 rounds the same borderline
+  correct held-out class where installed R NNS 13.0 rounds the same borderline
   estimate down, while boost remains a true output disparity whose installed-R
   and NNS Python balanced predictions both miss the held-out class.
 

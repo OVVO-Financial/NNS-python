@@ -15,7 +15,7 @@ uv run python scripts/update_benchmarks_doc.py docs/benchmark_reports/benchmark_
 
 ## Results
 
-R baselines use installed R NNS 12.1.
+R baselines use installed R NNS 13.0.
 
 `Python speed vs R` is computed as `R baseline / Python mean`. Values above `1.00x` mean Python is faster; values below `1.00x` mean Python is slower.
 
@@ -123,7 +123,7 @@ baseline so Python/R comparisons remain visible when R has not been rerun.
 Run only the realistic Python benchmarks with:
 
 ```bash
-NNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \
+PYNNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \
   --benchmark-json=docs/benchmark_reports/realistic_sd_python_latest.json \
   tests/benchmarks/test_stochastic_dominance_realistic.py \
   tests/benchmarks/test_finance_sd_rolling.py \

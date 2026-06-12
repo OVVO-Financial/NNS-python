@@ -1,0 +1,6 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Large parity artifacts: keep diffs out of review and treat as generated.
+tests/_r_cache.json -diff linguist-generated
+tools/NNS_13.0.tar.gz binary

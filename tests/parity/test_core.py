@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Callable
 
@@ -122,12 +121,10 @@ def test_edge_cases_match_r_category(
         assert np.isnan(expected)
         return
 
-    if not np.all(np.isfinite(edge_case.values)) and (
-        os.environ.get("NNS_OFFLINE") == "1"
-        or os.environ.get("PYNNS_OFFLINE") == "1"
-        or os.environ.get("NNS_R_CACHE_ONLY") == "1"
-        or os.environ.get("PYNNS_R_CACHE_ONLY") == "1"
-    ):
+    if not np.all(np.isfinite(edge_case.values)):
+        # Live R calls for non-finite partial-moment values can produce no JSON
+        # output, so these are local edge-behavior checks rather than
+        # cache-backed R parity entries.
         result = function(degree, target, edge_case.values)
         if edge_case.name == "contains-nan":
             assert np.isnan(result)

@@ -2,11 +2,10 @@
 
 ## Build
 
-NNS Python is packaged as the `NNS` distribution and imported with `import nns`.
-It includes the `nns._nnscore` native extension backed by the vendored C++ core in
-`extern/NNS-core`, while preserving Python fallbacks for the public APIs that route
-through the native backend. CI parity is cache-backed and does not require
-`Rscript`; `Rscript` is only needed for local cache regeneration.
+NNS Python is currently a pure-Python/NumPy/SciPy port. The earlier native extension
+scaffolding was removed after the core port demonstrated pure NumPy/SciPy parity
+and competitive performance. Reintroduce native code only as a deliberate future
+change backed by benchmarks.
 
 ## Degree-Zero Boundary
 
@@ -134,7 +133,7 @@ supported.
 
 `nns_part` maps to R's `NNS.part` but returns plain NumPy arrays instead of
 `data.table` objects: `"dt"` and `"regression.points"` are dictionaries of
-arrays. Installed R 12.1 only distinguishes `type = NULL` from any non-null
+arrays. Installed R 13.0 only distinguishes `type = NULL` from any non-null
 `type`: `None` uses XY quadrant splits, while every non-`None` value uses
 X-only splits. This differs from documentation that implies separate `"X"`,
 `"Y"`, and `"XONLY"` modes. NNS Python matches the installed binary.
@@ -267,16 +266,16 @@ counterintuitive. R's `CV.size = NULL` samples a random value between 0.2 and
 1/3; NNS Python uses a deterministic default of `0.25`. Pass `cv_size` explicitly for
 exact R parity.
 
-The installed-R 12.1 Iris classification vignette with `folds=1` is a documented
+The installed-R 13.0 Iris classification vignette with `folds=1` is a documented
 stack disparity rather than a NNS Python correctness target. On the `141:150` holdout,
-the true labels are all class code `3`. Installed R 12.1 returns stack class code
+the true labels are all class code `3`. Installed R 13.0 returns stack class code
 `2` for every row because its learned class-rounding threshold is about `0.60`;
 NNS Python returns class code `3` for every row because its learned threshold is about
 `0.29`. Both implementations have the same high-level shape in that case
 (`reg = 2`, `dim.red = 3`, raw combined stack near `2.5`), but the final
 threshold rounding differs. Since R default `folds=5` also returns class code
 `3`, NNS Python keeps the behavior that matches the practical classification result
-instead of forcing installed-R-12.1 `folds=1` parity.
+instead of forcing installed-R-13.0 `folds=1` parity.
 
 Factor predictor expansion is supported for `nns_stack(method=1)` and
 `nns_stack(method=2)` with explicit `factor_levels=` metadata. NNS Python expands
@@ -329,11 +328,11 @@ enabled. The public `n.best` value is structural-only because R's final internal
 `NNS.stack` call samples its own `CV.size = NULL` split, while NNS Python keeps the
 deterministic stack default.
 
-The installed-R 12.1 Iris boost vignette remains a true parity gap, but not a
+The installed-R 13.0 Iris boost vignette remains a true parity gap, but not a
 quality target for exact output matching. On the same all-class-`3` holdout,
-installed R 12.1 balanced boost returns class code `1` for every row, while NNS Python
+installed R 13.0 balanced boost returns class code `1` for every row, while NNS Python
 balanced boost returns class code `2` for every row; both are wrong for that
-example. Installed R 12.1 also does not accept the `folds` argument shown in the
+example. Installed R 13.0 also does not accept the `folds` argument shown in the
 rendered upstream overview for `NNS.boost`, so this example is tracked as
 R-version/upstream-example drift plus a boost parity gap rather than evidence
 that NNS Python should copy the installed-R balanced output.
@@ -411,7 +410,7 @@ to numeric series, delegates numeric forecasting to `nns_var`, and returns VAR
 fields plus `dates` and `metadata` dictionaries. Date labels are metadata rather
 than array indices. Without dates, forecast rows are labeled `t+1`, `t+2`, ...
 With dates, inputs are normalized to `YYYY-MM`, must be sorted and unique, and
-forecast labels advance monthly. R NNS 12.1 beta removed `NNS.nowcast`, so NNS Python
+forecast labels advance monthly. R NNS 13.0 does not export `NNS.nowcast`, so NNS Python
 does not export a public `nns_nowcast` wrapper. `CsvNowcastProvider` remains an
 explicit payload builder whose `fetch(series, start_date)` method returns
 `{"series": ..., "dates": ..., "metadata": ...}` for callers to pass to
@@ -462,7 +461,7 @@ helpers. NNS Python accepts `rpm` as a finite 2D numeric array with R's `y.hat`
 column in the final position. `nns_distance` applies R's per-target min-max
 rescaling before computing weighted nearest-neighbor predictions. `nns_distance_bulk`
 matches R's compiled bulk helper, including its raw-feature distance convention.
-For `nns_distance` with `k > 1`, NNS Python matches the installed R 12.1 binary:
+For `nns_distance` with `k > 1`, NNS Python matches the installed R 13.0 binary:
 the exponential rank-weight family uses the R C API's `Rf_dexp` scale argument
 as `1 / k`. This differs from the nearby source-code comment that describes it
 as a rate.

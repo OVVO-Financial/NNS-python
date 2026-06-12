@@ -373,7 +373,7 @@ def _render_realistic_sd(
         "Run only the realistic Python benchmarks with:",
         "",
         "```bash",
-        "NNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \\",
+        "PYNNS_OFFLINE=1 uv run pytest -q -n0 -m benchmark --benchmark-enable \\",
         "  --benchmark-json=docs/benchmark_reports/realistic_sd_python_latest.json \\",
         "  tests/benchmarks/test_stochastic_dominance_realistic.py \\",
         "  tests/benchmarks/test_finance_sd_rolling.py \\",
