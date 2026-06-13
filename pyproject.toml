@@ -104,3 +104,18 @@ python_version = "3.11"
 strict = true
 files = ["src/nns", "tests"]
 mypy_path = ["tests"]
+
+[tool.cibuildwheel]
+# Native (C++17 / nanobind) extension: build CPython wheels across 3.11-3.13.
+# scikit-build-core fetches cmake/ninja as build deps, so no system CMake needed.
+build = "cp311-* cp312-* cp313-*"
+skip = ["pp*", "*_i686", "*-win32", "*-musllinux_i686"]
+build-frontend = "build"
+# Smoke-test every built wheel: the native extension imports and computes.
+test-command = 'python -c "import nns, nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"'
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
