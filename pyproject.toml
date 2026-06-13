@@ -37,9 +37,15 @@ dependencies = [
     "scipy",
 ]
 
+[project.optional-dependencies]
+# Optional visual plotting API. The core stays NumPy/SciPy-only; install with
+#   pip install ovvo-nns[plot]
+plot = ["matplotlib>=3.7"]
+
 [dependency-groups]
 dev = [
     "hypothesis",
+    "matplotlib>=3.7",
     "mypy",
     "pytest",
     "pytest-benchmark",
@@ -112,6 +118,11 @@ python_version = "3.11"
 strict = true
 files = ["src/nns", "tests"]
 mypy_path = ["tests"]
+
+# matplotlib is an optional extra; allow type-checking without it installed.
+[[tool.mypy.overrides]]
+module = ["matplotlib.*"]
+ignore_missing_imports = true
 
 [tool.cibuildwheel]
 # Native (C++17 / nanobind) extension: build CPython wheels across 3.11-3.13.

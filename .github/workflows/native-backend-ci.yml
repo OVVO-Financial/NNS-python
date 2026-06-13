@@ -27,9 +27,10 @@ jobs:
           python -m pip install -U pip
           python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
           python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install "matplotlib>=3.7"
 
-      - name: Install package editable
-        run: python -m pip install -e .
+      - name: Install package editable (with optional plot extra)
+        run: python -m pip install -e ".[plot]"
 
       - name: Run native import smoke test
         run: python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
@@ -39,6 +40,9 @@ jobs:
 
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run plotting color-fidelity tests
+        run: python -m pytest -q tests/plotting
 
       - name: Run vignette examples
         run: |
