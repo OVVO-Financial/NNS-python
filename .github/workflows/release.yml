@@ -80,8 +80,26 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
 
-  publish_testpypi:
+  check_metadata:
     needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate metadata and README rendering (twine check)
+        run: |
+          # Pin modern tooling so PEP 639 License-Expression / Metadata 2.4 is
+          # recognized regardless of any preinstalled system 'packaging'.
+          python -m pip install -U pip "twine>=6.1" "packaging>=24.2"
+          python -m twine check --strict dist/*
+
+  publish_testpypi:
+    needs: [build_wheels, build_sdist, check_metadata]
     if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
     runs-on: ubuntu-latest
     environment: testpypi
@@ -97,7 +115,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
 
   publish_pypi:
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels, build_sdist, check_metadata]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == 'pypi')
     runs-on: ubuntu-latest
     environment: pypi
