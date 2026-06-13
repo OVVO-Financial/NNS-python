@@ -1,0 +1,144 @@
+name: Sync from NNS-core
+
+on:
+  repository_dispatch:
+    types: [nns-core-updated]
+  workflow_dispatch:
+    inputs:
+      core_commit:
+        required: true
+        type: string
+      r_repo:
+        required: false
+        default: OVVO-Financial/NNS
+        type: string
+      r_commit:
+        required: true
+        type: string
+      r_version:
+        required: true
+        type: string
+      r_src_tree_hash:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out NNS-python
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve payload
+        id: payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "core_commit=${{ github.event.client_payload.core_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_repo=${{ github.event.client_payload.r_repo }}" >> "$GITHUB_OUTPUT"
+            echo "r_commit=${{ github.event.client_payload.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ github.event.client_payload.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ github.event.client_payload.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "core_commit=${{ inputs.core_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_repo=${{ inputs.r_repo }}" >> "$GITHUB_OUTPUT"
+            echo "r_commit=${{ inputs.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ inputs.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ inputs.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out public NNS-core
+        uses: actions/checkout@v4
+        with:
+          repository: OVVO-Financial/NNS-core
+          ref: ${{ steps.payload.outputs.core_commit }}
+          path: upstream/NNS-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
+
+      - name: Vendor NNS-core snapshot
+        run: |
+          python scripts/sync_nns_core_snapshot.py \
+            --core-checkout upstream/NNS-core \
+            --core-commit "${{ steps.payload.outputs.core_commit }}" \
+            --r-repo "${{ steps.payload.outputs.r_repo }}" \
+            --r-commit "${{ steps.payload.outputs.r_commit }}" \
+            --r-version "${{ steps.payload.outputs.r_version }}" \
+            --r-src-tree-hash "${{ steps.payload.outputs.r_src_tree_hash }}"
+
+      - name: Install package editable
+        run: python -m pip install -e . --force-reinstall
+
+      - name: Run native import smoke test
+        run: python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+
+      - name: Run invariants
+        run: python -m pytest -q tests/invariants
+
+      - name: Run parity from committed R cache
+        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run R smoke
+        run: python -m pytest -q tests/parity/test_r13_smoke.py
+
+      - name: Run vignette examples
+        run: |
+          if [ -f tests/docs/test_vignette_examples.py ]; then
+            python -m pytest -q tests/docs/test_vignette_examples.py
+          else
+            echo "No docs vignette test present; skipping."
+          fi
+
+      - name: Run ruff
+        run: ruff check .
+
+      - name: Run mypy
+        run: mypy
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Open NNS-core sync PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: sync-nns-core-${{ steps.payload.outputs.core_commit }}
+          title: Sync vendored NNS-core from ${{ steps.payload.outputs.core_commit }}
+          body: |
+            This PR vendors the accepted public `OVVO-Financial/NNS-core`
+            snapshot into `extern/NNS-core`.
+
+            Core commit: `${{ steps.payload.outputs.core_commit }}`
+            R repo: `${{ steps.payload.outputs.r_repo }}`
+            R commit: `${{ steps.payload.outputs.r_commit }}`
+            R version: `${{ steps.payload.outputs.r_version }}`
+            R src tree hash: `${{ steps.payload.outputs.r_src_tree_hash }}`
+
+            Validation run in workflow:
+            - native import smoke test
+            - invariants
+            - parity from committed R cache
+            - R smoke test
+            - vignette examples if present
+            - ruff
+            - mypy
+            - build
+
+            Native code enters Python only through accepted public `NNS-core`
+            commits. This PR does not auto-port native code from R.
+          commit-message: Sync vendored NNS-core ${{ steps.payload.outputs.core_commit }}

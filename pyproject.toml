@@ -51,6 +51,7 @@ sdist.include = [
     "/LICENSE",
     "/README.md",
     "/docs",
+    "/sync",
     "/extern/NNS-core",
     "/original_tests",
     "/scripts",
@@ -91,6 +92,8 @@ select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
 "tests/**" = ["TID251"]
 "scripts/regenerate_r_cache.py" = ["TID251"]
 "scripts/install_local_r_nns.py" = ["TID251"]
+"scripts/run_live_r_parity_for_changed_api.py" = ["TID251"]
+"scripts/inspect_r_api_update.py" = ["TID251"]
 
 [tool.mypy]
 python_version = "3.11"

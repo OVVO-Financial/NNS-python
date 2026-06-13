@@ -1,0 +1,170 @@
+name: Inspect R API update
+
+on:
+  repository_dispatch:
+    types: [nns-r-api-or-version-updated]
+  workflow_dispatch:
+    inputs:
+      r_commit:
+        required: true
+        type: string
+      r_version:
+        required: true
+        type: string
+      r_src_tree_hash:
+        required: true
+        type: string
+      description_changed:
+        required: true
+        type: boolean
+      fresh_cache:
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  inspect-r-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out NNS-python
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve payload
+        id: payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "r_commit=${{ github.event.client_payload.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ github.event.client_payload.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ github.event.client_payload.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+            echo "description_changed=${{ github.event.client_payload.description_changed }}" >> "$GITHUB_OUTPUT"
+            echo "fresh_cache=false" >> "$GITHUB_OUTPUT"
+            echo '${{ toJson(github.event.client_payload.changed_files) }}' > changed_files.json
+          else
+            echo "r_commit=${{ inputs.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ inputs.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ inputs.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+            echo "description_changed=${{ inputs.description_changed }}" >> "$GITHUB_OUTPUT"
+            echo "fresh_cache=${{ inputs.fresh_cache }}" >> "$GITHUB_OUTPUT"
+            echo '[]' > changed_files.json
+          fi
+
+      - name: Check out upstream R NNS
+        uses: actions/checkout@v4
+        with:
+          repository: OVVO-Financial/NNS
+          ref: ${{ steps.payload.outputs.r_commit }}
+          path: upstream/NNS
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python build and test tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
+
+      - name: Plan R API parity review
+        run: |
+          python scripts/plan_r_api_parity_review.py \
+            --changed-files-json changed_files.json \
+            --map sync/r_api_map.json \
+            --out sync/last_r_api_inspection.md \
+            --json-out sync/last_r_api_plan.json
+
+      - name: Vendor R snapshot when DESCRIPTION changed
+        if: steps.payload.outputs.description_changed == 'true'
+        run: |
+          python scripts/sync_r_nns_snapshot.py \
+            --r-checkout upstream/NNS \
+            --r-repo OVVO-Financial/NNS \
+            --r-commit "${{ steps.payload.outputs.r_commit }}" \
+            --r-version "${{ steps.payload.outputs.r_version }}" \
+            --r-src-tree-hash "${{ steps.payload.outputs.r_src_tree_hash }}"
+
+      - name: Install package editable
+        run: python -m pip install -e . --force-reinstall
+
+      - name: Run mapped live R parity or report required fresh cache
+        id: live_parity
+        continue-on-error: true
+        run: |
+          if [ "${{ steps.payload.outputs.fresh_cache }}" = "true" ]; then
+            python scripts/run_live_r_parity_for_changed_api.py \
+              --plan sync/last_r_api_plan.json \
+              --r-checkout upstream/NNS \
+              --fresh-cache \
+              --out sync/last_live_r_parity_report.md
+          else
+            python scripts/run_live_r_parity_for_changed_api.py \
+              --plan sync/last_r_api_plan.json \
+              --r-checkout upstream/NNS \
+              --out sync/last_live_r_parity_report.md
+          fi
+
+      - name: Record live parity exit status
+        if: always()
+        shell: bash
+        run: |
+          status="${{ steps.live_parity.outcome }}"
+          {
+            echo ""
+            echo "## Workflow step outcome"
+            echo ""
+            echo "- \`run_live_r_parity_for_changed_api.py\` step outcome: \`${status}\`"
+            echo "- Fresh cache requested: \`${{ steps.payload.outputs.fresh_cache }}\`"
+            echo "- DESCRIPTION changed: \`${{ steps.payload.outputs.description_changed }}\`"
+          } >> sync/last_live_r_parity_report.md
+
+      - name: Run standard gates if no fresh cache was required
+        if: steps.payload.outputs.fresh_cache != 'true'
+        run: |
+          python -m pytest -q tests/invariants
+          NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+          python -m pytest -q tests/parity/test_r13_smoke.py
+          if [ -f tests/docs/test_vignette_examples.py ]; then
+            python -m pytest -q tests/docs/test_vignette_examples.py
+          fi
+          ruff check .
+          mypy
+          python -m build
+
+      - name: Open R API inspection PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: inspect-r-api-${{ steps.payload.outputs.r_commit }}
+          title: Inspect R NNS API update ${{ steps.payload.outputs.r_commit }}
+          body: |
+            This PR records a direct R behavior fidelity check from
+            `OVVO-Financial/NNS` to `OVVO-Financial/NNS-python`.
+
+            R commit: `${{ steps.payload.outputs.r_commit }}`
+            R version: `${{ steps.payload.outputs.r_version }}`
+            R src tree hash: `${{ steps.payload.outputs.r_src_tree_hash }}`
+            DESCRIPTION changed: `${{ steps.payload.outputs.description_changed }}`
+            Fresh cache requested: `${{ steps.payload.outputs.fresh_cache }}`
+
+            Reports:
+            - `sync/last_r_api_inspection.md`
+            - `sync/last_r_api_plan.json`
+            - `sync/last_live_r_parity_report.md`
+
+            Native code still enters Python only through `NNS-core`. But public
+            Python behavior must match live R NNS at the recorded R commit,
+            including wrappers, defaults, return shapes, and exported function
+            behavior.
+
+            If DESCRIPTION changed and fresh cache was not requested, run this
+            workflow manually with `fresh_cache=true`.
+          commit-message: Inspect R API update ${{ steps.payload.outputs.r_commit }}

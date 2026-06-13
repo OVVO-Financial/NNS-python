@@ -1,0 +1,65 @@
+{
+  "R/ARMA.R": {
+    "python_modules": ["src/nns/arma.py"],
+    "parity_tests": [
+      "tests/parity/test_r13_smoke.py",
+      "tests/parity/test_practical_examples.py"
+    ],
+    "cache_scope": ["NNS.ARMA", "NNS.ARMA.optim", "NNS.VAR"]
+  },
+  "R/Regression.R": {
+    "python_modules": [
+      "src/nns/regression.py",
+      "src/nns/multivariate_regression.py"
+    ],
+    "parity_tests": [
+      "tests/parity/test_r13_smoke.py",
+      "tests/parity/test_practical_examples.py"
+    ],
+    "cache_scope": ["NNS.reg", "NNS.M.reg"]
+  },
+  "R/Stack.R": {
+    "python_modules": ["src/nns/stack.py"],
+    "parity_tests": [
+      "tests/docs/test_vignette_examples.py"
+    ],
+    "cache_scope": ["NNS.stack"]
+  },
+  "R/Boost.R": {
+    "python_modules": ["src/nns/boost.py"],
+    "parity_tests": [
+      "tests/docs/test_vignette_examples.py"
+    ],
+    "cache_scope": ["NNS.boost"]
+  },
+  "R/Dependence.R": {
+    "python_modules": ["src/nns/dependence.py"],
+    "parity_tests": [
+      "tests/parity/test_r13_smoke.py",
+      "tests/docs/test_vignette_examples.py"
+    ],
+    "cache_scope": ["NNS.dep", "NNS.copula", "PM.matrix"]
+  },
+  "R/Partial_Moments.R": {
+    "python_modules": ["src/nns/partial_moments.py", "src/nns/var.py"],
+    "parity_tests": [
+      "tests/parity/test_r13_smoke.py",
+      "tests/invariants"
+    ],
+    "cache_scope": ["LPM", "UPM", "LPM.ratio", "UPM.ratio", "LPM.VaR", "UPM.VaR"]
+  },
+  "NAMESPACE": {
+    "python_modules": ["src/nns/__init__.py"],
+    "parity_tests": ["tests/parity/test_r13_smoke.py"],
+    "requires_export_review": true
+  },
+  "DESCRIPTION": {
+    "python_modules": [
+      "pyproject.toml",
+      "tools/NNS",
+      "tests/_r_cache.json"
+    ],
+    "parity_tests": ["tests/parity"],
+    "requires_fresh_cache": true
+  }
+}

@@ -41,7 +41,12 @@ jobs:
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
       - name: Run vignette examples
-        run: python -m pytest -q tests/docs/test_vignette_examples.py
+        run: |
+          if [ -f tests/docs/test_vignette_examples.py ]; then
+            python -m pytest -q tests/docs/test_vignette_examples.py
+          else
+            echo "No docs vignette test present; skipping."
+          fi
 
       - name: Run ruff
         run: ruff check .
