@@ -1,8 +1,8 @@
-"""Lazy matplotlib loading for the optional plotting API.
+"""Lazy matplotlib loading for the plotting API.
 
-matplotlib is an *optional* extra (``pip install ovvo-nns[plot]``). It is never
-imported at package import time; every plot function calls :func:`require_mpl`
-to import it on demand and raises a clear, actionable error if it is absent.
+matplotlib is a regular dependency of this package, but it is still imported
+lazily (never at package import time) so ``import nns`` stays light. Every plot
+function calls :func:`require_mpl` to import it on demand.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from matplotlib.axes import Axes
 
 _INSTALL_HINT = (
-    "matplotlib is required for nns.plotting. Install the optional extra with "
-    "`pip install ovvo-nns[plot]`."
+    "matplotlib is required for nns.plotting but could not be imported; "
+    "reinstall ovvo-nns to restore it (`pip install --force-reinstall ovvo-nns`)."
 )
 
 

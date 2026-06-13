@@ -13,15 +13,13 @@ plot artifacts.
 
 ## A visual plotting API now exists (`nns.plotting`)
 
-The Python port now ships an **optional** plotting API in the `nns.plotting`
-subpackage (`pip install ovvo-nns[plot]`). It is **color/element-faithful to R
-but not pixel-diffed**: tests assert *artist colors and which element they sit
-on*, never rendered images.
+The Python port now ships a plotting API in the `nns.plotting` subpackage. It is
+**color/element-faithful to R but not pixel-diffed**: tests assert *artist
+colors and which element they sit on*, never rendered images.
 
-- matplotlib is an optional extra (`[project.optional-dependencies].plot`). The
-  NNS core stays NumPy/SciPy-only; matplotlib is imported lazily inside each
-  plot function and a clear `ImportError("install ovvo-nns[plot]")` is raised if
-  it is absent. matplotlib is **never** imported at package top level.
+- matplotlib is a regular dependency of the package (no optional extra). It is
+  still imported lazily inside each plot function — never at package top level —
+  so `import nns` stays light and does not pull matplotlib in.
 - Each `plot_*` function takes an already-computed NNS result (or the same raw
   inputs) plus a keyword `ax=None`, returns the `Axes`/`Figure`, and **never**
   calls `plt.show()`. The compute functions' `plot=False` default behavior is

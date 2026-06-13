@@ -1,4 +1,4 @@
-"""matplotlib is lazily imported; absence raises a clear, actionable error."""
+"""matplotlib is a regular dependency but still imported lazily, never eagerly."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def test_require_mpl_raises_clear_error(monkeypatch: pytest.MonkeyPatch) -> None
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    with pytest.raises(ImportError, match=r"ovvo-nns\[plot\]"):
+    with pytest.raises(ImportError, match=r"matplotlib is required for nns\.plotting"):
         mpl_helper.require_mpl()
 
 

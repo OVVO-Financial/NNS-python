@@ -1,8 +1,7 @@
-"""Optional matplotlib plotting API for NNS, faithful to R NNS ``plot = TRUE``.
+"""matplotlib plotting API for NNS, faithful to R NNS ``plot = TRUE``.
 
-This subpackage is an **optional extra**. The NNS core stays NumPy/SciPy-only;
-matplotlib is required only here and is imported lazily inside each plot
-function (``pip install ovvo-nns[plot]``).
+matplotlib ships as a regular dependency of the package, but it is imported
+lazily inside each plot function so ``import nns`` stays light.
 
 Design contract for every ``plot_*`` function:
 
@@ -12,7 +11,7 @@ Design contract for every ``plot_*`` function:
 * Be **color/element-faithful** to R (see :mod:`nns.plotting.palette`), not
   pixel-diffed.
 
-Colors are exposed via :mod:`nns.plotting.palette`; the only same-named colors
+Colors are pinned in :mod:`nns.plotting.palette`; the only same-named colors
 that must *not* be trusted from matplotlib are ``green`` (-> ``#00FF00``) and
 ``grey`` (-> ``#BEBEBE``).
 """
