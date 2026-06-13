@@ -77,10 +77,18 @@ workflows:
 
 `inspect-r-api-update` chains to `parity-autofix` via a `repository_dispatch`,
 which the default `GITHUB_TOKEN` cannot emit. To enable the automatic chain, add
-a PAT with `contents: write` (or `repo`) scope as the `PARITY_DISPATCH_TOKEN`
-secret. Without it, `inspect-r-api-update` prints the manual trigger command and
-you run `parity-autofix` yourself via **workflow_dispatch** (inputs: `r_commit`,
-`r_version`).
+a fine-grained PAT with **Contents: read and write** on `NNS-python` as the
+`OVVO_SYNC_TOKEN` secret. Without it, `inspect-r-api-update` prints the manual
+trigger command and you run `parity-autofix` yourself via **workflow_dispatch**
+(inputs: `r_commit`, `r_version`).
+
+## Secret summary
+
+| Secret | Kind | Used for | Required? |
+| --- | --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Anthropic key (`sk-ant-…`, from console.anthropic.com) | authenticate the agent to Claude | **yes** — a GitHub token does not work here |
+| `PARITY_APP_TOKEN` | GitHub fine-grained PAT (Contents R/W, Pull requests R/W) | open the fix PR so CI runs on it | recommended |
+| `OVVO_SYNC_TOKEN` | GitHub fine-grained PAT (Contents R/W) | emit the `inspect -> autofix` `repository_dispatch` | optional (manual trigger otherwise) |
 
 ## Model
 
