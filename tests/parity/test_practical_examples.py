@@ -215,8 +215,11 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
 @pytest.mark.practical
 @pytest.mark.xfail(
     reason=(
-        "Installed R NNS 13.0 and NNS Python balanced Iris boost remain a true "
-        "diagnostic parity gap; both miss the all-class-3 holdout."
+        "Stochastic sampling gap: balanced NNS.boost draws CV indices, feature "
+        "subsets, and up/down-sampled class rows from R's RNG, which NNS Python "
+        "cannot reproduce bit-for-bit with NumPy's RNG. Both implementations "
+        "miss the all-class-3 holdout; deterministic boost paths are covered "
+        "by the strict parity tests in test_boost.py."
     ),
     strict=True,
 )
@@ -238,19 +241,11 @@ def test_iris_boost_classification_vignette_gap_is_explicit() -> None:
     assert not np.array_equal(_array(actual["results"]), _array(expected_boost["results"]))
     assert not np.array_equal(_array(actual["results"]), y_test)
     assert not np.array_equal(_array(expected_boost["results"]), y_test)
-    assert set(actual) == {"results", "feature_weights", "feature_frequency", "n_best"}
+    assert set(actual) == {"results", "feature_weights", "feature_frequency"}
 
 
 @pytest.mark.parity
 @pytest.mark.practical
-@pytest.mark.xfail(
-    reason=(
-        "Intentional ARMA weighting divergence: installed R weights numeric "
-        "multi-lag seasonal factors using reverse steps 1:length(lags), while "
-        "NNS Python weights each candidate using its actual lag."
-    ),
-    strict=True,
-)
 def test_sunspots_arma_example_matches_installed_r() -> None:
     expected = _r_sunspots_arma_example()
     actual = nns_arma(
@@ -260,21 +255,11 @@ def test_sunspots_arma_example_matches_installed_r() -> None:
         method="lin",
     )
 
-    # This documents the installed-R compatibility delta, not a target fix.
-    # NNS Python uses the actual seasonal factors when estimating lag strength;
-    # installed R uses the seasonal factor's position in the input vector.
     np.testing.assert_allclose(actual, _array(expected["estimates"]), atol=COMPOUND)
 
 
 @pytest.mark.parity
 @pytest.mark.practical
-@pytest.mark.xfail(
-    reason=(
-        "Remaining macro-like NNS.VAR difference is inherited from the "
-        "documented ARMA numeric multi-lag weighting divergence."
-    ),
-    strict=True,
-)
 def test_var_macro_like_example_matches_installed_r() -> None:
     expected = _r_var_macro_like_example()
     actual = nns_var(_matrix(expected["variables"]), h=4, tau=3, ncores=1, status=False)
@@ -317,7 +302,6 @@ def _iris_boost_diagnostics(expected: dict[str, Any]) -> dict[str, object]:
         "results": np.asarray(boost["results"], dtype=np.float64),
         "feature_weights": np.asarray(boost["feature.weights"], dtype=np.float64),
         "feature_frequency": np.asarray(boost["feature.frequency"], dtype=np.float64),
-        "n_best": float(boost["n.best"]),
     }
 
 
@@ -562,8 +546,7 @@ def _r_iris_classification_vignette() -> dict[str, Any]:
           boost = list(
             results = as.numeric(boost$results),
             feature_weights = as.numeric(boost$feature.weights),
-            feature_frequency = as.numeric(boost$feature.frequency),
-            n_best = as.numeric(boost$n.best)
+            feature_frequency = as.numeric(boost$feature.frequency)
           ),
           stack = list(
             results = as.numeric(stacked$stack),

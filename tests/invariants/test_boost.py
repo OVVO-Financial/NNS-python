@@ -88,7 +88,7 @@ def test_nns_boost_multiple_factor_predictors_are_positional(features_only: bool
     assert set(result) == (
         {"feature.weights", "feature.frequency"}
         if features_only
-        else {"results", "pred.int", "feature.weights", "feature.frequency", "n.best"}
+        else {"results", "pred.int", "feature.weights", "feature.frequency"}
     )
     assert np.sum(result["feature.weights"]) == pytest.approx(1.0)
     if not features_only:

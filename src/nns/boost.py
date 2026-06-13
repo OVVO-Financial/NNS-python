@@ -282,9 +282,11 @@ def _nns_boost_core(
         type=type_value,
         pred_int=pred_int,
     )
-    estimates = np.asarray(final_fit["stack"], dtype=np.float64)
-    if estimates.size == 0 or np.any(np.isnan(estimates)):
+    stack_estimates = final_fit["stack"]
+    if stack_estimates is None or np.asarray(stack_estimates, dtype=np.float64).size == 0:
         estimates = np.asarray(final_fit["reg"], dtype=np.float64)
+    else:
+        estimates = np.asarray(stack_estimates, dtype=np.float64)
     estimates = _fill_nan_with_gravity(estimates)
     if type_value == "class":
         estimates = _round_clamp_classes(estimates, y_train)
@@ -294,7 +296,6 @@ def _nns_boost_core(
         "pred.int": final_fit["pred.int"],
         "feature.weights": weights[order_idx],
         "feature.frequency": counts[order_idx],
-        "n.best": final_fit["NNS.reg.n.best"],
     }
 
 

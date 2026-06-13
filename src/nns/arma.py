@@ -753,8 +753,10 @@ def _numeric_seasonal_weights(
     lags: NDArray[np.int64],
 ) -> NDArray[np.float64]:
     output = np.empty(lags.size, dtype=np.float64)
-    for index, lag in enumerate(lags):
-        rev_var = variable[:: -int(lag)]
+    for index in range(lags.size):
+        # R NNS 13.0 reverses by the candidate's POSITION in seasonal.factor
+        # (variable[seq(length(variable), 1, -i)]), not by its lag value.
+        rev_var = variable[:: -(index + 1)]
         with np.errstate(invalid="ignore", divide="ignore"):
             output[index] = abs(
                 np.float64(np.std(rev_var, ddof=1)) / np.float64(np.mean(rev_var))

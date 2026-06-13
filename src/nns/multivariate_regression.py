@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
-from nns.distance import KValue, nns_distance
+from nns.distance import KValue, nns_distance, nns_distance_path_single_bulk
 from nns.part import NoiseReduction
 from nns.regression import Order, _normalize_type, _round_clamp_classes, nns_reg
 from nns.regression import _nns_copula_matrix as _copula_matrix
@@ -78,10 +78,7 @@ def nns_m_reg(
 
     k = _resolve_n_best(n_best, x_values, y_values, rpm)
     if _k_as_count(k, rpm.shape[0]) > 1 and not point_only:
-        fitted_y = np.array(
-            [nns_distance(rpm, row, k, type_value) for row in x_values],
-            dtype=np.float64,
-        )
+        fitted_y = nns_distance_path_single_bulk(rpm, x_values, k, type_value)
         if type_value == "class":
             fitted_y = _round_clamp_classes(fitted_y, y_values)
         residuals = fitted_y - y_values
@@ -336,30 +333,46 @@ def _predict_points(
     minimums = np.min(x, axis=0)
     maximums = np.max(x, axis=0)
     central = np.array([_gravity(rpm[:, col]) for col in range(x.shape[1])], dtype=np.float64)
-    out = np.empty(point_est.shape[0], dtype=np.float64)
-    outsider_rows = np.flatnonzero(np.any((point_est < minimums) | (point_est > maximums), axis=1))
-    for row_index, point in enumerate(point_est):
-        outsiders = (point < minimums) | (point > maximums)
-        if not np.any(outsiders):
-            out[row_index] = nns_distance(rpm, point, k, class_)
-            continue
-        if point_is_matrix and outsider_rows.size == 1:
-            # Installed R drops dimensions for one outsider row in the multi-point path:
-            # apply(as.matrix(point.est[i, ]), 1, f) passes scalar elements to f and
-            # vector assignment keeps the first result. Match that behavior.
-            scalar_point = np.full(point.shape, point[0], dtype=np.float64)
-            out[row_index] = _outside_prediction(
-                scalar_point,
-                minimums,
-                maximums,
-                central,
-                rpm,
-                k,
-                class_,
+    # NaN comparisons are already False, matching R's outsiders[is.na(outsiders)] <- 0.
+    outsider_mask = (point_est < minimums) | (point_est > maximums)
+
+    if not point_is_matrix:
+        point = point_est[0]
+        if not np.any(outsider_mask[0]):
+            return np.array(
+                [nns_distance(rpm, point, k, class_)],
+                dtype=np.float64,
             )
-            continue
-        out[row_index] = _outside_prediction(point, minimums, maximums, central, rpm, k, class_)
-    return out if point_is_matrix else out[:1]
+        return np.array(
+            [_outside_prediction(point, minimums, maximums, central, rpm, k, class_)],
+            dtype=np.float64,
+        )
+
+    out = nns_distance_path_single_bulk(rpm, point_est, k, class_)
+    outsider_rows = np.flatnonzero(np.any(outsider_mask, axis=1))
+    if outsider_rows.size:
+        outside_points = point_est[outsider_rows, :]
+        boundary = np.minimum(np.maximum(outside_points, minimums), maximums)
+        mid = (boundary + central) / 2.0
+        mid_2 = (boundary + mid) / 2.0
+
+        d1 = np.sqrt(np.sum((boundary - central) ** 2, axis=1))
+        d2 = np.sqrt(np.sum((boundary - mid) ** 2, axis=1))
+        d3 = np.sqrt(np.sum((boundary - mid_2) ** 2, axis=1))
+
+        boundary_est = nns_distance_path_single_bulk(rpm, boundary, k, class_)
+        mid_est = nns_distance_path_single_bulk(rpm, mid, k, class_)
+        mid_2_est = nns_distance_path_single_bulk(rpm, mid_2, k, class_)
+        central_est = nns_distance(rpm, central, k, class_)
+
+        g1 = (boundary_est - central_est) / np.maximum(d1, 1e-10)
+        g2 = (boundary_est - mid_est) / np.maximum(d2, 1e-10)
+        g3 = (boundary_est - mid_2_est) / np.maximum(d3, 1e-10)
+
+        last_gradient = (g1 * 3.0 + g2 * 2.0 + g3 * 1.0) / 6.0
+        last_distance = np.sqrt(np.sum((outside_points - boundary) ** 2, axis=1))
+        out[outsider_rows] = last_distance * last_gradient + boundary_est
+    return out
 
 
 def _outside_prediction(
@@ -378,10 +391,13 @@ def _outside_prediction(
     gradients = []
     for compare in (central, mid, mid_2):
         distance = float(np.sqrt(np.sum((boundary - compare) ** 2)))
-        if distance == 0.0:
-            gradients.append(0.0)
-        else:
-            gradients.append((boundary_est - nns_distance(rpm, compare, k, class_)) / distance)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            gradients.append(
+                float(
+                    np.float64(boundary_est - nns_distance(rpm, compare, k, class_))
+                    / np.float64(distance)
+                )
+            )
     last_gradient = float(np.dot(np.asarray(gradients), np.array([3.0, 2.0, 1.0])) / 6.0)
     last_distance = float(np.sqrt(np.sum((point - boundary) ** 2)))
     return last_distance * last_gradient + boundary_est

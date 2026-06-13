@@ -567,6 +567,8 @@ def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
     pct = min(max(float(percentile), 0.0), 1.0)
     if degree == 0:
         return float(np.quantile(values, pct, method="linear"))
+    if _is_supported_integer_degree(degree):
+        return _lpm_var_integer(pct, int(degree), values)
     xmin = float(np.min(values))
     xmax = float(np.max(values))
     if xmin == xmax:
@@ -589,6 +591,9 @@ def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
     pct = min(max(float(percentile), 0.0), 1.0)
     if degree == 0:
         return float(np.quantile(values, 1.0 - pct, method="linear"))
+    if _is_supported_integer_degree(degree):
+        # UPM.ratio(t) = p is equivalent to LPM.ratio(t) = 1 - p.
+        return _lpm_var_integer(1.0 - pct, int(degree), values)
     xmin = float(np.min(values))
     xmax = float(np.max(values))
     if xmin == xmax:
@@ -603,6 +608,119 @@ def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
         options={"xatol": _R_OPTIMIZE_TOL},
     )
     return float(result.x)
+
+
+_UNIROOT_TOL = float(np.finfo(float).eps ** 0.5)
+
+
+def _is_supported_integer_degree(degree: float) -> bool:
+    return (
+        math.isfinite(float(degree))
+        and float(degree) == int(degree)
+        and 1 <= int(degree) <= 4
+    )
+
+
+def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> float:
+    """Exact integer-degree LPM VaR inversion matching R NNS 13.0.
+
+    Mirrors R's ``.NNS_LPM_VaR_integer``: within an interval between sorted
+    unique observations, LPM_d(t) and UPM_d(t) are degree-d polynomials in t,
+    so VaR solves ``(1 - p) * LPM_d(t) - p * UPM_d(t) = 0`` exactly on the
+    located order-statistic interval.
+    """
+    n = values.size
+    x_sorted = np.sort(values)
+    # Center at the sorted median: (t - x) is translation-invariant, so results
+    # are mathematically identical, but prefix powers are built at deviation
+    # scale, eliminating catastrophic cancellation for level-shifted data.
+    shift = float(x_sorted[(n + 1) // 2 - 1])
+    x_sorted = x_sorted - shift
+    x_min = float(x_sorted[0])
+    x_max = float(x_sorted[-1])
+    if n == 1 or x_min == x_max:
+        return x_min + shift
+
+    unique_x, counts = np.unique(x_sorted, return_counts=True)
+    k_break = np.cumsum(counts)
+
+    prefix_power = np.zeros((degree + 1, unique_x.size), dtype=np.float64)
+    total_power = np.zeros(degree + 1, dtype=np.float64)
+    prefix_power[0] = k_break
+    total_power[0] = float(n)
+    for j in range(1, degree + 1):
+        x_power = x_sorted**j
+        prefix_power[j] = np.cumsum(x_power)[k_break - 1]
+        total_power[j] = float(np.sum(x_power))
+
+    lpm = np.zeros(unique_x.size, dtype=np.float64)
+    upm = np.zeros(unique_x.size, dtype=np.float64)
+    for j in range(degree + 1):
+        coef = float(math.comb(degree, j))
+        lpm += coef * (-1.0) ** j * unique_x ** (degree - j) * prefix_power[j]
+        suffix_power = total_power[j] - prefix_power[j]
+        upm += coef * (-1.0) ** (degree - j) * unique_x ** (degree - j) * suffix_power
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ratio_break = lpm / (lpm + upm)
+    ratio_break[np.isnan(ratio_break)] = 0.0
+    ratio_break = np.clip(ratio_break, 0.0, 1.0)
+    # Protect interval location from tiny floating-point non-monotonicity.
+    ratio_break = np.maximum.accumulate(ratio_break)
+    ratio_break[0] = 0.0
+    ratio_break[-1] = 1.0
+
+    if pct <= 0.0:
+        return x_min + shift
+    if pct >= 1.0:
+        return x_max + shift
+
+    interval = int(np.searchsorted(ratio_break, pct, side="right"))
+    interval = max(interval, 1)
+    interval = min(interval, unique_x.size - 1)
+
+    lower = float(unique_x[interval - 1])
+    upper = float(unique_x[interval])
+    if lower == upper:
+        return lower + shift
+
+    interval_prefix = prefix_power[:, interval - 1]
+
+    def root_value(t: float) -> float:
+        lpm_raw = 0.0
+        upm_raw = 0.0
+        for j in range(degree + 1):
+            coef = float(math.comb(degree, j))
+            lpm_raw += coef * (-1.0) ** j * t ** (degree - j) * float(interval_prefix[j])
+            suffix = float(total_power[j]) - float(interval_prefix[j])
+            upm_raw += coef * (-1.0) ** (degree - j) * t ** (degree - j) * suffix
+        return (1.0 - pct) * lpm_raw - pct * upm_raw
+
+    f_lower = root_value(lower)
+    f_upper = root_value(upper)
+    tol = _UNIROOT_TOL
+
+    if math.isfinite(f_lower) and abs(f_lower) <= tol:
+        return lower + shift
+    if math.isfinite(f_upper) and abs(f_upper) <= tol:
+        return upper + shift
+
+    if math.isfinite(f_lower) and math.isfinite(f_upper) and f_lower * f_upper <= 0.0:
+        from scipy.optimize import brentq
+
+        root = float(brentq(root_value, lower, upper, xtol=tol))
+        return min(max(root, lower), upper) + shift
+
+    # Numerical safety fallback, mirroring R's optimize() on |f|.
+    from scipy.optimize import minimize_scalar
+
+    result = minimize_scalar(
+        lambda t: abs(root_value(t)),
+        bounds=(lower, upper),
+        method="bounded",
+        options={"xatol": _R_OPTIMIZE_TOL},
+    )
+    return min(max(float(result.x), lower), upper) + shift
 
 
 def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:

@@ -41,6 +41,45 @@ def nns_distance(
     return float(np.dot(selected_y, weights))
 
 
+def nns_distance_path_single_bulk(
+    rpm: NDArray[np.float64],
+    x_test: NDArray[np.float64],
+    k: KValue,
+    class_: object | None = None,
+) -> NDArray[np.float64]:
+    """Return R's NNS.distance.path.single.bulk predictions for many target rows.
+
+    This mirrors the ``NNS_distance_path_single_parallel_cpp`` kernel, which
+    differs from the single-point ``NNS.distance`` kernel in its lognormal rank
+    weight (population sd of ranks instead of sample sd).
+    """
+    features, y_hat = _split_rpm(rpm)
+    tests = _as_matrix(x_test, "x_test")
+    if tests.shape[1] != features.shape[1]:
+        raise ValueError("x_test column count must match rpm feature column count.")
+
+    k_value = _resolve_k(k, features.shape[0])
+    out = np.empty(tests.shape[0], dtype=np.float64)
+    for row_index, dest in enumerate(tests):
+        scaled_features, scaled_dest = _rescale_joint(features, dest)
+        distances = _distance_sum(scaled_features, scaled_dest, zero_eps=1e-10)
+        indices = np.argsort(distances, kind="mergesort")
+        selected = indices[:k_value]
+        selected_distances = distances[selected]
+        selected_y = y_hat[selected]
+
+        if k_value == 1:
+            out[row_index] = float(selected_y[0])
+            continue
+
+        weights = _combined_weights(selected_distances, rank_sd_population=True)
+        if class_ is not None:
+            out[row_index] = _weighted_mode(selected_y, weights)
+        else:
+            out[row_index] = float(np.dot(selected_y, weights))
+    return out
+
+
 def nns_distance_bulk(
     rpm: NDArray[np.float64],
     x_test: NDArray[np.float64],
@@ -100,7 +139,11 @@ def _distance_sum(
     return distances
 
 
-def _combined_weights(distances: NDArray[np.float64]) -> NDArray[np.float64]:
+def _combined_weights(
+    distances: NDArray[np.float64],
+    *,
+    rank_sd_population: bool = False,
+) -> NDArray[np.float64]:
     from scipy import stats  # type: ignore[import-untyped]
 
     count = distances.size
@@ -115,7 +158,12 @@ def _combined_weights(distances: NDArray[np.float64]) -> NDArray[np.float64]:
 
     lognormal = np.zeros(count, dtype=np.float64)
     if count >= 2:
-        sd_ranks = float(np.std(ranks, ddof=1))
+        # R's single-point NNS.distance kernel uses the sample sd of ranks; the
+        # bulk path kernels use the population sd sqrt((k^2 - 1) / 12).
+        if rank_sd_population:
+            sd_ranks = float(np.sqrt((count * count - 1.0) / 12.0))
+        else:
+            sd_ranks = float(np.std(ranks, ddof=1))
         lognormal = np.abs(stats.lognorm.logpdf(ranks, s=sd_ranks, scale=1.0))[::-1]
         lognormal = _normalized(lognormal)
 
