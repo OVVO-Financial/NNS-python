@@ -1,14 +1,29 @@
 # NNS Python
 
-Python port of the R NNS 13.0 package.
+[![PyPI package](https://img.shields.io/badge/package-ovvo--nns-blue)](https://pypi.org/project/ovvo-nns/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+[![Status](https://img.shields.io/badge/status-alpha-orange)](docs/api_status.md)
 
-- Distribution package: `ovvo-nns` (`pip install ovvo-nns`)
-- Import package: `nns` (`import nns`)
-- Native extension: `nns._nnscore`
-- Runtime dependencies: NumPy, SciPy
-- R required for normal use: no
-- Status: alpha, parity-focused
-- License: GPL-3.0-only
+`ovvo-nns` brings Nonlinear Nonparametric Statistics to Python as the `nns` import package. It is a parity-focused port of the R `NNS` 13.0 package, designed for real-world data that violate symmetry, linearity, or distributional assumptions.
+
+NNS is built around partial moments, the lower and upper components of variance, and uses them across nonlinear dependence, correlation, causation, regression, classification, forecasting, stochastic dominance, stochastic superiority, Monte Carlo simulation, and numerical differentiation workflows.
+
+## Package at a glance
+
+| Item | Value |
+|---|---|
+| Distribution package | `ovvo-nns` |
+| Import package | `nns` |
+| Current version | `1.0.0a0` |
+| Python | `>=3.11` |
+| Required runtime dependencies | NumPy, SciPy |
+| R required at runtime | No |
+| Native acceleration | Private, optional `nns._nnscore` kernels where available |
+| Public API status | Alpha, parity-focused |
+| License | GPL-3.0-only |
+
+The public package is Python-native and does not call R at runtime. Some core kernels can use the private `_nnscore` extension when it is present, while public functions keep Python implementations and explicit fallback behavior.
 
 ## Install
 
@@ -16,20 +31,136 @@ Python port of the R NNS 13.0 package.
 pip install ovvo-nns
 ```
 
-## Quick Use
+Use the package as `nns`:
+
+```python
+import nns
+
+print(nns.__version__)
+```
+
+Source builds use `scikit-build-core` and `nanobind` for the optional native extension. Published wheels should be preferred when available.
+
+## Quick start
 
 ```python
 import numpy as np
-from nns import lpm, nns_dep, nns_reg
+from nns import lpm, nns_dep, nns_reg, upm
 
-x = np.array([-2.0, -1.0, 0.5, 3.0])
-downside = lpm(2, 0.0, x)
+x = np.array([-2.0, -1.0, 0.5, 3.0], dtype=np.float64)
 
-grid = np.linspace(-2.0, 2.0, 50)
-dep = nns_dep(grid, grid**2)
+lower = lpm(degree=2, target=0.0, x=x)
+upper = upm(degree=2, target=0.0, x=x)
 
-fit = nns_reg(grid, np.sin(grid), point_est=np.array([-1.0, 0.0, 1.0]))
+print("lower partial moment:", lower)
+print("upper partial moment:", upper)
 ```
+
+Measure nonlinear dependence:
+
+```python
+import numpy as np
+from nns import nns_cor, nns_dep
+
+grid = np.linspace(-2.0, 2.0, 80, dtype=np.float64)
+y = grid**2
+
+print("NNS dependence:", nns_dep(grid, y))
+print("NNS correlation:", nns_cor(grid, y))
+```
+
+Fit a nonlinear regression and estimate new points:
+
+```python
+import numpy as np
+from nns import nns_reg
+
+x = np.linspace(-3.0, 3.0, 80, dtype=np.float64)
+y = np.sin(x) + 0.2 * x
+points = np.array([-1.5, 0.0, 1.5], dtype=np.float64)
+
+fit = nns_reg(x, y, point_est=points, confidence_interval=None)
+
+print("R2:", fit["R2"])
+print(np.column_stack((points, fit["Point.est"])))
+```
+
+Forecast a univariate series:
+
+```python
+import numpy as np
+from nns import nns_arma, nns_seas
+
+t = np.arange(1, 60, dtype=np.float64)
+series = 10.0 + np.sin(t / 3.0) + 0.05 * t
+
+seasonality = nns_seas(series, modulo=[3, 4, 6], mod_only=True)
+forecast = nns_arma(series, h=3, seasonal_factor=4, method="lin")
+
+print("best seasonal period:", seasonality["best.period"])
+print("forecast:", forecast)
+```
+
+## Main API areas
+
+| Area | Representative functions |
+|---|---|
+| Partial moments | `lpm`, `upm`, `lpm_ratio`, `upm_ratio`, `pm_matrix` |
+| Classical moment helpers | `mean_pm`, `var_pm`, `skew_pm`, `kurt_pm`, `nns_moments` |
+| Dependence, correlation, copula | `nns_dep`, `nns_cor`, `nns_copula` |
+| Causation | `nns_causation`, `causal_matrix` |
+| Regression and classification | `nns_reg`, `nns_m_reg`, `nns_stack`, `nns_boost` |
+| Forecasting | `nns_seas`, `nns_arma`, `nns_arma_optim`, `nns_var` |
+| Nowcast panels | `nns_nowcast_panel`, `CsvNowcastProvider` |
+| Distribution tools | `nns_cdf`, `nns_anova`, `nns_norm` |
+| Stochastic dominance | `fsd`, `ssd`, `tsd`, `nns_sd_cluster`, `sd_efficient_set` |
+| Stochastic superiority and simulation | `nns_ss`, `nns_mc`, `nns_meboot` |
+| Differentiation | `nns_diff`, `dy_dx`, `dy_d` |
+| Categorical helpers | `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` |
+
+See [API status](docs/api_status.md) for implemented, partial, guarded, and known-gap paths.
+
+## Design boundaries
+
+NNS Python prioritizes stable public behavior from installed R NNS 13.0, not private helper parity. The package returns NumPy arrays and plain dictionaries rather than R `data.table` objects, uses explicit Python errors for several unsafe R coercions, and generally ignores plotting side effects.
+
+Important boundaries:
+
+- R is used only for parity tests and local cache regeneration, not normal runtime use.
+- Stochastic exact stream parity is not expected because Python paths use NumPy random generation.
+- Factor and class ordering should be passed explicitly when ordering matters.
+- Direct raw-factor `nns_m_reg(..., factor_2_dummy=True)` is intentionally guarded. Use `prepare_factor_predictors(...)` before `nns_m_reg(...)`.
+- Plotting arguments are generally ignored and data is returned instead.
+
+See [behavior conventions](docs/conventions.md) for detailed compatibility notes.
+
+## Examples and notebooks
+
+Runnable examples live in [`docs/examples`](docs/examples):
+
+| Topic | Script |
+|---|---|
+| Partial moments | [`partial_moments.py`](docs/examples/partial_moments.py) |
+| Dependence | [`dependence.py`](docs/examples/dependence.py) |
+| Distributions and ANOVA | [`distributions_anova.py`](docs/examples/distributions_anova.py) |
+| Regression | [`regression.py`](docs/examples/regression.py) |
+| Classification | [`classification.py`](docs/examples/classification.py) |
+| Forecasting | [`forecasting.py`](docs/examples/forecasting.py) |
+| Nowcast panel | [`nowcast_panel.py`](docs/examples/nowcast_panel.py) |
+
+Run one example:
+
+```bash
+uv run python docs/examples/partial_moments.py
+```
+
+Run all script examples:
+
+```bash
+for example in docs/examples/*.py; do uv run python "$example"; done
+```
+
+Notebook workflows are also available under [`docs/examples/notebooks`](docs/examples/notebooks).
 
 ## Documentation
 
@@ -48,11 +179,22 @@ uv run ruff check .
 uv run mypy
 ```
 
-CI parity is cache-backed through committed fixtures and does not require `Rscript`. `Rscript` and the R `NNS` package are only needed for local cache regeneration. The parity claim is bounded by committed fixtures and cache entries; full R package parity is not claimed, and plot artifacts are intentionally out of scope.
+Run benchmark tests explicitly:
+
+```bash
+uv run pytest -n0 -m benchmark --benchmark-enable tests/benchmarks/
+```
+
+The default parity suite is cache-backed and does not require `Rscript`. `Rscript` and the R `NNS` package are needed only when regenerating parity caches or running live R comparison scripts.
+
+## Benchmarks
+
+Benchmarks compare selected Python paths with installed R NNS 13.0 baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
 
 ## Attribution
 
-NNS was created by Fred Viole as the companion R package to Viole, F. and
-Nawrocki, D. (2013), *Nonlinear Nonparametric Statistics: Using Partial Moments*.
+NNS was created by Fred Viole as the companion R package to:
 
-Upstream: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
+Viole, F. and Nawrocki, D. (2013), *Nonlinear Nonparametric Statistics: Using Partial Moments*.
+
+Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
