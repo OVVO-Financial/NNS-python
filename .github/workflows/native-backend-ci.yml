@@ -40,6 +40,9 @@ jobs:
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
+      - name: Run vignette examples
+        run: python -m pytest -q tests/docs/test_vignette_examples.py
+
       - name: Run ruff
         run: ruff check .
 
