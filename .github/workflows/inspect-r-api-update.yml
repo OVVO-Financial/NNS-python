@@ -127,6 +127,40 @@ jobs:
             echo "- DESCRIPTION changed: \`${{ steps.payload.outputs.description_changed }}\`"
           } >> sync/last_live_r_parity_report.md
 
+      - name: Dispatch parity autofix for live-R verification
+        if: steps.payload.outputs.fresh_cache != 'true'
+        shell: bash
+        env:
+          DISPATCH_TOKEN: ${{ secrets.PARITY_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The cache-based gates below only prove parity against the committed
+          # cache. The parity-autofix workflow owns live-R verification (it sets
+          # up R) and opens a separate, human-reviewed fix PR if behavior drifted.
+          tests=$(jq '.parity_tests | length' sync/last_r_api_plan.json)
+          if [ "${tests}" -eq 0 ]; then
+            echo "No mapped parity tests for this change; not dispatching parity autofix."
+            exit 0
+          fi
+          if [ -z "${DISPATCH_TOKEN:-}" ]; then
+            echo "PARITY_DISPATCH_TOKEN not set; skipping auto-chain to parity-autofix."
+            echo "Run parity-autofix manually with r_commit=${{ steps.payload.outputs.r_commit }} r_version=${{ steps.payload.outputs.r_version }}."
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg rc "${{ steps.payload.outputs.r_commit }}" \
+            --arg rv "${{ steps.payload.outputs.r_version }}" \
+            --arg rh "${{ steps.payload.outputs.r_src_tree_hash }}" \
+            --slurpfile cf changed_files.json \
+            '{event_type:"nns-parity-divergence", client_payload:{r_commit:$rc, r_version:$rv, r_src_tree_hash:$rh, changed_files:($cf[0] // [])}}')
+          curl -sSf -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+            -d "${payload}"
+          echo "Dispatched nns-parity-divergence for live-R parity autofix."
+
+
       - name: Run standard gates if no fresh cache was required
         if: steps.payload.outputs.fresh_cache != 'true'
         run: |

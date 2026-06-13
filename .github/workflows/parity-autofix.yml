@@ -1,0 +1,213 @@
+name: Parity autofix
+
+# Automated R-behavior parity fix loop for NNS-python.
+#
+# This is the "fix if required" half of the fidelity chain. The detection half
+# lives in inspect-r-api-update.yml. When live-R parity for a changed R API
+# diverges, this workflow re-derives the divergence against live R and hands a
+# structured report to an agent (anthropics/claude-code-action) that may draft a
+# fix to src/nns/** ONLY, then opens a SEPARATE parity-correction PR.
+#
+# Human-merge policy: this workflow never merges. A human reviews every fix PR.
+#
+# Trigger model:
+#   * repository_dispatch [nns-parity-divergence]  - emitted by
+#     inspect-r-api-update.yml when live parity diverges (needs a PAT, see
+#     docs/parity_autofix.md), or by upstream automation.
+#   * workflow_dispatch                            - manual fallback.
+
+on:
+  repository_dispatch:
+    types: [nns-parity-divergence]
+  workflow_dispatch:
+    inputs:
+      r_commit:
+        required: true
+        type: string
+      r_version:
+        required: true
+        type: string
+      r_src_tree_hash:
+        required: false
+        default: "unknown"
+        type: string
+      model:
+        description: Claude model id for the autofix agent
+        required: false
+        default: claude-sonnet-4-6
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  parity-autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out NNS-python
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve payload
+        id: payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "r_commit=${{ github.event.client_payload.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ github.event.client_payload.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ github.event.client_payload.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+            echo "model=claude-sonnet-4-6" >> "$GITHUB_OUTPUT"
+            echo '${{ toJson(github.event.client_payload.changed_files) }}' > changed_files.json
+          else
+            echo "r_commit=${{ inputs.r_commit }}" >> "$GITHUB_OUTPUT"
+            echo "r_version=${{ inputs.r_version }}" >> "$GITHUB_OUTPUT"
+            echo "r_src_tree_hash=${{ inputs.r_src_tree_hash }}" >> "$GITHUB_OUTPUT"
+            echo "model=${{ inputs.model }}" >> "$GITHUB_OUTPUT"
+            echo '[]' > changed_files.json
+          fi
+
+      - name: Check out upstream R NNS
+        uses: actions/checkout@v4
+        with:
+          repository: OVVO-Financial/NNS
+          ref: ${{ steps.payload.outputs.r_commit }}
+          path: upstream/NNS
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "release"
+
+      - name: Install Python build and test tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
+
+      - name: Install package editable
+        run: python -m pip install -e . --force-reinstall
+
+      - name: Install R dependencies for NNS (best effort)
+        uses: r-lib/actions/setup-r-dependencies@v2
+        continue-on-error: true
+        with:
+          working-directory: tools/NNS
+          dependencies: '"hard"'
+          extra-packages: any::jsonlite
+
+      - name: Plan R API parity review
+        run: |
+          python scripts/plan_r_api_parity_review.py \
+            --changed-files-json changed_files.json \
+            --map sync/r_api_map.json \
+            --out sync/last_r_api_inspection.md \
+            --json-out sync/last_r_api_plan.json
+
+      - name: Install live R NNS from upstream checkout (best effort)
+        id: r_install
+        continue-on-error: true
+        run: |
+          # install_local_r_nns.py installs from the vendored tools/NNS by
+          # default; the upstream checkout is the recorded truth for this commit.
+          python scripts/install_local_r_nns.py
+
+      - name: Run live R parity to reproduce divergence
+        id: live_parity
+        continue-on-error: true
+        run: |
+          python scripts/run_live_r_parity_for_changed_api.py \
+            --plan sync/last_r_api_plan.json \
+            --r-checkout upstream/NNS \
+            --skip-install \
+            --out sync/last_live_r_parity_report.md
+
+      - name: Decide whether a fix is required
+        id: gate
+        shell: bash
+        run: |
+          outcome="${{ steps.live_parity.outcome }}"
+          r_ok="${{ steps.r_install.outcome }}"
+          echo "live_parity_outcome=${outcome}" >> "$GITHUB_OUTPUT"
+          echo "r_install_outcome=${r_ok}" >> "$GITHUB_OUTPUT"
+          if [ "${outcome}" = "success" ]; then
+            echo "needs_fix=false" >> "$GITHUB_OUTPUT"
+            echo "Live R parity passed; no fix required."
+          elif [ "${r_ok}" != "success" ]; then
+            # Cannot verify against live R -> do NOT let the agent guess a fix.
+            echo "needs_fix=false" >> "$GITHUB_OUTPUT"
+            echo "escalate=true" >> "$GITHUB_OUTPUT"
+            echo "Live R install failed; escalating instead of auto-fixing."
+          else
+            echo "needs_fix=true" >> "$GITHUB_OUTPUT"
+            echo "Live R parity diverged; dispatching autofix agent."
+          fi
+
+      - name: Run parity-fix agent
+        if: steps.gate.outputs.needs_fix == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Use the GitHub App token if configured so the resulting PR triggers
+          # native-backend-ci (PRs opened with the default GITHUB_TOKEN do not).
+          github_token: ${{ secrets.PARITY_APP_TOKEN || github.token }}
+          prompt: |
+            You are fixing an R-behavior parity divergence in OVVO-Financial/NNS-python.
+
+            Context:
+            - R behavioral truth: OVVO-Financial/NNS at commit ${{ steps.payload.outputs.r_commit }} (version ${{ steps.payload.outputs.r_version }}), checked out at upstream/NNS and installed as live R.
+            - The divergence report is at sync/last_live_r_parity_report.md. The parity plan is at sync/last_r_api_plan.json and the R->Python map is at sync/r_api_map.json.
+
+            Hard rules (do not violate):
+            1. Edit files under src/nns/** ONLY. NEVER edit extern/NNS-core/**, tools/NNS/**, tests/_r_cache.json, or any test/cache file to make a check pass.
+            2. Classify the root cause first and act accordingly:
+               - Python port bug (a wrapper/default/return-shape/algorithm in src/nns/** drifted from R): fix it in src/nns/**.
+               - R changed behavior (the divergence is because upstream R itself changed): DO NOT edit code to chase a cache value. Stop and open the PR/issue as an escalation describing the change; cache regeneration is a separate, reviewed step.
+               - Native kernel change (the difference originates in C++ src/** / NNS-core): DO NOT edit. Native code enters Python only through accepted NNS-core commits. Stop and escalate.
+            3. Verify any fix against LIVE R, not the committed cache. The fix must keep ALL of these green:
+               - python -m pytest -q -n 0 tests/invariants
+               - the mapped parity tests in the plan (run with -n 0), against live R
+               - ruff check . ; mypy ; python -m build
+               Do not weaken tests or tolerances.
+            4. Keep the change minimal and in the style of the surrounding code.
+
+            Deliverable:
+            - Create a NEW branch named parity-fix/${{ steps.payload.outputs.r_commit }} and open a SEPARATE parity-correction pull request into the default branch. Do NOT merge it.
+            - The PR body MUST contain, for each divergence: the function, the arguments, the R output, the Python output, the first divergent intermediate, the affected source files, and the proposed fix (or, for escalations, why no code fix was made and what must happen upstream / in NNS-core).
+            - Title: "Parity fix: R NNS ${{ steps.payload.outputs.r_commit }}".
+          claude_args: |
+            --model ${{ steps.payload.outputs.model }}
+            --max-turns 40
+            --allowedTools Edit,Read,Write,Glob,Grep,Bash(python:*),Bash(python -m pytest:*),Bash(ruff:*),Bash(mypy:*),Bash(pip:*),Bash(Rscript:*),Bash(git:*),Bash(gh:*)
+            --disallowedTools Bash(rm:*)
+
+      - name: Escalate when live R could not verify
+        if: steps.gate.outputs.escalate == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: parity-escalation-${{ steps.payload.outputs.r_commit }}
+          title: Parity escalation (live R unavailable) ${{ steps.payload.outputs.r_commit }}
+          body: |
+            Live R NNS could not be installed in CI for R commit
+            `${{ steps.payload.outputs.r_commit }}` (version
+            `${{ steps.payload.outputs.r_version }}`), so a parity fix was NOT
+            attempted automatically — fidelity must be verified against live R,
+            never guessed.
+
+            Reports:
+            - `sync/last_r_api_inspection.md`
+            - `sync/last_r_api_plan.json`
+            - `sync/last_live_r_parity_report.md`
+
+            Action required: run `scripts/install_local_r_nns.py` in an
+            environment with R available, reproduce the divergence, and apply a
+            reviewed parity fix. Native differences must route through NNS-core.
+          commit-message: Parity escalation ${{ steps.payload.outputs.r_commit }}
