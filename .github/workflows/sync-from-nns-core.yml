@@ -106,7 +106,7 @@ jobs:
           fi
 
       - name: Run ruff
-        run: ruff check .
+        run: ruff check . --exclude extern/NNS-core --exclude upstream
 
       - name: Run mypy
         run: mypy
