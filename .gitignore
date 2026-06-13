@@ -14,5 +14,9 @@ __pycache__/
 # Virtual environments
 .venv/
 
-# R cache lock
+# R cache lock and fresh-regeneration backup
 tests/_r_cache.lock
+tests/_r_cache.json.bak
+
+# Vendored R NNS local-install build artifacts
+tools/NNS/src/*.o
