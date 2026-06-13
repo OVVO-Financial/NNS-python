@@ -2,7 +2,7 @@
 
 Python port of the R NNS 13.0 package.
 
-- Distribution package: `NNS`
+- Distribution package: `ovvo-nns` (`pip install ovvo-nns`)
 - Import package: `nns` (`import nns`)
 - Native extension: `nns._nnscore`
 - Runtime dependencies: NumPy, SciPy
@@ -13,7 +13,7 @@ Python port of the R NNS 13.0 package.
 ## Install
 
 ```bash
-pip install NNS
+pip install ovvo-nns
 ```
 
 ## Quick Use

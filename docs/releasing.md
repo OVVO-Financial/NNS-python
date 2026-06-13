@@ -7,20 +7,29 @@ stored in the repo.
 
 The pipeline is `.github/workflows/release.yml`.
 
+The official distribution name is **`ovvo-nns`** (`pip install ovvo-nns`, then
+`import nns`). The import package stays `nns`.
+
 ## One-time setup
 
-### 1. Take over the PyPI project
-Get an **Owner** invitation to `https://pypi.org/project/NNS/` from the current
-owner (see the handover notes); do not reuse anyone's API tokens. Enable 2FA.
-Consider holding the project under a PyPI **Organization** (e.g.
-`OVVO-Financial`).
+### 1. Claim the PyPI project name
+The first Trusted-Publishing upload registers the `ovvo-nns` name to your
+account/organization — no takeover of the legacy `NNS` project is required. Use
+your own PyPI account (enable 2FA), and consider owning it under a PyPI
+**Organization** (e.g. `OVVO-Financial`). For the very first publish, add a
+**pending** Trusted Publisher (PyPI → *Your projects* → *Publishing* → *Add a
+pending publisher*) for the not-yet-existing `ovvo-nns` project.
+
+(Optional: if you later also obtain the legacy `NNS` name, you can publish it as
+an alias pointing at the same `import nns` package.)
 
 ### 2. Configure Trusted Publishers
-On PyPI (and TestPyPI) → the project → **Publishing** → add a GitHub Actions
-trusted publisher:
+On PyPI (and TestPyPI) for project **`ovvo-nns`** → **Publishing** → add a GitHub
+Actions trusted publisher:
 
 | Field | Value |
 | --- | --- |
+| PyPI Project Name | `ovvo-nns` |
 | Owner | `OVVO-Financial` |
 | Repository | `NNS-python` |
 | Workflow name | `release.yml` |
@@ -54,7 +63,7 @@ Each wheel is smoke-tested (`import nns._nnscore` + a numeric call). PyPy and
    to. The provenance gate **fails a tagged release** while these are `unknown`.
 3. Dry run end to end against TestPyPI:
    * Actions → **Release** → *Run workflow* → `publish: testpypi`.
-   * Verify the artifacts and `pip install -i https://test.pypi.org/simple/ NNS`.
+   * Verify the artifacts and `pip install -i https://test.pypi.org/simple/ ovvo-nns`.
 4. Tag and push to publish to PyPI:
    ```bash
    git tag v1.0.0
