@@ -177,6 +177,7 @@ jobs:
       - name: Open R API inspection PR
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
           branch: inspect-r-api-${{ steps.payload.outputs.r_commit }}
           title: Inspect R NNS API update ${{ steps.payload.outputs.r_commit }}
           body: |
