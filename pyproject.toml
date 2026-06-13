@@ -33,6 +33,7 @@ keywords = [
 ]
 urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Project" = "https://github.com/OVVO-Financial/NNS-python" }
 dependencies = [
+    "matplotlib>=3.7",
     "numpy",
     "scipy",
 ]

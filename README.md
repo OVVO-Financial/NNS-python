@@ -39,6 +39,10 @@ The public package is Python-native and does not call R at runtime. Some core ke
 pip install ovvo-nns
 ```
 
+This includes the matplotlib plotting API (`nns.plotting`); matplotlib is a
+regular dependency and is imported lazily, so `import nns` stays light. See
+[`docs/plot_parity_policy.md`](docs/plot_parity_policy.md).
+
 Use the package as `nns`:
 
 ```python
@@ -138,7 +142,7 @@ Important boundaries:
 - Stochastic exact stream parity is not expected because Python paths use NumPy random generation.
 - Factor and class ordering should be passed explicitly when ordering matters.
 - Direct raw-factor `nns_m_reg(..., factor_2_dummy=True)` is intentionally guarded. Use `prepare_factor_predictors(...)` before `nns_m_reg(...)`.
-- Plotting arguments are generally ignored and data is returned instead.
+- Compute functions' `plot` arguments are ignored and data is returned instead; visual plotting is a separate API in `nns.plotting`, color/element-faithful to R but not pixel-diffed.
 
 See [behavior conventions](docs/conventions.md) for detailed compatibility notes.
 

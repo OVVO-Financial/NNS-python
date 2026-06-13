@@ -2,14 +2,35 @@
 
 ## Summary
 
-Graphics-device artifacts are **intentionally not compared** in CI parity. The
-parity suite validates the **returned values** of NNS functions, never the
-generated plots, PDFs, or other graphics-device output.
+Graphics-device artifacts are **intentionally not pixel-compared** in CI
+parity. The parity suite validates the **returned values** of NNS functions,
+never byte-/pixel-identical plot, PDF, or other graphics-device output.
 
 This is a deliberate, permanent policy decision — not an unresolved migration
 blocker. R plotting and Python plotting use different graphics stacks, and a
 faithful value-level port does not require byte-identical (or pixel-identical)
 plot artifacts.
+
+## A visual plotting API now exists (`nns.plotting`)
+
+The Python port now ships a plotting API in the `nns.plotting` subpackage. It is
+**color/element-faithful to R but not pixel-diffed**: tests assert *artist
+colors and which element they sit on*, never rendered images.
+
+- matplotlib is a regular dependency of the package (no optional extra). It is
+  still imported lazily inside each plot function — never at package top level —
+  so `import nns` stays light and does not pull matplotlib in.
+- Each `plot_*` function takes an already-computed NNS result (or the same raw
+  inputs) plus a keyword `ax=None`, returns the `Axes`/`Figure`, and **never**
+  calls `plt.show()`. The compute functions' `plot=False` default behavior is
+  untouched; plotting is a separate opt-in call.
+- Colors are pinned in `nns.plotting.palette` to the exact R `grDevices` hex
+  used by `tools/NNS/R/*.R`. R and matplotlib agree on `steelblue`/`red` but
+  **disagree** on `green` (R `#00FF00` vs mpl `#008000`) and `grey` (R `#BEBEBE`
+  vs mpl `#808080`); the palette pins those so the port stays faithful.
+- Plotting tests live in `tests/plotting/`, run on the headless `Agg` backend,
+  and assert `mcolors.to_hex(...)` of line/scatter/patch artists — **no**
+  pixel/PDF comparison.
 
 ## What is compared
 
@@ -46,9 +67,9 @@ any `*.pdf`, `plot3d`, or `rgl`; the CI workflow
 (`.github/workflows/native-backend-ci.yml`) runs only the invariant suite, the
 cache-only parity suite, `ruff`, `mypy`, and `python -m build`.
 
-## When (and only when) image comparison would be in scope
+## Image comparison remains out of scope
 
-Image or PDF comparison would only be considered if and when the Python package
-grows a real, first-class plotting API that needs validation. There is no such
-API today. Until one exists, no PDF/image comparison is attempted, and adding
-one is explicitly out of scope.
+Even though a first-class plotting API (`nns.plotting`) now exists, image or PDF
+comparison is still **out of scope**. The API is validated by asserting artist
+colors and the element each color sits on (faithful to R's `col=` usage), which
+is sufficient for a value-level port. No PDF/image diffing is attempted.

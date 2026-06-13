@@ -40,6 +40,9 @@ jobs:
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
+      - name: Run plotting color-fidelity tests
+        run: python -m pytest -q tests/plotting
+
       - name: Run vignette examples
         run: |
           if [ -f tests/docs/test_vignette_examples.py ]; then
