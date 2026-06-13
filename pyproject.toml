@@ -5,6 +5,14 @@ description = "Python port of nonlinear nonparametric statistics from R NNS"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-only"
+authors = [
+    { name = "Fred Viole", email = "ovvo.open.source@gmail.com" },
+    { name = "Roberto Spadim" },
+    { name = "Rasheed Khoshnaw" },
+]
+maintainers = [
+    { name = "Fred Viole", email = "ovvo.open.source@gmail.com" },
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
