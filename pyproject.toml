@@ -79,7 +79,11 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["*.ipynb"]
+extend-exclude = [
+    "*.ipynb",
+    "extern/NNS-core",
+    "upstream",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
