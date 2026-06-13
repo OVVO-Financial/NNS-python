@@ -1,0 +1,111 @@
+name: Release
+
+# Builds multi-platform wheels + sdist and (optionally) publishes to PyPI /
+# TestPyPI via Trusted Publishing (OIDC) — no API token is stored.
+#
+# Triggers:
+#   * push tag v*        -> build, gate on provenance, publish to PyPI.
+#   * workflow_dispatch  -> build, and publish to the chosen target:
+#                           none (artifacts only), testpypi, or pypi.
+#
+# One-time setup before the first real publish (see docs/releasing.md):
+#   * Configure a PyPI Trusted Publisher for this repo + workflow, and a
+#     TestPyPI one for dry runs.
+#   * Create GitHub environments named `pypi` and `testpypi`.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Where to publish the built artifacts
+        type: choice
+        options: [none, testpypi, pypi]
+        default: none
+
+permissions:
+  contents: read
+
+jobs:
+  provenance-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check release provenance
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Real tagged release: require full traceability.
+            python scripts/check_release_provenance.py --tag "${{ github.ref_name }}"
+          elif [ "${{ inputs.publish }}" = "pypi" ]; then
+            python scripts/check_release_provenance.py
+          else
+            # Dry run / artifact-only / TestPyPI: allow placeholder provenance.
+            python scripts/check_release_provenance.py --allow-unknown
+          fi
+
+  build_wheels:
+    needs: provenance-check
+    name: Wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    needs: provenance-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sdist
+        run: pipx run build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish_testpypi:
+    needs: [build_wheels, build_sdist]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish_pypi:
+    needs: [build_wheels, build_sdist]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == 'pypi')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
