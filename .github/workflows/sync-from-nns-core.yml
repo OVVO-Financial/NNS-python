@@ -117,6 +117,7 @@ jobs:
       - name: Open NNS-core sync PR
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
           branch: sync-nns-core-${{ steps.payload.outputs.core_commit }}
           title: Sync vendored NNS-core from ${{ steps.payload.outputs.core_commit }}
           body: |
