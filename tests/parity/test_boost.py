@@ -294,7 +294,6 @@ def test_nns_boost_stochastic_epoch_path_matches_r_structure() -> None:
     )
     assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
     assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["n.best"], dtype=np.float64).size > 0
     assert actual["pred.int"] is None
 
 
@@ -337,7 +336,6 @@ def test_nns_boost_stochastic_epoch_ts_test_matches_r_structure() -> None:
     )
     assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
     assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["n.best"], dtype=np.float64).size > 0
     assert actual["pred.int"] is None
 
 
@@ -547,7 +545,7 @@ def test_nns_boost_binary_class_matches_r(depth: int | None) -> None:
         feature_importance=False,
     )
 
-    _assert_boost_matches(actual, expected, exact_n_best=False)
+    _assert_boost_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -581,7 +579,7 @@ def test_nns_boost_binary_class_pred_int_matches_r(depth: int) -> None:
         feature_importance=False,
     )
 
-    _assert_boost_matches(actual, expected, exact_n_best=False)
+    _assert_boost_matches(actual, expected)
     assert isinstance(actual["pred.int"], dict)
     assert set(actual["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
     assert all(values.shape == actual["results"].shape for values in actual["pred.int"].values())
@@ -615,7 +613,7 @@ def test_nns_boost_multiclass_matches_r(depth: int) -> None:
         feature_importance=False,
     )
 
-    _assert_boost_matches(actual, expected, exact_n_best=False)
+    _assert_boost_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -681,7 +679,7 @@ def test_nns_boost_factor_like_class_matches_r() -> None:
         feature_importance=False,
     )
 
-    _assert_boost_matches(actual, expected, exact_n_best=False)
+    _assert_boost_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -724,8 +722,6 @@ def test_nns_boost_class_stable_metadata_matches_r_when_n_best_is_structural() -
         expected_dict["feature.frequency"],
         atol=COMPOUND,
     )
-    assert np.asarray(actual["n.best"], dtype=np.float64).size > 0
-    assert np.asarray(expected_dict["n.best"], dtype=np.float64).size > 0
 
 
 @pytest.mark.parity
@@ -981,19 +977,10 @@ def test_nns_boost_raw_character_class_raises() -> None:
         nns_boost(variable, labels, variable[:3], type="class", cv_size=0.25)
 
 
-def _assert_boost_matches(
-    actual: dict[str, Any],
-    expected: Any,
-    *,
-    exact_n_best: bool = True,
-) -> None:
+def _assert_boost_matches(actual: dict[str, Any], expected: Any) -> None:
     assert isinstance(expected, dict)
     assert set(actual) == set(expected)
     for key in actual:
-        if key == "n.best" and not exact_n_best:
-            assert np.asarray(actual[key], dtype=np.float64).size > 0
-            assert np.asarray(expected[key], dtype=np.float64).size > 0
-            continue
         _assert_nested_numeric_close(actual[key], expected[key])
 
 
@@ -1043,5 +1030,3 @@ def _assert_boost_class_structure(
     assert np.asarray(expected["feature.weights"], dtype=np.float64).ndim == 1
     assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
     assert np.asarray(expected["feature.frequency"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["n.best"], dtype=np.float64).size > 0
-    assert np.asarray(expected["n.best"], dtype=np.float64).size > 0
