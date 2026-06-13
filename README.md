@@ -9,6 +9,12 @@
 
 NNS is built around partial moments, the lower and upper components of variance, and uses them across nonlinear dependence, correlation, causation, regression, classification, forecasting, stochastic dominance, stochastic superiority, Monte Carlo simulation, and numerical differentiation workflows.
 
+
+> NNS was created by Fred Viole as the companion R package to Viole, F. and Nawrocki, D. (2013), *Nonlinear Nonparametric Statistics: Using Partial Moments*. **Book (2nd Edition):** https://ovvo-financial.github.io/NNS/book/
+>   
+>  **Implementation:** For a direct quantitative finance implementation of NNS, see [OVVO Labs](https://www.ovvolabs.com)
+
+
 ## Package at a glance
 
 | Item | Value |
@@ -192,9 +198,4 @@ The default parity suite is cache-backed and does not require `Rscript`. `Rscrip
 Benchmarks compare selected Python paths with installed R NNS 13.0 baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
 
 ## Attribution
-
-NNS was created by Fred Viole as the companion R package to:
-
-Viole, F. and Nawrocki, D. (2013), *Nonlinear Nonparametric Statistics: Using Partial Moments*.
-
 Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
