@@ -20,3 +20,6 @@ tests/_r_cache.json.bak
 
 # Vendored R NNS local-install build artifacts
 tools/NNS/src/*.o
+
+# Stray R plotting artifact from headless regeneration
+Rplots.pdf
