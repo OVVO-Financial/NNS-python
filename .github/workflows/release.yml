@@ -48,6 +48,13 @@ jobs:
             python scripts/check_release_provenance.py --allow-unknown
           fi
 
+      - name: Verify vendored provenance against upstream
+        # Real releases only: clone the upstreams at the recorded commits and
+        # prove the vendored extern/NNS-core and tools/NNS actually came from
+        # them. Dry runs may carry placeholder provenance, so skip them.
+        if: github.event_name == 'push' || inputs.publish == 'pypi'
+        run: python scripts/verify_release_provenance.py
+
   build_wheels:
     needs: provenance-check
     name: Wheels on ${{ matrix.os }}
