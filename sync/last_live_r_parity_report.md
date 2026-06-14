@@ -4,14 +4,11 @@
 - R checkout: `upstream/NNS`
 - Fresh cache requested: `False`
 - Skip install: `False`
+- Live R recompute: `True`
 
-## Result: R install failed
+## Result: live R parity diverged
 
-`scripts/install_local_r_nns.py` exited nonzero; live R parity could not be run.
+Mapped parity tests recomputed every R value from the freshly installed live R NNS and the Python implementation did not match. Public Python behavior differs from live R at the recorded commit.
+
+Failing command: `/opt/hostedtoolcache/Python/3.11.15/x64/bin/python -m pytest -q -n 0 tests/parity/test_practical_examples.py tests/parity/test_r13_smoke.py`
 Exit status: `1`
-
-## Workflow step outcome
-
-- `run_live_r_parity_for_changed_api.py` step outcome: `failure`
-- Fresh cache requested: `false`
-- DESCRIPTION changed: `false`
