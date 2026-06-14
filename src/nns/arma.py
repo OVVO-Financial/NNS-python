@@ -768,20 +768,22 @@ def _numeric_seasonal_weights(
     lags: NDArray[np.int64],
 ) -> NDArray[np.float64]:
     output = np.empty(lags.size, dtype=np.float64)
-    for index in range(lags.size):
-        # R NNS 13.0 reverses by the candidate's POSITION in seasonal.factor
-        # (variable[seq(length(variable), 1, -i)]), not by its lag value.
-        rev_var = variable[:: -(index + 1)]
+
+    for index, lag in enumerate(lags):
+        # Numeric seasonal_factor entries are actual lag values.
+        rev_var = variable[::-int(lag)]
         with np.errstate(invalid="ignore", divide="ignore"):
             output[index] = abs(
                 np.float64(np.std(rev_var, ddof=1)) / np.float64(np.mean(rev_var))
             )
+
     with np.errstate(invalid="ignore", divide="ignore"):
         baseline_cv = abs(
             np.float64(np.std(variable, ddof=1)) / np.float64(np.mean(variable))
         )
         relative = output / baseline_cv
         seasonal_weighting = 1.0 / relative
+
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
     denom = float(np.sum(observation_weighting * seasonal_weighting))
     return (seasonal_weighting * observation_weighting) / denom
