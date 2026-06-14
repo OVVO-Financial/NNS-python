@@ -5,9 +5,8 @@
 [![PyPI package](https://img.shields.io/badge/package-ovvo--nns-blue)](https://pypi.org/project/ovvo-nns/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-orange)](docs/api_status.md)
 
-`ovvo-nns` brings Nonlinear Nonparametric Statistics to Python as the `nns` import package. It is a parity-focused port of the R `NNS` 13.0 package, designed for real-world data that violate symmetry, linearity, or distributional assumptions.
+`ovvo-nns` brings Nonlinear Nonparametric Statistics to Python as the `nns` import package. It is a parity-focused port of the R `NNS` 13.0+ package, designed for real-world data that violate symmetry, linearity, or distributional assumptions.
 
 NNS is built around partial moments, the lower and upper components of variance, and uses them across nonlinear dependence, correlation, causation, regression, classification, forecasting, stochastic dominance, stochastic superiority, Monte Carlo simulation, and numerical differentiation workflows.
 
@@ -23,12 +22,12 @@ NNS is built around partial moments, the lower and upper components of variance,
 |---|---|
 | Distribution package | `ovvo-nns` |
 | Import package | `nns` |
-| Current version | `1.0.0a0` |
+| Current version | `1.0.1` |
 | Python | `>=3.11` |
 | Required runtime dependencies | NumPy, SciPy |
 | R required at runtime | No |
 | Native acceleration | Private, optional `nns._nnscore` kernels where available |
-| Public API status | Alpha, parity-focused |
+| Public API status | Stable, parity-focused |
 | License | GPL-3.0-only |
 
 The public package is Python-native and does not call R at runtime. Some core kernels can use the private `_nnscore` extension when it is present, while public functions keep Python implementations and explicit fallback behavior.
@@ -134,7 +133,7 @@ See [API status](docs/api_status.md) for implemented, partial, guarded, and know
 
 ## Design boundaries
 
-NNS Python prioritizes stable public behavior from installed R NNS 13.0, not private helper parity. The package returns NumPy arrays and plain dictionaries rather than R `data.table` objects, uses explicit Python errors for several unsafe R coercions, and generally ignores plotting side effects.
+NNS Python prioritizes stable public behavior from installed R NNS 13.0+, not private helper parity. The package returns NumPy arrays and plain dictionaries rather than R `data.table` objects, uses explicit Python errors for several unsafe R coercions, and generally ignores plotting side effects.
 
 Important boundaries:
 
@@ -201,7 +200,7 @@ The default parity suite is cache-backed and does not require `Rscript`. `Rscrip
 
 ## Benchmarks
 
-Benchmarks compare selected Python paths with installed R NNS 13.0 baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
+Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
 
 ## Attribution
 Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
