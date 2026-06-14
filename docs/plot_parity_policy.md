@@ -50,9 +50,13 @@ colors and which element they sit on*, never rendered images.
   a plotting API, so Python parity calls pass the R `plot = FALSE` equivalent
   and assert only on returned values.
 
-When a ported function has an R `plot` argument, the Python API either omits the
-argument entirely or treats plotting as out of scope; only the value-bearing
-return is asserted in parity tests.
+When a ported function has an R `plot` argument, the Python function keeps its
+value-only **return** contract (parity asserts only on the returned value). As a
+side effect, passing `plot=True` renders a Matplotlib figure through the
+`nns.plotting` layer — `nns_reg`, `nns_m_reg`, `nns_arma`, `nns_arma_optim`,
+`nns_cdf`, and `nns_seas` are wired this way (plus `residual_plot=True` for the
+regression functions). The figures are color/element-faithful but never
+pixel-compared, and computation with the default `plot=False` opens no figure.
 
 ## Inventory of committed graphics artifacts
 

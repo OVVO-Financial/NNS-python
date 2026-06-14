@@ -57,10 +57,10 @@ def nns_reg(
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
 ) -> dict[str, Any]:
     """Univariate numeric port of R's NNS.reg."""
-    del return_values, plot, plot_regions, residual_plot, ncores
+    del return_values, ncores
 
     if dim_red_method is not None:
-        return _nns_reg_dimred(
+        result = _nns_reg_dimred(
             x,
             y,
             factor_2_dummy=factor_2_dummy,
@@ -80,6 +80,11 @@ def nns_reg(
             class_levels=class_levels,
             factor_levels=factor_levels,
         )
+        _maybe_render_reg(
+            result, plot=plot, plot_regions=plot_regions,
+            residual_plot=residual_plot, point_est=point_est,
+        )
+        return result
 
     type_value = _normalize_type(type)
     if type_value == "class":
@@ -101,7 +106,7 @@ def nns_reg(
         dispatch_n_best = n_best
         if type_value == "class" and dispatch_n_best is None:
             dispatch_n_best = 1
-        return nns_m_reg(
+        result = nns_m_reg(
             np.asarray(x_for_dispatch, dtype=np.float64),
             y_matrix_values,
             factor_2_dummy=False,
@@ -117,6 +122,11 @@ def nns_reg(
             confidence_interval=confidence_interval,
             class_levels=class_levels,
         )
+        _maybe_render_reg(
+            result, plot=plot, plot_regions=plot_regions,
+            residual_plot=residual_plot, point_est=point_est,
+        )
+        return result
 
     del tau, threshold, n_best, dist
     x_values, y_values = _validate_univariate_inputs(
@@ -137,7 +147,7 @@ def nns_reg(
     )
     noise = _validate_noise_reduction(noise_reduction)
     point_values = _as_point_est(point_for_dispatch)
-    return _nns_reg_univariate_core(
+    result = _nns_reg_univariate_core(
         x_values,
         y_values,
         order=order,
@@ -150,6 +160,47 @@ def nns_reg(
         equation=None,
         x_star=None,
     )
+    _maybe_render_reg(
+        result, plot=plot, plot_regions=plot_regions,
+        residual_plot=residual_plot, point_est=point_est,
+    )
+    return result
+
+
+def _maybe_render_reg(
+    result: dict[str, Any],
+    *,
+    plot: bool,
+    plot_regions: bool,
+    residual_plot: bool,
+    point_est: NDArray[np.float64] | float | None,
+) -> None:
+    """Render the NNS.reg figure(s) as a side effect when a plot flag is set.
+
+    Plotting is decoupled from computation: this only fires for the standard
+    univariate result (one that carries ``Fitted.xy``) so the value-only return
+    contract is unchanged. ``plot``/``plot_regions`` draw the regression figure;
+    ``residual_plot`` draws a residual scatter.
+    """
+    if not (plot or plot_regions or residual_plot):
+        return
+    fitted = result.get("Fitted.xy") if isinstance(result, dict) else None
+    if not isinstance(fitted, dict) or "x" not in fitted:
+        return
+    if plot or plot_regions:
+        from nns.plotting.regression import plot_nns_reg
+
+        plot_nns_reg(result, point_est=point_est)
+    if residual_plot:
+        from nns.plotting._mpl import resolve_ax
+
+        xs = np.asarray(fitted["x"], dtype=np.float64)
+        residuals = np.asarray(fitted.get("residuals", []), dtype=np.float64)
+        if residuals.size and residuals.size == xs.size:
+            ax = resolve_ax(None)
+            ax.scatter(xs, residuals, color="steelblue")
+            ax.axhline(0.0, color="red")
+            ax.set_title("NNS Residual Plot")
 
 
 def prepare_factor_predictors(

@@ -32,7 +32,7 @@ def nns_arma_optim(
     plot: bool = False,
 ) -> dict[str, Any]:
     """Optimize seasonal factors for :func:`nns_arma` like R's ``NNS.ARMA.optim``."""
-    del ncores, print_trace, plot
+    del ncores, print_trace
 
     values = _as_variable(variable)
     original_values = values.copy()
@@ -326,7 +326,7 @@ def nns_arma_optim(
         lower_pi = np.maximum(0.0, lower_pi)
         upper_pi = np.maximum(0.0, upper_pi)
 
-    return {
+    result = {
         "periods": nns_periods,
         "weights": nns_weights,
         "obj.fn": nns_score,
@@ -339,6 +339,11 @@ def nns_arma_optim(
         "lower.pred.int": lower_pi,
         "upper.pred.int": upper_pi,
     }
+    if plot:
+        from nns.plotting.arma import plot_nns_arma_optim
+
+        plot_nns_arma_optim(result, original_values)
+    return result
 
 
 def nns_arma(
@@ -360,12 +365,22 @@ def nns_arma(
     random_seed: int | None = None,
 ) -> NDArray[np.float64] | dict[str, NDArray[np.float64]]:
     """Autoregressive NNS forecast matching R's installed NNS.ARMA behavior."""
-    del plot, seasonal_plot
+    del seasonal_plot
 
     horizon = int(h)
     if horizon < 1:
         raise ValueError("h must be a positive integer.")
     values = _as_variable(variable)
+
+    def _finish(
+        forecast: NDArray[np.float64] | dict[str, NDArray[np.float64]],
+    ) -> NDArray[np.float64] | dict[str, NDArray[np.float64]]:
+        if plot:
+            from nns.plotting.arma import plot_nns_arma
+
+            ts = int(training_set) if training_set is not None else int(values.size)
+            plot_nns_arma(forecast, values, training_set=ts)
+        return forecast
     if _is_numeric_seasonal(seasonal_factor) and dynamic:
         raise ValueError(
             'Hmmm...Seems you have "seasonal.factor" specified and "dynamic = TRUE".  '
@@ -389,12 +404,12 @@ def nns_arma(
 
     estimates = np.zeros(horizon, dtype=np.float64)
     if not _is_numeric_seasonal(seasonal_factor) and np.ptp(values) == 0.0:
-        return _with_prediction_intervals(
+        return _finish(_with_prediction_intervals(
             estimates,
             lin_residual=0.0,
             pred_int=pred_int,
             random_seed=random_seed,
-        )
+        ))
     lags, lag_weights = _resolve_lags_and_weights(
         values,
         seasonal_factor=seasonal_factor,
@@ -416,7 +431,7 @@ def nns_arma(
             method=method_l,
             shrink=shrink,
         )
-        return estimates
+        return _finish(estimates)
 
     current = values
     lin_regression_estimates = np.array([], dtype=np.float64)
@@ -490,12 +505,12 @@ def nns_arma(
         if not np.isfinite(lin_resid):
             lin_resid = 0.0
 
-    return _with_prediction_intervals(
+    return _finish(_with_prediction_intervals(
         estimates,
         lin_residual=lin_resid,
         pred_int=pred_int,
         random_seed=random_seed,
-    )
+    ))
 
 
 def _valid_arma_optim_seasonals(

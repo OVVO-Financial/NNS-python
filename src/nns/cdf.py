@@ -20,7 +20,6 @@ def nns_cdf(
     names: Sequence[str] | None = None,
 ) -> dict[str, object]:
     """Partial-moment CDF wrapper matching R's non-plotting NNS.CDF paths."""
-    del plot
     type_value = type.lower()
     if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
         raise ValueError("invalid type")
@@ -29,10 +28,26 @@ def nns_cdf(
     if values.ndim == 0:
         values = values.reshape(1)
     if values.ndim == 1 or (values.ndim == 2 and values.shape[1] == 1):
-        return _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
+        result = _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
+        if plot:
+            _render_cdf(result, target)
+        return result
     if values.ndim == 2:
+        # Multivariate CDF has no faithful single-Axes plot; plot is a no-op here.
         return _multivariate_cdf(values, float(degree), target, type_value, names)
     raise ValueError("variable must be a vector or 2D matrix.")
+
+
+def _render_cdf(result: dict[str, object], target: float | NDArray[np.float64] | None) -> None:
+    """Render the univariate NNS.CDF figure as a side effect of ``plot=True``."""
+    from nns.plotting.partial_moments import plot_nns_cdf
+
+    plot_target: float | None = None
+    if target is not None:
+        coords = np.asarray(target, dtype=np.float64).reshape(-1)
+        if coords.size == 1:
+            plot_target = float(coords[0])
+    plot_nns_cdf(result, target=plot_target)
 
 
 def _univariate_cdf(

@@ -39,8 +39,8 @@ def nns_m_reg(
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
 ) -> MRegResult:
-    """Multivariate numeric regression matching R's non-plotting NNS.M.reg path."""
-    del plot, residual_plot, location, dist, return_values, plot_regions, ncores
+    """Multivariate numeric regression matching R's NNS.M.reg path."""
+    del location, dist, return_values, plot_regions, ncores
     type_value = _normalize_type(type)
     x_values, y_values = _validate_inputs(
         x,
@@ -107,7 +107,7 @@ def nns_m_reg(
         confidence_interval=confidence_interval,
     )
     r2 = _class_accuracy(y_values, fitted_y) if type_value == "class" else _r2(y_values, fitted_y)
-    return {
+    result: MRegResult = {
         "R2": r2,
         "rhs.partitions": _rhs_partitions_dict(reg_points_matrix),
         "RPM": _rpm_dict(rpm),
@@ -115,6 +115,42 @@ def nns_m_reg(
         "pred.int": pred_int,
         "Fitted.xy": fitted,
     }
+    if plot or residual_plot:
+        _render_m_reg(fitted, plot=plot, residual_plot=residual_plot)
+    return result
+
+
+def _render_m_reg(
+    fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]],
+    *,
+    plot: bool,
+    residual_plot: bool,
+) -> None:
+    """Render multivariate fitted-vs-actual / residual diagnostics on ``plot=True``.
+
+    The synthetic predictors make a single x-axis ill-defined, so ``plot`` shows
+    fitted vs actual (steelblue points, red 1:1 line) and ``residual_plot`` shows
+    residuals about zero -- a figure is still produced, faithful to R's colors.
+    """
+    from nns.plotting._mpl import resolve_ax
+
+    y = np.asarray(fitted["y"], dtype=np.float64)
+    y_hat = np.asarray(fitted["y.hat"], dtype=np.float64)
+    if plot and y.size and y.size == y_hat.size:
+        ax = resolve_ax(None)
+        ax.scatter(y, y_hat, color="steelblue")
+        lo, hi = float(min(y.min(), y_hat.min())), float(max(y.max(), y_hat.max()))
+        ax.plot([lo, hi], [lo, hi], color="red")
+        ax.set_xlabel("y")
+        ax.set_ylabel("y.hat")
+        ax.set_title("NNS.M.reg Fitted vs Actual")
+    if residual_plot:
+        residuals = np.asarray(fitted.get("residuals", []), dtype=np.float64)
+        if residuals.size:
+            ax = resolve_ax(None)
+            ax.scatter(np.arange(1, residuals.size + 1), residuals, color="steelblue")
+            ax.axhline(0.0, color="red")
+            ax.set_title("NNS.M.reg Residual Plot")
 
 
 def _validate_inputs(

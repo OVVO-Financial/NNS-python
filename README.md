@@ -142,7 +142,7 @@ Important boundaries:
 - Stochastic exact stream parity is not expected because Python paths use NumPy random generation.
 - Factor and class ordering should be passed explicitly when ordering matters.
 - Direct raw-factor `nns_m_reg(..., factor_2_dummy=True)` is intentionally guarded. Use `prepare_factor_predictors(...)` before `nns_m_reg(...)`.
-- Compute functions' `plot` arguments are ignored and data is returned instead; visual plotting is a separate API in `nns.plotting`, color/element-faithful to R but not pixel-diffed.
+- Compute functions still return values, not figures; passing `plot=True` (where R has it) additionally renders a Matplotlib figure as a side effect via the `nns.plotting` layer, which is color/element-faithful to R but not pixel-diffed. The plot functions can also be called directly on a computed result.
 
 See [behavior conventions](docs/conventions.md) for detailed compatibility notes.
 
