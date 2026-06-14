@@ -100,6 +100,10 @@ jobs:
         id: live_parity
         continue-on-error: true
         run: |
+          # This job does not set up R; live-R verification is delegated to the
+          # parity-autofix workflow (dispatched below), which installs R. Here we
+          # gate the mapped parity tests against the committed cache, so pass
+          # --skip-install instead of trying to install R from local source.
           if [ "${{ steps.payload.outputs.fresh_cache }}" = "true" ]; then
             python scripts/run_live_r_parity_for_changed_api.py \
               --plan sync/last_r_api_plan.json \
@@ -110,6 +114,7 @@ jobs:
             python scripts/run_live_r_parity_for_changed_api.py \
               --plan sync/last_r_api_plan.json \
               --r-checkout upstream/NNS \
+              --skip-install \
               --out sync/last_live_r_parity_report.md
           fi
 

@@ -3,12 +3,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 REPORT_DEFAULT = Path("sync/last_live_r_parity_report.md")
+R_CACHE_PATH = Path("tests/_r_cache.json")
+# Backup suffix is gitignored (see .gitignore) so it never lands in a PR.
+R_CACHE_BACKUP = R_CACHE_PATH.with_suffix(".json.bak")
+
+# Toggles that force tests/_r.py into offline/cache-only mode. Clearing them lets
+# a parity test actually shell out to live R on a cache miss.
+OFFLINE_TOGGLES = (
+    "CI",
+    "NNS_R_CACHE_ONLY",
+    "PYNNS_R_CACHE_ONLY",
+    "NNS_OFFLINE",
+    "PYNNS_OFFLINE",
+)
 
 
 def load_json(path: Path) -> Any:
@@ -21,13 +35,101 @@ def write_report(path: Path, lines: list[str]) -> None:
     print(path)
 
 
-def run(cmd: list[str], env_extra: dict[str, str] | None = None) -> int:
+def run(
+    cmd: list[str],
+    env_extra: dict[str, str] | None = None,
+    clear_offline: bool = False,
+) -> int:
     env = os.environ.copy()
+    if clear_offline:
+        for name in OFFLINE_TOGGLES:
+            env.pop(name, None)
     if env_extra:
         env.update(env_extra)
     print("+ " + " ".join(cmd))
     completed = subprocess.run(cmd, env=env)
     return completed.returncode
+
+
+def run_live_subset(out: Path, header: list[str], parity_tests: list[str]) -> None:
+    """Recompute the mapped parity subset from live R and compare against Python.
+
+    R NNS must already be installed (the workflow installs it from the upstream
+    checkout at the recorded commit). The committed cache is moved aside so every
+    mapped ``nns()`` call shells out to live R, the mapped tests run with the
+    offline toggles cleared, then the committed cache is restored unchanged. A
+    test failure means public Python behavior diverged from live R.
+    """
+
+    if shutil.which("Rscript") is None:
+        lines = [*header,
+            "## Result: live R unavailable",
+            "",
+            "`Rscript` is not on PATH, so live R parity could not be verified. "
+            "Install R NNS before running with `--live`.",
+        ]
+        write_report(out, lines)
+        raise SystemExit(4)
+
+    existing_tests = [t for t in parity_tests if Path(t).exists()]
+    missing_tests = [t for t in parity_tests if not Path(t).exists()]
+    if not existing_tests:
+        lines = [*header,
+            "## Result: no mapped parity tests present",
+            "",
+            "No mapped parity test paths exist on disk; manual review is "
+            "recommended.",
+        ]
+        if missing_tests:
+            lines.extend(["", "Missing mapped tests:", ""])
+            lines.extend(f"- `{t}`" for t in missing_tests)
+        write_report(out, lines)
+        return
+
+    cmd = [sys.executable, "-m", "pytest", "-q", "-n", "0", *existing_tests]
+    moved = False
+    try:
+        if R_CACHE_PATH.exists():
+            shutil.move(str(R_CACHE_PATH), str(R_CACHE_BACKUP))
+            moved = True
+        # With the cache absent and offline toggles cleared, each mapped nns()
+        # call recomputes against the freshly installed live R and the test
+        # asserts the Python implementation matches it.
+        code = run(cmd, clear_offline=True)
+    finally:
+        if R_CACHE_PATH.exists():
+            R_CACHE_PATH.unlink()
+        if moved:
+            shutil.move(str(R_CACHE_BACKUP), str(R_CACHE_PATH))
+
+    if code != 0:
+        lines = [*header,
+            "## Result: live R parity diverged",
+            "",
+            "Mapped parity tests recomputed every R value from the freshly "
+            "installed live R NNS and the Python implementation did not match. "
+            "Public Python behavior differs from live R at the recorded commit.",
+            "",
+            f"Failing command: `{' '.join(cmd)}`",
+            f"Exit status: `{code}`",
+        ]
+        write_report(out, lines)
+        raise SystemExit(code)
+
+    lines = [*header,
+        "## Result: live R parity passed (recomputed from live R)",
+        "",
+        "Every mapped parity value was recomputed from the freshly installed "
+        "live R NNS and matched the Python implementation.",
+        "",
+        "Tests run:",
+        "",
+    ]
+    lines.extend(f"- `{t}`" for t in existing_tests)
+    if missing_tests:
+        lines.extend(["", "Skipped missing mapped tests:", ""])
+        lines.extend(f"- `{t}`" for t in missing_tests)
+    write_report(out, lines)
 
 
 def main() -> None:
@@ -36,6 +138,15 @@ def main() -> None:
     parser.add_argument("--r-checkout", type=Path, required=False)
     parser.add_argument("--fresh-cache", action="store_true")
     parser.add_argument("--skip-install", action="store_true")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "Recompute the mapped parity subset from already-installed live R "
+            "(toggles cleared, committed cache moved aside) and compare against "
+            "Python. A failure means Python diverged from live R."
+        ),
+    )
     parser.add_argument("--out", type=Path, default=REPORT_DEFAULT)
     args = parser.parse_args()
 
@@ -51,6 +162,7 @@ def main() -> None:
         f"- R checkout: `{args.r_checkout}`",
         f"- Fresh cache requested: `{args.fresh_cache}`",
         f"- Skip install: `{args.skip_install}`",
+        f"- Live R recompute: `{args.live}`",
         "",
     ]
 
@@ -66,6 +178,13 @@ def main() -> None:
         lines.extend(f"- `{file}`" for file in plan.get("unmapped_r_files", []))
         write_report(args.out, lines)
         raise SystemExit(2)
+
+    # Live recompute mode: the true fidelity test. It recomputes the mapped
+    # subset from already-installed live R regardless of cache state, so it also
+    # covers version bumps without a separate fresh-cache pass.
+    if args.live:
+        run_live_subset(args.out, header, parity_tests)
+        return
 
     # 3. Fresh cache required but not requested.
     if requires_fresh_cache and not args.fresh_cache:
