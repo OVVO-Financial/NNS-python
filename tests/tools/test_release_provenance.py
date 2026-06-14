@@ -43,8 +43,10 @@ def test_allow_unknown_passes_with_placeholder_provenance() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_unknown_provenance_fails_real_release() -> None:
-    result = _run([])
+def test_unknown_provenance_fails_real_release(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest)  # default r_commit/core_commit are "unknown"
+    result = _run(["--manifest", str(manifest)])
     assert result.returncode != 0
     assert "provenance" in (result.stdout + result.stderr).lower()
 
