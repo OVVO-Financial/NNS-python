@@ -12,6 +12,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+from typing import Any
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -88,12 +90,25 @@ def test_nns_seas_plot_true_creates_figure() -> None:
 
 
 def test_nns_m_reg_plot_true_creates_figure() -> None:
+    import matplotlib.colors as mcolors
+
     rng = np.random.default_rng(6)
     x = np.sort(rng.normal(size=40))
     y = 2.0 * x + rng.normal(scale=0.3, size=40)
     features = np.column_stack([x, x**2])
     nns.nns_m_reg(features, y, plot=True)
     assert _fig_count() > 0
+    ax: Any = plt.gca()
+    # R's M.reg residual plot: actual y is steelblue, fitted y.hat is a red line.
+    edge_hexes = {
+        mcolors.to_hex(row)
+        for coll in ax.collections
+        for row in coll.get_edgecolor()
+        if len(row)
+    }
+    line_hexes = {mcolors.to_hex(line.get_color()) for line in ax.get_lines()}
+    assert "#4682b4" in edge_hexes
+    assert "#ff0000" in line_hexes
 
 
 def test_plot_false_creates_no_figure() -> None:

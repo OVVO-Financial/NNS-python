@@ -116,41 +116,40 @@ def nns_m_reg(
         "Fitted.xy": fitted,
     }
     if plot or residual_plot:
-        _render_m_reg(fitted, plot=plot, residual_plot=residual_plot)
+        _render_m_reg(fitted)
     return result
 
 
-def _render_m_reg(
-    fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]],
-    *,
-    plot: bool,
-    residual_plot: bool,
-) -> None:
-    """Render multivariate fitted-vs-actual / residual diagnostics on ``plot=True``.
+def _render_m_reg(fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]]) -> None:
+    """Render R's NNS.M.reg residual plot (Multivariate_Regression.R:367-377).
 
-    The synthetic predictors make a single x-axis ill-defined, so ``plot`` shows
-    fitted vs actual (steelblue points, red 1:1 line) and ``residual_plot`` shows
-    residuals about zero -- a figure is still produced, faithful to R's colors.
+    The multivariate plot output is the residual plot: actual ``y`` over the
+    observation index as ``steelblue`` open circles, fitted ``y.hat`` as a
+    ``red`` line, and a pink (alpha 0.375) confidence band when present.
     """
+    from nns.plotting import palette
     from nns.plotting._mpl import resolve_ax
 
     y = np.asarray(fitted["y"], dtype=np.float64)
     y_hat = np.asarray(fitted["y.hat"], dtype=np.float64)
-    if plot and y.size and y.size == y_hat.size:
-        ax = resolve_ax(None)
-        ax.scatter(y, y_hat, color="steelblue")
-        lo, hi = float(min(y.min(), y_hat.min())), float(max(y.max(), y_hat.max()))
-        ax.plot([lo, hi], [lo, hi], color="red")
-        ax.set_xlabel("y")
-        ax.set_ylabel("y.hat")
-        ax.set_title("NNS.M.reg Fitted vs Actual")
-    if residual_plot:
-        residuals = np.asarray(fitted.get("residuals", []), dtype=np.float64)
-        if residuals.size:
-            ax = resolve_ax(None)
-            ax.scatter(np.arange(1, residuals.size + 1), residuals, color="steelblue")
-            ax.axhline(0.0, color="red")
-            ax.set_title("NNS.M.reg Residual Plot")
+    if y.size == 0 or y.size != y_hat.size:
+        return
+    ax = resolve_ax(None)
+    index = np.arange(1, y.size + 1)
+    ax.scatter(index, y, facecolors="none", edgecolors="steelblue", marker="o")
+    ax.plot(index, y_hat, color="red", linewidth=2)
+    if "conf.int.pos" in fitted and "conf.int.neg" in fitted:
+        pos = np.asarray(fitted["conf.int.pos"], dtype=np.float64)
+        neg = np.asarray(fitted["conf.int.neg"], dtype=np.float64)
+        mask = np.isfinite(pos) & np.isfinite(neg)
+        if mask.any():
+            ax.fill_between(
+                index[mask], neg[mask], pos[mask],
+                color=palette.PINK, alpha=palette.CI_ALPHA_REG, linewidth=0.0,
+            )
+    ax.set_xlabel("Index")
+    ax.set_ylabel("y (blue)   y.hat (red)")
+    ax.set_title("NNS.M.reg Residual Plot")
 
 
 def _validate_inputs(
