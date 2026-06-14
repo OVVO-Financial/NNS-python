@@ -4,7 +4,7 @@
   "r_version": "13.0",
   "r_src_tree_hash": "654e411bd4e8caabfd57a1a4190eb1d97411e059",
   "core_repo": "OVVO-Financial/NNS-core",
-  "core_commit": "7f93df9dff8762df870c1fbba6e03c0469be6e69",
+  "core_commit": "cfc25a3469df6460f9224fb976fcb58de9d58068",
   "python_repo": "OVVO-Financial/NNS-python",
   "python_commit": null,
   "vendored_core_path": "extern/NNS-core",
