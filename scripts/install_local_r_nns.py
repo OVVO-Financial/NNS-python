@@ -17,6 +17,7 @@ non-CRAN R NNS install.
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -34,8 +35,24 @@ _VERSION_SCRIPT = (
 )
 
 
-def _resolve_source() -> Path:
-    """Return the vendored NNS source path, preferring the extracted directory."""
+def _resolve_source(override: Path | None = None) -> Path:
+    """Return the NNS source path to install.
+
+    With no override, prefer the vendored extracted directory and fall back to
+    the vendored tarball. With an override (for example an upstream checkout at a
+    recorded R commit), install that path directly after validating it is a
+    package source directory or tarball.
+    """
+
+    if override is not None:
+        if override.is_dir() and (override / "DESCRIPTION").is_file():
+            return override
+        if override.is_file():
+            return override
+        raise SystemExit(
+            f"ERROR: --source {override} is not an R package source. Expected a "
+            "directory containing DESCRIPTION or a package tarball."
+        )
 
     if (_SOURCE_DIR / "DESCRIPTION").is_file():
         return _SOURCE_DIR
@@ -58,9 +75,32 @@ def _require(tool: str) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=None,
+        help=(
+            "Install from this R package source (directory with DESCRIPTION or a "
+            "tarball) instead of the vendored tools/NNS. Use an upstream checkout "
+            "to install live R NNS at a recorded commit."
+        ),
+    )
+    parser.add_argument(
+        "--expected-version",
+        default=_EXPECTED_VERSION,
+        help=(
+            "Package version the install must report after loading. Defaults to "
+            f"{_EXPECTED_VERSION!r}. Pass the recorded upstream version when "
+            "installing from a non-vendored source."
+        ),
+    )
+    args = parser.parse_args()
+    expected_version = args.expected_version or _EXPECTED_VERSION
+
     r_bin = _require("R")
     rscript_bin = _require("Rscript")
-    source = _resolve_source()
+    source = _resolve_source(args.source)
 
     print(f"Installing R NNS from local source: {source} (not CRAN)")
     install = subprocess.run(
@@ -86,15 +126,15 @@ def main() -> int:
 
     installed_version = probe.stdout.strip()
     print(f"Installed NNS version: {installed_version}")
-    if installed_version != _EXPECTED_VERSION:
+    if installed_version != expected_version:
         print(
             "ERROR: installed NNS version "
-            f"{installed_version!r} does not match expected {_EXPECTED_VERSION!r}.",
+            f"{installed_version!r} does not match expected {expected_version!r}.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"OK: R NNS {_EXPECTED_VERSION} installed from local source.")
+    print(f"OK: R NNS {expected_version} installed from local source.")
     return 0
 
 

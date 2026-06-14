@@ -112,18 +112,24 @@ jobs:
         id: r_install
         continue-on-error: true
         run: |
-          # install_local_r_nns.py installs from the vendored tools/NNS by
-          # default; the upstream checkout is the recorded truth for this commit.
-          python scripts/install_local_r_nns.py
+          # Install the recorded R code itself (upstream checkout at r_commit),
+          # not the vendored tools/NNS snapshot, so the fidelity test runs
+          # against the exact R behavior that triggered this workflow.
+          python scripts/install_local_r_nns.py \
+            --source upstream/NNS \
+            --expected-version "${{ steps.payload.outputs.r_version }}"
 
       - name: Run live R parity to reproduce divergence
         id: live_parity
         continue-on-error: true
         run: |
+          # --live recomputes the mapped parity subset from the freshly installed
+          # live R (committed cache moved aside, offline toggles cleared) and
+          # compares it against Python. A failure means real behavior diverged.
           python scripts/run_live_r_parity_for_changed_api.py \
             --plan sync/last_r_api_plan.json \
             --r-checkout upstream/NNS \
-            --skip-install \
+            --live \
             --out sync/last_live_r_parity_report.md
 
       - name: Classify live parity outcome
