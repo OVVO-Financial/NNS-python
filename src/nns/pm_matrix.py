@@ -109,7 +109,7 @@ def pm_matrix(
 def _native_matrix(value: Any, dim: int) -> NDArray[np.float64]:
     matrix = np.asarray(value, dtype=np.float64)
     if matrix.shape == (dim, dim):
-        return cast(NDArray[np.float64], matrix)
+        return matrix
     return cast(NDArray[np.float64], matrix.reshape((dim, dim), order="F"))
 
 
