@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-import re
-import tomllib
+import importlib.util
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "scripts" / "check_version_consistency.py"
 
 
-def _pyproject_version() -> str:
-    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    return str(data["project"]["version"])
+def _load_module() -> object:
+    spec = importlib.util.spec_from_file_location("check_version_consistency", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def _package_version() -> str:
-    text = (REPO_ROOT / "src" / "nns" / "__init__.py").read_text(encoding="utf-8")
-    match = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.MULTILINE)
-    assert match is not None, "could not find __version__ in src/nns/__init__.py"
-    return match.group(1)
+def test_version_is_consistent_everywhere() -> None:
+    """pyproject, nns.__version__, and the README current-version row must agree.
 
-
-def test_package_version_matches_pyproject() -> None:
-    assert _package_version() == _pyproject_version()
+    The README is the PyPI project description, so a stale version row there
+    shows the wrong version on the package page. This guards every version bump.
+    """
+    module = _load_module()
+    _version, problems = module.check(REPO_ROOT)  # type: ignore[attr-defined]
+    assert problems == [], problems

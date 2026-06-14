@@ -35,6 +35,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Check version consistency
+        # The README is the PyPI project description; block the release if its
+        # current-version row, nns.__version__, and pyproject disagree.
+        run: python scripts/check_version_consistency.py
       - name: Check release provenance
         shell: bash
         run: |
