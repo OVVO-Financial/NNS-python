@@ -1,6 +1,6 @@
 [project]
 name = "ovvo-nns"
-version = "1.0.0a0"
+version = "1.0.0"
 description = "Python port of nonlinear nonparametric statistics from R NNS"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,7 +14,7 @@ maintainers = [
     { name = "Fred Viole", email = "ovvo.open.source@gmail.com" },
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
