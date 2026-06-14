@@ -54,8 +54,6 @@ invariant, and property coverage.
 | Boost: `nns_boost` | partial | medium | Deterministic and stochastic structures are implemented; one high-feature threshold path remains guarded to match installed-R failure behavior. |
 | Seasonality: `nns_seas` | implemented | high | Non-plotting installed-R path is implemented and cached defensively. |
 | ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and supported VAR dimension-reduction paths are implemented on focused fixtures. Explicit numeric multi-lag ARMA uses actual-lag weighting instead of installed R's position-based weighting quirk. VAR's multivariate stack stage matches R's effective time-series holdout sizing; the remaining macro-like VAR strict xfail is inherited from ARMA optimizer period selection. Stochastic interval streams are structural/statistical parity only. |
-| Nowcast panel: `nns_nowcast_panel` | implemented | medium | Python-native deterministic monthly panel helper backed by `nns_var`. R NNS 13.0 does not export `NNS.nowcast`, so this is no longer an R-export parity target. |
-| Providers: `CsvNowcastProvider` | implemented | medium | Produces explicit local/offline payloads for `nns_nowcast_panel`. |
 | Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
 | Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
 | ANOVA: `nns_anova` | implemented | high | Binary, multi-group, pairwise, and degenerate `NaN` conventions are covered. |
@@ -75,10 +73,6 @@ invariant, and property coverage.
 ## Intentional Design Boundaries
 
 - No hidden network fetching happens by default.
-- NNS Python does not export `nns_nowcast`; R NNS 13.0 does not export `NNS.nowcast`.
-- Nowcast providers are payload builders for `nns_nowcast_panel`, not implicit
-  public forecast wrappers.
-- `CsvNowcastProvider` is local/offline.
 - Library code does not auto-load `.env` files.
 - External data clients and dataframe libraries are not dependencies.
 - NNS Python uses explicit Python errors for some cases where R silently truncates,
@@ -93,23 +87,6 @@ invariant, and property coverage.
   degree-1 continuous calls, and an exact order-statistic matrix for large
   degree-1 discrete calls. Optional compiled SD backends remain deferred until
   benchmark evidence justifies the added packaging and maintenance cost.
-
-## Provider Boundary
-
-Nowcast provider support is explicit. Providers return payloads; callers pass
-the payload to `nns_nowcast_panel`:
-
-```python
-from nns import nns_nowcast_panel
-from nns.providers import CsvNowcastProvider
-
-provider = CsvNowcastProvider("monthly_panel.csv")
-payload = provider.fetch((), "2000-01-03")
-result = nns_nowcast_panel(payload["series"], h=2, tau=12, dates=payload["dates"])
-```
-
-NNS Python does not ship a default Yahoo, FRED, or other live-data workflow hidden
-behind a public nowcast wrapper.
 
 ## Intentional Divergences And Caveats
 

@@ -122,7 +122,6 @@ print("forecast:", forecast)
 | Causation | `nns_causation`, `causal_matrix` |
 | Regression and classification | `nns_reg`, `nns_m_reg`, `nns_stack`, `nns_boost` |
 | Forecasting | `nns_seas`, `nns_arma`, `nns_arma_optim`, `nns_var` |
-| Nowcast panels | `nns_nowcast_panel`, `CsvNowcastProvider` |
 | Distribution tools | `nns_cdf`, `nns_anova`, `nns_norm` |
 | Stochastic dominance | `fsd`, `ssd`, `tsd`, `nns_sd_cluster`, `sd_efficient_set` |
 | Stochastic superiority and simulation | `nns_ss`, `nns_mc`, `nns_meboot` |
@@ -157,7 +156,6 @@ Runnable examples live in [`docs/examples`](docs/examples):
 | Regression | [`regression.py`](docs/examples/regression.py) |
 | Classification | [`classification.py`](docs/examples/classification.py) |
 | Forecasting | [`forecasting.py`](docs/examples/forecasting.py) |
-| Nowcast panel | [`nowcast_panel.py`](docs/examples/nowcast_panel.py) |
 
 Run one example:
 
@@ -179,7 +177,6 @@ Notebook workflows are also available under [`docs/examples/notebooks`](docs/exa
 - [Behavior conventions and intentional divergences](docs/conventions.md)
 - [Benchmarks](docs/benchmarks.md)
 - [Examples](docs/examples/README.md)
-- [Nowcast design](docs/specs_nowcast.md)
 
 ## Development
 

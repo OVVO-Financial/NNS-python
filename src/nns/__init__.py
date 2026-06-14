@@ -4,7 +4,7 @@ from typing import Any
 
 from nns.pm_matrix import pm_matrix as pm_matrix
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 _EXPORTS = {
     "FactorDesign": ("nns.regression", "FactorDesign"),
@@ -48,7 +48,6 @@ _EXPORTS = {
     "nns_mc": ("nns.mc", "nns_mc"),
     "nns_meboot": ("nns.meboot", "nns_meboot"),
     "nns_norm": ("nns.norm", "nns_norm"),
-    "nns_nowcast_panel": ("nns.nowcast", "nns_nowcast_panel"),
     "nns_part": ("nns.part", "nns_part"),
     "nns_reg": ("nns.regression", "nns_reg"),
     "nns_rescale": ("nns.central_tendencies", "nns_rescale"),
