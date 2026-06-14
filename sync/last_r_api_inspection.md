@@ -2,11 +2,7 @@
 
 ## Changed files
 
-- `NNS_13.0.tar.gz`
-- `NNS_13.0.zip`
 - `R/ARMA.R`
-- `src/NNS.dll`
-- `tests/testthat/Rplots.pdf`
 
 ## Affected Python modules
 

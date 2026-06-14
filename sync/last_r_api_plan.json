@@ -1,10 +1,6 @@
 {
   "changed_files": [
-    "NNS_13.0.tar.gz",
-    "NNS_13.0.zip",
-    "R/ARMA.R",
-    "src/NNS.dll",
-    "tests/testthat/Rplots.pdf"
+    "R/ARMA.R"
   ],
   "affected_python_modules": [
     "src/nns/arma.py"
