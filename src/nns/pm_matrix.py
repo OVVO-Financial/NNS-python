@@ -56,21 +56,11 @@ def pm_matrix(
         )
         dim = int(native_result["dim"])
         result: PMMatrixResult = {
-            "cupm": np.asarray(native_result["cupm"], dtype=np.float64).reshape(
-                (dim, dim), order="F"
-            ),
-            "dupm": np.asarray(native_result["dupm"], dtype=np.float64).reshape(
-                (dim, dim), order="F"
-            ),
-            "dlpm": np.asarray(native_result["dlpm"], dtype=np.float64).reshape(
-                (dim, dim), order="F"
-            ),
-            "clpm": np.asarray(native_result["clpm"], dtype=np.float64).reshape(
-                (dim, dim), order="F"
-            ),
-            "cov.matrix": np.asarray(native_result["cov.matrix"], dtype=np.float64).reshape(
-                (dim, dim), order="F"
-            ),
+            "cupm": _native_matrix(native_result["cupm"], dim),
+            "dupm": _native_matrix(native_result["dupm"], dim),
+            "dlpm": _native_matrix(native_result["dlpm"], dim),
+            "clpm": _native_matrix(native_result["clpm"], dim),
+            "cov.matrix": _native_matrix(native_result["cov.matrix"], dim),
         }
         if resolved_names is not None:
             result["names"] = resolved_names
@@ -114,6 +104,13 @@ def pm_matrix(
     if resolved_names is not None:
         result["names"] = resolved_names
     return result
+
+
+def _native_matrix(value: Any, dim: int) -> NDArray[np.float64]:
+    matrix = np.asarray(value, dtype=np.float64)
+    if matrix.shape == (dim, dim):
+        return cast(NDArray[np.float64], matrix)
+    return cast(NDArray[np.float64], matrix.reshape((dim, dim), order="F"))
 
 
 def _resolve_names(names: Sequence[str] | None, n_cols: int) -> list[str] | None:

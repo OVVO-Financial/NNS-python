@@ -89,6 +89,10 @@ def test_direct_native_partial_moment_smoke(native: ModuleType) -> None:
         )
         assert native_pm["dim"] == 2
         assert set(native_pm) >= {"cupm", "dupm", "dlpm", "clpm", "cov.matrix", "dim"}
+        for key in ("cupm", "dupm", "dlpm", "clpm", "cov.matrix"):
+            assert isinstance(native_pm[key], np.ndarray)
+            assert native_pm[key].shape == (2, 2)
+            assert native_pm[key].flags.f_contiguous
 
 
 def test_direct_native_fast_lm_smoke(native: ModuleType) -> None:

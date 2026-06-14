@@ -3,6 +3,7 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <cstdint>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,7 @@ namespace {
 
 using Vector = nb::ndarray<const double, nb::ndim<1>, nb::c_contig>;
 using IntVector = nb::ndarray<const int, nb::ndim<1>, nb::c_contig>;
+using Matrix = nb::ndarray<nb::numpy, double, nb::shape<-1, -1>, nb::f_contig>;
 
 std::size_t checked_size(const Vector& x, const char* name) {
   const std::size_t n = x.shape(0);
@@ -23,6 +25,14 @@ std::size_t checked_size(const Vector& x, const char* name) {
     throw std::invalid_argument(std::string(name) + " must be non-empty.");
   }
   return n;
+}
+
+Matrix matrix_from_column_major_vector(std::vector<double>&& values, std::size_t dim) {
+  auto* storage = new std::vector<double>(std::move(values));
+  nb::capsule owner(storage, [](void* p) noexcept {
+    delete static_cast<std::vector<double>*>(p);
+  });
+  return Matrix(storage->data(), {dim, dim}, owner, {1, static_cast<int64_t>(dim)});
 }
 
 void check_same_size(const Vector& x, const Vector& y, const char* x_name, const char* y_name) {
@@ -136,14 +146,14 @@ nb::dict pm_matrix_dict(double degree_lpm,
     throw std::invalid_argument("target length must equal d.");
   }
   checked_flat_matrix_size(variable, n, d, "variable");
-  const nns::PMMatrixResult result = nns::pm_matrix(degree_lpm, degree_upm, target.data(),
-                                                    variable.data(), n, d, pop_adj, norm);
+  nns::PMMatrixResult result = nns::pm_matrix(degree_lpm, degree_upm, target.data(),
+                                              variable.data(), n, d, pop_adj, norm);
   nb::dict out;
-  out["cupm"] = result.cupm;
-  out["dupm"] = result.dupm;
-  out["dlpm"] = result.dlpm;
-  out["clpm"] = result.clpm;
-  out["cov.matrix"] = result.cov;
+  out["cupm"] = matrix_from_column_major_vector(std::move(result.cupm), result.dim);
+  out["dupm"] = matrix_from_column_major_vector(std::move(result.dupm), result.dim);
+  out["dlpm"] = matrix_from_column_major_vector(std::move(result.dlpm), result.dim);
+  out["clpm"] = matrix_from_column_major_vector(std::move(result.clpm), result.dim);
+  out["cov.matrix"] = matrix_from_column_major_vector(std::move(result.cov), result.dim);
   out["dim"] = result.dim;
   return out;
 }
