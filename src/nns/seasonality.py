@@ -19,8 +19,21 @@ def nns_seas(
     mod_only: bool = True,
     plot: bool = False,
 ) -> SeasonalityResult:
-    """Seasonality test matching R's NNS.seas non-plotting path."""
-    del plot
+    """Seasonality test matching R's NNS.seas; ``plot=True`` renders the figure."""
+    result = _nns_seas_compute(variable, modulo=modulo, mod_only=mod_only)
+    if plot:
+        from nns.plotting.seasonality import plot_nns_seas
+
+        plot_nns_seas(result)
+    return result
+
+
+def _nns_seas_compute(
+    variable: NDArray[np.float64],
+    *,
+    modulo: int | list[int] | NDArray[np.int64] | None = None,
+    mod_only: bool = True,
+) -> SeasonalityResult:
     values = _validate_variable(variable)
     modulo_values = None if modulo is None else _as_modulo(modulo)
     cache_key = _cache_key(values, modulo_values, mod_only)

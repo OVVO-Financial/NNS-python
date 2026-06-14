@@ -39,8 +39,8 @@ def nns_m_reg(
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
 ) -> MRegResult:
-    """Multivariate numeric regression matching R's non-plotting NNS.M.reg path."""
-    del plot, residual_plot, location, dist, return_values, plot_regions, ncores
+    """Multivariate numeric regression matching R's NNS.M.reg path."""
+    del location, dist, return_values, plot_regions, ncores
     type_value = _normalize_type(type)
     x_values, y_values = _validate_inputs(
         x,
@@ -107,7 +107,7 @@ def nns_m_reg(
         confidence_interval=confidence_interval,
     )
     r2 = _class_accuracy(y_values, fitted_y) if type_value == "class" else _r2(y_values, fitted_y)
-    return {
+    result: MRegResult = {
         "R2": r2,
         "rhs.partitions": _rhs_partitions_dict(reg_points_matrix),
         "RPM": _rpm_dict(rpm),
@@ -115,6 +115,41 @@ def nns_m_reg(
         "pred.int": pred_int,
         "Fitted.xy": fitted,
     }
+    if plot or residual_plot:
+        _render_m_reg(fitted)
+    return result
+
+
+def _render_m_reg(fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]]) -> None:
+    """Render R's NNS.M.reg residual plot (Multivariate_Regression.R:367-377).
+
+    The multivariate plot output is the residual plot: actual ``y`` over the
+    observation index as ``steelblue`` open circles, fitted ``y.hat`` as a
+    ``red`` line, and a pink (alpha 0.375) confidence band when present.
+    """
+    from nns.plotting import palette
+    from nns.plotting._mpl import resolve_ax
+
+    y = np.asarray(fitted["y"], dtype=np.float64)
+    y_hat = np.asarray(fitted["y.hat"], dtype=np.float64)
+    if y.size == 0 or y.size != y_hat.size:
+        return
+    ax = resolve_ax(None)
+    index = np.arange(1, y.size + 1)
+    ax.scatter(index, y, facecolors="none", edgecolors="steelblue", marker="o")
+    ax.plot(index, y_hat, color="red", linewidth=2)
+    if "conf.int.pos" in fitted and "conf.int.neg" in fitted:
+        pos = np.asarray(fitted["conf.int.pos"], dtype=np.float64)
+        neg = np.asarray(fitted["conf.int.neg"], dtype=np.float64)
+        mask = np.isfinite(pos) & np.isfinite(neg)
+        if mask.any():
+            ax.fill_between(
+                index[mask], neg[mask], pos[mask],
+                color=palette.PINK, alpha=palette.CI_ALPHA_REG, linewidth=0.0,
+            )
+    ax.set_xlabel("Index")
+    ax.set_ylabel("y (blue)   y.hat (red)")
+    ax.set_title("NNS.M.reg Residual Plot")
 
 
 def _validate_inputs(
