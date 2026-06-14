@@ -204,3 +204,5 @@ Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. M
 
 ## Attribution
 Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
+
+Contributors: Roberto Spadim, Rasheed Khoshnaw
