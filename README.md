@@ -199,7 +199,11 @@ The default parity suite is cache-backed and does not require `Rscript`. `Rscrip
 
 Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
 
+## Authors and contributors
+
+- **Fred Viole** — author and maintainer
+- **Roberto Spadim** — contributor
+- **Rasheed Khoshnaw** — contributor
+
 ## Attribution
 Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
-
-Contributors: Roberto Spadim, Rasheed Khoshnaw
