@@ -125,6 +125,9 @@ test-command = 'python -c "import nns, nns._nnscore as c; print(c.lpm(2.0, 0.0, 
 
 [tool.cibuildwheel.macos]
 archs = ["x86_64", "arm64"]
+# nanobind's C++17 runtime uses aligned new/delete, which requires macOS 10.13+.
+# cibuildwheel otherwise defaults x86_64 to 10.9 and the build fails to compile.
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.14" }
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
