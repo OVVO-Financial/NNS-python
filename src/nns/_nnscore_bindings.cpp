@@ -791,6 +791,104 @@ nb::dict nns_dep_pair(const Vector& xa, const Vector& ya, bool asym) {
   return out;
 }
 
+// --- NNS.copula faithful port (nns.copula._copula) --------------------------
+// General-d n-dimensional partial moments mirroring the pure-Python
+// _clpm_nd/_cupm_nd/_dpm_nd, with numpy-faithful pairwise means. data is
+// column-major n x d; target is the d-vector of per-column targets supplied by
+// the caller (np.mean), so it is already bit-identical. pm covariance matrices
+// reuse the verified nns::pm_matrix kernel.
+
+double nd_clpm_general(const double* data, std::size_t n, std::size_t d, const double* target,
+                       double degree) {
+  std::vector<double> v(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    bool valid = true;
+    double prod = 1.0;
+    for (std::size_t c = 0; c < d; ++c) {
+      const double cd = target[c] - data[i + c * n];
+      if (cd < 0.0) valid = false;
+      prod *= cd;
+    }
+    v[i] = (degree == 0.0) ? (valid ? 1.0 : 0.0) : (valid ? prod : 0.0);
+  }
+  return np_mean(v.data(), n);
+}
+
+double nd_cupm_general(const double* data, std::size_t n, std::size_t d, const double* target,
+                       double degree) {
+  std::vector<double> v(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    bool valid = true;
+    double prod = 1.0;
+    for (std::size_t c = 0; c < d; ++c) {
+      const double dd = data[i + c * n] - target[c];
+      if (dd < 0.0) valid = false;
+      prod *= dd;
+    }
+    v[i] = (degree == 0.0) ? (valid ? 1.0 : 0.0) : (valid ? prod : 0.0);
+  }
+  return np_mean(v.data(), n);
+}
+
+double nd_dpm_general(const double* data, std::size_t n, std::size_t d, const double* target,
+                      double degree, bool norm) {
+  std::vector<double> v(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    bool below = true, above = true;
+    double prod_abs = 1.0;
+    for (std::size_t c = 0; c < d; ++c) {
+      const double diff = data[i + c * n] - target[c];
+      if (!(diff < 0.0)) below = false;
+      if (!(diff > 0.0)) above = false;
+      prod_abs *= std::abs(diff);
+    }
+    const bool discordant = !(below || above);
+    v[i] = (degree == 0.0) ? (discordant ? 1.0 : 0.0) : (discordant ? prod_abs : 0.0);
+  }
+  const double dpm = np_mean(v.data(), n);
+  if (degree == 0.0) return dpm;  // Python returns mean(discordant) before norm
+  if (!norm) return dpm;
+  const double clpm = nd_clpm_general(data, n, d, target, 1.0);
+  const double cupm = nd_cupm_general(data, n, d, target, 1.0);
+  const double total = clpm + cupm + dpm;
+  return total > 0.0 ? dpm / total : 0.0;
+}
+
+double upper_tri_pairwise(const std::vector<double>& m, std::size_t d) {
+  std::vector<double> vals;
+  vals.reserve(d * (d - 1U) / 2U);
+  for (std::size_t i = 0; i < d; ++i)
+    for (std::size_t j = i + 1U; j < d; ++j) vals.push_back(m[i + j * d]);
+  return np_pairwise_sum(vals.data(), vals.size());
+}
+
+double copula_nd(const double* data, std::size_t n, std::size_t d, const double* target,
+                 bool continuous) {
+  const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false);
+  const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
+  if (disc_co == 1.0 || disc_co == 0.0) return 1.0;
+  const double disc_d = nd_dpm_general(data, n, d, target, 0.0, true);
+
+  double cont_co, cont_d;
+  if (continuous) {
+    const nns::PMMatrixResult cont = nns::pm_matrix(1.0, 1.0, target, data, n, d, true, true);
+    cont_co = upper_tri_pairwise(cont.cupm, d) + upper_tri_pairwise(cont.clpm, d);
+    cont_d = nd_dpm_general(data, n, d, target, 1.0, true);
+  } else {
+    cont_co = disc_co;
+    cont_d = disc_d;
+  }
+
+  const double dd = static_cast<double>(d);
+  const double indep_co = 0.25 * (dd * dd - dd);
+  const double discrete_dep = clamp01(std::abs(disc_co - indep_co) / indep_co);
+  const double continuous_dep = clamp01(std::abs(cont_co - indep_co) / indep_co);
+  const double indep_d = 1.0 - std::pow(0.5, dd);
+  const double nd_disc = std::abs(disc_d - indep_d) / indep_d;
+  const double nd_cont = std::abs(cont_d - indep_d) / indep_d;
+  return std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
+}
+
 }  // namespace
 
 NB_MODULE(_nnscore, m) {
@@ -928,4 +1026,16 @@ NB_MODULE(_nnscore, m) {
   m.def("nns_part_off", &nns_part_off, nb::arg("x"), nb::arg("y"), nb::arg("xonly"),
         nb::arg("max_order"), nb::arg("obs_req"), nb::arg("min_obs_stop"));
   m.def("nns_dep_pair", &nns_dep_pair, nb::arg("x"), nb::arg("y"), nb::arg("asym"));
+  m.def(
+      "copula_nd",
+      [](const Vector& data, std::size_t n, std::size_t d, const Vector& target, bool continuous) {
+        if (data.shape(0) != n * d) {
+          throw std::invalid_argument("data length must equal n * d.");
+        }
+        if (target.shape(0) != d) {
+          throw std::invalid_argument("target length must equal d.");
+        }
+        return copula_nd(data.data(), n, d, target.data(), continuous);
+      },
+      nb::arg("data"), nb::arg("n"), nb::arg("d"), nb::arg("target"), nb::arg("continuous"));
 }
