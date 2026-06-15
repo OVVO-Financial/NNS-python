@@ -22,7 +22,7 @@ NNS is built around partial moments, the lower and upper components of variance,
 |---|---|
 | Distribution package | `ovvo-nns` |
 | Import package | `nns` |
-| Current version | `1.0.3` |
+| Current version | `1.0.4` |
 | Python | `>=3.11` |
 | Required runtime dependencies | NumPy, SciPy |
 | R required at runtime | No |
