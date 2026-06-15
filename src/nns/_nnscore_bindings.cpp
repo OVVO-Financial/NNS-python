@@ -12,6 +12,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "nns/nns.hpp"
@@ -375,16 +376,17 @@ double gravity_exact_impl(const double* data, std::size_t raw_n) {
 // `_gravity`. The caller (Python wrapper) resolves max_order exactly as
 // nns_part does and falls back to pure Python for the mean/median/mode paths,
 // so this only implements the gravity ("off") aggregation.
-nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_order, int obs_req,
-                      bool min_obs_stop) {
-  const std::size_t n = checked_size(xa, "x");
-  if (ya.shape(0) != n) {
-    throw std::invalid_argument("x and y must have the same length.");
-  }
-  const double* x = xa.data();
-  const double* y = ya.data();
 
-  // floor_order = floor(log2(max(1, n))), computed exactly via bit position.
+struct PartitionLabels {
+  std::vector<std::string> quadrant;
+  std::vector<std::string> prior;
+  int depth;
+};
+
+// Shared partition loop (noise="off"): assigns quadrant and prior.quadrant
+// labels exactly as nns.part.nns_part does for the gravity path.
+PartitionLabels partition_labels(const double* x, const double* y, std::size_t n, bool xonly,
+                                 int max_order, int obs_req, bool min_obs_stop) {
   int floor_order = 0;
   {
     std::size_t v = (n < 1U) ? 1U : n;
@@ -401,7 +403,6 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
   int depth = 0;
 
   while (depth < max_order && depth < floor_order) {
-    // np.unique(quad) -> sorted labels, inverse, counts (std::map sorts keys).
     std::map<std::string, int> label_idx;
     for (const std::string& s : quad) {
       label_idx.emplace(s, 0);
@@ -431,10 +432,10 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
       std::vector<double> gx;
       std::vector<double> gy;
       gx.reserve(members[gi].size());
-      gy.reserve(members[gi].size());
+      if (!xonly) gy.reserve(members[gi].size());
       for (const std::size_t i : members[gi]) {
         gx.push_back(x[i]);
-        gy.push_back(y[i]);
+        if (!xonly) gy.push_back(y[i]);
       }
       const double cx = gravity_exact_impl(gx.data(), gx.size());
       const double cy = xonly ? 0.0 : gravity_exact_impl(gy.data(), gy.size());
@@ -470,18 +471,19 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
       }
     }
   }
+  return {std::move(quad), std::move(prior), depth};
+}
 
-  // regression points grouped by prior.quadrant (sorted labels via std::map).
+// regression points grouped by prior.quadrant (sorted labels via std::map),
+// with the discrete half-up rounding of x that _is_discrete_like_r triggers.
+void regression_points_from_prior(const double* x, const double* y, std::size_t n,
+                                  const std::vector<std::string>& prior, bool x_discrete,
+                                  std::vector<std::string>* rp_quadrant, std::vector<double>* rp_x,
+                                  std::vector<double>* rp_y) {
   std::map<std::string, std::vector<std::size_t>> prior_groups;
   for (std::size_t i = 0; i < n; ++i) {
     prior_groups[prior[i]].push_back(i);
   }
-  std::vector<std::string> rp_quadrant;
-  std::vector<double> rp_x;
-  std::vector<double> rp_y;
-  rp_quadrant.reserve(prior_groups.size());
-  rp_x.reserve(prior_groups.size());
-  rp_y.reserve(prior_groups.size());
   for (const auto& kv : prior_groups) {
     std::vector<double> gx;
     std::vector<double> gy;
@@ -491,37 +493,53 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
       gx.push_back(x[i]);
       gy.push_back(y[i]);
     }
-    rp_quadrant.push_back(kv.first);
-    rp_x.push_back(gravity_exact_impl(gx.data(), gx.size()));
-    rp_y.push_back(gravity_exact_impl(gy.data(), gy.size()));
+    if (rp_quadrant != nullptr) rp_quadrant->push_back(kv.first);
+    rp_x->push_back(gravity_exact_impl(gx.data(), gx.size()));
+    rp_y->push_back(gravity_exact_impl(gy.data(), gy.size()));
   }
-
-  // _is_discrete_like_r(x) -> round regression-point x half-up.
-  bool any_finite = false;
-  bool all_integral = true;
-  for (std::size_t i = 0; i < n; ++i) {
-    if (std::isfinite(x[i])) {
-      any_finite = true;
-      if (x[i] != std::floor(x[i])) {
-        all_integral = false;
-        break;
-      }
-    }
-  }
-  if (any_finite && all_integral) {
-    for (double& v : rp_x) {
+  if (x_discrete) {
+    for (double& v : *rp_x) {
       const double f = std::floor(v);
       v = (v - f < 0.5) ? f : std::ceil(v);
     }
   }
+}
+
+bool x_is_discrete_like_r(const double* x, std::size_t n) {
+  bool any_finite = false;
+  for (std::size_t i = 0; i < n; ++i) {
+    if (std::isfinite(x[i])) {
+      any_finite = true;
+      if (x[i] != std::floor(x[i])) return false;
+    }
+  }
+  return any_finite;
+}
+
+nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_order, int obs_req,
+                      bool min_obs_stop) {
+  const std::size_t n = checked_size(xa, "x");
+  if (ya.shape(0) != n) {
+    throw std::invalid_argument("x and y must have the same length.");
+  }
+  const double* x = xa.data();
+  const double* y = ya.data();
+
+  PartitionLabels pl = partition_labels(x, y, n, xonly, max_order, obs_req, min_obs_stop);
+
+  std::vector<std::string> rp_quadrant;
+  std::vector<double> rp_x;
+  std::vector<double> rp_y;
+  regression_points_from_prior(x, y, n, pl.prior, x_is_discrete_like_r(x, n), &rp_quadrant, &rp_x,
+                               &rp_y);
 
   std::vector<double> dt_x(x, x + n);
   std::vector<double> dt_y(y, y + n);
   nb::dict dt;
   dt["x"] = std::move(dt_x);
   dt["y"] = std::move(dt_y);
-  dt["quadrant"] = std::move(quad);
-  dt["prior.quadrant"] = std::move(prior);
+  dt["quadrant"] = std::move(pl.quadrant);
+  dt["prior.quadrant"] = std::move(pl.prior);
 
   nb::dict regression_points;
   regression_points["quadrant"] = std::move(rp_quadrant);
@@ -529,7 +547,7 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
   regression_points["y"] = std::move(rp_y);
 
   nb::dict out;
-  out["order"] = depth;
+  out["order"] = pl.depth;
   out["dt"] = dt;
   out["regression.points"] = regression_points;
   return out;
@@ -889,6 +907,182 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
   return std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
 }
 
+// --- NNS.reg multivariate-call regression points ----------------------------
+// Faithful port of nns.regression._nns_reg_univariate_core's multivariate_call
+// path for the common regime: noise="off", not class_mode, not smooth, the
+// standard XONLY partition branch (dependence != 1, integer dep_order). The
+// Python wrapper computes `dependence`/`dep_order` and gates on this regime,
+// falling back to pure Python otherwise.
+
+// _consolidate_points: finite filter, lexsort by (x, y), unique x, gravity y.
+void consolidate_points(const std::vector<double>& xin, const std::vector<double>& yin,
+                        std::vector<double>* ux, std::vector<double>* uy) {
+  std::vector<std::pair<double, double>> pts;
+  pts.reserve(xin.size());
+  for (std::size_t i = 0; i < xin.size(); ++i) {
+    if (std::isfinite(xin[i]) && std::isfinite(yin[i])) pts.emplace_back(xin[i], yin[i]);
+  }
+  std::sort(pts.begin(), pts.end(), [](const std::pair<double, double>& a,
+                                       const std::pair<double, double>& b) {
+    if (a.first != b.first) return a.first < b.first;
+    return a.second < b.second;
+  });
+  std::size_t i = 0;
+  while (i < pts.size()) {
+    const double cx = pts[i].first;
+    std::vector<double> gy;
+    std::size_t j = i;
+    while (j < pts.size() && pts[j].first == cx) {
+      gy.push_back(pts[j].second);
+      ++j;
+    }
+    ux->push_back(cx);
+    uy->push_back(gravity_exact_impl(gy.data(), gy.size()));
+    i = j;
+  }
+}
+
+double mean_of_unique(std::vector<double> v) {
+  std::sort(v.begin(), v.end());
+  v.erase(std::unique(v.begin(), v.end()), v.end());
+  return np_mean(v.data(), v.size());
+}
+
+// _edge_lm_fit: fast_lm then evaluate at the low/high edge of x.
+double edge_lm_fit(const std::vector<double>& xx, const std::vector<double>& yy, bool low) {
+  const nns::FastLmResult fit = nns::fast_lm(xx.data(), yy.data(), xx.size());
+  const double intercept = fit.coef[0];
+  const double slope = fit.coef[1];
+  double edge = xx[0];
+  for (double v : xx) edge = low ? std::min(edge, v) : std::max(edge, v);
+  return intercept + slope * edge;
+}
+
+// _endpoint_y for the non-class path.
+double endpoint_y(const double* x, const double* y, std::size_t n, const std::vector<double>& rp_x,
+                  bool low, double dependence) {
+  double boundary = low ? *std::min_element(x, x + n) : *std::max_element(x, x + n);
+  double reg_range = low ? *std::min_element(rp_x.begin(), rp_x.end())
+                         : *std::max_element(rp_x.begin(), rp_x.end());
+  const double mid_range = 0.5 * (boundary + reg_range);
+
+  std::vector<double> y_boundary, y_mid, x_mid, x_boundary;
+  for (std::size_t i = 0; i < n; ++i) {
+    const bool in_boundary = low ? (x[i] <= reg_range) : (x[i] >= reg_range);
+    const bool in_mid = low ? (x[i] <= mid_range) : (x[i] >= mid_range);
+    if (in_boundary) {
+      y_boundary.push_back(y[i]);
+      x_boundary.push_back(x[i]);
+    }
+    if (in_mid) {
+      y_mid.push_back(y[i]);
+      x_mid.push_back(x[i]);
+    }
+  }
+  std::size_t unique_x_mid;
+  {
+    std::vector<double> xm = x_mid;
+    std::sort(xm.begin(), xm.end());
+    unique_x_mid = static_cast<std::size_t>(std::distance(xm.begin(), std::unique(xm.begin(), xm.end())));
+  }
+
+  if (unique_x_mid > 1U && y_boundary.size() > 5U) {
+    if (dependence < 0.95 && y_boundary.size() > 1U && y_mid.size() > 1U) {
+      const double fit_boundary = edge_lm_fit(x_boundary, y_boundary, low);
+      const double fit_mid = edge_lm_fit(x_mid, y_mid, low);
+      return (fit_boundary * static_cast<double>(y_boundary.size()) +
+              fit_mid * static_cast<double>(y_mid.size())) /
+             static_cast<double>(y_boundary.size() + y_mid.size());
+    }
+    std::vector<double> boundary_values;
+    for (std::size_t i = 0; i < n; ++i)
+      if (x[i] == boundary) boundary_values.push_back(y[i]);
+    return mean_of_unique(std::move(boundary_values));
+  }
+  std::vector<double> at_boundary;
+  for (std::size_t i = 0; i < n; ++i)
+    if (x[i] == boundary) at_boundary.push_back(y[i]);
+  return gravity_exact_impl(at_boundary.data(), at_boundary.size());
+}
+
+nb::dict nns_reg_mv(const Vector& xa, const Vector& ya, double dependence, int dep_order) {
+  const std::size_t n = checked_size(xa, "x");
+  if (ya.shape(0) != n) {
+    throw std::invalid_argument("x and y must have the same length.");
+  }
+  const double* x = xa.data();
+  const double* y = ya.data();
+  const double minx = *std::min_element(x, x + n);
+  const double maxx = *std::max_element(x, x + n);
+  const double miny = *std::min_element(y, y + n);
+  const double maxy = *std::max_element(y, y + n);
+
+  // XONLY, noise="off" partition -> regression points.
+  PartitionLabels pl = partition_labels(x, y, n, /*xonly=*/true, dep_order, /*obs_req=*/0,
+                                        /*min_obs_stop=*/true);
+  std::vector<double> prp_x, prp_y;
+  regression_points_from_prior(x, y, n, pl.prior, x_is_discrete_like_r(x, n), nullptr, &prp_x,
+                               &prp_y);
+
+  // _initial_regression_points: clamp x to [minx, maxx], then consolidate.
+  for (double& v : prp_x) v = std::min(maxx, std::max(v, minx));
+  std::vector<double> rp_x, rp_y;
+  consolidate_points(prp_x, prp_y, &rp_x, &rp_y);
+
+  // _central_point (non-class): median row positions of 1..m -> (m+1)/2.
+  const double med = (static_cast<double>(rp_x.size()) + 1.0) / 2.0;
+  const long r0 = static_cast<long>(std::floor(med));
+  const long r1 = static_cast<long>(std::ceil(med));
+  const double cxv0 = rp_x[static_cast<std::size_t>(r0) - 1U];
+  const double cxv1 = rp_x[static_cast<std::size_t>(r1) - 1U];
+  double central_y;
+  if (r0 != r1) {
+    std::vector<double> gy;
+    for (std::size_t i = 0; i < n; ++i)
+      if (x[i] >= cxv0 && x[i] <= cxv1) gy.push_back(y[i]);
+    central_y = gravity_exact_impl(gy.data(), gy.size());
+  } else {
+    central_y = rp_y[static_cast<std::size_t>(r0) - 1U];
+  }
+  const double cxvals[2] = {cxv0, cxv1};
+  const double central_x = gravity_exact_impl(cxvals, 2);
+
+  // _append_and_consolidate_point(central).
+  {
+    std::vector<double> ax = rp_x, ay = rp_y;
+    ax.push_back(central_x);
+    ay.push_back(central_y);
+    rp_x.clear();
+    rp_y.clear();
+    consolidate_points(ax, ay, &rp_x, &rp_y);
+  }
+
+  // _endpoint_y_values (non-class, dependence < 1 so the else branch).
+  const double min_y = endpoint_y(x, y, n, rp_x, /*low=*/true, dependence);
+  const double max_y = endpoint_y(x, y, n, rp_x, /*low=*/false, dependence);
+  {
+    std::vector<double> ax = rp_x, ay = rp_y;
+    ax.push_back(minx);
+    ax.push_back(maxx);
+    ax.push_back(central_x);
+    ay.push_back(min_y);
+    ay.push_back(max_y);
+    ay.push_back(central_y);
+    rp_x.clear();
+    rp_y.clear();
+    consolidate_points(ax, ay, &rp_x, &rp_y);
+  }
+
+  // Final clamps.
+  for (double& v : rp_x) v = std::min(maxx, std::max(v, minx));
+  for (double& v : rp_y) v = std::min(maxy, std::max(v, miny));
+
+  nb::dict out;
+  out["x"] = std::move(rp_x);
+  out["y"] = std::move(rp_y);
+  return out;
+}
+
 }  // namespace
 
 NB_MODULE(_nnscore, m) {
@@ -1038,4 +1232,6 @@ NB_MODULE(_nnscore, m) {
         return copula_nd(data.data(), n, d, target.data(), continuous);
       },
       nb::arg("data"), nb::arg("n"), nb::arg("d"), nb::arg("target"), nb::arg("continuous"));
+  m.def("nns_reg_mv", &nns_reg_mv, nb::arg("x"), nb::arg("y"), nb::arg("dependence"),
+        nb::arg("dep_order"));
 }
