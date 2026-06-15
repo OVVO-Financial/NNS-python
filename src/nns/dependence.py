@@ -17,6 +17,16 @@ def nns_dep(
 ) -> dict[str, float]:
     """Return NNS nonlinear correlation and dependence for a pair of variables."""
     x_values, y_values = _as_pair(x, y)
+
+    native = nnscore()
+    if native is not None and hasattr(native, "nns_dep_pair"):
+        res = native.nns_dep_pair(
+            np.ascontiguousarray(x_values),
+            np.ascontiguousarray(y_values),
+            bool(asym),
+        )
+        return {"Correlation": float(res["Correlation"]), "Dependence": float(res["Dependence"])}
+
     if _is_constant(x_values) or _is_constant(y_values):
         return {"Correlation": 0.0, "Dependence": 0.0}
 
