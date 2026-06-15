@@ -3,6 +3,9 @@
 ## Changed files
 
 - `R/ARMA.R`
+- `R/RcppExports.R`
+- `src/RcppExports.cpp`
+- `src/internal_functions.cpp`
 
 ## Affected Python modules
 
@@ -23,4 +26,8 @@
 
 - Fresh cache required: `False`
 - Export review required: `False`
-- Unmapped R files present: `False`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/RcppExports.R`

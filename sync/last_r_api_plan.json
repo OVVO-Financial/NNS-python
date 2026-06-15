@@ -1,6 +1,9 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "R/ARMA.R",
+    "R/RcppExports.R",
+    "src/RcppExports.cpp",
+    "src/internal_functions.cpp"
   ],
   "affected_python_modules": [
     "src/nns/arma.py"
@@ -16,7 +19,9 @@
   ],
   "requires_fresh_cache": false,
   "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/RcppExports.R"
+  ],
   "warnings": []
 }
