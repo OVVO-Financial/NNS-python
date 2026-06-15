@@ -1,3 +1,6 @@
 [
-  "R/ARMA.R"
+  "R/ARMA.R",
+  "R/RcppExports.R",
+  "src/RcppExports.cpp",
+  "src/internal_functions.cpp"
 ]
