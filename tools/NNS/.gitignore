@@ -1,0 +1,7 @@
+tests/testthat/*.pdf
+.Rproj.user
+.RData
+.Rhistory
+NNS.Rproj
+src/*.o
+src/*.dll
