@@ -718,7 +718,7 @@ wheels = [
 
 [[package]]
 name = "ovvo-nns"
-version = "1.0.0a0"
+version = "1.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
