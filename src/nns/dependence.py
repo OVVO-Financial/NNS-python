@@ -6,6 +6,7 @@ from collections import defaultdict
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._native import nnscore
 from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
 
 
@@ -276,6 +277,10 @@ def _as_nd_moment_inputs(
 
 
 def _gravity(x: NDArray[np.float64]) -> float:
+    native = nnscore()
+    if native is not None and hasattr(native, "gravity_exact"):
+        values = np.ascontiguousarray(np.asarray(x, dtype=np.float64).reshape(-1))
+        return float(native.gravity_exact(values))
     values = np.sort(x[np.isfinite(x)])
     n = values.size
     if n == 0:

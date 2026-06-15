@@ -3,8 +3,11 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -226,6 +229,137 @@ nb::dict stochastic_superiority_dict(const Vector& x, const Vector& y) {
   return out;
 }
 
+// Bit-faithful port of the pure-Python NNS gravity central tendency
+// (`nns.dependence._gravity` and its helpers `_quartiles_like_r_code`,
+// `_interpolate_position`, `_simple_bin_counts`). This is intentionally a
+// separate symbol from the vendored `nns::gravity`, which derives from a
+// different revision and diverges from the R-faithful Python the parity suite
+// enforces. Non-finite values are filtered and the remainder is sorted, exactly
+// as the Python does, so the caller may pass a raw array.
+double gravity_at_position(const std::vector<double>& sorted, double position) {
+  const std::size_t n = sorted.size();
+  const long floor_pos = std::min<long>(static_cast<long>(n),
+                                         std::max<long>(1L, static_cast<long>(std::floor(position))));
+  const long ceil_pos = std::min<long>(static_cast<long>(n),
+                                        std::max<long>(1L, static_cast<long>(std::ceil(position))));
+  const double weight = position - std::floor(position);
+  const double lo = sorted[static_cast<std::size_t>(floor_pos) - 1U];
+  const double hi = sorted[static_cast<std::size_t>(ceil_pos) - 1U];
+  return lo + weight * (hi - lo);
+}
+
+double gravity_exact_impl(const double* data, std::size_t raw_n) {
+  std::vector<double> values;
+  values.reserve(raw_n);
+  for (std::size_t i = 0; i < raw_n; ++i) {
+    if (std::isfinite(data[i])) {
+      values.push_back(data[i]);
+    }
+  }
+  const std::size_t n = values.size();
+  if (n == 0U) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  std::sort(values.begin(), values.end());
+  if (n <= 3U) {
+    if (n == 1U) return values[0];
+    if (n == 2U) return 0.5 * (values[0] + values[1]);
+    return values[1];  // numpy median of 3 sorted values
+  }
+  if (values.front() == values.back()) {
+    return values[0];
+  }
+  const double value_range = values.back() - values.front();
+  if (value_range == 0.0) {
+    return values[0];
+  }
+
+  // _quartiles_like_r_code
+  const double dn = static_cast<double>(n);
+  const double p25 = dn * 0.25, p50 = dn * 0.50, p75 = dn * 0.75;
+  double q1, q2, q3;
+  if (n % 2U == 0U) {
+    q1 = values[static_cast<std::size_t>(std::max<long>(1L, static_cast<long>(std::floor(p25)))) - 1U];
+    q2 = values[static_cast<std::size_t>(std::max<long>(1L, static_cast<long>(std::floor(p50)))) - 1U];
+    q3 = values[static_cast<std::size_t>(std::max<long>(1L, static_cast<long>(std::floor(p75)))) - 1U];
+  } else {
+    q1 = gravity_at_position(values, p25);
+    const long f50 = std::min<long>(static_cast<long>(n), std::max<long>(1L, static_cast<long>(std::floor(p50))));
+    const long c50 = std::min<long>(static_cast<long>(n), std::max<long>(1L, static_cast<long>(std::ceil(p50))));
+    q2 = 0.5 * (values[static_cast<std::size_t>(f50) - 1U] + values[static_cast<std::size_t>(c50) - 1U]);
+    q3 = gravity_at_position(values, p75);
+  }
+
+  double width = (q3 - q1) * std::pow(dn, -0.5);
+  if (!(width > 0.0) || !std::isfinite(width)) {
+    width = value_range / 128.0;
+  }
+
+  // _simple_bin_counts
+  const double origin = values.front();
+  const double int_max = static_cast<double>(std::numeric_limits<int32_t>::max());
+  long bin_count;
+  if (!(width > 0.0) || !std::isfinite(width)) {
+    bin_count = 1;
+  } else {
+    const double bin_ratio = (values.back() - origin) / width + 1e-12;
+    if (!std::isfinite(bin_ratio) || bin_ratio > int_max) {
+      bin_count = 1;
+    } else {
+      bin_count = static_cast<long>(std::floor(bin_ratio)) + 1;
+    }
+  }
+  bin_count = std::min<long>(std::max<long>(1L, bin_count), static_cast<long>(4U * n));
+  const std::size_t nb = static_cast<std::size_t>(bin_count);
+
+  std::vector<int64_t> counts(nb, 0);
+  if (nb == 1U) {
+    counts[0] = static_cast<int64_t>(n);
+  } else {
+    for (const double v : values) {
+      long idx = static_cast<long>(std::floor((v - origin) / width));
+      idx = std::min<long>(std::max<long>(0L, idx), bin_count - 1);
+      counts[static_cast<std::size_t>(idx)] += 1;
+    }
+  }
+
+  int64_t max_count = counts[0];
+  for (const int64_t c : counts) {
+    if (c > max_count) max_count = c;
+  }
+  std::size_t n_max = 0, last_max = 0;
+  for (std::size_t i = 0; i < nb; ++i) {
+    if (counts[i] == max_count) {
+      ++n_max;
+      last_max = i;
+    }
+  }
+  std::size_t lo, hi;
+  if (n_max == 1U) {
+    const long center = static_cast<long>(last_max);
+    lo = static_cast<std::size_t>(std::max<long>(0L, center - 1));
+    hi = static_cast<std::size_t>(std::min<long>(bin_count - 1, center + 1));
+  } else {
+    lo = 0;
+    hi = nb - 1U;
+  }
+
+  double denom = 0.0, weighted = 0.0;
+  for (std::size_t i = lo; i <= hi; ++i) {
+    const double bin_name = origin + static_cast<double>(i) * width;
+    denom += static_cast<double>(counts[i]);
+    weighted += bin_name * static_cast<double>(counts[i]);
+  }
+  const double mode_gravity =
+      denom > 0.0 ? weighted / denom : origin + static_cast<double>((lo + hi) / 2U) * width;
+
+  double sum = 0.0;
+  for (const double v : values) sum += v;
+  const double mean = sum / dn;
+
+  return 0.25 * (q2 + mode_gravity + mean + 0.5 * (q1 + q3));
+}
+
 }  // namespace
 
 NB_MODULE(_nnscore, m) {
@@ -357,4 +491,7 @@ NB_MODULE(_nnscore, m) {
   });
 
   m.def("stochastic_superiority", &stochastic_superiority_dict);
+  m.def("gravity_exact", [](const Vector& x) {
+    return gravity_exact_impl(x.data(), x.shape(0));
+  });
 }
