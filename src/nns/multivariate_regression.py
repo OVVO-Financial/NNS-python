@@ -29,7 +29,7 @@ def nns_m_reg(
     point_est: NDArray[np.float64] | None = None,
     point_only: bool = False,
     plot: bool = False,
-    residual_plot: bool = True,
+    residual_plot: bool = False,
     location: object | None = None,
     noise_reduction: NoiseReduction = "off",
     dist: str = "L2",
