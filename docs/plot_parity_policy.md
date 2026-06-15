@@ -54,9 +54,20 @@ When a ported function has an R `plot` argument, the Python function keeps its
 value-only **return** contract (parity asserts only on the returned value). As a
 side effect, passing `plot=True` renders a Matplotlib figure through the
 `nns.plotting` layer — `nns_reg`, `nns_m_reg`, `nns_arma`, `nns_arma_optim`,
-`nns_cdf`, and `nns_seas` are wired this way (plus `residual_plot=True` for the
-regression functions). The figures are color/element-faithful but never
-pixel-compared, and computation with the default `plot=False` opens no figure.
+`nns_cdf`, and `nns_seas` are wired this way (plus an explicit
+`residual_plot=True` for the regression functions). The figures are
+color/element-faithful but never pixel-compared. Every plotting flag —
+`plot`, `plot_regions`, and `residual_plot` on both `nns_reg` and `nns_m_reg`
+— defaults to `False`, so computation opens no figure unless a flag is set
+explicitly.
+
+This matters for the composed estimators. `nns_boost`, `nns_stack`,
+`nns_var`, and any other function that calls `nns_reg`/`nns_m_reg` internally
+never pass a plotting flag, so they open no figures during fitting — even when
+they invoke the regression core hundreds of times. `nns_reg` forwards its own
+`plot`/`residual_plot` flags down to `nns_m_reg` on the multivariate path, so
+the caller's flags (default `False`) are the single source of truth and the
+multivariate core never plots on its own default.
 
 ## Inventory of committed graphics artifacts
 

@@ -121,10 +121,8 @@ def nns_reg(
             dist=dist,
             confidence_interval=confidence_interval,
             class_levels=class_levels,
-        )
-        _maybe_render_reg(
-            result, plot=plot, plot_regions=plot_regions,
-            residual_plot=residual_plot, point_est=point_est,
+            plot=plot,
+            residual_plot=residual_plot,
         )
         return result
 
