@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm, _is_fcl
+from nns._native import nnscore
 from nns.categorical import encode_factor_codes, factor_2_dummy_fr
 from nns.causation import _uni_caus
 from nns.central_tendencies import nns_mode
@@ -244,6 +245,34 @@ def _nns_reg_univariate_core(
 
     dependence = _regression_dependence(x_values, y_values)
     dep_order = _dep_reduced_order(dependence, order, y_values.size)
+
+    # Native fast path for the multivariate-call regression-points contract.
+    # Covers the common regime (noise="off", non-class, non-smooth, standard
+    # XONLY partition branch); other regimes fall through to pure Python. This
+    # carries the native acceleration across every NNS.reg multivariate caller
+    # (nns_m_reg and thus NNS.stack / NNS.boost), not just nns_arma.
+    if (
+        multivariate_call
+        and not class_mode
+        and not smooth
+        and noise == "off"
+        and dependence != 1.0
+        and dep_order != "max"
+        and not isinstance(order, str)
+    ):
+        native = nnscore()
+        if native is not None and hasattr(native, "nns_reg_mv"):
+            res = native.nns_reg_mv(
+                np.ascontiguousarray(x_values),
+                np.ascontiguousarray(y_values),
+                float(dependence),
+                int(dep_order),
+            )
+            return {
+                "x": np.asarray(res["x"], dtype=np.float64),
+                "y": np.asarray(res["y"], dtype=np.float64),
+            }
+
     part_map = _partition_for_regression(x_values, y_values, dependence, dep_order, order, noise)
     nns_ids = part_map["dt"]["quadrant"].astype(str)
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import math
-from typing import Literal, TypeAlias, TypedDict, cast
+from typing import Any, Literal, TypeAlias, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._native import nnscore
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity
 
@@ -69,6 +70,19 @@ def nns_part(
 
     xonly = type is not None
     n = x_values.size
+
+    native = nnscore()
+    if native is not None and hasattr(native, "nns_part_off") and noise == "off":
+        res = native.nns_part_off(
+            np.ascontiguousarray(x_values),
+            np.ascontiguousarray(y_values),
+            xonly,
+            int(max_order),
+            int(obs_req),
+            bool(min_obs_stop),
+        )
+        return _part_result_from_native(res, x_values, y_values)
+
     floor_order = math.floor(math.log2(max(1, n)))
     quadrants = np.full(n, "q", dtype=f"<U{max_order + 1}")
     prior_quadrants = np.full(n, "pq", dtype=f"<U{max_order + 1}")
@@ -129,6 +143,30 @@ def nns_part(
             "prior.quadrant": prior_quadrants.astype(str),
         },
         "regression.points": regression_points,
+    }
+
+
+def _part_result_from_native(
+    res: dict[str, Any],
+    x_values: NDArray[np.float64],
+    y_values: NDArray[np.float64],
+) -> PartResult:
+    """Rebuild the NNS.part payload from the native nns_part_off result."""
+    dt = res["dt"]
+    rp = res["regression.points"]
+    return {
+        "order": int(res["order"]),
+        "dt": {
+            "x": x_values.copy(),
+            "y": y_values.copy(),
+            "quadrant": np.asarray(dt["quadrant"], dtype=str),
+            "prior.quadrant": np.asarray(dt["prior.quadrant"], dtype=str),
+        },
+        "regression.points": {
+            "quadrant": np.asarray(rp["quadrant"], dtype=str),
+            "x": np.asarray(rp["x"], dtype=np.float64),
+            "y": np.asarray(rp["y"], dtype=np.float64),
+        },
     }
 
 
