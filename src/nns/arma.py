@@ -433,9 +433,18 @@ def nns_arma(
         )
         return _finish(estimates)
 
-    current = values
+    # Pre-allocate the full history-plus-horizon buffer once and fill it by
+    # index. Appending the recursive estimate via np.concatenate at every step
+    # reallocates and copies the entire series each iteration, which is O(N^2)
+    # over a long horizon; writing into a fixed buffer and advancing a length
+    # pointer is O(1) per step. The helpers receive a view of the populated
+    # prefix, so the math is identical to the growing-array version.
+    buffer = np.empty(values.size + horizon, dtype=np.float64)
+    buffer[: values.size] = values
+    current_len = values.size
     lin_regression_estimates = np.array([], dtype=np.float64)
     for index in range(horizon):
+        current = buffer[:current_len]
         if dynamic:
             lags, lag_weights = _resolve_lags_and_weights(
                 current,
@@ -496,7 +505,8 @@ def nns_arma(
             estimate = 0.0
 
         estimates[index] = estimate
-        current = np.concatenate((current, np.array([estimate], dtype=np.float64)))
+        buffer[current_len] = estimate
+        current_len += 1
 
     lin_resid = 0.0
     if pred_int is not None and method_l != "means" and lin_regression_estimates.size:
