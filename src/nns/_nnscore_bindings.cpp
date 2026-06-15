@@ -4,10 +4,12 @@
 #include <nanobind/stl/vector.h>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -360,6 +362,173 @@ double gravity_exact_impl(const double* data, std::size_t raw_n) {
   return 0.25 * (q2 + mode_gravity + mean + 0.5 * (q1 + q3));
 }
 
+// Bit-faithful port of the pure-Python NNS.part recursive partitioner
+// (`nns.part.nns_part`) for the noise_reduction="off" path that the NNS.reg
+// numeric regression / nns_arma hot path uses exclusively. Centers and
+// regression points are aggregated with gravity_exact, matching the Python
+// `_gravity`. The caller (Python wrapper) resolves max_order exactly as
+// nns_part does and falls back to pure Python for the mean/median/mode paths,
+// so this only implements the gravity ("off") aggregation.
+nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_order, int obs_req,
+                      bool min_obs_stop) {
+  const std::size_t n = checked_size(xa, "x");
+  if (ya.shape(0) != n) {
+    throw std::invalid_argument("x and y must have the same length.");
+  }
+  const double* x = xa.data();
+  const double* y = ya.data();
+
+  // floor_order = floor(log2(max(1, n))), computed exactly via bit position.
+  int floor_order = 0;
+  {
+    std::size_t v = (n < 1U) ? 1U : n;
+    while ((static_cast<std::size_t>(1) << (floor_order + 1)) <= v) {
+      ++floor_order;
+    }
+  }
+  if (max_order == 0) {
+    max_order = 1;
+  }
+
+  std::vector<std::string> quad(n, "q");
+  std::vector<std::string> prior(n, "pq");
+  int depth = 0;
+
+  while (depth < max_order && depth < floor_order) {
+    // np.unique(quad) -> sorted labels, inverse, counts (std::map sorts keys).
+    std::map<std::string, int> label_idx;
+    for (const std::string& s : quad) {
+      label_idx.emplace(s, 0);
+    }
+    int g = 0;
+    std::vector<std::string> labels;
+    labels.reserve(label_idx.size());
+    for (auto& kv : label_idx) {
+      kv.second = g++;
+      labels.push_back(kv.first);
+    }
+    const int ngroups = g;
+    std::vector<int> counts(ngroups, 0);
+    std::vector<std::vector<std::size_t>> members(ngroups);
+    for (std::size_t i = 0; i < n; ++i) {
+      const int gi = label_idx[quad[i]];
+      counts[gi] += 1;
+      members[gi].push_back(i);
+    }
+
+    bool any_split = false;
+    for (int gi = 0; gi < ngroups; ++gi) {
+      if (counts[gi] <= obs_req) {
+        continue;
+      }
+      any_split = true;
+      std::vector<double> gx;
+      std::vector<double> gy;
+      gx.reserve(members[gi].size());
+      gy.reserve(members[gi].size());
+      for (const std::size_t i : members[gi]) {
+        gx.push_back(x[i]);
+        gy.push_back(y[i]);
+      }
+      const double cx = gravity_exact_impl(gx.data(), gx.size());
+      const double cy = xonly ? 0.0 : gravity_exact_impl(gy.data(), gy.size());
+      for (const std::size_t i : members[gi]) {
+        prior[i] = labels[gi];
+        if (xonly) {
+          const bool low_x = std::isfinite(x[i]) && std::isfinite(cx) && (x[i] > cx);
+          quad[i] += (low_x ? '2' : '1');
+        } else {
+          const bool low_x = std::isfinite(x[i]) && std::isfinite(cx) && (x[i] <= cx);
+          const bool low_y = std::isfinite(y[i]) && std::isfinite(cy) && (y[i] <= cy);
+          const int qn = 1 + (low_x ? 1 : 0) + 2 * (low_y ? 1 : 0);
+          quad[i] += static_cast<char>('0' + qn);
+        }
+      }
+    }
+    if (!any_split) {
+      break;
+    }
+    ++depth;
+
+    if (min_obs_stop) {
+      std::map<std::string, int> post_counts;
+      for (const std::string& s : quad) {
+        post_counts[s] += 1;
+      }
+      int min_count = INT_MAX;
+      for (const auto& kv : post_counts) {
+        min_count = std::min(min_count, kv.second);
+      }
+      if (min_count <= obs_req) {
+        break;
+      }
+    }
+  }
+
+  // regression points grouped by prior.quadrant (sorted labels via std::map).
+  std::map<std::string, std::vector<std::size_t>> prior_groups;
+  for (std::size_t i = 0; i < n; ++i) {
+    prior_groups[prior[i]].push_back(i);
+  }
+  std::vector<std::string> rp_quadrant;
+  std::vector<double> rp_x;
+  std::vector<double> rp_y;
+  rp_quadrant.reserve(prior_groups.size());
+  rp_x.reserve(prior_groups.size());
+  rp_y.reserve(prior_groups.size());
+  for (const auto& kv : prior_groups) {
+    std::vector<double> gx;
+    std::vector<double> gy;
+    gx.reserve(kv.second.size());
+    gy.reserve(kv.second.size());
+    for (const std::size_t i : kv.second) {
+      gx.push_back(x[i]);
+      gy.push_back(y[i]);
+    }
+    rp_quadrant.push_back(kv.first);
+    rp_x.push_back(gravity_exact_impl(gx.data(), gx.size()));
+    rp_y.push_back(gravity_exact_impl(gy.data(), gy.size()));
+  }
+
+  // _is_discrete_like_r(x) -> round regression-point x half-up.
+  bool any_finite = false;
+  bool all_integral = true;
+  for (std::size_t i = 0; i < n; ++i) {
+    if (std::isfinite(x[i])) {
+      any_finite = true;
+      if (x[i] != std::floor(x[i])) {
+        all_integral = false;
+        break;
+      }
+    }
+  }
+  if (any_finite && all_integral) {
+    for (double& v : rp_x) {
+      const double f = std::floor(v);
+      v = (v - f < 0.5) ? f : std::ceil(v);
+    }
+  }
+
+  std::vector<double> dt_x(x, x + n);
+  std::vector<double> dt_y(y, y + n);
+  nb::dict dt;
+  dt["x"] = std::move(dt_x);
+  dt["y"] = std::move(dt_y);
+  dt["quadrant"] = std::move(quad);
+  dt["prior.quadrant"] = std::move(prior);
+
+  nb::dict regression_points;
+  regression_points["quadrant"] = std::move(rp_quadrant);
+  regression_points["x"] = std::move(rp_x);
+  regression_points["y"] = std::move(rp_y);
+
+  nb::dict out;
+  out["order"] = depth;
+  out["dt"] = dt;
+  out["regression.points"] = regression_points;
+  return out;
+}
+
 }  // namespace
 
 NB_MODULE(_nnscore, m) {
@@ -494,4 +663,6 @@ NB_MODULE(_nnscore, m) {
   m.def("gravity_exact", [](const Vector& x) {
     return gravity_exact_impl(x.data(), x.shape(0));
   });
+  m.def("nns_part_off", &nns_part_off, nb::arg("x"), nb::arg("y"), nb::arg("xonly"),
+        nb::arg("max_order"), nb::arg("obs_req"), nb::arg("min_obs_stop"));
 }
