@@ -1,18 +1,19 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    ".gitignore",
+    "R/Regression.R"
   ],
   "affected_python_modules": [
-    "src/nns/arma.py"
+    "src/nns/multivariate_regression.py",
+    "src/nns/regression.py"
   ],
   "parity_tests": [
     "tests/parity/test_practical_examples.py",
     "tests/parity/test_r13_smoke.py"
   ],
   "cache_scope": [
-    "NNS.ARMA",
-    "NNS.ARMA.optim",
-    "NNS.VAR"
+    "NNS.M.reg",
+    "NNS.reg"
   ],
   "requires_fresh_cache": false,
   "requires_export_review": false,

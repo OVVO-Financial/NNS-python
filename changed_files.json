@@ -1,3 +1,4 @@
 [
-  "R/ARMA.R"
+  ".gitignore",
+  "R/Regression.R"
 ]
