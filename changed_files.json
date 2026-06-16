@@ -1,3 +1,4 @@
 [
-  "R/ARMA.R"
+  "R/Regression.R",
+  "src/nns_reg_points.cpp"
 ]
