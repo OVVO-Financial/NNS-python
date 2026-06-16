@@ -1,3 +1,10 @@
 [
-  "R/ARMA.R"
+  "R/ARMA.R",
+  "R/Dependence.R",
+  "R/RcppExports.R",
+  "R/Regression.R",
+  "src/RcppExports.cpp",
+  "src/central_tendencies.cpp",
+  "src/central_tendencies.h",
+  "src/nns_reg_points.cpp"
 ]
