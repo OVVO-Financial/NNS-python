@@ -1,3 +1,8 @@
 [
-  "R/ARMA.R"
+  "DESCRIPTION",
+  "NNS_13.0.tar.gz",
+  "NNS_13.0.zip",
+  "man/NNS.part.Rd",
+  "src/NNS.dll",
+  "tests/testthat/Rplots.pdf"
 ]

@@ -3,12 +3,15 @@
 - Plan: `sync/last_r_api_plan.json`
 - R checkout: `upstream/NNS`
 - Fresh cache requested: `False`
-- Skip install: `False`
-- Live R recompute: `True`
+- Skip install: `True`
+- Live R recompute: `False`
 
-## Result: live R parity diverged
+## Result: fresh cache required
 
-Mapped parity tests recomputed every R value from the freshly installed live R NNS and the Python implementation did not match. Public Python behavior differs from live R at the recorded commit.
+The plan reports `requires_fresh_cache=true` (for example a `DESCRIPTION` version change). Re-run this workflow with `--fresh-cache` / `fresh_cache=true` to regenerate the parity cache from empty against live R.
 
-Failing command: `/opt/hostedtoolcache/Python/3.11.15/x64/bin/python -m pytest -q -n 0 tests/parity/test_practical_examples.py tests/parity/test_r13_smoke.py`
-Exit status: `1`
+## Workflow step outcome
+
+- `run_live_r_parity_for_changed_api.py` step outcome: `failure`
+- Fresh cache requested: `false`
+- DESCRIPTION changed: `true`

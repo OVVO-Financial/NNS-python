@@ -150,7 +150,52 @@ NNS.reg = function (x, y,
   
   oldw <- getOption("warn")
   options(warn = -1)
-  
+
+  # ---- Lean fast path for multivariate callers (NNS.ARMA / NNS.stack / NNS.boost) ----
+  # Those call NNS.reg(x, y, multivariate.call = TRUE) on numeric vectors many
+  # times. Bypass the full argument-marshalling setup below (match.call/deparse,
+  # factor / dim-reduction handling, frame conversions) and go straight to the
+  # XONLY partition + native regression points. Bit-identical to the full path
+  # for the configuration it handles; every other case falls through unchanged.
+  if (isTRUE(getOption("NNS.native", TRUE)) &&
+      isTRUE(multivariate.call) && is.null(type) && is.null(dim.red.method) &&
+      !isTRUE(smooth) && identical(noise.reduction, "off") &&
+      is.null(dim(x)) && is.null(dim(y)) && is.numeric(x) && is.numeric(y) &&
+      (is.null(order) || (is.numeric(order) && length(order) == 1)) &&
+      !anyNA(x) && !anyNA(y) &&
+      !(is.discrete(y) && length(unique(y)) < sqrt(length(y)))) {
+
+    xv <- as.double(x)
+    yv <- as.numeric(y)
+
+    dependence <- tryCatch(NNS.dep(xv, yv, print.map = FALSE, asym = TRUE)$Dependence, error = function(e) .1)
+    dependence <- tryCatch(mean(c(dependence, NNS.copula(cbind(apply(cbind(xv, xv, yv), 2, function(z) NNS.rescale(z, 0, 1)))))), error = function(e) dependence)
+    dependence[is.na(dependence)] <- 0.1
+
+    rounded_dep <- ifelse(dependence*10 %% 1 < .5, floor(dependence * 10), ceiling(dependence * 10))
+    if(length(yv) < 100){
+      rounded_dep <- rounded_dep / 2
+      rounded_dep <- floor(rounded_dep)
+    }
+    rounded_dep <- max(1, rounded_dep)
+    dep.reduced.order <- max(1, ifelse(is.null(order), rounded_dep, order))
+
+    if (dependence != 1 && !identical(dep.reduced.order, "max") && dependence < 1) {
+      pm <- .NNS.reg.part.xonly(xv, yv, dep.reduced.order)
+      if (length(pm$x) == 0) {
+        pm <- .NNS.reg.part.xonly(xv, yv, min(nchar(pm$dt_quadrant)))
+      }
+      if (length(pm$x) > 0) {
+        res <- NNS_reg_points_cpp(xv, yv,
+                                  as.numeric(pm$x), as.numeric(pm$y),
+                                  as.numeric(dependence), 0.95)
+        data.table::setDT(res)
+        return(res)
+      }
+    }
+    # dependence == 1 / order == "max" / empty partition -> fall through to full path
+  }
+
   if(anyNA(cbind(x,y))) stop("You have some missing values, please address.")
   
   if(plot.regions && !is.null(order) && order == "max") stop('Please reduce the "order" or set "plot.regions = FALSE".')
@@ -480,8 +525,28 @@ NNS.reg = function (x, y,
     }
   }
   
+  # Native fast path for multivariate callers (NNS.ARMA / NNS.stack / NNS.boost).
+  # Reproduces the regression.points pipeline below in C++, avoiding the per-call
+  # data.table overhead that dominates when NNS.reg is invoked many times on small
+  # inputs.  Bit-identical to the pure-R path; gated by getOption("NNS.native").
+  # Only the configuration the pure-R block reaches here is handled natively:
+  # type = NULL, noise.reduction = "off", dependence < 1, dep.reduced.order != "max".
+  if (isTRUE(getOption("NNS.native", TRUE)) &&
+      multivariate.call && is.null(type) && !isTRUE(smooth) &&
+      identical(noise.reduction, "off") && !is.character(order) &&
+      is.numeric(dependence) && length(dependence) == 1 && dependence < 1 &&
+      !identical(dep.reduced.order, "max") &&
+      length(part.map$regression.points$x) > 0) {
+    res <- NNS_reg_points_cpp(as.numeric(x), as.numeric(y),
+                              as.numeric(part.map$regression.points$x),
+                              as.numeric(part.map$regression.points$y),
+                              as.numeric(dependence), stn)
+    data.table::setDT(res)
+    return(res)
+  }
+
   nns.ids <- part.map$dt$quadrant
-  
+
   if(length(part.map$dt$y) > length(y)){
     part.map$dt$x <- pmax(min(x), pmin(part.map$dt$x, max(x)))
     part.map$dt[, y := gravity(y), by = "x"]
@@ -710,9 +775,15 @@ NNS.reg = function (x, y,
   regression.points$y <- pmin(pmax(regression.points$y, min(y)), max(y))
   
   if(!is.null(type) && type=="class") regression.points$y <- pmax(min(y), pmin(max(y), ifelse(regression.points$y %% 1 < 0.5, floor(regression.points$y), ceiling(regression.points$y))))
-  
-  
-  # Coefficients 
+
+  # Multivariate callers (e.g. NNS.ARMA, NNS.stack, NNS.boost) only consume the
+  # consolidated regression points.  regression.points is final at this stage;
+  # the downstream Regression.Coefficients / fitted-value computation below does
+  # not mutate it, so return early to skip that wasted work on every call.
+  if (multivariate.call) return(regression.points[, .(x, y)])
+
+
+  # Coefficients
   Regression.Coefficients <- regression.points[, .(rise, run)]
   Regression.Coefficients <- Regression.Coefficients[complete.cases(Regression.Coefficients), ]
   upper.x <- regression.points[(2:.N), x]
@@ -954,4 +1025,26 @@ NNS.reg = function (x, y,
                    "Fitted.xy" = fitted))
   }
   
+}
+
+# Lean XONLY partition for the native NNS.reg fast path: calls NNS_part_cpp
+# directly and returns the regression points as plain vectors, skipping the
+# data.table construction / setorder / coercion done by NNS.part().  Ordering
+# by quadrant uses radix (C locale), matching data.table::setorder; discrete-x
+# rounding mirrors NNS.part() (round finite values only, preserving infinities).
+# Bit-identical to NNS.part(...)$regression.points.  Defined after NNS.reg (not
+# between its roxygen block and definition) so the docs stay attached to NNS.reg.
+.NNS.reg.part.xonly <- function(x, y, ord) {
+  out <- NNS_part_cpp(x = x, y = y, type = "XONLY",
+                      order_in = as.integer(ord), obs_req = 0L,
+                      min_obs_stop = TRUE, noise_reduction = "off")
+  rp <- out[["regression.points"]]
+  o  <- base::order(rp$quadrant, method = "radix")
+  rpx <- rp$x[o]
+  rpy <- rp$y[o]
+  if (is.discrete(x)) {
+    finite <- is.finite(rpx)
+    rpx[finite] <- ifelse(rpx[finite] %% 1 < 0.5, floor(rpx[finite]), ceiling(rpx[finite]))
+  }
+  list(x = rpx, y = rpy, dt_quadrant = out$dt$quadrant)
 }
