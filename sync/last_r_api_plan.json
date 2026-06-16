@@ -1,22 +1,40 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "R/ARMA.R",
+    "R/Dependence.R",
+    "R/RcppExports.R",
+    "R/Regression.R",
+    "src/RcppExports.cpp",
+    "src/central_tendencies.cpp",
+    "src/central_tendencies.h",
+    "src/nns_reg_points.cpp"
   ],
   "affected_python_modules": [
-    "src/nns/arma.py"
+    "src/nns/arma.py",
+    "src/nns/dependence.py",
+    "src/nns/multivariate_regression.py",
+    "src/nns/regression.py"
   ],
   "parity_tests": [
+    "tests/docs/test_vignette_examples.py",
     "tests/parity/test_practical_examples.py",
     "tests/parity/test_r13_smoke.py"
   ],
   "cache_scope": [
     "NNS.ARMA",
     "NNS.ARMA.optim",
-    "NNS.VAR"
+    "NNS.M.reg",
+    "NNS.VAR",
+    "NNS.copula",
+    "NNS.dep",
+    "NNS.reg",
+    "PM.matrix"
   ],
   "requires_fresh_cache": false,
   "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/RcppExports.R"
+  ],
   "warnings": []
 }
