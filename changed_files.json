@@ -1,3 +1,5 @@
 [
-  "R/ARMA.R"
+  "R/Partition_Map.R",
+  "src/NNS_part.cpp",
+  "tests/testthat/test_NNS_reg_infinite.R"
 ]

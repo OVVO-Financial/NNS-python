@@ -2,25 +2,28 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `R/Partition_Map.R`
+- `src/NNS_part.cpp`
+- `tests/testthat/test_NNS_reg_infinite.R`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- None mapped
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- None mapped
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- None mapped
 
 ## Required actions
 
 - Fresh cache required: `False`
 - Export review required: `False`
-- Unmapped R files present: `False`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/Partition_Map.R`
