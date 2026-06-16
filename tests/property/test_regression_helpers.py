@@ -77,8 +77,12 @@ def test_var_outputs_are_inside_observed_range(
     lower = lpm_var(percentile, degree, values)
     upper = upm_var(percentile, degree, values)
 
-    assert float(np.min(values)) <= lower <= float(np.max(values))
-    assert float(np.min(values)) <= upper <= float(np.max(values))
+    # lpm_var/upm_var are optimizer-based (scipy.minimize_scalar); allow a
+    # floating-point tolerance scaled to the data magnitude, matching the
+    # 1e-9 relative-tolerance idiom used by the other bounds tests here.
+    tol = 1e-9 * max(1.0, abs(float(np.min(values))), abs(float(np.max(values))))
+    assert float(np.min(values)) - tol <= lower <= float(np.max(values)) + tol
+    assert float(np.min(values)) - tol <= upper <= float(np.max(values)) + tol
 
 
 @given(finite_arrays, st.booleans(), st.booleans())
