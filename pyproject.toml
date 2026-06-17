@@ -103,6 +103,7 @@ select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["TID251"]
+"scripts/generate_api_reference.py" = ["E501"]
 "scripts/regenerate_r_cache.py" = ["TID251"]
 "scripts/install_local_r_nns.py" = ["TID251"]
 "scripts/run_live_r_parity_for_changed_api.py" = ["TID251"]
@@ -117,7 +118,6 @@ mypy_path = ["tests"]
 
 [tool.cibuildwheel]
 # Native (C++17 / nanobind) extension: build CPython wheels across 3.11-3.14.
-# scikit-build-core fetches cmake/ninja as build deps, so no system CMake needed.
 build = "cp311-* cp312-* cp313-* cp314-*"
 skip = ["pp*", "*_i686", "*-win32", "*-musllinux_i686"]
 build-frontend = "build"
