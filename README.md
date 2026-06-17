@@ -4,6 +4,7 @@
 
 [![PyPI package](https://img.shields.io/badge/package-ovvo--nns-blue)](https://pypi.org/project/ovvo-nns/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Docs](https://img.shields.io/badge/docs-ovvo--financial.github.io-blue)](https://ovvo-financial.github.io/NNS-python/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
 
 `ovvo-nns` brings Nonlinear Nonparametric Statistics to Python as the `nns` import package. It is a parity-focused port of the R `NNS` 13.0+ package, designed for real-world data that violate symmetry, linearity, or distributional assumptions.
@@ -177,6 +178,9 @@ uv run python examples/run_all_vignettes.py
 ```
 
 ## Documentation
+
+The full documentation site is hosted at
+**<https://ovvo-financial.github.io/NNS-python/>**.
 
 - [API reference manual](docs/api_reference.md)
 - [API status and known gaps](docs/api_status.md)

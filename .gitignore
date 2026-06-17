@@ -23,3 +23,6 @@ tools/NNS/src/*.o
 
 # Stray R plotting artifact from headless regeneration
 Rplots.pdf
+
+# MkDocs build output
+/site/
