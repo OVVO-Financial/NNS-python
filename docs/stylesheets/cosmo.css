@@ -1,0 +1,77 @@
+/*
+ * Cosmo-flavored theme overrides for Material for MkDocs.
+ *
+ * Goal: match the R NNS pkgdown site, which uses Bootstrap 5 with the
+ * Bootswatch "Cosmo" theme — a flat design with a blue (#2780e3) primary,
+ * a solid-blue top navbar, the Source Sans typeface, and squared corners.
+ */
+
+/* ---- Light scheme: Cosmo palette ------------------------------------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #2780e3;
+  --md-primary-fg-color--light: #5a9ee9;
+  --md-primary-fg-color--dark:  #1f6ec1;
+  --md-primary-bg-color:        #ffffff;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+
+  --md-accent-fg-color:         #1f6ec1;
+
+  /* Cosmo body text + links */
+  --md-typeset-color:           #373a3c;
+  --md-typeset-a-color:         #2780e3;
+
+  /* Cosmo semantic accents (admonitions, etc.) */
+  --md-code-hl-color:           rgba(39, 128, 227, 0.15);
+}
+
+/* ---- Dark scheme: keep the Cosmo blue identity ----------------------- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #2780e3;
+  --md-primary-fg-color--light: #5a9ee9;
+  --md-primary-fg-color--dark:  #1f6ec1;
+  --md-accent-fg-color:         #5a9ee9;
+  --md-typeset-a-color:         #5a9ee9;
+}
+
+/* ---- Flat, squared corners (Cosmo is flat) --------------------------- */
+.md-typeset pre > code,
+.md-typeset code,
+.md-typeset .highlight,
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset table:not([class]),
+.md-typeset .md-button,
+.md-search__form,
+.md-search__output {
+  border-radius: 0 !important;
+}
+
+/* Cosmo navbar feel: tighter, uppercase-ish weight on the top tabs */
+.md-tabs {
+  font-weight: 600;
+}
+
+/* Source Sans renders a touch light; nudge headings bolder like Cosmo */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Cosmo-style primary buttons (flat, solid blue) */
+.md-typeset .md-button--primary {
+  background-color: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
+  color: #fff;
+}
+.md-typeset .md-button--primary:hover {
+  background-color: var(--md-primary-fg-color--dark);
+  border-color: var(--md-primary-fg-color--dark);
+}
+
+/* Keep the hex sticker logo crisp and reasonably sized in the header */
+.md-header__button.md-logo img {
+  height: 1.6rem;
+  width: auto;
+}

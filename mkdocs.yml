@@ -11,11 +11,19 @@ copyright: Copyright &copy; Fred Viole — GPL-3.0-only
 
 theme:
   name: material
+  logo: assets/nns_hex_sticker.png
+  favicon: assets/nns_hex_sticker.png
+  # Match the R NNS pkgdown site (Bootstrap 5 + Bootswatch "Cosmo"):
+  # flat design, a solid blue top navbar, and the Source Sans typeface.
+  font:
+    text: Source Sans 3
+    code: Source Code Pro
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.top
-    - navigation.sections
     - toc.follow
     - content.code.copy
     - content.action.edit
@@ -24,20 +32,19 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
   icon:
     repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/cosmo.css
 
 plugins:
   - search
