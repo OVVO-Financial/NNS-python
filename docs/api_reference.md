@@ -440,5 +440,5 @@ When a public API changes:
 1. Update or add the function docstring in `src/nns`.
 2. Update implementation status in `docs/api_status.md` if parity or support changed.
 3. Run `uv run python scripts/generate_api_reference.py`.
-4. Review examples in `docs/examples` if the signature or return shape changed.
+4. Review examples in `examples/vignettes` if the signature or return shape changed.
 5. Confirm `README.md` still points to the manual and the correct API status page.

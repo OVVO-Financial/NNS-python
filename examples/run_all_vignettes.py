@@ -4,8 +4,7 @@ This is a single, IDLE-friendly driver for the vignette example scripts in
 ``examples/vignettes/``. Open it in IDLE and press **F5** (or run
 ``python examples/run_all_vignettes.py`` from a terminal) to execute all
 vignettes in the documented order and print each one's output, so you can
-compare it against the R NNS vignettes PDF and the markdown in
-``docs/vignettes/``.
+compare it against the R NNS vignettes PDF.
 
 Each vignette also self-checks with assertions, so this driver reports PASS/FAIL
 per vignette and a final summary, and exits non-zero if any vignette fails.
@@ -24,29 +23,27 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VIGNETTE_DIR = REPO_ROOT / "examples" / "vignettes"
 
-# Ordered to match docs/vignettes/NN_*.md and the R NNS vignettes PDF.
-# (number, title, example-script stem, docs/vignettes markdown file)
+# Ordered to match the R NNS vignettes PDF.
+# (number, title, example-script stem)
 VIGNETTES = [
-    ("00", "Overview", "overview", "00_overview.md"),
-    ("01", "Partial moments", "partial_moments", "01_partial_moments.md"),
+    ("00", "Overview", "overview"),
+    ("01", "Partial moments", "partial_moments"),
     ("02", "Descriptive & distributional tools",
-     "descriptive_distributional_tools", "02_descriptive_distributional_tools.md"),
+     "descriptive_distributional_tools"),
     ("03", "Dependence & nonlinear association",
-     "dependence_nonlinear_association", "03_dependence_nonlinear_association.md"),
+     "dependence_nonlinear_association"),
     ("04", "Normalization & rescaling",
-     "normalization_rescaling", "04_normalization_rescaling.md"),
+     "normalization_rescaling"),
     ("05", "Hypothesis, ANOVA & stochastic superiority",
-     "hypothesis_anova_stochastic_superiority",
-     "05_hypothesis_anova_stochastic_superiority.md"),
+     "hypothesis_anova_stochastic_superiority"),
     ("06", "Regression, boosting, stacking & causality",
-     "regression_boosting_stacking_causality",
-     "06_regression_boosting_stacking_causality.md"),
+     "regression_boosting_stacking_causality"),
     ("07", "Time series forecasting",
-     "time_series_forecasting", "07_time_series_forecasting.md"),
+     "time_series_forecasting"),
     ("08", "Simulation, bootstrap & risk-neutral",
-     "simulation_bootstrap_riskneutral", "08_simulation_bootstrap_riskneutral.md"),
+     "simulation_bootstrap_riskneutral"),
     ("09", "Portfolio & stochastic dominance",
-     "portfolio_stochastic_dominance", "09_portfolio_stochastic_dominance.md"),
+     "portfolio_stochastic_dominance"),
 ]
 
 
@@ -66,13 +63,12 @@ def run() -> int:
     os.chdir(REPO_ROOT)
 
     results = []
-    for number, title, stem, doc in VIGNETTES:
+    for number, title, stem in VIGNETTES:
         banner = f"  Vignette {number}: {title}  "
         rule = "=" * max(len(banner), 60)
         print("\n" + rule)
         print(banner)
         print(f"  script: examples/vignettes/{stem}.py")
-        print(f"  doc:    docs/vignettes/{doc}")
         print(rule)
 
         start = time.perf_counter()
