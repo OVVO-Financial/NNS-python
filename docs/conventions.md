@@ -90,7 +90,7 @@ data-frame grouping or filtering. R remains faster on some large finance
 fixtures because its C++ path walks merged sorted thresholds in tight parallel
 loops with minimal temporaries; NNS Python instead uses NumPy order-statistic blocks,
 `searchsorted`, contiguous column storage, and early-exit scans to stay
-dependency-light and pure Python for alpha.
+dependency-light and pure Python.
 
 `nns_cdf` maps to R's `NNS.CDF` deterministic non-plotting paths. It is a
 partial-moment distribution wrapper rather than a textbook ECDF: `degree = 0`
