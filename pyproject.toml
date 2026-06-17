@@ -48,6 +48,10 @@ dev = [
     "pytest-xdist>=3.8.0",
     "ruff",
 ]
+docs = [
+    "mkdocs-material>=9.5",
+    "pymdown-extensions>=10",
+]
 
 [build-system]
 requires = ["scikit-build-core", "nanobind"]
