@@ -3,7 +3,7 @@
 This page summarizes the public NNS Python API surface, known gaps, guarded paths,
 and design boundaries.
 
-NNS Python is an alpha, parity-focused Python port of installed R NNS 13.0,
+NNS Python is a stable, parity-focused Python port of installed R NNS 13.0,
 implemented natively in Python on top of NumPy and SciPy. It does not
 wrap R, call the R package at runtime, or depend on compiled R/C++ shims. The
 goal is public input/output compatibility where R behavior is stable,
@@ -81,7 +81,7 @@ invariant, and property coverage.
 - Stochastic exact stream parity is not expected. Stochastic paths use NumPy RNG
   and are tested structurally/statistically.
 - Plotting side effects from R APIs are generally ignored; NNS Python returns data.
-- Stochastic-dominance performance work stays pure NumPy for alpha. The current
+- Stochastic-dominance performance work stays pure NumPy for now. The current
   implementation mirrors R's sorted-column/prefix-sum algorithm and adds
   Python-specific guard pruning, kept-only active-set scans for degree 2/3 and
   degree-1 continuous calls, and an exact order-statistic matrix for large
@@ -115,7 +115,8 @@ examples include:
 
 ## Release-Relevant Caveats
 
-- NNS Python is alpha. The public API is parity-focused but not declared stable.
+- The public API is stable and parity-focused. Behavior is not expected to break
+  across minor releases.
 - This is not full R parity yet.
 - `dy_d` scalar and vectorized point/distribution modes are covered on focused
   fixtures. Multi-row mixed derivative point matrices intentionally use

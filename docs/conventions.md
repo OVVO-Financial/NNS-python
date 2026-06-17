@@ -2,10 +2,12 @@
 
 ## Build
 
-NNS Python is currently a pure-Python/NumPy/SciPy port. The earlier native extension
-scaffolding was removed after the core port demonstrated pure NumPy/SciPy parity
-and competitive performance. Reintroduce native code only as a deliberate future
-change backed by benchmarks.
+NNS Python is a Python-native NumPy/SciPy port with optional private native
+acceleration through `nns._nnscore` where available. Source builds use
+`scikit-build-core` and `nanobind` to compile the extension; published wheels
+should be preferred when available. Public APIs keep Python implementations and
+explicit fallback behavior, so native code remains a deliberate,
+benchmark-backed implementation detail rather than a public API.
 
 ## Degree-Zero Boundary
 
@@ -90,7 +92,7 @@ data-frame grouping or filtering. R remains faster on some large finance
 fixtures because its C++ path walks merged sorted thresholds in tight parallel
 loops with minimal temporaries; NNS Python instead uses NumPy order-statistic blocks,
 `searchsorted`, contiguous column storage, and early-exit scans to stay
-dependency-light and pure Python for alpha.
+dependency-light and pure Python.
 
 `nns_cdf` maps to R's `NNS.CDF` deterministic non-plotting paths. It is a
 partial-moment distribution wrapper rather than a textbook ECDF: `degree = 0`
