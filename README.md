@@ -144,40 +144,46 @@ Important boundaries:
 
 See [behavior conventions](docs/conventions.md) for detailed compatibility notes.
 
-## Examples and notebooks
+## Examples
 
-Runnable examples live in [`docs/examples`](docs/examples):
+Runnable, self-checking example scripts live in
+[`examples/vignettes`](examples/vignettes), mirroring the R NNS vignettes. They
+are exercised in CI by `tests/docs/test_vignette_examples.py`, so they stay in
+sync with the package.
 
 | Topic | Script |
 |---|---|
-| Partial moments | [`partial_moments.py`](docs/examples/partial_moments.py) |
-| Dependence | [`dependence.py`](docs/examples/dependence.py) |
-| Distributions and ANOVA | [`distributions_anova.py`](docs/examples/distributions_anova.py) |
-| Regression | [`regression.py`](docs/examples/regression.py) |
-| Classification | [`classification.py`](docs/examples/classification.py) |
-| Forecasting | [`forecasting.py`](docs/examples/forecasting.py) |
+| Overview | [`overview.py`](examples/vignettes/overview.py) |
+| Partial moments | [`partial_moments.py`](examples/vignettes/partial_moments.py) |
+| Descriptive and distributional tools | [`descriptive_distributional_tools.py`](examples/vignettes/descriptive_distributional_tools.py) |
+| Dependence and nonlinear association | [`dependence_nonlinear_association.py`](examples/vignettes/dependence_nonlinear_association.py) |
+| Normalization and rescaling | [`normalization_rescaling.py`](examples/vignettes/normalization_rescaling.py) |
+| Hypothesis, ANOVA and stochastic superiority | [`hypothesis_anova_stochastic_superiority.py`](examples/vignettes/hypothesis_anova_stochastic_superiority.py) |
+| Regression, boosting, stacking and causality | [`regression_boosting_stacking_causality.py`](examples/vignettes/regression_boosting_stacking_causality.py) |
+| Time series forecasting | [`time_series_forecasting.py`](examples/vignettes/time_series_forecasting.py) |
+| Simulation, bootstrap and risk-neutral | [`simulation_bootstrap_riskneutral.py`](examples/vignettes/simulation_bootstrap_riskneutral.py) |
+| Portfolio and stochastic dominance | [`portfolio_stochastic_dominance.py`](examples/vignettes/portfolio_stochastic_dominance.py) |
 
 Run one example:
 
 ```bash
-uv run python docs/examples/partial_moments.py
+uv run python examples/vignettes/partial_moments.py
 ```
 
-Run all script examples:
+Run all of them with a PASS/FAIL summary:
 
 ```bash
-for example in docs/examples/*.py; do uv run python "$example"; done
+uv run python examples/run_all_vignettes.py
 ```
-
-Notebook workflows are also available under [`docs/examples/notebooks`](docs/examples/notebooks).
 
 ## Documentation
 
 - [API reference manual](docs/api_reference.md)
 - [API status and known gaps](docs/api_status.md)
 - [Behavior conventions and intentional divergences](docs/conventions.md)
+- [Parity target, cache regeneration, and automation](docs/parity.md)
 - [Benchmarks](docs/benchmarks.md)
-- [Examples](docs/examples/README.md)
+- [Examples](examples/vignettes)
 
 ## Development
 

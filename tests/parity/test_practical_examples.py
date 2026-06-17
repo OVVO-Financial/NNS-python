@@ -26,7 +26,7 @@ from nns import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-BOSTON_CSV = ROOT / "docs" / "examples" / "notebooks" / "data" / "boston_housing.csv"
+BOSTON_CSV = ROOT / "tests" / "data" / "boston_housing.csv"
 _IRIS_CLASS_LEVELS = ["setosa", "versicolor", "virginica"]
 
 
