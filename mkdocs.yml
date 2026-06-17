@@ -7,11 +7,13 @@ repo_name: OVVO-Financial/NNS-python
 repo_url: https://github.com/OVVO-Financial/NNS-python
 edit_uri: edit/main/docs/
 
-copyright: Copyright &copy; Fred Viole — GPL-3.0-only
+copyright: Developed by Fred Viole.
 
 theme:
   name: material
-  logo: assets/nns_hex_sticker.png
+  # pkgdown's navbar uses a text brand ("NNS") with the hex sticker shown in
+  # the home page body, so we keep the header text-only and place the sticker
+  # on the home page instead of using it as a header logo.
   favicon: assets/nns_hex_sticker.png
   # Match the R NNS pkgdown site (Bootstrap 5 + Bootswatch "Cosmo"):
   # flat design, a solid blue top navbar, and the Source Sans typeface.

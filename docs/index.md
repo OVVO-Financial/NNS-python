@@ -1,8 +1,10 @@
-# NNS Python
+<img src="assets/nns_hex_sticker.png" width="150" alt="NNS hex sticker" style="border: none; outline: none; margin: 0; padding: 0; display: block;">
 
-[![PyPI package](https://img.shields.io/pypi/v/ovvo-nns?label=ovvo-nns&color=blue)](https://pypi.org/project/ovvo-nns/)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](https://github.com/OVVO-Financial/NNS-python/blob/main/LICENSE)
+[![PyPI package](https://img.shields.io/pypi/v/ovvo-nns?label=ovvo-nns&color=2780e3)](https://pypi.org/project/ovvo-nns/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-2780e3)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-2780e3)](https://github.com/OVVO-Financial/NNS-python/blob/main/LICENSE)
+
+# NNS Python
 
 `ovvo-nns` brings **Nonlinear Nonparametric Statistics** to Python as the `nns`
 import package. It is a parity-focused port of the R `NNS` 13.0+ package,
@@ -88,6 +90,28 @@ unsafe R coercions, and generally ignores plotting side effects.
 
 See [behavior conventions](conventions.md) for detailed compatibility notes and
 [parity with R NNS](parity.md) for the parity target and automation.
+
+## Links
+
+- [View on PyPI](https://pypi.org/project/ovvo-nns/)
+- [Browse source code](https://github.com/OVVO-Financial/NNS-python)
+- [Report a bug](https://github.com/OVVO-Financial/NNS-python/issues)
+
+## License
+
+[GPL-3.0-only](https://www.gnu.org/licenses/gpl-3.0.en.html)
+
+## Citation
+
+NNS is the companion to Viole, F. and Nawrocki, D. (2013),
+*Nonlinear Nonparametric Statistics: Using Partial Moments* (ISBN: 1490523995).
+2nd edition: <https://ovvo-financial.github.io/NNS/book/>.
+
+## Developers
+
+- **Fred Viole** — author and maintainer
+- **Roberto Spadim** — contributor
+- **Rasheed Khoshnaw** — contributor
 
 ## Attribution
 
