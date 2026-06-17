@@ -173,6 +173,7 @@ Notebook workflows are also available under [`docs/examples/notebooks`](docs/exa
 
 ## Documentation
 
+- [API reference manual](docs/api_reference.md)
 - [API status and known gaps](docs/api_status.md)
 - [Behavior conventions and intentional divergences](docs/conventions.md)
 - [Benchmarks](docs/benchmarks.md)
@@ -206,4 +207,5 @@ Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. M
 - **Rasheed Khoshnaw** — contributor
 
 ## Attribution
+
 Upstream R package and reference implementation: [OVVO-Financial/NNS](https://github.com/OVVO-Financial/NNS)
