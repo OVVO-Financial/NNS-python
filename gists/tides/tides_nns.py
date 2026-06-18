@@ -96,5 +96,5 @@ plt.xlabel("datetime")
 plt.ylabel("tide_feet")
 plt.legend()
 plt.tight_layout()
-plt.savefig("tides_forecast.png", dpi=120)  # so the gist can show the figure
+plt.savefig("tides_forecast.png", dpi=120)  # so the README can show the figure
 plt.show()
