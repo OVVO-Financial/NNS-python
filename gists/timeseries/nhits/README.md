@@ -8,10 +8,14 @@ accuracy than Transformer models at ~50× less compute**. It is, however, still 
 neural network: it needs a training loop, hyperparameters, and the hardware to go
 with them.
 
-This example forecasts the last **120 steps** of an hourly traffic-volume series
-with `NNS.ARMA` — **no neural network, no training loop, no hyperparameter
-search** — in a handful of lines. The seasonal periods are discovered directly
-from the data by `nns_seas`.
+Marco Peixeiro's walkthrough, [*All About
+N-HiTS*](https://www.datasciencewithmarco.com/blog/all-about-n-hits-the-latest-breakthrough-in-time-series-forecasting),
+applies N-HiTS to exactly this problem: forecast the last **120 steps** (five
+days) of the hourly **Interstate 94 Westbound** traffic-volume series, scored by
+MAE. This example runs the *same* dataset, the *same* `[:-120]` / `[-120:]`
+split, and the *same* metric — but with `NNS.ARMA` instead of a neural network:
+**no training loop, no hyperparameter search**, seasonal periods discovered
+directly from the data by `nns_seas`.
 
 ## Result
 
@@ -21,10 +25,23 @@ from the data by `nns_seas`.
 MAE on traffic data: 236.16791666666677
 ```
 
-On a series that swings from ~200 to ~6,200 vehicles, NNS tracks both the sharp
-rush-hour peaks and the overnight troughs with a mean absolute error around
-**236** — a competitive long-horizon forecast produced in seconds, without any
-of the training machinery a neural model requires.
+Head-to-head on the identical series, split, and metric (deep-learning numbers
+from the article):
+
+| Model | MAE | Beats the naive baseline? |
+|-------|----:|:--:|
+| **NNS.ARMA.optim** | **236** | ✅ |
+| Naive seasonal (weekly, K=168) | 249 | — |
+| N-HiTS | 266 | ❌ |
+| N-BEATS | worse than N-HiTS | ❌ |
+
+The article's punchline is that **neither N-HiTS nor N-BEATS beats the simple
+naive seasonal baseline** on this series ("the baseline still outperforms
+N-HiTS"). NNS is the only method here that does — an MAE of **236** versus the
+baseline's 249 and N-HiTS's 266 — and it gets there in seconds with none of the
+training machinery a neural model needs. (In fairness, the article notes this is
+a small, repetitive sample, which is partly why the baseline is so strong; the
+point is that NNS clears a bar the neural models did not.)
 
 ## Run it
 
