@@ -17,6 +17,7 @@ from time import perf_counter
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 import nns
 
 total_start = perf_counter()
@@ -53,7 +54,7 @@ max_usable_period = training_set // 4  # conservative; matches optim's limit her
 nns_periods = all_periods[all_periods < max_usable_period][:100]
 
 if nns_periods.size == 0:
-    raise RuntimeError("No usable seasonal periods below %d." % max_usable_period)
+    raise RuntimeError(f"No usable seasonal periods below {max_usable_period}.")
 
 forecast_start = perf_counter()
 arma_parameters = nns.nns_arma_optim(
