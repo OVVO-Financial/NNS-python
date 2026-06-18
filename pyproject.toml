@@ -96,6 +96,7 @@ extend-exclude = [
     "*.ipynb",
     "extern/NNS-core",
     "upstream",
+    "gists",
 ]
 
 [tool.ruff.lint]
