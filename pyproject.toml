@@ -1,6 +1,6 @@
 [project]
 name = "ovvo-nns"
-version = "1.0.6"
+version = "1.0.7"
 description = "Python port of nonlinear nonparametric statistics from R NNS"
 readme = "README.md"
 requires-python = ">=3.11"
