@@ -792,7 +792,13 @@ def _numeric_seasonal_weights(
             np.float64(np.std(variable, ddof=1)) / np.float64(np.mean(variable))
         )
         relative = output / baseline_cv
-        seasonal_weighting = 1.0 / relative
+        # A perfectly stable lag-subsample in an otherwise-varying series has CV 0, so
+        # relative 0 -> 1/relative = Inf -> Inf/Inf = NaN in the normalisation below,
+        # poisoning the forecast. Floor relative so that (maximally seasonal) lag gets a
+        # large but finite weight. A fully constant series (baseline CV 0 -> relative
+        # NaN) is intentionally left to propagate NaN, matching the R reference.
+        floor = np.finfo(np.float64).eps
+        seasonal_weighting = 1.0 / np.maximum(relative, floor)
 
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
     denom = float(np.sum(observation_weighting * seasonal_weighting))
