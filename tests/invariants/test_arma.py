@@ -33,6 +33,22 @@ def test_nns_arma_numeric_seasonal_dynamic_raises() -> None:
         nns_arma(variable, h=3, seasonal_factor=5, dynamic=True)
 
 
+def test_numeric_seasonal_weights_constant_subsample_is_finite() -> None:
+    # Regression: a lag-subsample with zero variance gives CV 0, so the seasonal
+    # weighting 1 / (CV / baseline) = 1 / 0 = Inf and the normalisation collapsed to
+    # Inf / Inf = NaN -- which produced an all-NaN forecast. Now guarded.
+    rng = np.random.default_rng(0)
+    variable = rng.uniform(50.0, 150.0, size=40)
+    variable[::-4] = 10.0  # every 4th point (from the end) identical -> std 0
+
+    weights = _numeric_seasonal_weights(variable, np.array([4], dtype=np.int64))
+    assert np.isfinite(weights).all()
+    np.testing.assert_allclose(weights.sum(), 1.0)
+
+    forecast = nns_arma(variable, h=8, seasonal_factor=4, method="lin")
+    assert np.isfinite(forecast).all()
+
+
 @pytest.mark.stochastic
 def test_nns_arma_pred_int_returns_interval_dict() -> None:
     variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
