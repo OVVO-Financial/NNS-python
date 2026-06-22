@@ -115,8 +115,10 @@ select = ["E", "F", "I", "B", "UP", "N", "RUF", "TID"]
 "scripts/inspect_r_api_update.py" = ["TID251"]
 "scripts/verify_release_provenance.py" = ["TID251"]
 
+# No python_version pin: mypy targets the interpreter it runs under. The CI
+# matrix runs mypy on 3.11-3.14, and pinning to 3.11 made mypy reject newer
+# numpy stubs that use PEP 695 `type` statements (valid only on 3.12+).
 [tool.mypy]
-python_version = "3.11"
 strict = true
 files = ["src/nns", "tests"]
 mypy_path = ["tests"]
