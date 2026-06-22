@@ -135,10 +135,12 @@ def _discrete_mode(values: NDArray[np.float64], multi: bool) -> float | NDArray[
     integerized = _nearest_int_half_up_array(values)
     modes, counts = np.unique(integerized, return_counts=True)
     tied_modes = modes[counts == int(np.max(counts))]
-    tied_modes = np.sort(tied_modes.astype(np.float64))
+    # Annotate the sorted result so the multi return is typed rather than Any
+    # under the more precise numpy stubs that mypy sees when targeting 3.12+.
+    sorted_modes: NDArray[np.float64] = np.sort(tied_modes.astype(np.float64))
     if multi:
-        return tied_modes
-    return float(np.mean(tied_modes))
+        return sorted_modes
+    return float(np.mean(sorted_modes))
 
 
 def _continuous_mode(values: NDArray[np.float64], multi: bool) -> float | NDArray[np.float64]:

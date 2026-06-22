@@ -22,7 +22,12 @@ def nns_norm(x: NDArray[np.float64], linear: bool = False) -> NDArray[np.float64
         scale_factor = _scale_factor(values)
         scales = np.mean(ratio_grid * scale_factor, axis=0)
 
-    return cast(NDArray[np.float64], values * scales[np.newaxis, :])
+    # Annotated assignment instead of cast(): under mypy targeting 3.12+ the
+    # numpy stubs type this product precisely, making an explicit cast redundant
+    # (warn_redundant_casts), while on 3.11 the stubs return Any and the
+    # annotation still narrows it without a no-any-return error.
+    scaled: NDArray[np.float64] = values * scales[np.newaxis, :]
+    return scaled
 
 
 def _scale_factor(values: NDArray[np.float64]) -> NDArray[np.float64]:
