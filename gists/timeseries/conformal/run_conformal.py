@@ -1,34 +1,39 @@
 """
-run_point_duel.py
+run_conformal.py
 ================================================================================
-Point-model duel under one honest protocol.
+Time-series block benchmark — NNS under one honest protocol (issue #57 redux).
 
-Every method makes the SAME commitment NNS makes: at each origin t, given only
-data through t, forecast an h-step block (h = implied_h = t*(1-0.9)/0.9) with NO
-online updating inside the block. No method gets to peek at a realized value to
-predict the next one. This is the apples-to-apples that the original benchmark
-lacked (where the baselines forecast h=1 with true lags and refreshed every step).
+A single walk-forward emits BOTH analyses, from the same leak-free NNS block
+forecast (computed once per origin):
 
-Point forecasters
------------------
-  * NNS block        — NNS.ARMA.optim, model selected on a strictly historical
-                       validation tail (leak-free), native block forecast.
-  * Ridge (recursive)— ridge on N_LAGS lags, fit on all data <= t, then projected
-                       h steps RECURSIVELY (its own predictions become the lags;
-                       no true intermediate values). This removes the h=1 crutch.
-  * Persistence      — last observed value carried forward h steps (floor).
+  POINT DUEL — who forecasts best?
+    At each origin t, given only data through t, every method forecasts an
+    h-step block (h = implied_h = t*(1-0.9)/0.9) with NO online updating — no
+    method peeks at a realized value to predict the next one.
+      * NNS block        — NNS.ARMA.optim, model selected on a strictly
+                           historical validation tail (leak-free).
+      * Ridge (recursive)— ridge on N_LAGS lags, fit on all data <= t, projected
+                           h steps recursively (own predictions become lags).
+      * Persistence      — last value carried forward (floor).
 
-Intervals (secondary, same protocol)
-------------------------------------
-Each point method is wrapped with the SAME per-lead-time split-conformal band,
-calibrated on that method's own realized block residuals pooled across past
-origins (flat fallback while thin). NNS additionally reports its native PI.
+  INTERVAL STUDY — given the NNS forecast, how should the band be drawn?
+    The NNS point forecast is held FIXED and only the interval construction
+    varies, on identical residuals:
+      * NNS native PI            — results +/- pi_width (flat, NNS's own rule)
+      * NNS + split-CP (flat)    — empirical (1-a) quantile of NNS residuals
+      * NNS + split-CP (per-lead)— quantile per lead-time k (widens w/ horizon)
+      * NNS + Gaussian (flat)    — z * std(residuals)
+    Plus Ridge/Persistence + split-CP (per-lead) to show that interval quality
+    follows point quality.
 
-Outputs a POINT table (MAE / RMSE, the headline) and an INTERVAL table.
+Framed as an adaptation to discern coverage guarantees on a heteroskedastic
+process: marginal coverage is cheap; the test is conditional (per-regime /
+worst-window) coverage and whether width adapts.
 
 Run:
     pip install ovvo-nns numpy pandas scipy scikit-learn
-    python run_point_duel.py
+    python run_conformal.py
+Writes results/{point,interval}{,_all}.csv
 """
 from __future__ import annotations
 
@@ -69,8 +74,9 @@ VAL_FRAC    = 0.10
 CP_MIN_POOL = 8
 LOCAL_WIN   = 2
 
-os.makedirs("results_duel", exist_ok=True)
+os.makedirs("results", exist_ok=True)
 _MSE = lambda predicted, actual: np.mean((predicted - actual) ** 2)
+POINT_METHODS = ["NNS block", "Ridge (recursive)", "Persistence"]
 
 # ── DGP ──────────────────────────────────────────────────────────────────────
 def make_timeseries(T: int = 3500, seed: int = 0, heavy_tail: bool = False) -> dict:
@@ -88,16 +94,14 @@ def make_timeseries(T: int = 3500, seed: int = 0, heavy_tail: bool = False) -> d
         y[i] = level[i] + 0.55 * (y[i-1] - level[i-1]) + sigma[i] * eps[i]
     return {"y": y, "level": level, "sigma": sigma}
 
-# ── Lag features ─────────────────────────────────────────────────────────────
 def lag_features(y: np.ndarray, n_lags: int = N_LAGS):
     n  = len(y)
     yy = y[n_lags:]
     X  = np.column_stack([y[n_lags - k: n - k] for k in range(1, n_lags + 1)])
     return X, yy
 
-# ── Point forecasters (all produce an h-step block from the end of y[:t]) ────
+# ── Point forecasters (each returns an h-step block from end of y_hist) ──────
 def forecast_ridge_recursive(y_hist: np.ndarray, h: int, n_lags: int = N_LAGS) -> np.ndarray:
-    """Fit ridge on all data <= t, then project h steps recursively."""
     X, yy = lag_features(y_hist, n_lags)
     if HAS_SKLEARN:
         model = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
@@ -107,13 +111,10 @@ def forecast_ridge_recursive(y_hist: np.ndarray, h: int, n_lags: int = N_LAGS) -
         Xtr = np.column_stack([X, np.ones(len(X))])
         coef, *_ = np.linalg.lstsq(Xtr, yy, rcond=None)
         predict = lambda lags: float(np.append(lags, 1.0) @ coef)
-    hist = list(y_hist[-n_lags:])
-    out = []
+    hist = list(y_hist[-n_lags:]); out = []
     for _ in range(h):
-        lags = np.array(hist[-1::-1][:n_lags])   # [y_{t}, y_{t-1}, ..., y_{t-n_lags+1}]
-        yhat = predict(lags)
-        out.append(yhat)
-        hist.append(yhat)                         # feed prediction back (no true value)
+        lags = np.array(hist[-1::-1][:n_lags])
+        yhat = predict(lags); out.append(yhat); hist.append(yhat)
     return np.asarray(out)
 
 def forecast_persistence(y_hist: np.ndarray, h: int) -> np.ndarray:
@@ -133,7 +134,7 @@ def get_nns_seas_periods(series: np.ndarray, train_n: int) -> list[int]:
         return [2]
 
 def forecast_nns_block(y_hist: np.ndarray, h: int):
-    """Returns (point, native_lo, native_hi, cal_resid) — leak-free block forecast."""
+    """Leak-free NNS block: returns (point, native_lo, native_hi, cal_resid)."""
     n = len(y_hist)
     val_h = max(1, int(round(VAL_FRAC * n)))
     periods = get_nns_seas_periods(y_hist, n)
@@ -148,56 +149,58 @@ def forecast_nns_block(y_hist: np.ndarray, h: int):
     cal_resid = np.asarray(fit["errors"], float) + float(fit["bias.shift"])
     return point, nat_lo, nat_hi, cal_resid
 
-# ── Scoring helpers ──────────────────────────────────────────────────────────
+# ── Metrics ──────────────────────────────────────────────────────────────────
 def z_alpha(alpha: float = ALPHA) -> float:
     return float(stats.norm.ppf(1 - alpha / 2))
-
 def coverage(lo, hi, y) -> float:
-    lo, hi, y = map(np.asarray, (lo, hi, y))
-    return float(np.mean((y >= lo) & (y <= hi)))
-
+    lo, hi, y = map(np.asarray, (lo, hi, y)); return float(np.mean((y >= lo) & (y <= hi)))
 def mean_width(lo, hi) -> float:
     return float(np.mean(np.asarray(hi) - np.asarray(lo)))
-
 def rolling_coverage(lo, hi, y, window: int = WINDOW) -> np.ndarray:
     lo, hi, y = map(np.asarray, (lo, hi, y)); n = len(y)
-    if n < window:
-        return np.array([])
-    return np.array([coverage(lo[i:i+window], hi[i:i+window], y[i:i+window])
-                     for i in range(n - window + 1)])
-
+    if n < window: return np.array([])
+    return np.array([coverage(lo[i:i+window], hi[i:i+window], y[i:i+window]) for i in range(n-window+1)])
 def worst_window_coverage(lo, hi, y, window: int = WINDOW) -> float:
-    rc = rolling_coverage(lo, hi, y, window)
-    return float(np.min(rc)) if len(rc) > 0 else float("nan")
-
+    rc = rolling_coverage(lo, hi, y, window); return float(np.min(rc)) if len(rc) > 0 else float("nan")
 def interval_score(lo, hi, y, alpha: float = ALPHA) -> float:
     lo, hi, y = map(np.asarray, (lo, hi, y))
-    return float(np.mean((hi - lo) + (2/alpha)*np.maximum(lo - y, 0)
-                         + (2/alpha)*np.maximum(y - hi, 0)))
-
+    return float(np.mean((hi - lo) + (2/alpha)*np.maximum(lo - y, 0) + (2/alpha)*np.maximum(y - hi, 0)))
+def coverage_by_stratum(lo, hi, y, sigma, k: int = 4) -> list[float]:
+    lo, hi, y, sigma = map(np.asarray, (lo, hi, y, sigma))
+    ranks = stats.rankdata(sigma, method="ordinal")
+    grp   = np.ceil(ranks / len(ranks) * k).astype(int).clip(1, k)
+    return [coverage(lo[grp == j], hi[grp == j], y[grp == j]) for j in range(1, k+1)]
 def _emp_q(scores, level=TARGET_COV):
     s = np.sort(np.abs(np.asarray(scores, float))); n = len(s)
-    if n == 0:
-        return None
+    if n == 0: return None
     k = int(np.ceil((n + 1) * level)) - 1
     return float("inf") if k >= n else float(s[k])
 
-# ── One seed ──────────────────────────────────────────────────────────────────
-POINT_METHODS = ["NNS block", "Ridge (recursive)", "Persistence"]
-
+# ── One seed: single walk-forward, both analyses ─────────────────────────────
 def run_once(seed: int = 0, heavy_tail: bool = False, verbose: bool = True) -> dict:
     d = make_timeseries(T=3500, seed=seed, heavy_tail=heavy_tail)
     y, sig = d["y"], d["sigma"]
     T_raw = len(y); z = z_alpha(ALPHA)
 
-    pt_pred  = defaultdict(list)            # point forecasts by method
+    pt_pred = defaultdict(list)
     acc_y, acc_sig = [], []
-    lo_acc = defaultdict(list); hi_acc = defaultdict(list)
-    pools  = {m: defaultdict(list) for m in POINT_METHODS}   # per-method per-lead resid pool
-    nat_lo_all, nat_hi_all = [], []        # NNS native PI
+    lo_acc = defaultdict(list); hi_acc = defaultdict(list); sig_acc = defaultdict(list)
+    per_lead = {m: defaultdict(list) for m in POINT_METHODS}   # realized |resid| by lead
+    flat_pool = {m: [] for m in POINT_METHODS}                 # realized |resid| pooled
 
     current_train = N_LAGS + CAL_END
     t0 = time.time(); n_chunks = 0
+
+    def cp_width(m, k, q_fallback):
+        pool = []
+        for kk in range(max(0, k - LOCAL_WIN), k + LOCAL_WIN + 1):
+            pool.extend(per_lead[m].get(kk, []))
+        if len(pool) >= CP_MIN_POOL:
+            q = _emp_q(pool, TARGET_COV)
+            if q is not None and np.isfinite(q):
+                return q
+        qf = _emp_q(flat_pool[m], TARGET_COV) if flat_pool[m] else None
+        return qf if (qf is not None and np.isfinite(qf)) else q_fallback
 
     while current_train < T_raw:
         remaining = T_raw - current_train
@@ -208,12 +211,10 @@ def run_once(seed: int = 0, heavy_tail: bool = False, verbose: bool = True) -> d
         sgb = sig[current_train:current_train + h]
 
         try:
-            nns_pt, nat_lo, nat_hi, _ = forecast_nns_block(y_hist, h)
+            nns_pt, nat_lo, nat_hi, cal_resid = forecast_nns_block(y_hist, h)
         except Exception as exc:
-            if verbose:
-                print(f"  [seed {seed} chunk {n_chunks+1} NNS failed: {exc}] skip")
-            current_train += h
-            continue
+            if verbose: print(f"  [seed {seed} chunk {n_chunks+1} NNS failed: {exc}] skip")
+            current_train += h; continue
 
         preds = {
             "NNS block":         nns_pt,
@@ -222,66 +223,73 @@ def run_once(seed: int = 0, heavy_tail: bool = False, verbose: bool = True) -> d
         }
         n_chunks += 1
 
-        # per-lead split-CP on each method's own past realized residuals
+        q_flat_nns = _emp_q(cal_resid, TARGET_COV)
+        if q_flat_nns is None or not np.isfinite(q_flat_nns):
+            q_flat_nns = float(np.std(cal_resid) + 1e-6)
+        s_flat_nns = max(float(np.std(cal_resid)), 1e-8)
+
+        # ── INTERVAL STUDY on the fixed NNS point ────────────────────────────
+        lo_acc["NNS native PI"].extend(nat_lo); hi_acc["NNS native PI"].extend(nat_hi)
+        sig_acc["NNS native PI"].extend(np.maximum((nat_hi - nat_lo)/2.0, 1e-8)/z)
+
+        lo_acc["NNS + split-CP (flat)"].extend(nns_pt - q_flat_nns)
+        hi_acc["NNS + split-CP (flat)"].extend(nns_pt + q_flat_nns)
+        sig_acc["NNS + split-CP (flat)"].extend(np.full(h, max(q_flat_nns/z, 1e-8)))
+
+        lo_acc["NNS + Gaussian (flat)"].extend(nns_pt - z*s_flat_nns)
+        hi_acc["NNS + Gaussian (flat)"].extend(nns_pt + z*s_flat_nns)
+        sig_acc["NNS + Gaussian (flat)"].extend(np.full(h, s_flat_nns))
+
+        # ── per-lead split-CP for each point method (shared machinery) ───────
         for m in POINT_METHODS:
             p = preds[m]
-            lo = np.empty(h); hi = np.empty(h)
+            name = f"{m} + split-CP (per-lead)" if m != "NNS block" else "NNS + split-CP (per-lead)"
+            lo = np.empty(h); hi = np.empty(h); ss = np.empty(h)
             for k in range(h):
-                pool = []
-                for kk in range(max(0, k - LOCAL_WIN), k + LOCAL_WIN + 1):
-                    pool.extend(pools[m].get(kk, []))
-                qk = _emp_q(pool, TARGET_COV) if len(pool) >= CP_MIN_POOL else None
-                if qk is None or not np.isfinite(qk):
-                    # fallback: flat quantile of whatever realized resid we have, else inf->wide
-                    flat_pool = [v for vs in pools[m].values() for v in vs]
-                    qf = _emp_q(flat_pool, TARGET_COV) if flat_pool else None
-                    qk = qf if (qf is not None and np.isfinite(qf)) else float(np.std(p) + 1e-6)
-                lo[k] = p[k] - qk; hi[k] = p[k] + qk
-            lo_acc[f"{m} + CP"].extend(lo); hi_acc[f"{m} + CP"].extend(hi)
+                qk = cp_width(m, k, q_flat_nns)
+                lo[k] = p[k] - qk; hi[k] = p[k] + qk; ss[k] = max(qk/z, 1e-8)
+            lo_acc[name].extend(lo); hi_acc[name].extend(hi); sig_acc[name].extend(ss)
 
-        nat_lo_all.extend(nat_lo); nat_hi_all.extend(nat_hi)
         for m in POINT_METHODS:
             pt_pred[m].extend(preds[m])
         acc_y.extend(yb); acc_sig.extend(sgb)
 
-        # update pools AFTER scoring
+        # update pools AFTER scoring (now data <= next origin)
         for m in POINT_METHODS:
             r = np.abs(yb - preds[m])
+            flat_pool[m].extend(r.tolist())
             for k in range(h):
-                pools[m][k].append(r[k])
+                per_lead[m][k].append(r[k])
 
         current_train += h
 
     y_arr = np.asarray(acc_y); sig_arr = np.asarray(acc_sig)
 
-    # POINT metrics
+    # POINT table
     point_rows = []
     for m in POINT_METHODS:
-        p = np.asarray(pt_pred[m])
-        err = p - y_arr
-        point_rows.append({
-            "method": m,
-            "MAE":    float(np.mean(np.abs(err))),
-            "RMSE":   float(np.sqrt(np.mean(err**2))),
-            "median_AE": float(np.median(np.abs(err))),
-        })
+        err = np.asarray(pt_pred[m]) - y_arr
+        point_rows.append({"method": m, "MAE": float(np.mean(np.abs(err))),
+                           "RMSE": float(np.sqrt(np.mean(err**2))),
+                           "median_AE": float(np.median(np.abs(err)))})
 
-    # INTERVAL metrics
+    # INTERVAL table
     int_rows = []
-    def _introw(name, lo, hi):
-        lo = np.asarray(lo); hi = np.asarray(hi)
-        return {"method": name, "marg_cov": coverage(lo, hi, y_arr),
-                "worst_win_cov": worst_window_coverage(lo, hi, y_arr),
-                "width": mean_width(lo, hi), "interval_score": interval_score(lo, hi, y_arr)}
-    int_rows.append(_introw("NNS native PI", nat_lo_all, nat_hi_all))
     for name in lo_acc:
-        int_rows.append(_introw(name, lo_acc[name], hi_acc[name]))
+        lo = np.asarray(lo_acc[name]); hi = np.asarray(hi_acc[name]); s_ = np.asarray(sig_acc[name])
+        cbs = coverage_by_stratum(lo, hi, y_arr, sig_arr)
+        int_rows.append({
+            "method": name, "marg_cov": coverage(lo, hi, y_arr),
+            "worst_win_cov": worst_window_coverage(lo, hi, y_arr),
+            "cov_lowvol": cbs[0], "cov_hivol": cbs[-1],
+            "cond_cov_gap": max(abs(c - TARGET_COV) for c in cbs if not math.isnan(c)),
+            "width": mean_width(lo, hi), "interval_score": interval_score(lo, hi, y_arr),
+        })
 
     if verbose:
         mae = {m: np.mean(np.abs(np.asarray(pt_pred[m]) - y_arr)) for m in POINT_METHODS}
         print(f"  [seed {seed}] {n_chunks} blocks  MAE: "
-              + "  ".join(f"{m}={mae[m]:.3f}" for m in POINT_METHODS)
-              + f"  ({time.time()-t0:.0f}s)")
+              + "  ".join(f"{m}={mae[m]:.3f}" for m in POINT_METHODS) + f"  ({time.time()-t0:.0f}s)")
 
     return {"point": pd.DataFrame(point_rows), "interval": pd.DataFrame(int_rows)}
 
@@ -298,17 +306,17 @@ def run_all() -> dict:
     point_agg = point_dt.groupby("method", sort=False).mean().reset_index().sort_values("RMSE")
     int_agg   = int_dt.groupby("method", sort=False).mean().reset_index().sort_values("interval_score")
 
-    point_dt.to_csv("results_duel/point_all.csv", index=False)
-    int_dt.to_csv("results_duel/interval_all.csv", index=False)
-    point_agg.to_csv("results_duel/point.csv", index=False)
-    int_agg.to_csv("results_duel/interval.csv", index=False)
+    point_dt.to_csv("results/point_all.csv", index=False)
+    int_dt.to_csv("results/interval_all.csv", index=False)
+    point_agg.to_csv("results/point.csv", index=False)
+    int_agg.to_csv("results/interval.csv", index=False)
 
-    print(f"\n=== POINT-MODEL DUEL  (block h-step, no online updating; "
-          f"mean over {N_SEEDS} seeds) ===\n")
+    pd.set_option("display.width", 200, "display.max_columns", 20)
+    print(f"\n=== POINT DUEL  (block h-step, no online updating; mean over {N_SEEDS} seeds) ===\n")
     print(point_agg.round(3).to_string(index=False))
-    print(f"\n=== INTERVALS (same protocol, per-method CP + NNS native) ===\n")
+    print(f"\n=== INTERVAL STUDY  (point = NNS fixed; alpha={ALPHA}, target={TARGET_COV}) ===\n")
     print(int_agg.round(3).to_string(index=False))
-    print("\nWrote results_duel/{point,interval}{,_all}.csv")
+    print("\nWrote results/{point,interval}{,_all}.csv")
     return {"point": point_agg, "interval": int_agg}
 
 
