@@ -118,10 +118,3 @@ python run_conformal.py
 
 Writes `results/point.csv`, `results/interval.csv` (aggregated) and the per-seed
 `*_all.csv`.
-
-## Not yet addressed
-
-`NNS.ARMA.optim` still treats the tail after `training_set` as its validation target
-with no guard or warning when out-of-range data is passed — the upstream gap behind
-#57. Adding that guard is left to a follow-up; until then, treat this as the
-corrected-content restoration, not a closed case.
