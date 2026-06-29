@@ -2,25 +2,157 @@
 
 ## Changed files
 
+- `DESCRIPTION`
+- `NAMESPACE`
+- `NNS_13.0.tar.gz`
+- `NNS_13.0.zip`
 - `R/ARMA.R`
+- `R/ARMA_optim.R`
+- `R/Boost.R`
+- `R/Causal_matrix.R`
+- `R/Dependence.R`
+- `R/Multivariate_Regression.R`
+- `R/NNS_Distance.R`
+- `R/NNS_Distance_bulk.R`
+- `R/NNS_MC.R`
+- `R/NNS_VAR.R`
+- `R/NNS_meboot.R`
+- `R/Normalization.R`
+- `R/Partial_Moments.R`
+- `R/Partition_Map.R`
+- `R/RcppExports.R`
+- `R/Regression.R`
+- `R/SD_Cluster.R`
+- `R/Stack.R`
+- `R/dy_d_wrt.R`
+- `R/dy_dx.R`
+- `R/gvload.R`
+- `R/print_methods.R`
+- `doc/NNSvignette_01_Overview.R`
+- `doc/NNSvignette_01_Overview.Rmd`
+- `doc/NNSvignette_01_Overview.html`
+- `doc/NNSvignette_02_Partial_Moments.R`
+- `doc/NNSvignette_02_Partial_Moments.Rmd`
+- `doc/NNSvignette_03_Correlation_and_Dependence.R`
+- `doc/NNSvignette_03_Correlation_and_Dependence.Rmd`
+- `doc/NNSvignette_03_Correlation_and_Dependence.html`
+- `doc/NNSvignette_04_Normalization_and_Rescaling.R`
+- `doc/NNSvignette_04_Normalization_and_Rescaling.Rmd`
+- `doc/NNSvignette_04_Normalization_and_Rescaling.html`
+- `doc/NNSvignette_05_Sampling.R`
+- `doc/NNSvignette_05_Sampling.Rmd`
+- `doc/NNSvignette_05_Sampling.html`
+- `doc/NNSvignette_06_Comparing_Distributions.R`
+- `doc/NNSvignette_06_Comparing_Distributions.Rmd`
+- `doc/NNSvignette_06_Comparing_Distributions.html`
+- `doc/NNSvignette_07_Clustering_and_Regression.R`
+- `doc/NNSvignette_07_Clustering_and_Regression.Rmd`
+- `doc/NNSvignette_07_Clustering_and_Regression.html`
+- `doc/NNSvignette_08_Classification.R`
+- `doc/NNSvignette_08_Classification.Rmd`
+- `doc/NNSvignette_08_Classification.html`
+- `doc/NNSvignette_09_Forecasting.R`
+- `doc/NNSvignette_09_Forecasting.Rmd`
+- `doc/NNSvignette_09_Forecasting.html`
+- `man/NNS.part.Rd`
+- `man/NNS.reg.Rd`
+- `man/dy.dx.Rd`
+- `src/NNS.dll`
+- `src/RcppExports.cpp`
+- `src/table_ops.cpp`
+- `tests/testthat/Rplots.pdf`
+- `tests/testthat/test_Partial_Moments.R`
+- `tests/testthat/test_Partition_Map.R`
+- `vignettes/NNSvignette_01_Overview.R`
+- `vignettes/NNSvignette_01_Overview.Rmd`
+- `vignettes/NNSvignette_01_Overview.html`
+- `vignettes/NNSvignette_02_Partial_Moments.R`
+- `vignettes/NNSvignette_02_Partial_Moments.Rmd`
+- `vignettes/NNSvignette_03_Correlation_and_Dependence.R`
+- `vignettes/NNSvignette_03_Correlation_and_Dependence.Rmd`
+- `vignettes/NNSvignette_03_Correlation_and_Dependence.html`
+- `vignettes/NNSvignette_04_Normalization_and_Rescaling.R`
+- `vignettes/NNSvignette_04_Normalization_and_Rescaling.Rmd`
+- `vignettes/NNSvignette_04_Normalization_and_Rescaling.html`
+- `vignettes/NNSvignette_05_Sampling.R`
+- `vignettes/NNSvignette_05_Sampling.Rmd`
+- `vignettes/NNSvignette_05_Sampling.html`
+- `vignettes/NNSvignette_06_Comparing_Distributions.R`
+- `vignettes/NNSvignette_06_Comparing_Distributions.Rmd`
+- `vignettes/NNSvignette_06_Comparing_Distributions.html`
+- `vignettes/NNSvignette_07_Clustering_and_Regression.R`
+- `vignettes/NNSvignette_07_Clustering_and_Regression.Rmd`
+- `vignettes/NNSvignette_07_Clustering_and_Regression.html`
+- `vignettes/NNSvignette_08_Classification.R`
+- `vignettes/NNSvignette_08_Classification.Rmd`
+- `vignettes/NNSvignette_08_Classification.html`
+- `vignettes/NNSvignette_09_Forecasting.R`
+- `vignettes/NNSvignette_09_Forecasting.Rmd`
+- `vignettes/NNSvignette_09_Forecasting.html`
 
 ## Affected Python modules
 
+- `pyproject.toml`
+- `src/nns/__init__.py`
 - `src/nns/arma.py`
+- `src/nns/boost.py`
+- `src/nns/dependence.py`
+- `src/nns/multivariate_regression.py`
+- `src/nns/partial_moments.py`
+- `src/nns/regression.py`
+- `src/nns/stack.py`
+- `src/nns/var.py`
+- `tests/_r_cache.json`
+- `tools/NNS`
 
 ## Parity tests to run
 
+- `tests/docs/test_vignette_examples.py`
+- `tests/invariants`
+- `tests/parity`
 - `tests/parity/test_practical_examples.py`
 - `tests/parity/test_r13_smoke.py`
 
 ## Cache scope
 
+- `LPM`
+- `LPM.VaR`
+- `LPM.ratio`
 - `NNS.ARMA`
 - `NNS.ARMA.optim`
+- `NNS.M.reg`
 - `NNS.VAR`
+- `NNS.boost`
+- `NNS.copula`
+- `NNS.dep`
+- `NNS.reg`
+- `NNS.stack`
+- `PM.matrix`
+- `UPM`
+- `UPM.VaR`
+- `UPM.ratio`
 
 ## Required actions
 
-- Fresh cache required: `False`
-- Export review required: `False`
-- Unmapped R files present: `False`
+- Fresh cache required: `True`
+- Export review required: `True`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/ARMA_optim.R`
+- `R/Causal_matrix.R`
+- `R/Multivariate_Regression.R`
+- `R/NNS_Distance.R`
+- `R/NNS_Distance_bulk.R`
+- `R/NNS_MC.R`
+- `R/NNS_VAR.R`
+- `R/NNS_meboot.R`
+- `R/Normalization.R`
+- `R/Partition_Map.R`
+- `R/RcppExports.R`
+- `R/SD_Cluster.R`
+- `R/dy_d_wrt.R`
+- `R/dy_dx.R`
+- `R/gvload.R`
+- `R/print_methods.R`
