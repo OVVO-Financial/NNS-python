@@ -1,22 +1,18 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "NNS_13.0.tar.gz",
+    "NNS_13.0.zip",
+    "R/NNS_meboot.R",
+    "src/NNS.dll"
   ],
-  "affected_python_modules": [
-    "src/nns/arma.py"
-  ],
-  "parity_tests": [
-    "tests/parity/test_practical_examples.py",
-    "tests/parity/test_r13_smoke.py"
-  ],
-  "cache_scope": [
-    "NNS.ARMA",
-    "NNS.ARMA.optim",
-    "NNS.VAR"
-  ],
+  "affected_python_modules": [],
+  "parity_tests": [],
+  "cache_scope": [],
   "requires_fresh_cache": false,
   "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/NNS_meboot.R"
+  ],
   "warnings": []
 }
