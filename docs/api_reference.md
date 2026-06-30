@@ -40,9 +40,9 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Co-moments | `co_upm` | `Co.UPM` | implemented | Pairwise co-upper partial moment. |
 | Co-moments | `d_lpm` | `D.LPM` | implemented | Pairwise distance lower partial moment. |
 | Co-moments | `d_upm` | `D.UPM` | implemented | Pairwise distance upper partial moment. |
-| Co-moments | `co_lpm_nd` | N-dimensional co-LPM path | implemented | N-dimensional co-lower partial moment wrapper. |
-| Co-moments | `co_upm_nd` | N-dimensional co-UPM path | implemented | N-dimensional co-upper partial moment wrapper. |
-| Co-moments | `dpm_nd` | N-dimensional DPM path | implemented | N-dimensional directional partial moment wrapper. |
+| Co-moments | `co_lpm_nd` | `Co.LPM_nD` | implemented | N-dimensional co-lower partial moment wrapper. |
+| Co-moments | `co_upm_nd` | `Co.UPM_nD` | implemented | N-dimensional co-upper partial moment wrapper. |
+| Co-moments | `dpm_nd` | `DPM_nD` | implemented | N-dimensional directional partial moment wrapper. |
 | Classical moments | `ecdf_pm` | ECDF partial-moment helper | implemented | Empirical distribution helper used by moment routines. |
 | Classical moments | `mean_pm` | `Mean` partial-moment helper | implemented | Mean via partial-moment conventions. |
 | Classical moments | `var_pm` | `Variance` partial-moment helper | implemented | Variance via partial-moment conventions. |
@@ -76,12 +76,12 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Central tendencies | `nns_gravity` | `NNS.gravity` | implemented | NNS gravity center helper. |
 | Central tendencies | `nns_mode` | `NNS.mode` | implemented | NNS mode helper. |
 | Central tendencies | `nns_rescale` | `NNS.rescale` | implemented | Rescaling helper. |
-| Stochastic dominance | `fsd` | `FSD` | implemented | First-order stochastic dominance. |
-| Stochastic dominance | `ssd` | `SSD` | implemented | Second-order stochastic dominance. |
-| Stochastic dominance | `tsd` | `TSD` | implemented | Third-order stochastic dominance. |
-| Stochastic dominance | `fsd_uni` | `FSD.uni` | implemented | Univariate FSD wrapper. |
-| Stochastic dominance | `ssd_uni` | `SSD.uni` | implemented | Univariate SSD wrapper. |
-| Stochastic dominance | `tsd_uni` | `TSD.uni` | implemented | Univariate TSD wrapper. |
+| Stochastic dominance | `fsd` | `NNS.FSD` | implemented | First-order stochastic dominance. |
+| Stochastic dominance | `ssd` | `NNS.SSD` | implemented | Second-order stochastic dominance. |
+| Stochastic dominance | `tsd` | `NNS.TSD` | implemented | Third-order stochastic dominance. |
+| Stochastic dominance | `fsd_uni` | `NNS.FSD.uni` | implemented | Univariate FSD wrapper. |
+| Stochastic dominance | `ssd_uni` | `NNS.SSD.uni` | implemented | Univariate SSD wrapper. |
+| Stochastic dominance | `tsd_uni` | `NNS.TSD.uni` | implemented | Univariate TSD wrapper. |
 | Stochastic dominance | `nns_sd_cluster` | `NNS.SD.cluster` | implemented | Stochastic-dominance clustering. |
 | Stochastic dominance | `sd_efficient_set` | `SD.efficient.set` | implemented | Stochastic-dominance efficient set. |
 | Stochastic superiority | `nns_ss` | `NNS.SS` | implemented | Stochastic superiority. |
@@ -89,7 +89,7 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Simulation | `nns_meboot` | `NNS.meboot` | implemented | Maximum-entropy bootstrap helper. |
 | Differentiation | `nns_diff` | `NNS.diff` | implemented | Numerical differentiation. |
 | Differentiation | `dy_dx` | `dy.dx` | implemented | Scalar derivative helper. |
-| Differentiation | `dy_d` | `dy.d` | partial | Multivariate derivative helper. |
+| Differentiation | `dy_d` | `dy.d_` | partial | Multivariate derivative helper. |
 | VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR helper. |
 | VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR helper. |
 
@@ -359,13 +359,13 @@ Rescales inputs using NNS conventions.
 
 #### `fsd`, `ssd`, `tsd`
 
-Closest R APIs: `FSD`, `SSD`, and `TSD`.
+Closest R APIs: `NNS.FSD`, `NNS.SSD`, and `NNS.TSD`.
 
 Compute first-, second-, and third-order stochastic dominance.
 
 #### `fsd_uni`, `ssd_uni`, `tsd_uni`
 
-Closest R APIs: `FSD.uni`, `SSD.uni`, and `TSD.uni`.
+Closest R APIs: `NNS.FSD.uni`, `NNS.SSD.uni`, and `NNS.TSD.uni`.
 
 Univariate wrappers for stochastic dominance workflows.
 
@@ -415,7 +415,7 @@ Scalar derivative helper for overall and pointwise evaluation modes.
 
 #### `dy_d`
 
-Closest R API: `dy.d`.
+Closest R API: `dy.d_`.
 
 Multivariate derivative helper. Scalar and vectorized point and distribution modes are covered. Multi-row mixed derivative point matrices use pointwise Python semantics rather than R's order-dependent list-matrix packing quirk.
 
