@@ -1,6 +1,6 @@
 [project]
 name = "ovvo-nns"
-version = "1.0.7"
+version = "1.0.8"
 description = "Python port of nonlinear nonparametric statistics from R NNS"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,7 +31,7 @@ keywords = [
     "forecasting",
     "nns",
 ]
-urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Project" = "https://github.com/OVVO-Financial/NNS-python" }
+urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Documentation" = "https://ovvo-financial.github.io/NNS-python/" }
 dependencies = [
     "matplotlib>=3.7",
     "numpy",
