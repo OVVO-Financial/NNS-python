@@ -5,7 +5,7 @@
 [![PyPI package](https://img.shields.io/badge/package-ovvo--nns-blue)](https://pypi.org/project/ovvo-nns/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Docs](https://img.shields.io/badge/docs-ovvo--financial.github.io-blue)](https://ovvo-financial.github.io/NNS-python/)
-[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](https://github.com/OVVO-Financial/NNS-python/blob/main/LICENSE)
 
 `ovvo-nns` brings Nonlinear Nonparametric Statistics to Python as the `nns` import package. It is a parity-focused port of the R `NNS` 13.0+ package, designed for real-world data that violate symmetry, linearity, or distributional assumptions.
 
@@ -41,7 +41,7 @@ pip install ovvo-nns
 
 This includes the matplotlib plotting API (`nns.plotting`); matplotlib is a
 regular dependency and is imported lazily, so `import nns` stays light. See
-[`docs/plot_parity_policy.md`](docs/plot_parity_policy.md).
+the [plot parity policy](https://ovvo-financial.github.io/NNS-python/plot_parity_policy/).
 
 Use the package as `nns`:
 
@@ -129,7 +129,7 @@ print("forecast:", forecast)
 | Differentiation | `nns_diff`, `dy_dx`, `dy_d` |
 | Categorical helpers | `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` |
 
-See [API status](docs/api_status.md) for implemented, partial, guarded, and known-gap paths.
+See [API status](https://ovvo-financial.github.io/NNS-python/api_status/) for implemented, partial, guarded, and known-gap paths.
 
 ## Design boundaries
 
@@ -143,27 +143,27 @@ Important boundaries:
 - Direct raw-factor `nns_m_reg(..., factor_2_dummy=True)` is intentionally guarded. Use `prepare_factor_predictors(...)` before `nns_m_reg(...)`.
 - Compute functions still return values, not figures; passing `plot=True` (where R has it) additionally renders a Matplotlib figure as a side effect via the `nns.plotting` layer, which is color/element-faithful to R but not pixel-diffed. The plot functions can also be called directly on a computed result.
 
-See [behavior conventions](docs/conventions.md) for detailed compatibility notes.
+See [behavior conventions](https://ovvo-financial.github.io/NNS-python/conventions/) for detailed compatibility notes.
 
 ## Examples
 
 Runnable, self-checking example scripts live in
-[`examples/vignettes`](examples/vignettes), mirroring the R NNS vignettes. They
+[`examples/vignettes`](https://github.com/OVVO-Financial/NNS-python/tree/main/examples/vignettes), mirroring the R NNS vignettes. They
 are exercised in CI by `tests/docs/test_vignette_examples.py`, so they stay in
 sync with the package.
 
 | Topic | Script |
 |---|---|
-| Overview | [`overview.py`](examples/vignettes/overview.py) |
-| Partial moments | [`partial_moments.py`](examples/vignettes/partial_moments.py) |
-| Descriptive and distributional tools | [`descriptive_distributional_tools.py`](examples/vignettes/descriptive_distributional_tools.py) |
-| Dependence and nonlinear association | [`dependence_nonlinear_association.py`](examples/vignettes/dependence_nonlinear_association.py) |
-| Normalization and rescaling | [`normalization_rescaling.py`](examples/vignettes/normalization_rescaling.py) |
-| Hypothesis, ANOVA and stochastic superiority | [`hypothesis_anova_stochastic_superiority.py`](examples/vignettes/hypothesis_anova_stochastic_superiority.py) |
-| Regression, boosting, stacking and causality | [`regression_boosting_stacking_causality.py`](examples/vignettes/regression_boosting_stacking_causality.py) |
-| Time series forecasting | [`time_series_forecasting.py`](examples/vignettes/time_series_forecasting.py) |
-| Simulation, bootstrap and risk-neutral | [`simulation_bootstrap_riskneutral.py`](examples/vignettes/simulation_bootstrap_riskneutral.py) |
-| Portfolio and stochastic dominance | [`portfolio_stochastic_dominance.py`](examples/vignettes/portfolio_stochastic_dominance.py) |
+| Overview | [`overview.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/overview.py) |
+| Partial moments | [`partial_moments.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/partial_moments.py) |
+| Descriptive and distributional tools | [`descriptive_distributional_tools.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/descriptive_distributional_tools.py) |
+| Dependence and nonlinear association | [`dependence_nonlinear_association.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/dependence_nonlinear_association.py) |
+| Normalization and rescaling | [`normalization_rescaling.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/normalization_rescaling.py) |
+| Hypothesis, ANOVA and stochastic superiority | [`hypothesis_anova_stochastic_superiority.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/hypothesis_anova_stochastic_superiority.py) |
+| Regression, boosting, stacking and causality | [`regression_boosting_stacking_causality.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/regression_boosting_stacking_causality.py) |
+| Time series forecasting | [`time_series_forecasting.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/time_series_forecasting.py) |
+| Simulation, bootstrap and risk-neutral | [`simulation_bootstrap_riskneutral.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/simulation_bootstrap_riskneutral.py) |
+| Portfolio and stochastic dominance | [`portfolio_stochastic_dominance.py`](https://github.com/OVVO-Financial/NNS-python/blob/main/examples/vignettes/portfolio_stochastic_dominance.py) |
 
 Run one example:
 
@@ -182,12 +182,12 @@ uv run python examples/run_all_vignettes.py
 The full documentation site is hosted at
 **<https://ovvo-financial.github.io/NNS-python/>**.
 
-- [API reference manual](docs/api_reference.md)
-- [API status and known gaps](docs/api_status.md)
-- [Behavior conventions and intentional divergences](docs/conventions.md)
-- [Parity target, cache regeneration, and automation](docs/parity.md)
-- [Benchmarks](docs/benchmarks.md)
-- [Examples](examples/vignettes)
+- [API reference manual](https://ovvo-financial.github.io/NNS-python/api_reference/)
+- [API status and known gaps](https://ovvo-financial.github.io/NNS-python/api_status/)
+- [Behavior conventions and intentional divergences](https://ovvo-financial.github.io/NNS-python/conventions/)
+- [Parity target, cache regeneration, and automation](https://ovvo-financial.github.io/NNS-python/parity/)
+- [Benchmarks](https://ovvo-financial.github.io/NNS-python/benchmarks/)
+- [Examples](https://github.com/OVVO-Financial/NNS-python/tree/main/examples/vignettes)
 
 ## Development
 
@@ -208,7 +208,7 @@ The default parity suite is cache-backed and does not require `Rscript`. `Rscrip
 
 ## Benchmarks
 
-Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](docs/benchmarks.md) for current measurements and commands.
+Benchmarks compare selected Python paths with installed R NNS 13.0+ baselines. Many core operations are faster in Python, while some large stochastic-dominance workloads remain faster in R because the R package uses compiled kernels for those paths. See [benchmarks](https://ovvo-financial.github.io/NNS-python/benchmarks/) for current measurements and commands.
 
 ## Authors and contributors
 

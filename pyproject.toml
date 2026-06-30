@@ -31,7 +31,7 @@ keywords = [
     "forecasting",
     "nns",
 ]
-urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Project" = "https://github.com/OVVO-Financial/NNS-python" }
+urls = { "Homepage" = "https://github.com/OVVO-Financial/NNS-python", "Repository" = "https://github.com/OVVO-Financial/NNS-python", "Source" = "https://github.com/OVVO-Financial/NNS-python", "Issues" = "https://github.com/OVVO-Financial/NNS-python/issues", "Documentation" = "https://ovvo-financial.github.io/NNS-python/" }
 dependencies = [
     "matplotlib>=3.7",
     "numpy",
