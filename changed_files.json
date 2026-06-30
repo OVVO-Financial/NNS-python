@@ -1,3 +1,14 @@
 [
-  "R/ARMA.R"
+  "DESCRIPTION",
+  "NNS_13.0.tar.gz",
+  "NNS_13.0.zip",
+  "R/NNS_meboot.R",
+  "doc/NNSvignette_05_Sampling.R",
+  "doc/NNSvignette_05_Sampling.Rmd",
+  "doc/NNSvignette_05_Sampling.html",
+  "man/NNS.meboot.Rd",
+  "src/NNS.dll",
+  "vignettes/NNSvignette_05_Sampling.R",
+  "vignettes/NNSvignette_05_Sampling.Rmd",
+  "vignettes/NNSvignette_05_Sampling.html"
 ]
