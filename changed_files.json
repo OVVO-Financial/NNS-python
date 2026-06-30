@@ -1,3 +1,11 @@
 [
-  "R/ARMA.R"
+  "DESCRIPTION",
+  "NAMESPACE",
+  "R/Copula.R",
+  "R/Multivariate_Regression.R",
+  "R/Partial_Moments.R",
+  "R/gvload.R",
+  "doc/NNSvignette_01_Overview.html",
+  "src/NNS.dll",
+  "vignettes/NNSvignette_01_Overview.html"
 ]

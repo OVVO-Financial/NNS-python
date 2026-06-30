@@ -2,25 +2,48 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `DESCRIPTION`
+- `NAMESPACE`
+- `R/Copula.R`
+- `R/Multivariate_Regression.R`
+- `R/Partial_Moments.R`
+- `R/gvload.R`
+- `doc/NNSvignette_01_Overview.html`
+- `src/NNS.dll`
+- `vignettes/NNSvignette_01_Overview.html`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `pyproject.toml`
+- `src/nns/__init__.py`
+- `src/nns/partial_moments.py`
+- `src/nns/var.py`
+- `tests/_r_cache.json`
+- `tools/NNS`
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
+- `tests/invariants`
+- `tests/parity`
 - `tests/parity/test_r13_smoke.py`
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- `LPM`
+- `LPM.VaR`
+- `LPM.ratio`
+- `UPM`
+- `UPM.VaR`
+- `UPM.ratio`
 
 ## Required actions
 
-- Fresh cache required: `False`
-- Export review required: `False`
-- Unmapped R files present: `False`
+- Fresh cache required: `True`
+- Export review required: `True`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/Copula.R`
+- `R/Multivariate_Regression.R`
+- `R/gvload.R`
