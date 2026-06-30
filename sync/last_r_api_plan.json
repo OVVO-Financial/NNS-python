@@ -1,22 +1,43 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "DESCRIPTION",
+    "NAMESPACE",
+    "R/Copula.R",
+    "R/Multivariate_Regression.R",
+    "R/Partial_Moments.R",
+    "R/gvload.R",
+    "doc/NNSvignette_01_Overview.html",
+    "src/NNS.dll",
+    "vignettes/NNSvignette_01_Overview.html"
   ],
   "affected_python_modules": [
-    "src/nns/arma.py"
+    "pyproject.toml",
+    "src/nns/__init__.py",
+    "src/nns/partial_moments.py",
+    "src/nns/var.py",
+    "tests/_r_cache.json",
+    "tools/NNS"
   ],
   "parity_tests": [
-    "tests/parity/test_practical_examples.py",
+    "tests/invariants",
+    "tests/parity",
     "tests/parity/test_r13_smoke.py"
   ],
   "cache_scope": [
-    "NNS.ARMA",
-    "NNS.ARMA.optim",
-    "NNS.VAR"
+    "LPM",
+    "LPM.VaR",
+    "LPM.ratio",
+    "UPM",
+    "UPM.VaR",
+    "UPM.ratio"
   ],
-  "requires_fresh_cache": false,
-  "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "requires_fresh_cache": true,
+  "requires_export_review": true,
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/Copula.R",
+    "R/Multivariate_Regression.R",
+    "R/gvload.R"
+  ],
   "warnings": []
 }
