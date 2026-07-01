@@ -1,3 +1,13 @@
 [
-  "R/ARMA.R"
+  "DESCRIPTION",
+  "NNS_13.0.tar.gz",
+  "NNS_13.0.zip",
+  "NNS_13.1.tar.gz",
+  "NNS_13.1.zip",
+  "R/ARMA_optim.R",
+  "R/NNS_VAR.R",
+  "README.md",
+  "man/NNS.ARMA.optim.Rd",
+  "man/NNS.VAR.Rd",
+  "src/NNS.dll"
 ]

@@ -1,0 +1,106 @@
+# Appendix: Notation and Function Reference
+
+This appendix consolidates the notation used across the book and maps each object to its primary R implementation pattern. It is intended as a quick lookup for readers moving between theoretical sections and code-first workflows.
+
+Unless otherwise noted, all functions in this appendix come from the **NNS** package. In executable code, load the package once and then call functions directly as shown in the table entries below.
+
+```r
+library(NNS)
+```
+
+## Core directional operators and partial moments
+
+| Symbol | Definition | Interpretation | R function / pattern |
+|---|---|---|---|
+| $x^+$ | $\max(x,0)$ | Positive-part operator | `pmax(x, 0)` |
+| $(X-t)^+$ | $\max(X-t,0)$ | Deviation above benchmark $t$ | internal to `UPM(...)` |
+| $(t-X)^+$ | $\max(t-X,0)$ | Deviation below benchmark $t$ | internal to `LPM(...)` |
+| $L_r(t;X)$ | $E[(t-X)_+^r]$ | Lower partial moment, degree $r$ | `LPM(r, t, X)` |
+| $U_r(t;X)$ | $E[(X-t)_+^r]$ | Upper partial moment, degree $r$ | `UPM(r, t, X)` |
+| $L_r/(L_r+U_r)$ | Degree-$r$ lower ratio | Directional CDF-style probability below $t$ | `LPM.ratio(r, t, X)` |
+| $U_r/(L_r+U_r)$ | Degree-$r$ upper ratio | Directional probability above $t$ | `UPM.ratio(r, t, X)` |
+
+## Co-partial moments, dependence, and causation
+
+| Symbol | Definition / role | R function |
+|---|---|---|
+| $CoLPM, CoUPM$ | Concordant lower/upper co-partial moments | `Co.LPM(...)`, `Co.UPM(...)` |
+| $DLPM, DUPM$ | Divergent lower/upper co-partial moments | `D.LPM(...)`, `D.UPM(...)` |
+| $NNS.dep(X,Y)$ | Global nonlinear dependence measure | `NNS.dep(x, y)` |
+| $NNS.copula(X,Y)$ | Nonparametric dependence geometry / copula view | `NNS.copula(x, y)` |
+| $NNS.caus(X,Y)$ | Directional causation diagnostic | `NNS.caus(x, y)` |
+
+## Distribution comparison, dominance, and interval objects
+
+| Symbol | Definition / role | R function |
+|---|---|---|
+| $F^{(0)}(t)$ | Degree-zero empirical CDF (step measure) | `ecdf(x)(t)` or `LPM.ratio(0, t, x)` |
+| $F^{(1)}(t)$ | Degree-one continuous CDF-style ratio | `LPM.ratio(1, t, x)` |
+| $p = P(X' > Y')$ | Directional exceedance probability for pairwise comparison | estimated by cross-sample indicator averages |
+| $\text{Certainty}_{\text{ANOVA}}$ | NNS ANOVA agreement certainty from CDF benchmark deviations ($1$ = strongest agreement) | `NNS.ANOVA(...)` |
+| FSD / SSD / TSD | First-, second-, third-order stochastic dominance | `NNS.FSD(...)`, `NNS.SSD(...)`, `NNS.TSD(...)` |
+| $Q^-_{d}(\alpha)$ | Lower degree-$d$ quantile | `LPM.VaR(alpha, degree = d, x)` |
+| $Q^+_{d}(\alpha)$ | Upper degree-$d$ quantile | `UPM.VaR(alpha, degree = d, x)` |
+| PI$_{1-\alpha}$ | Prediction interval $[Q^-_d(\alpha/2),Q^+_d(\alpha/2)]$ | `LPM.VaR(...)` + `UPM.VaR(...)` |
+
+
+
+`LPM.VaR(percentile, degree, variable)`
+Lower-tail threshold operator obtained by inverting the degree-specific lower partial-moment probability representation.
+Interpretation by degree:
+
+* `degree = 0`: empirical-CDF lower quantile,
+* `degree = 1`: severity-weighted lower threshold based on directional magnitude,
+* `degree = 2`: extreme-deviation-sensitive lower threshold.
+  In finance, the degree-zero case is commonly called VaR, but the operator is more general than that label.
+
+`UPM.VaR(percentile, degree, variable)`
+Upper-tail analog of `LPM.VaR`, used for right-tail threshold selection and interval construction.
+
+
+
+## Directional Decision Regions Crosswalk (Classical → NNS)
+
+To maintain continuity with Chapter 22's directional decision-region framing, the table below maps common classical statistics and procedures to their directional NNS counterparts.
+
+| Classical statistic / workflow | Typical classical role | Directional NNS counterpart | Reference chapter | Notes |
+|---|---|---|---|---|
+| Pearson correlation | Linear association summary | `NNS.dep(x, y)` | Chapter 10 | Captures nonlinear and asymmetric dependence, not only linear co-movement. |
+| Parametric VaR / empirical quantile VaR | Tail-loss thresholding | `LPM.VaR(alpha, degree, x)` *(degree-dependent)* | Chapter 16 | Degree controls sensitivity to tail severity beyond degree-0 quantiles. |
+| Upper-tail quantile threshold | Right-tail risk/opportunity cutoff | `UPM.VaR(alpha, degree, x)` *(degree-dependent)* | Chapter 16 | Upper-tail analog to `LPM.VaR` for asymmetric interval construction. |
+| Classical ANOVA (mean-comparison test) | Group-level location comparison | `NNS.ANOVA(...)` *(degree-dependent CDF benchmarking)* | Chapter 15 | Agreement certainty is benchmarked through directional CDF-style deviations. |
+| Linear Granger-style directional inference | Lead-lag direction under linear structure | `NNS.caus(x, y)` | Chapter 14 | Directionality can be nonlinear and state dependent. |
+| Copula / Joint Tail Dependency | Joint probability of concurrent outcomes | `Co.LPM(degree, target.x, target.y, x, y)` / `Co.UPM(degree, target.x, target.y, x, y)` | Chapter 4 | Co.LPM captures concurrent downside structure; Co.UPM is the upper-tail counterpart for joint directional events. |
+| Mean-variance interval heuristics | Uncertainty bands under Gaussian assumptions | `LPM.VaR(...)` + `UPM.VaR(...)` *(degree-dependent bounds)* | Chapter 17 | Produces directional prediction intervals without normality assumptions. |
+
+
+## Regression and forecasting workflow objects
+
+| Symbol | Definition / role | R function | Reference chapter |
+|---|---|---|---|
+| $\hat y = \hat E[Y\mid X]$ | NNS conditional mean estimate | `NNS.reg(x, y)` | Chapter 22 |
+| Residual local distribution | Partition-level error distribution | via `NNS.reg(...)$Fitted.xy$residuals` outputs | Chapter 22 |
+| $\widehat{PI}(x_0)$ | Conditional prediction interval at $x_0$ | `NNS.reg(..., point.est = x0, confidence.interval = ...)` | Chapter 17 |
+| Regime-specific directional dependence | Time-local / state-local dependence | `NNS.dep(...)` on rolling/segmented windows | Chapter 10 |
+
+## A.3 Technical Note: Adaptive Order and Consistency Conditions
+
+Chapter 18 established two core consistency conditions for recursive mean-split regression:
+
+1. **Shrinking cell diameter** at each target location so local bias vanishes,
+2. **Growing cell occupancy** so local sample averages stabilize.
+
+When `order = NULL`, the implementation determines effective recursion depth per regressor from directional dependence with the response (`NNS.dep`-style logic). This modifies how quickly local cells contract across predictors, but it does not alter the fundamental structure of the consistency argument.
+
+High-dependence predictors are allocated deeper partitioning, so their local diameters contract faster in regions where signal is strong. Low-dependence predictors are partitioned more conservatively, preserving broader local averaging where aggressive refinement would primarily amplify noise. Occupancy control remains enforced through the minimum cell-size rule.
+
+The resulting estimator is therefore **locally adaptive in rate**:
+
+- in high-signal regions, convergence tracks a faster path closer to an oracle fixed-order choice for that local structure;
+- in low-signal regions, the estimator intentionally retains coarser cells, exchanging some local bias for improved stability.
+
+A concise takeaway is:
+
+> Under the Chapter 18 regularity conditions (shrinking local diameters and diverging local occupancy), dependence-driven order allocation preserves the same bias–variance decomposition used for consistency arguments, while allowing refinement to concentrate where dependence signal is stronger.
+
+The key practical point is that internal adaptive order selection keeps the same consistency checklist for users—control occupancy and ensure progressive local refinement—while often improving finite-sample stability by avoiding unnecessary depth in weak-signal coordinates.

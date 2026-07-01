@@ -1,15 +1,15 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "905b8bbd42b3236bf88aba7f18df7a9a378dbd7b",
-  "r_version": "13.0",
-  "r_src_tree_hash": "654e411bd4e8caabfd57a1a4190eb1d97411e059",
+  "r_commit": "9012ec236283e6584323cd482b9f0141b8b32a8b",
+  "r_version": "13.1",
+  "r_src_tree_hash": "ea9c70ebaaad905553e87bfc2273dfa6ad94161c",
   "core_repo": "OVVO-Financial/NNS-core",
   "core_commit": "cfc25a3469df6460f9224fb976fcb58de9d58068",
   "python_repo": "OVVO-Financial/NNS-python",
   "python_commit": null,
   "vendored_core_path": "extern/NNS-core",
   "vendored_r_path": "tools/NNS",
-  "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
+  "vendored_r_tarball": "tools/NNS_13.1.tar.gz",
   "r_cache_path": "tests/_r_cache.json",
   "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS."
 }

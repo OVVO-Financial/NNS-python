@@ -69,7 +69,11 @@ NNS.ARMA.optim <- function(variable,
                            seasonal.factor,
                            lin.only = FALSE,
                            negative.values = FALSE,
-                           obj.fn =  expression( mean((predicted - actual)^2) / (NNS::Co.LPM(1, predicted, actual, target_x = mean(predicted), target_y = mean(actual)) + NNS::Co.UPM(1, predicted, actual, target_x = mean(predicted), target_y = mean(actual)) )  ),
+                           obj.fn =  expression( {
+                             .denom <- NNS::Co.LPM(1, predicted, actual, target_x = mean(predicted), target_y = mean(actual)) +
+                                       NNS::Co.UPM(1, predicted, actual, target_x = mean(predicted), target_y = mean(actual))
+                             if (.denom == 0) Inf else mean((predicted - actual)^2) / .denom
+                           } ),
                            objective = "min",
                            linear.approximation = TRUE,
                            ncores = NULL,
@@ -125,32 +129,42 @@ NNS.ARMA.optim <- function(variable,
   
   methods <- c("lin", "nonlin", "both")
   if(lin.only) methods <- "lin"
-  
+
   for(j in methods){
     seasonal.combs <- current.seasonals <- vector(mode = "list")
     current.estimate <- numeric()
     
     if (j == "lin") {
       # Determine the number of cores to use
-      num_cores <- if (is.null(ncores)) {
-        max(2L, parallel::detectCores() - 1L)
+      auto_cores <- is.null(ncores)
+      num_cores <- if (auto_cores) {
+        max(1L, as.integer(parallel::detectCores()) - 1L, na.rm = TRUE)
       } else {
-        ncores
+        max(1L, as.integer(ncores), na.rm = TRUE)
       }
-      
+
+      # Workload gate: standing up a process cluster costs ~1s (spawn +
+      # exporting data to workers). For small series / few seasonal candidates
+      # that fixed cost can exceed the compute it parallelizes. The series-length
+      # / candidate-count heuristic only gates the AUTOMATIC default
+      # (ncores = NULL); an explicit ncores is an intentional request and is
+      # honored whenever there is more than one seasonal candidate to spread
+      # across cores.
+      use_parallel <- num_cores > 1 &&
+        length(seasonal.factor) >= 2L &&
+        (!auto_cores || (length(variable) >= 500L && length(seasonal.factor) >= 8L))
+
       # Manage cluster creation
       cl <- NULL
-      if (num_cores > 1) {
+      if (use_parallel) {
+        forked <- FALSE
         cl <- tryCatch(
-          parallel::makeForkCluster(num_cores),
+          { cl0 <- parallel::makeForkCluster(num_cores); forked <- TRUE; cl0 },
           error = function(e) parallel::makeCluster(num_cores)
         )
-        doParallel::registerDoParallel(cl)
-        invisible(data.table::setDTthreads(1))  # Restrict threading for parallelization
-        parallel::clusterEvalQ(cl, library(NNS))
-      } else {
-        foreach::registerDoSEQ()
-        invisible(data.table::setDTthreads(0))  # Default threading
+        # Fork workers inherit the already-loaded NNS namespace; only the PSOCK
+        # fallback needs an explicit library() call on each worker.
+        if (!forked) parallel::clusterEvalQ(cl, library(NNS))
       }
     }
     
@@ -181,8 +195,8 @@ NNS.ARMA.optim <- function(variable,
       if(is.null(ncol(seasonal.combs[[i]])) || dim(seasonal.combs[[i]])[2]==0) break 
       
       if (j == "lin") {
-        # Parallel or sequential computation based on num_cores
-        nns.estimates.indiv <- if (num_cores > 1) {
+        # Parallel or sequential computation based on the workload gate
+        nns.estimates.indiv <- if (use_parallel) {
           parallel::clusterExport(
             cl,
             varlist = c("variable", "h_eval", "training.set", "seasonal.combs", "i", "obj.fn", "negative.values", "NNS.ARMA", "print.trace"),
@@ -297,8 +311,6 @@ NNS.ARMA.optim <- function(variable,
       # Clean up cluster
       if (!is.null(cl)) {
         parallel::stopCluster(cl)
-        doParallel::stopImplicitCluster()
-        invisible(data.table::setDTthreads(0))  # Restore threading
         invisible(gc(verbose = FALSE))  # Clean up memory
       }
     }
@@ -516,7 +528,7 @@ NNS.ARMA.optim <- function(variable,
   }
   
   
-  return(list(periods = nns.periods,
+  return(.NNS.out(list(periods = nns.periods,
               weights = nns.weights,
               obj.fn = nns.SSE,
               method = nns.method,
@@ -526,5 +538,5 @@ NNS.ARMA.optim <- function(variable,
               errors = errors,
               results = model.results,
               lower.pred.int = lower_PIs,
-              upper.pred.int = upper_PIs))
+              upper.pred.int = upper_PIs)))
 }
