@@ -1,0 +1,586 @@
+# Why Correlation Fails
+
+Chapters 7 and 8 developed descriptive statistics and distribution estimation using directional partial moments.  
+Those results showed that many classical statistical quantities arise from aggregations of directional deviations relative to benchmarks.
+
+The next topic is **dependence between variables**.
+
+Classical statistics measures dependence primarily through **covariance and correlation**.  
+These statistics summarize relationships between variables with a single number.
+
+However, these measures possess fundamental limitations. They
+
+- measure only **linear association**,
+- aggregate directional information symmetrically,
+- and can obscure nonlinear, asymmetric, or tail-specific relationships.
+
+Directional statistics provides a deeper perspective.  
+Just as classical moments arise from aggregations of partial moments, **covariance and correlation arise from aggregations of directional co-partial moments**.
+
+This chapter explains why correlation can fail and establishes the connection between covariance and directional partial-moment matrices.
+
+---
+
+## Classical Dependence Measures
+
+For two random variables \(X\) and \(Y\), the **covariance** is
+
+\[
+\operatorname{Cov}(X,Y)
+=
+E[(X-\mu_X)(Y-\mu_Y)].
+\]
+
+Covariance measures the joint variation of the two variables relative to their means.
+
+The **Pearson correlation coefficient** standardizes covariance:
+
+\[
+\rho(X,Y)
+=
+\frac{\operatorname{Cov}(X,Y)}
+{\sigma_X\sigma_Y}.
+\]
+
+The statistic lies in the interval
+
+\[
+-1 \le \rho(X,Y) \le 1.
+\]
+
+Values near
+
+- \(1\) indicate strong positive linear association,
+- \(-1\) indicate strong negative linear association,
+- \(0\) indicate no linear association.
+
+The key limitation is that correlation measures **only linear relationships**.  
+If dependence is nonlinear, asymmetric, or concentrated in tails, correlation may understate it or miss it entirely.
+
+---
+
+## Directional Co-Partial Moments
+
+Directional statistics partitions the joint distribution relative to benchmark values \(t_X\) and \(t_Y\).
+
+Four directional regions arise:
+
+\[
+X \le t_X,\; Y \le t_Y,
+\]
+
+\[
+X \le t_X,\; Y > t_Y,
+\]
+
+\[
+X > t_X,\; Y \le t_Y,
+\]
+
+\[
+X > t_X,\; Y > t_Y.
+\]
+
+These regions correspond to combinations of directional deviations.
+
+Benchmarks may be chosen in different ways depending on the application:
+
+- **External benchmarks**, such as policy targets, required returns, safety thresholds, or liability levels.
+- **Internal benchmarks**, such as sample means, medians, or other distribution-derived reference points.
+
+The covariance decomposition developed in the next section uses the **means**:
+
+\[
+t_X = \mu_X,
+\qquad
+t_Y = \mu_Y.
+\]
+
+Define the positive-part operator
+
+\[
+(x)_+ = \max(x,0).
+\]
+
+The directional co-partial moments of order \(r,s\) are:
+
+### Co-Lower Partial Moment
+
+\[
+\operatorname{CoLPM}_{r,s}(X,Y)
+=
+E[(t_X-X)_+^r (t_Y-Y)_+^s].
+\]
+
+This measures concordant lower-side co-movement: both variables are below their benchmarks.
+
+### Co-Upper Partial Moment
+
+\[
+\operatorname{CoUPM}_{r,s}(X,Y)
+=
+E[(X-t_X)_+^r (Y-t_Y)_+^s].
+\]
+
+This measures concordant upper-side co-movement: both variables are above their benchmarks.
+
+### Divergent Lower Partial Moment
+
+\[
+\operatorname{DLPM}_{r,s}(X,Y)
+=
+E[(X-t_X)_+^r (t_Y-Y)_+^s].
+\]
+
+This measures one divergent direction: \(X\) is above its benchmark while \(Y\) is below its benchmark.
+
+### Divergent Upper Partial Moment
+
+\[
+\operatorname{DUPM}_{r,s}(X,Y)
+=
+E[(t_X-X)_+^r (Y-t_Y)_+^s].
+\]
+
+This measures the opposite divergent direction: \(X\) is below its benchmark while \(Y\) is above its benchmark.
+
+Together, these four quantities provide a **directional decomposition of dependence structure**.
+
+---
+
+## Covariance from Co-Partial Moments
+
+Covariance can be expressed directly in terms of directional co-partial moments.
+
+Let the benchmarks equal the means:
+
+\[
+t_X=\mu_X,
+\qquad
+t_Y=\mu_Y.
+\]
+
+From the directional decomposition introduced in Chapter 2,
+
+\[
+x = x_+ - (-x)_+.
+\]
+
+Applying this to deviations gives
+
+\[
+X-\mu_X = (X-\mu_X)_+ - (\mu_X-X)_+
+\]
+
+and
+
+\[
+Y-\mu_Y = (Y-\mu_Y)_+ - (\mu_Y-Y)_+.
+\]
+
+Define
+
+\[
+A=(X-\mu_X)_+,
+\qquad
+B=(\mu_X-X)_+,
+\]
+
+\[
+C=(Y-\mu_Y)_+,
+\qquad
+D=(\mu_Y-Y)_+.
+\]
+
+Then
+
+\[
+(X-\mu_X)(Y-\mu_Y)
+=
+(A-B)(C-D).
+\]
+
+Expanding gives
+
+\[
+(A-B)(C-D)
+=
+AC + BD - AD - BC.
+\]
+
+Substituting the definitions yields
+
+\[
+\begin{aligned}
+(X-\mu_X)(Y-\mu_Y)
+&=
+(X-\mu_X)_+(Y-\mu_Y)_+ \\
+&\quad+
+(\mu_X-X)_+(\mu_Y-Y)_+ \\
+&\quad-
+(X-\mu_X)_+(\mu_Y-Y)_+ \\
+&\quad-
+(\mu_X-X)_+(Y-\mu_Y)_+.
+\end{aligned}
+\]
+
+Taking expectations gives
+
+\[
+\operatorname{Cov}(X,Y)
+=
+\operatorname{CoUPM}_{1,1}(X,Y)
++
+\operatorname{CoLPM}_{1,1}(X,Y)
+-
+\operatorname{DLPM}_{1,1}(X,Y)
+-
+\operatorname{DUPM}_{1,1}(X,Y).
+\]
+
+Thus covariance is the **signed aggregation of four directional co-partial moments**.
+
+This mirrors the earlier variance decomposition
+
+\[
+\operatorname{Var}(X)
+=
+U_2(\mu;X)+L_2(\mu;X).
+\]
+
+The difference is that covariance requires both concordant and divergent directional components. Concordant components enter positively. Divergent components enter negatively.
+
+---
+
+## Covariance Matrices from Partial-Moment Matrices
+
+For a system of \(N\) variables, directional co-partial moments form matrices.
+
+Define the degree-1 directional matrices by
+
+\[
+\operatorname{CoLPM}_{ij}
+=
+\operatorname{CoLPM}_{1,1}(X_i,X_j),
+\]
+
+\[
+\operatorname{CoUPM}_{ij}
+=
+\operatorname{CoUPM}_{1,1}(X_i,X_j),
+\]
+
+\[
+\operatorname{DLPM}_{ij}
+=
+\operatorname{DLPM}_{1,1}(X_i,X_j),
+\]
+
+\[
+\operatorname{DUPM}_{ij}
+=
+\operatorname{DUPM}_{1,1}(X_i,X_j).
+\]
+
+Each matrix captures directional co-movement across the variables.
+
+The classical covariance matrix can be written as
+
+\[
+\Sigma
+=
+\operatorname{CoLPM}
++
+\operatorname{CoUPM}
+-
+\operatorname{DLPM}
+-
+\operatorname{DUPM}.
+\]
+
+The diagonal elements satisfy
+
+\[
+\Sigma_{ii}
+=
+\operatorname{Var}(X_i).
+\]
+
+This follows because when \(i=j\), the divergent partial moments vanish. A variable cannot be both above and below its own benchmark at the same observation. The expression therefore reduces to the variance decomposition derived earlier:
+
+\[
+\operatorname{Var}(X_i)
+=
+U_2(\mu_i;X_i)+L_2(\mu_i;X_i).
+\]
+
+Like their univariate counterparts, these directional matrices can be **estimated empirically from sample data** using sample co-partial moments.
+
+```{r pm-matrix-example}
+library(NNS)
+
+set.seed(123)
+x <- rnorm(100)
+y <- rnorm(100)
+
+cov.mtx <- PM.matrix(
+  LPM_degree = 1,
+  UPM_degree = 1,
+  target = "mean",
+  variable = cbind(x, y),
+  pop_adj = TRUE
+)
+
+cov.mtx
+
+# Reassembled covariance matrix
+cov.mtx$clpm + cov.mtx$cupm - cov.mtx$dlpm - cov.mtx$dupm
+
+# Standard covariance matrix
+cov(cbind(x, y))
+```
+
+The reassembled matrix is identical to the standard covariance matrix, confirming the degree-1 directional decomposition in empirical form.
+
+---
+
+## Gram-Matrix Structure of Concordant Co-Partial Moment Matrices
+
+The concordant co-partial moment matrices have a simple linear algebra structure.
+
+For a system of \(N\) variables observed over \(T\) periods, define the lower directional-deviation matrix \(L^{(r)}\) by
+
+\[
+L^{(r)}_{t i}
+=
+(t_i-X_{i,t})_+^r.
+\]
+
+The \(i\)-th column of \(L^{(r)}\) is the lower directional-deviation vector for variable \(X_i\).
+
+Then the co-lower partial moment matrix is
+
+\[
+\operatorname{CoLPM}^{(r)}
+=
+\frac{1}{T}
+\left(L^{(r)}\right)^\top L^{(r)}.
+\]
+
+Similarly, define the upper directional-deviation matrix \(U^{(r)}\) by
+
+\[
+U^{(r)}_{t i}
+=
+(X_{i,t}-t_i)_+^r.
+\]
+
+Then the co-upper partial moment matrix is
+
+\[
+\operatorname{CoUPM}^{(r)}
+=
+\frac{1}{T}
+\left(U^{(r)}\right)^\top U^{(r)}.
+\]
+
+Thus each concordant co-partial moment matrix is a **Gram matrix**: its entries are pairwise inner products of directional-deviation vectors.
+
+For any weight vector \(w\),
+
+\[
+\begin{aligned}
+w^\top \operatorname{CoLPM}^{(r)} w
+&=
+\frac{1}{T}
+w^\top
+\left(L^{(r)}\right)^\top
+L^{(r)}
+w \\
+&=
+\frac{1}{T}
+\left\|L^{(r)}w\right\|^2 \\
+&\geq 0.
+\end{aligned}
+\]
+
+Therefore \(\operatorname{CoLPM}^{(r)}\) is positive semidefinite. The same argument applies to \(\operatorname{CoUPM}^{(r)}\).
+
+This explains why concordant co-partial moment matrices are symmetric and positive semidefinite: they are matrices of inner products between directional deviation vectors. The result is structural, not distributional. It does not require normality, linearity, or parametric assumptions.
+
+This point should not be confused with the covariance reconstruction above. The concordant matrices \(\operatorname{CoLPM}\) and \(\operatorname{CoUPM}\) are positive semidefinite Gram matrices. The covariance matrix is a **signed aggregation** that subtracts the divergent matrices:
+
+\[
+\Sigma
+=
+\operatorname{CoLPM}
++
+\operatorname{CoUPM}
+-
+\operatorname{DLPM}
+-
+\operatorname{DUPM}.
+\]
+
+The Gram structure explains why the directional building blocks are well-behaved. The signed aggregation explains how classical covariance is recovered from those building blocks.
+
+---
+
+## Correlation as a Normalized Covariance
+
+The correlation matrix is obtained by standardizing covariance:
+
+\[
+\rho_{ij}
+=
+\frac{\Sigma_{ij}}
+{\sqrt{\Sigma_{ii}\Sigma_{jj}}}.
+\]
+
+Since covariance itself is derived from directional matrices, correlation represents a further aggregation.
+
+The information hierarchy becomes
+
+\[
+(\operatorname{CoLPM},\operatorname{CoUPM},\operatorname{DLPM},\operatorname{DUPM})
+\rightarrow
+\Sigma
+\rightarrow
+\rho.
+\]
+
+Directional matrices therefore preserve more structural information about dependence than correlation alone.
+
+Correlation is useful when a single linear summary is appropriate. It is incomplete when the dependence structure differs across lower, upper, or divergent regions.
+
+---
+
+## Nonlinear Dependence
+
+Correlation measures linear association and therefore fails when relationships are nonlinear.
+
+Consider
+
+\[
+Y=X^2
+\]
+
+with \(X\) symmetrically distributed around zero.
+
+In this case
+
+\[
+\operatorname{Corr}(X,Y)=0.
+\]
+
+For example, if \(X\sim N(0,1)\), then
+
+\[
+\operatorname{Corr}(X,X^2)=0.
+\]
+
+Despite zero correlation, the variables are perfectly dependent.
+
+Directional co-partial moments reveal this structure.
+
+With benchmark \(t_X=0\),
+
+- \(\operatorname{CoUPM}\) captures dependence when \(X>0\) and \(Y\) is above its benchmark,
+- \(\operatorname{DUPM}\) or \(\operatorname{DLPM}\) captures the mirrored dependence when \(X<0\), depending on the benchmark chosen for \(Y\).
+
+The directional matrices expose strong dependence that the aggregated covariance can cancel.
+
+---
+
+## Asymmetric Dependence
+
+**Asymmetric dependence** refers to dependence that differs between the upper and lower regions of the joint distribution.
+
+Examples include
+
+- financial assets that move together primarily during crashes,
+- economic variables responding differently to positive and negative shocks,
+- risk exposures concentrated in losses.
+
+Directional matrices isolate these effects directly.
+
+For example,
+
+\[
+\operatorname{CoLPM}
+\]
+
+captures joint downside deviations, while
+
+\[
+\operatorname{CoUPM}
+\]
+
+captures joint upside co-movement.
+
+If dependence is concentrated in one region, the directional matrices reveal it even when overall covariance appears modest.
+
+---
+
+## Tail Dependence
+
+Extreme events often drive the most consequential relationships.
+
+Correlation averages dependence across the entire distribution and therefore may understate tail relationships.
+
+Directional co-partial moments of higher order emphasize extreme deviations:
+
+\[
+\operatorname{CoLPM}_{r,s},
+\qquad
+\operatorname{CoUPM}_{r,s}.
+\]
+
+Increasing \(r\) and \(s\) increases sensitivity to extreme observations.
+
+This concept is closely related to **tail dependence in copula theory**, which Chapter 10 examines in detail.
+
+---
+
+## Information Loss in Aggregation
+
+The mapping from directional matrices to covariance is **many-to-one**.
+
+Different directional dependence structures can produce identical covariance values.
+
+Similarly, many covariance matrices produce identical correlation matrices after normalization.
+
+Thus correlation discards substantial structural information about joint distributions.
+
+Directional methods preserve this information by retaining contributions from each directional region separately.
+
+The directional representation is therefore strictly richer:
+
+\[
+\text{directional co-partial moments}
+\rightarrow
+\text{covariance}
+\rightarrow
+\text{correlation}.
+\]
+
+Each arrow aggregates information. Once aggregated, the lost directional structure cannot generally be recovered without additional assumptions.
+
+---
+
+## Summary
+
+This chapter examined the limitations of classical correlation and covariance.
+
+Key observations include:
+
+1. Correlation measures only linear association.
+2. Covariance aggregates directional co-deviations across the joint distribution.
+3. Covariance itself arises from directional co-partial moments.
+4. The covariance matrix equals a signed aggregation of directional partial-moment matrices.
+5. Concordant co-partial moment matrices are Gram matrices and are therefore symmetric and positive semidefinite.
+6. Correlation is the normalized version of the covariance aggregate.
+
+Directional statistics therefore provides a richer representation of dependence structure.
+
+The following chapter develops directional dependence measures built from directional co-partial moments.

@@ -1,0 +1,12 @@
+language: R
+sudo: false
+warnings_are_errors: false
+cache: packages
+branches:
+  only:
+  - NNS-Beta-Version
+r_binary_packages:
+  - RcppGSL 
+  - RcppZiggurat 
+  - Rfast
+  
