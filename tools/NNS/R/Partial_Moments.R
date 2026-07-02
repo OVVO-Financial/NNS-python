@@ -268,13 +268,13 @@ NNS.CDF <- function(variable,
   if (is.null(dim(variable))||ncol(variable)==1) {
     x    <- sort(variable)
     pval <- LPM.ratio(degree,x,variable)
-    DT   <- data.table::data.table(x, pval)
+    DT   <- data.frame(x, pval)
     colname <- switch(type,
                       cdf="CDF",
                       survival="S(x)",
                       hazard="h(x)",
                       `cumulative hazard`="H(x)")
-    data.table::setnames(DT, c("x",colname))
+    names(DT) <- c("x",colname)
     
     # adjust pval for survival/hazard/cumhaz
     if (type=="survival") DT[[2]] <- 1-DT[[2]]
@@ -308,7 +308,7 @@ NNS.CDF <- function(variable,
       }
     }
     
-    return(list(Function=DT,target.value=Pv))
+    return(list(Function=.NNS.df(DT),target.value=Pv))
   }
   
   # — Multivariate case (d >= 2)
@@ -356,10 +356,11 @@ NNS.CDF <- function(variable,
     }
     
     if (plot && ncol(variable) == 2) {
+      .nns_require_rgl()
       x1 <- variable[, 1]; x2 <- variable[, 2]
       u1 <- LPM.ratio(degree, x1, x1)
       u2 <- LPM.ratio(degree, x2, x2)
-      
+
       rgl::plot3d(u1, u2, CDF,
                   xlab = paste0(xlab, " uniform"), ylab = paste0(ylab, " uniform"), zlab = toupper(type),
                   col  = "steelblue", pch = 19, box = FALSE)
@@ -406,8 +407,8 @@ NNS.CDF <- function(variable,
       }
     }
     
-    outDT <- data.table::data.table(variable, CDF = CDF)
-    return(list(Function = outDT, target.value = Pv))
+    outDT <- data.frame(variable, CDF = CDF, check.names = FALSE)
+    return(list(Function = .NNS.df(outDT), target.value = Pv))
   }
 }
 
