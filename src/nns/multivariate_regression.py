@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _warn_unsupported
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 from nns.distance import KValue, nns_distance, nns_distance_path_single_bulk
@@ -40,7 +41,13 @@ def nns_m_reg(
     class_levels: list[object] | None = None,
 ) -> MRegResult:
     """Multivariate numeric regression matching R's NNS.M.reg path."""
-    del location, dist, return_values, plot_regions, ncores
+    _warn_unsupported(
+        location=location is not None,
+        dist=dist != "L2",
+        return_values=return_values is not False,
+        plot_regions=plot_regions,
+        ncores=ncores is not None,
+    )
     type_value = _normalize_type(type)
     x_values, y_values = _validate_inputs(
         x,
@@ -237,7 +244,6 @@ def _regression_points_matrix(
             noise_reduction=noise,
             plot=False,
             multivariate_call=True,
-            ncores=1,
         )
         points = np.asarray(result["x"], dtype=np.float64)
         columns.append(points)

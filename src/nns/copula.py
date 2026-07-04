@@ -7,7 +7,7 @@ from typing import cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.co_moments import _as_pair
 from nns.dependence import _dpm_nd
 from nns.pm_matrix import pm_matrix
@@ -48,10 +48,10 @@ def _copula(
     target: NDArray[np.float64],
     continuous: bool,
 ) -> float:
-    native = nnscore()
-    if native is not None and hasattr(native, "copula_nd"):
+    native_copula = native_fn("copula_nd")
+    if native_copula is not None:
         return float(
-            native.copula_nd(
+            native_copula(
                 np.ascontiguousarray(np.ravel(values, order="F")),
                 values.shape[0],
                 values.shape[1],

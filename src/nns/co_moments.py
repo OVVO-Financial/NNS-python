@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.core import _as_degree, _as_targets
 
 
@@ -69,33 +71,19 @@ def _co_moment(
     degree_x = _as_degree(degree_x)
     degree_y = _as_degree(degree_y)
 
-    native = nnscore()
-    if (
-        native is not None
-        and x_targets.size > 0
-        and y_targets.size > 0
-        and _native_function_available(native, x_side, y_side)
-    ):
-        x_contig = np.ascontiguousarray(x_values)
-        y_contig = np.ascontiguousarray(y_values)
-        x_targets_contig = np.ascontiguousarray(x_targets)
-        y_targets_contig = np.ascontiguousarray(y_targets)
-        if x_side is _lower and y_side is _lower:
-            native_result = native.co_lpm_v(
-                degree_x, degree_y, x_contig, y_contig, x_targets_contig, y_targets_contig
-            )
-        elif x_side is _upper and y_side is _upper:
-            native_result = native.co_upm_v(
-                degree_x, degree_y, x_contig, y_contig, x_targets_contig, y_targets_contig
-            )
-        elif x_side is _upper and y_side is _lower:
-            native_result = native.d_lpm_v(
-                degree_y, degree_x, x_contig, y_contig, x_targets_contig, y_targets_contig
-            )
-        else:
-            native_result = native.d_upm_v(
-                degree_x, degree_y, x_contig, y_contig, x_targets_contig, y_targets_contig
-            )
+    native, swap_degrees = _native_co_moment(x_side, y_side)
+    if native is not None and x_targets.size > 0 and y_targets.size > 0:
+        first_degree, second_degree = (
+            (degree_y, degree_x) if swap_degrees else (degree_x, degree_y)
+        )
+        native_result = native(
+            first_degree,
+            second_degree,
+            np.ascontiguousarray(x_values),
+            np.ascontiguousarray(y_values),
+            np.ascontiguousarray(x_targets),
+            np.ascontiguousarray(y_targets),
+        )
         moments = np.asarray(native_result, dtype=np.float64).reshape(-1)
         if np.asarray(target_x).ndim == 0 and np.asarray(target_y).ndim == 0:
             return float(moments[0])
@@ -115,14 +103,15 @@ def _co_moment(
     return moments
 
 
-def _native_function_available(native: object, x_side: object, y_side: object) -> bool:
+def _native_co_moment(x_side: object, y_side: object) -> tuple[Any | None, bool]:
+    """Return the native kernel for a side pair and whether it swaps degree order."""
     if x_side is _lower and y_side is _lower:
-        return hasattr(native, "co_lpm_v")
+        return native_fn("co_lpm_v"), False
     if x_side is _upper and y_side is _upper:
-        return hasattr(native, "co_upm_v")
+        return native_fn("co_upm_v"), False
     if x_side is _upper and y_side is _lower:
-        return hasattr(native, "d_lpm_v")
-    return hasattr(native, "d_upm_v")
+        return native_fn("d_lpm_v"), True
+    return native_fn("d_upm_v"), False
 
 
 def _as_pair(

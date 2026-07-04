@@ -6,7 +6,7 @@ from typing import Any, Literal, TypeAlias, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.core import _as_degree
 
 Target: TypeAlias = float | None | Literal["mean"] | NDArray[np.float64]
@@ -42,9 +42,9 @@ def pm_matrix(
 
     observations = values.shape[0]
 
-    native = nnscore()
-    if native is not None and hasattr(native, "pm_matrix"):
-        native_result = native.pm_matrix(
+    native_pm_matrix = native_fn("pm_matrix")
+    if native_pm_matrix is not None:
+        native_result = native_pm_matrix(
             lpm_degree,
             upm_degree,
             np.ascontiguousarray(targets),

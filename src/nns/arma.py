@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _fast_lm
+from nns._helpers import _fast_lm, _warn_unsupported
 from nns.co_moments import co_lpm, co_upm
 from nns.dependence import _gravity
 from nns.mc import nns_mc
@@ -32,7 +32,8 @@ def nns_arma_optim(
     plot: bool = False,
 ) -> dict[str, Any]:
     """Optimize seasonal factors for :func:`nns_arma` like R's ``NNS.ARMA.optim``."""
-    del ncores, print_trace
+    _warn_unsupported(ncores=ncores is not None)
+    del print_trace  # R console trace flag; NNS Python emits no console output.
 
     values = _as_variable(variable)
     original_values = values.copy()
@@ -365,7 +366,7 @@ def nns_arma(
     random_seed: int | None = None,
 ) -> NDArray[np.float64] | dict[str, NDArray[np.float64]]:
     """Autoregressive NNS forecast matching R's installed NNS.ARMA behavior."""
-    del seasonal_plot
+    del seasonal_plot  # R plotting side effect; NNS Python returns data instead.
 
     horizon = int(h)
     if horizon < 1:

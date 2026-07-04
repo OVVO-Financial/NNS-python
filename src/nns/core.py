@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 
 
 def lpm(
@@ -11,63 +11,7 @@ def lpm(
     target: float | NDArray[np.float64],
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
-    targets = _as_targets(target)
-    degree = _as_degree(degree)
-
-    native = nnscore()
-    if (
-        native is not None
-        and hasattr(native, "lpm")
-        and targets.size > 0
-        and _native_safe(values, targets)
-    ):
-        native_result = native.lpm(
-            degree,
-            float(targets[0]) if np.asarray(target).ndim == 0 else targets,
-            np.ascontiguousarray(values),
-        )
-        return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
-
-    if degree == 0:
-        moments = np.mean(values <= targets[:, np.newaxis], axis=1)
-        return _result_for_target(moments, target)
-
-    moments = np.mean(np.maximum(0.0, targets[:, np.newaxis] - values) ** degree, axis=1)
-    return _result_for_target(moments, target)
-
-
-def lpm_ratio(
-    degree: float,
-    target: float | NDArray[np.float64],
-    x: NDArray[np.float64],
-) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
-    targets = _as_targets(target)
-    degree = _as_degree(degree)
-
-    native = nnscore()
-    if (
-        native is not None
-        and hasattr(native, "lpm_ratio_v")
-        and targets.size > 0
-        and _native_safe(values, targets)
-    ):
-        native_result = native.lpm_ratio_v(
-            degree,
-            np.ascontiguousarray(targets),
-            np.ascontiguousarray(values),
-        )
-        return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
-
-    if degree == 0:
-        return lpm(degree, target, x)
-
-    lower = lpm(degree, target, x)
-    upper = upm(degree, target, x)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = np.asarray(lower) / (np.asarray(lower) + np.asarray(upper))
-    return _result_for_target(np.asarray(ratio).reshape(-1), target)
+    return _moment(degree, target, x, lower=True)
 
 
 def upm(
@@ -75,30 +19,15 @@ def upm(
     target: float | NDArray[np.float64],
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
-    targets = _as_targets(target)
-    degree = _as_degree(degree)
+    return _moment(degree, target, x, lower=False)
 
-    native = nnscore()
-    if (
-        native is not None
-        and hasattr(native, "upm")
-        and targets.size > 0
-        and _native_safe(values, targets)
-    ):
-        native_result = native.upm(
-            degree,
-            float(targets[0]) if np.asarray(target).ndim == 0 else targets,
-            np.ascontiguousarray(values),
-        )
-        return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
 
-    if degree == 0:
-        moments = np.mean(values > targets[:, np.newaxis], axis=1)
-        return _result_for_target(moments, target)
-
-    moments = np.mean(np.maximum(0.0, values - targets[:, np.newaxis]) ** degree, axis=1)
-    return _result_for_target(moments, target)
+def lpm_ratio(
+    degree: float,
+    target: float | NDArray[np.float64],
+    x: NDArray[np.float64],
+) -> float | NDArray[np.float64]:
+    return _ratio(degree, target, x, lower=True)
 
 
 def upm_ratio(
@@ -106,18 +35,51 @@ def upm_ratio(
     target: float | NDArray[np.float64],
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
+    return _ratio(degree, target, x, lower=False)
+
+
+def _moment(
+    degree: float,
+    target: float | NDArray[np.float64],
+    x: NDArray[np.float64],
+    *,
+    lower: bool,
+) -> float | NDArray[np.float64]:
     values = _as_1d_values(x)
     targets = _as_targets(target)
     degree = _as_degree(degree)
 
-    native = nnscore()
-    if (
-        native is not None
-        and hasattr(native, "upm_ratio_v")
-        and targets.size > 0
-        and _native_safe(values, targets)
-    ):
-        native_result = native.upm_ratio_v(
+    native = native_fn("lpm" if lower else "upm")
+    if native is not None and targets.size > 0 and _native_safe(values, targets):
+        native_target = float(targets[0]) if np.asarray(target).ndim == 0 else targets
+        native_result = native(degree, native_target, np.ascontiguousarray(values))
+        return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
+
+    if degree == 0:
+        # R convention: equality with the target counts toward the lower moment.
+        grid = targets[:, np.newaxis]
+        moments = np.mean(values <= grid if lower else values > grid, axis=1)
+        return _result_for_target(moments, target)
+
+    deviations = targets[:, np.newaxis] - values if lower else values - targets[:, np.newaxis]
+    moments = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
+    return _result_for_target(moments, target)
+
+
+def _ratio(
+    degree: float,
+    target: float | NDArray[np.float64],
+    x: NDArray[np.float64],
+    *,
+    lower: bool,
+) -> float | NDArray[np.float64]:
+    values = _as_1d_values(x)
+    targets = _as_targets(target)
+    degree = _as_degree(degree)
+
+    native = native_fn("lpm_ratio_v" if lower else "upm_ratio_v")
+    if native is not None and targets.size > 0 and _native_safe(values, targets):
+        native_result = native(
             degree,
             np.ascontiguousarray(targets),
             np.ascontiguousarray(values),
@@ -125,12 +87,13 @@ def upm_ratio(
         return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
 
     if degree == 0:
-        return upm(degree, target, x)
+        return _moment(degree, target, x, lower=lower)
 
-    lower = lpm(degree, target, x)
-    upper = upm(degree, target, x)
+    lower_moment = np.asarray(lpm(degree, target, x))
+    upper_moment = np.asarray(upm(degree, target, x))
+    numerator = lower_moment if lower else upper_moment
     with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = np.asarray(upper) / (np.asarray(lower) + np.asarray(upper))
+        ratio = numerator / (lower_moment + upper_moment)
     return _result_for_target(np.asarray(ratio).reshape(-1), target)
 
 

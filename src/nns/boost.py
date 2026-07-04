@@ -50,7 +50,7 @@ def nns_boost(
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
 ) -> BoostResult:
     """Deterministic NNS.boost port using real NNS.reg and NNS.stack internals."""
-    del status
+    del status  # R console progress flag; NNS Python emits no console output.
     type_value = _normalize_type(type)
     if balance:
         type_value = "class"

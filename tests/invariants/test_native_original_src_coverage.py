@@ -39,9 +39,9 @@ def native() -> ModuleType:
 
 @pytest.fixture()
 def disable_native(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr(core_module, "nnscore", lambda: None)
-    monkeypatch.setattr(co_moments_module, "nnscore", lambda: None)
-    monkeypatch.setattr(pm_matrix_module, "nnscore", lambda: None)
+    monkeypatch.setattr(core_module, "native_fn", lambda name: None)
+    monkeypatch.setattr(co_moments_module, "native_fn", lambda name: None)
+    monkeypatch.setattr(pm_matrix_module, "native_fn", lambda name: None)
     yield
 
 
@@ -153,7 +153,8 @@ class _FinitePartialMomentNative:
 def test_public_lpm_upm_non_finite_values_use_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(core_module, "nnscore", lambda: _FinitePartialMomentNative())
+    fake = _FinitePartialMomentNative()
+    monkeypatch.setattr(core_module, "native_fn", lambda name: getattr(fake, name, None))
     x = np.array([1.0, np.nan, 3.0], dtype=np.float64)
 
     assert np.isnan(lpm(1.0, 0.0, x))
@@ -206,8 +207,10 @@ def test_public_partial_moment_fallback_matches_native(
     del disable_native
     fallback = fallback_call()
     native_module = _native()
-    monkeypatch.setattr(core_module, "nnscore", lambda: native_module)
-    monkeypatch.setattr(co_moments_module, "nnscore", lambda: native_module)
+    monkeypatch.setattr(core_module, "native_fn", lambda name: getattr(native_module, name, None))
+    monkeypatch.setattr(
+        co_moments_module, "native_fn", lambda name: getattr(native_module, name, None)
+    )
     actual = native_call()
     np.testing.assert_allclose(actual, fallback)
 
@@ -220,7 +223,9 @@ def test_public_pm_matrix_fallback_matches_native(
     fallback = pm_matrix(1.0, 1.0, "mean", matrix, True, norm=False)
 
     native_module = _native()
-    monkeypatch.setattr(pm_matrix_module, "nnscore", lambda: native_module)
+    monkeypatch.setattr(
+        pm_matrix_module, "native_fn", lambda name: getattr(native_module, name, None)
+    )
     actual = pm_matrix(1.0, 1.0, "mean", matrix, True, norm=False)
 
     assert actual.keys() == fallback.keys()

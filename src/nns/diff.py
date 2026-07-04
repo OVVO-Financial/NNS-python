@@ -206,7 +206,7 @@ def dy_d(
     messages: bool = True,
 ) -> dict[str, NDArray[np.float64]]:
     """Partial derivative wrapper for R's ``dy.d_`` numeric matrix path."""
-    del messages
+    del messages  # R console message flag; NNS Python emits no console output.
     x_values = np.asarray(x, dtype=np.float64)
     if x_values.ndim != 2:
         raise ValueError("Please ensure (x) is a matrix or data.frame type object.")

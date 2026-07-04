@@ -36,7 +36,7 @@ def nns_meboot(
     Stochastic draws use NumPy's RNG, so exact replicate parity with R is not
     expected. Deterministic diagnostics follow the installed R algorithm.
     """
-    del elaps
+    del elaps  # R elapsed-time printout flag; NNS Python emits no console output.
     values = np.asarray(x, dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be a 1D numeric vector.")

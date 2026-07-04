@@ -5,7 +5,7 @@ import math
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.dependence import _quartiles_like_r_code, _simple_bin_counts
 
 
@@ -60,10 +60,10 @@ def nns_mode(
     if n == 0:
         return np.array([np.nan], dtype=np.float64) if multi else float("nan")
 
-    native = nnscore()
-    if native is not None and hasattr(native, "mode"):
+    native_mode = native_fn("mode")
+    if native_mode is not None:
         native_result = np.asarray(
-            native.mode(np.ascontiguousarray(finite), discrete, multi), dtype=np.float64
+            native_mode(np.ascontiguousarray(finite), discrete, multi), dtype=np.float64
         )
         if multi:
             return native_result
@@ -87,9 +87,9 @@ def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     if bool(np.all(finite == finite[0])):
         return float(finite[0])
 
-    native = nnscore()
-    if native is not None and hasattr(native, "gravity"):
-        return float(native.gravity(np.ascontiguousarray(finite), discrete))
+    native_gravity = native_fn("gravity")
+    if native_gravity is not None:
+        return float(native_gravity(np.ascontiguousarray(finite), discrete))
 
     value_range = float(abs(finite[-1] - finite[0]))
     if value_range == 0.0:
