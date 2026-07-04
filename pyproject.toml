@@ -59,21 +59,23 @@ build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 wheel.packages = ["src/nns"]
+# Everything git-tracked ships by default; include re-adds files under an
+# excluded directory (include patterns take priority over exclude).
 sdist.include = [
-    "/CMakeLists.txt",
-    "/LICENSE",
-    "/README.md",
-    "/docs",
-    "/sync",
-    "/extern/NNS-core",
+    "/sync/nns_source.json",
+]
+sdist.exclude = [
+    "/tests",
+    "/tools",
     "/original_tests",
     "/scripts",
-    "/tools/NNS",
-    "/tools/NNS_13.0.tar.gz",
-    "/tests/_r_cache.json",
-    "/tests/fixtures/original_tests_expected.json",
-    "/pyproject.toml",
-    "/src",
+    "/docs",
+    "/sync",
+    "/gists",
+    "/examples",
+    "/.github",
+    "/mkdocs.yml",
+    "/uv.lock",
 ]
 
 [tool.pytest.ini_options]
