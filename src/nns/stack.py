@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +13,7 @@ from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 from nns.regression import (
     Order,
+    RegResult,
     _expand_factor_predictors,
     _normalize_type,
     _prepare_y_values,
@@ -22,8 +23,32 @@ from nns.regression import (
 )
 
 Objective = Literal["min", "max"]
+
+StackPredInt = dict[str, NDArray[np.float64]]
+"""Interval arrays keyed like R's stack pred.int output."""
 Method = int | Sequence[int]
-StackResult = dict[str, Any]
+StackResult = TypedDict(
+    "StackResult",
+    {
+        "OBJfn.reg": float,
+        "NNS.reg.n.best": float,
+        "probability.threshold": float,
+        "OBJfn.dim.red": float,
+        "NNS.dim.red.threshold": float,
+        "reg": NDArray[np.float64],
+        "reg.pred.int": "StackPredInt | None",
+        "dim.red": NDArray[np.float64],
+        "dim.red.pred.int": "StackPredInt | None",
+        "stack": NDArray[np.float64],
+        "pred.int": "StackPredInt | None",
+    },
+)
+"""``nns_stack`` result mirroring R's NNS.stack output names.
+
+``reg``/``dim.red`` carry each method's out-of-sample estimates and ``stack``
+the weighted combination; the ``*.pred.int`` entries are ``None`` unless
+``pred_int`` is requested.
+"""
 
 
 def nns_stack(
@@ -299,7 +324,7 @@ def _evaluate_method2(
         fold_scores.append(float(scores[best_index]))
 
         if stack and methods == (1, 2):
-            fit = nns_reg(
+            fit = cast("RegResult", nns_reg(
                 cv_x_train,
                 cv_y_train,
                 point_est=cv_x_test,
@@ -308,7 +333,7 @@ def _evaluate_method2(
                 order=order,
                 dist=dist,
                 point_only=False,
-            )
+            ))
             train_star = cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"]
             test_star = _xstar_for_points(
                 fit,
@@ -322,7 +347,7 @@ def _evaluate_method2(
     final_class_threshold = (
         _threshold_mode(threshold_results) if type_value == "class" else math.nan
     )
-    final_fit = nns_reg(
+    final_fit = cast("RegResult", nns_reg(
         x_train,
         y_train,
         point_est=x_test,
@@ -333,7 +358,7 @@ def _evaluate_method2(
         point_only=False,
         confidence_interval=pred_int,
         type=type_value,
-    )
+    ))
     fitted = cast(dict[str, NDArray[np.float64]], final_fit["Fitted.xy"])
     fitted_yhat = fitted["y.hat"]
     prediction = _as_prediction(final_fit["Point.est"], x_test.shape[0])
@@ -579,7 +604,7 @@ def _fold_xstar(
             predicted = _class_threshold_round(predicted, threshold, cv_y_train)
         scores[idx] = objective_fn(predicted, cv_y_test)
     best_index = int(np.nanargmin(scores) if objective == "min" else np.nanargmax(scores))
-    fit = nns_reg(
+    fit = cast("RegResult", nns_reg(
         cv_x_train,
         cv_y_train,
         point_est=cv_x_test,
@@ -588,7 +613,7 @@ def _fold_xstar(
         order=order,
         dist=dist,
         point_only=False,
-    )
+    ))
     return cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"], _xstar_for_points(
         fit,
         cv_x_train,
@@ -662,14 +687,14 @@ def _threshold_grid(
     elif isinstance(dim_red_method, str) and dim_red_method.lower() == "equal":
         return np.array([0.0], dtype=np.float64)
     else:
-        fit = nns_reg(
+        fit = cast("RegResult", nns_reg(
             x,
             y,
             dim_red_method=dim_red_method,
             order=order,
             dist=dist,
             point_only=True,
-        )
+        ))
         equation = cast(dict[str, NDArray[np.float64]], fit["equation"])
         scores = np.abs(np.round(equation["Coefficient"][:-1], 2))
     scores = np.asarray(scores, dtype=np.float64)
@@ -711,7 +736,7 @@ def _reg_point_est(
 
 
 def _xstar_for_points(
-    fit: dict[str, Any],
+    fit: RegResult,
     train_x: NDArray[np.float64],
     test_x: NDArray[np.float64],
     *,

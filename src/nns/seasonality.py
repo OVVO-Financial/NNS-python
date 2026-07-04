@@ -2,12 +2,30 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from typing import SupportsInt, cast
+from typing import SupportsInt, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-SeasonalityResult = dict[str, object]
+SeasonalityTable = TypedDict(
+    "SeasonalityTable",
+    {
+        "Period": NDArray[np.int64],
+        "Coefficient.of.Variation": NDArray[np.float64],
+        "Variable.Coefficient.of.Variation": NDArray[np.float64],
+    },
+)
+"""Per-period seasonality diagnostics ordered by strength (R's ``$all.periods``)."""
+
+SeasonalityResult = TypedDict(
+    "SeasonalityResult",
+    {
+        "all.periods": SeasonalityTable,
+        "best.period": int,
+        "periods": NDArray[np.int64],
+    },
+)
+"""``nns_seas`` result mirroring R's NNS.seas output names."""
 _CacheKey = tuple[bytes, tuple[int, ...], bool]
 _CACHE_MAX_SIZE = 32
 _CACHE: OrderedDict[_CacheKey, SeasonalityResult] = OrderedDict()
@@ -374,15 +392,17 @@ def _clone_result(result: SeasonalityResult) -> SeasonalityResult:
     table = result["all.periods"]
     if not isinstance(table, dict):
         raise TypeError("Invalid seasonality result cache payload.")
-    cloned_table = {
-        "Period": np.asarray(table["Period"]).copy(),
-        "Coefficient.of.Variation": np.asarray(table["Coefficient.of.Variation"]).copy(),
+    cloned_table: SeasonalityTable = {
+        "Period": np.asarray(table["Period"], dtype=np.int64).copy(),
+        "Coefficient.of.Variation": np.asarray(
+            table["Coefficient.of.Variation"], dtype=np.float64
+        ).copy(),
         "Variable.Coefficient.of.Variation": np.asarray(
-            table["Variable.Coefficient.of.Variation"]
+            table["Variable.Coefficient.of.Variation"], dtype=np.float64
         ).copy(),
     }
     return {
         "all.periods": cloned_table,
         "best.period": int(cast(SupportsInt, result["best.period"])),
-        "periods": np.asarray(result["periods"]).copy(),
+        "periods": np.asarray(result["periods"], dtype=np.int64).copy(),
     }

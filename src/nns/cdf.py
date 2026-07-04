@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns.dependence import co_lpm_nd
-from nns.regression import nns_reg
+from nns.regression import RegResult, nns_reg
+
+if TYPE_CHECKING:
+    from nns.multivariate_regression import MRegResult
 
 
 def nns_cdf(
@@ -73,7 +76,7 @@ def _univariate_cdf(
     }[type_value]
 
     y = pval.copy()
-    fit: dict[str, Any] | None = None
+    fit: RegResult | MRegResult | None = None
     if type_value == "survival":
         y = 1.0 - y
     elif type_value == "hazard":

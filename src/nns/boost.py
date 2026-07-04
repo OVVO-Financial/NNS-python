@@ -4,7 +4,7 @@ import itertools
 import math
 import warnings
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +13,8 @@ from nns.categorical import _balance_class_training, _dense_factor_codes, encode
 from nns.dependence import _gravity
 from nns.regression import (
     Order,
+    RegResult,
+    RegXStar,
     _normalize_type,
     _prepare_y_values,
     _r_minmax_columns,
@@ -22,7 +24,16 @@ from nns.regression import (
 from nns.stack import nns_stack
 
 Objective = Literal["min", "max"]
-BoostResult = dict[str, Any]
+BoostResult = TypedDict(
+    "BoostResult",
+    {
+        "feature.weights": NDArray[np.float64],
+        "feature.frequency": NDArray[np.float64],
+        "results": NotRequired[NDArray[np.float64]],
+        "pred.int": NotRequired["dict[str, NDArray[np.float64]] | None"],
+    },
+)
+"""``nns_boost`` result. ``features_only=True`` returns only the feature keys."""
 
 
 def nns_boost(
@@ -267,7 +278,8 @@ def _nns_boost_core(
         order=depth,
         point_only=False,
     )
-    xstar_train = np.asarray(xstar_fit["x.star"]["x"], dtype=np.float64)
+    x_star = cast("RegXStar", cast("RegResult", xstar_fit)["x.star"])
+    xstar_train = np.asarray(x_star["x"], dtype=np.float64)
     xstar_train = _fill_nan_with_gravity(xstar_train)
     xstar_test = _project_xstar(x_train, x_test, coef)
     xstar_test = _fill_nan_with_gravity(xstar_test)

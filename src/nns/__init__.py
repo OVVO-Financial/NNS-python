@@ -4,10 +4,20 @@ from typing import Any
 
 from nns.pm_matrix import pm_matrix as pm_matrix
 
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 
 _EXPORTS = {
+    "BoostResult": ("nns.boost", "BoostResult"),
     "FactorDesign": ("nns.regression", "FactorDesign"),
+    "MRegResult": ("nns.multivariate_regression", "MRegResult"),
+    "MebootResult": ("nns.meboot", "MebootResult"),
+    "PartResult": ("nns.part", "PartResult"),
+    "RegFitted": ("nns.regression", "RegFitted"),
+    "RegPoints": ("nns.regression", "RegPoints"),
+    "RegResult": ("nns.regression", "RegResult"),
+    "SeasonalityResult": ("nns.seasonality", "SeasonalityResult"),
+    "StackResult": ("nns.stack", "StackResult"),
+    "VarResult": ("nns.var", "VarResult"),
     "causal_matrix": ("nns.causation", "causal_matrix"),
     "co_lpm": ("nns.co_moments", "co_lpm"),
     "co_lpm_nd": ("nns.dependence", "co_lpm_nd"),
