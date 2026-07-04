@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
+
+
+def _warn_unsupported(**was_set: bool) -> None:
+    """Warn about R-compatibility parameters that have no effect in NNS Python.
+
+    Each keyword names a parameter; pass True when the caller deviated from the
+    default and would therefore expect the parameter to do something.
+    """
+    ignored = [name for name, flag in was_set.items() if flag]
+    if ignored:
+        warnings.warn(
+            f"{', '.join(ignored)}: accepted for R NNS API compatibility "
+            "but not implemented in NNS Python; ignored.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def _fast_lm(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, float]:
@@ -17,9 +35,9 @@ def _fast_lm(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, flo
     if x_values.size == 0:
         raise ValueError("x and y must be non-empty.")
 
-    native = nnscore()
-    if native is not None and hasattr(native, "fast_lm"):
-        result = native.fast_lm(np.ascontiguousarray(x_values), np.ascontiguousarray(y_values))
+    native_fast_lm = native_fn("fast_lm")
+    if native_fast_lm is not None:
+        result = native_fast_lm(np.ascontiguousarray(x_values), np.ascontiguousarray(y_values))
         coef = result["coef"]
         return float(coef[0]), float(coef[1])
 

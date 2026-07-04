@@ -6,7 +6,7 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity
 
@@ -71,9 +71,9 @@ def nns_part(
     xonly = type is not None
     n = x_values.size
 
-    native = nnscore()
-    if native is not None and hasattr(native, "nns_part_off") and noise == "off":
-        res = native.nns_part_off(
+    native_part = native_fn("nns_part_off")
+    if native_part is not None and noise == "off":
+        res = native_part(
             np.ascontiguousarray(x_values),
             np.ascontiguousarray(y_values),
             xonly,

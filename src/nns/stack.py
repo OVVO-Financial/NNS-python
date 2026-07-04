@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _warn_unsupported
 from nns.categorical import _balance_class_training, _dense_factor_codes
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
@@ -51,7 +52,10 @@ def nns_stack(
     random_seed: int | None = None,
 ) -> StackResult:
     """Port of R's deterministic numeric/classification NNS.stack orchestration."""
-    del optimize_threshold, status, ncores
+    _warn_unsupported(ncores=ncores is not None)
+    # optimize_threshold defaults to True in R but the threshold search is not
+    # ported; status is R's console progress flag and NNS Python prints nothing.
+    del optimize_threshold, status
     type_value = _normalize_type(type)
     if balance:
         type_value = "class"

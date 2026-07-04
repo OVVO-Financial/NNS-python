@@ -8,8 +8,8 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _fast_lm, _is_fcl
-from nns._native import nnscore
+from nns._helpers import _fast_lm, _is_fcl, _warn_unsupported
+from nns._native import native_fn
 from nns.categorical import encode_factor_codes, factor_2_dummy_fr
 from nns.causation import _uni_caus
 from nns.central_tendencies import nns_mode
@@ -58,7 +58,10 @@ def nns_reg(
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
 ) -> dict[str, Any]:
     """Univariate numeric port of R's NNS.reg."""
-    del return_values, ncores
+    _warn_unsupported(
+        return_values=return_values is not True,
+        ncores=ncores is not None,
+    )
 
     if dim_red_method is not None:
         result = _nns_reg_dimred(
@@ -127,6 +130,8 @@ def nns_reg(
         )
         return result
 
+    # tau, threshold, n_best, and dist only apply to the dim-red and
+    # multivariate paths dispatched above, mirroring R's NNS.reg.
     del tau, threshold, n_best, dist
     x_values, y_values = _validate_univariate_inputs(
         x_for_dispatch,
@@ -138,12 +143,6 @@ def nns_reg(
     class_mode = type_value == "class" or _should_auto_classify(y_values)
     if class_mode:
         noise_reduction = "mode_class"
-    _reject_deferred_paths(
-        point_est=point_for_dispatch,
-        confidence_interval=confidence_interval,
-        smooth=smooth,
-        multivariate_call=multivariate_call,
-    )
     noise = _validate_noise_reduction(noise_reduction)
     point_values = _as_point_est(point_for_dispatch)
     result = _nns_reg_univariate_core(
@@ -260,9 +259,9 @@ def _nns_reg_univariate_core(
         and dep_order != "max"
         and not isinstance(order, str)
     ):
-        native = nnscore()
-        if native is not None and hasattr(native, "nns_reg_mv"):
-            res = native.nns_reg_mv(
+        native_reg_mv = native_fn("nns_reg_mv")
+        if native_reg_mv is not None:
+            res = native_reg_mv(
                 np.ascontiguousarray(x_values),
                 np.ascontiguousarray(y_values),
                 float(dependence),
@@ -903,17 +902,6 @@ def _dimred_order(x_star: NDArray[np.float64], y: NDArray[np.float64], order: Or
     if y.size < 100:
         computed = _round_half_up(max(1.0, computed / 2.0))
     return max(1, computed)
-
-
-def _reject_deferred_paths(
-    *,
-    point_est: NDArray[np.float64] | float | None,
-    confidence_interval: float | None,
-    smooth: bool,
-    multivariate_call: bool,
-    allow_smooth_fallback: bool = False,
-) -> None:
-    del point_est, confidence_interval, smooth, multivariate_call, allow_smooth_fallback
 
 
 def _validate_noise_reduction(value: str) -> NoiseReduction:

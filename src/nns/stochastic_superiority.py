@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.meboot import nns_meboot
 from nns.var import lpm_var, upm_var
 
@@ -73,11 +73,9 @@ def _stoch_superiority(
     if xs.size == 0 or ys.size == 0:
         raise ValueError("x and y must both have positive length.")
 
-    native = nnscore()
-    if native is not None and hasattr(native, "stochastic_superiority"):
-        return dict(
-            native.stochastic_superiority(np.ascontiguousarray(xs), np.ascontiguousarray(ys))
-        )
+    native_ss = native_fn("stochastic_superiority")
+    if native_ss is not None:
+        return dict(native_ss(np.ascontiguousarray(xs), np.ascontiguousarray(ys)))
 
     xs = np.sort(xs)
     ys = np.sort(ys)

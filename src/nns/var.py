@@ -8,6 +8,7 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _warn_unsupported
 from nns.core import lpm_ratio, upm_ratio
 
 _R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
@@ -33,7 +34,12 @@ def nns_var(
     ``interpolated_and_extrapolated`` and ``names`` instead of returning a bare
     data frame as R does.
     """
-    del obj_fn, status, ncores, nowcast
+    _warn_unsupported(
+        obj_fn=obj_fn is not None,
+        ncores=ncores is not None,
+        nowcast=nowcast,
+    )
+    del status  # R console progress flag; NNS Python emits no console output.
 
     method = dim_red_method.lower()
     if method not in {"cor", "nns.dep", "nns.caus", "all"}:
@@ -140,7 +146,6 @@ def _var_interpolate_and_extrapolate(
                 order=None,
                 folds=5,
                 method=1,
-                ncores=1,
                 status=False,
             )["stack"]
             variable_interpolation[missing] = np.asarray(fill, dtype=np.float64)
@@ -149,7 +154,6 @@ def _var_interpolate_and_extrapolate(
                 complete[:, 0],
                 complete[:, 1],
                 order="max",
-                ncores=1,
                 point_est=np.asarray(missing, dtype=np.float64) + 1,
                 plot=False,
                 point_only=True,
@@ -175,7 +179,6 @@ def _var_interpolate_and_extrapolate(
                 h=h,
                 seasonal_factor=None if periods is None else periods,
                 negative_values=float(np.min(variable_interpolation)) < 0.0,
-                ncores=1,
             )
             forecast = np.asarray(result["results"], dtype=np.float64)
             univariate_columns.append(forecast)

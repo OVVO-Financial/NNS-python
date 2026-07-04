@@ -6,7 +6,7 @@ from collections import defaultdict
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import nnscore
+from nns._native import native_fn
 from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
 
 
@@ -18,9 +18,9 @@ def nns_dep(
     """Return NNS nonlinear correlation and dependence for a pair of variables."""
     x_values, y_values = _as_pair(x, y)
 
-    native = nnscore()
-    if native is not None and hasattr(native, "nns_dep_pair"):
-        res = native.nns_dep_pair(
+    native_dep_pair = native_fn("nns_dep_pair")
+    if native_dep_pair is not None:
+        res = native_dep_pair(
             np.ascontiguousarray(x_values),
             np.ascontiguousarray(y_values),
             bool(asym),
@@ -287,10 +287,10 @@ def _as_nd_moment_inputs(
 
 
 def _gravity(x: NDArray[np.float64]) -> float:
-    native = nnscore()
-    if native is not None and hasattr(native, "gravity_exact"):
+    native_gravity_exact = native_fn("gravity_exact")
+    if native_gravity_exact is not None:
         values = np.ascontiguousarray(np.asarray(x, dtype=np.float64).reshape(-1))
-        return float(native.gravity_exact(values))
+        return float(native_gravity_exact(values))
     values = np.sort(x[np.isfinite(x)])
     n = values.size
     if n == 0:
