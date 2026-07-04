@@ -24,5 +24,14 @@ tools/NNS/src/*.o
 # Stray R plotting artifact from headless regeneration
 Rplots.pdf
 
+# Workflow-local input file (sync/last_* reports stay tracked by design)
+/changed_files.json
+
+# Local working checkouts of upstream repos
+/upstream/
+
+# Local notes
+/NNS_LOCAL_REFERENCE.md
+
 # MkDocs build output
 /site/
