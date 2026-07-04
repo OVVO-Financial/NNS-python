@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 import numpy as np
@@ -143,9 +144,15 @@ def _xy(
     size: int,
     rho: float,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    covariance = np.array([[1.0, rho], [rho, 1.0]])
-    values = rng.multivariate_normal(np.array([0.0, 0.0]), covariance, size=size)
-    return values[:, 0], values[:, 1]
+    # Correlate via the closed-form 2x2 Cholesky factor over standard_normal
+    # draws. standard_normal is covered by NumPy's stream-compatibility
+    # guarantee and the arithmetic is exactly rounded IEEE, so these inputs
+    # (and the R-cache keys hashed from them) are bit-identical on every
+    # platform. multivariate_normal is not: its SVD runs through LAPACK,
+    # whose kernels vary by BLAS build and CPU.
+    x = rng.standard_normal(size)
+    z = rng.standard_normal(size)
+    return x, rho * x + math.sqrt(1.0 - rho * rho) * z
 
 
 def _targets(

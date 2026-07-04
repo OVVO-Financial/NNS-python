@@ -36,7 +36,7 @@ colors and which element they sit on*, never rendered images.
 
 - Numeric return values (scalars, vectors, matrices, nested result dicts) from
   every ported function, against committed R fixtures and the committed R cache
-  (`tests/_r_cache.json`).
+  (`tests/_r_cache/`).
 - Structural contracts (result keys, shapes, dtypes, finiteness) via the
   invariant suite.
 

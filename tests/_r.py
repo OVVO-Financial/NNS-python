@@ -13,9 +13,9 @@ from warnings import warn
 import numpy as np
 from numpy.typing import NDArray
 
-_CACHE_PATH = Path(__file__).with_name("_r_cache.json")
-_LOCK_PATH = _CACHE_PATH.with_suffix(".lock")
-_SCHEMA_VERSION = 1
+_CACHE_DIR = Path(__file__).with_name("_r_cache")
+_LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
+_SCHEMA_VERSION = 2
 _NNS_VERSION = "13.0"
 
 JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
@@ -39,7 +39,7 @@ def nns(function: str, *args: Any) -> RValue:
         raise RuntimeError(
             f"R cache miss for NNS::{function} with key {key}. "
             "Run without CI/NNS_R_CACHE_ONLY/PYNNS_R_CACHE_ONLY/"
-            f"NNS_OFFLINE/PYNNS_OFFLINE to populate {_CACHE_PATH}."
+            f"NNS_OFFLINE/PYNNS_OFFLINE to populate {_CACHE_DIR}."
         )
 
     return _uncached_nns(function, args, key, refresh)
@@ -865,12 +865,18 @@ def _uncached_nns(
 
 
 def _cache_key(function: str, args: tuple[Any, ...]) -> str:
+    """Return ``<function>:<sha256>``.
+
+    The function prefix routes each entry to its per-function shard file in
+    ``tests/_r_cache/`` and makes cache-miss messages self-describing. The
+    digest part is unchanged from the legacy single-file cache.
+    """
     payload = json.dumps(
         {"function": function, "args": args},
         sort_keys=True,
         separators=(",", ":"),
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{function}:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
 
 
 def _cache_state() -> tuple[Cache, bool]:
@@ -881,38 +887,80 @@ def _cache_state() -> tuple[Cache, bool]:
 
 
 def _read_cache_from_disk() -> tuple[Cache, bool]:
-    if not _CACHE_PATH.exists():
+    """Merge every per-function shard in ``tests/_r_cache/`` into one mapping.
+
+    A shard built for a different NNS version marks the whole cache stale;
+    the next write purges mismatched shards and regeneration starts clean.
+    """
+    if not _CACHE_DIR.is_dir():
         return {}, False
 
-    cache = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
-    if not isinstance(cache, dict) or cache.get("schema_version") != _SCHEMA_VERSION:
-        raise RuntimeError(f"Unsupported R cache schema in {_CACHE_PATH}.")
+    merged: Cache = {}
+    for shard_path in sorted(_CACHE_DIR.glob("*.json")):
+        shard = json.loads(shard_path.read_text(encoding="utf-8"))
+        if not isinstance(shard, dict) or shard.get("schema_version") != _SCHEMA_VERSION:
+            raise RuntimeError(f"Unsupported R cache schema in {shard_path}.")
+        if shard.get("nns_version") != _NNS_VERSION:
+            warn(
+                f"R cache shard {shard_path.name} was built for NNS "
+                f"{shard.get('nns_version')}; expected {_NNS_VERSION}. Refreshing entries.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return {}, True
+        entries = shard.get("entries")
+        if not isinstance(entries, dict):
+            raise RuntimeError(f"Invalid R cache entries in {shard_path}.")
+        merged.update(cast(Cache, entries))
+    return merged, False
 
-    nns_version = cache.get("nns_version")
-    if nns_version != _NNS_VERSION:
-        warn(
-            f"R cache was built for NNS {nns_version}; "
-            f"expected {_NNS_VERSION}. Refreshing entries.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return {}, True
 
-    entries = cache.get("entries")
-    if not isinstance(entries, dict):
-        raise RuntimeError(f"Invalid R cache entries in {_CACHE_PATH}.")
-    return cast(Cache, entries), False
+def _shard_name(key: str) -> str:
+    function = key.split(":", 1)[0] if ":" in key else "misc"
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in function)
+
+
+# Serialized-content memo so unchanged shards are not rewritten on every new
+# entry during regeneration (and produce zero git churn).
+_SHARD_MEMO: dict[str, str] = {}
+_STALE_SHARDS_PURGED = False
 
 
 def _write_cache(entries: Cache) -> None:
-    payload = {
-        "nns_version": _NNS_VERSION,
-        "schema_version": _SCHEMA_VERSION,
-        "entries": entries,
-    }
-    tmp_path = _CACHE_PATH.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    tmp_path.replace(_CACHE_PATH)
+    global _STALE_SHARDS_PURGED
+    _CACHE_DIR.mkdir(exist_ok=True)
+
+    shards: dict[str, Cache] = {}
+    for key, value in entries.items():
+        shards.setdefault(_shard_name(key), {})[key] = value
+
+    for name, shard_entries in shards.items():
+        payload = json.dumps(
+            {
+                "nns_version": _NNS_VERSION,
+                "schema_version": _SCHEMA_VERSION,
+                "entries": shard_entries,
+            },
+            sort_keys=True,
+            indent=2,
+        ) + "\n"
+        shard_path = _CACHE_DIR / f"{name}.json"
+        if _SHARD_MEMO.get(name) is None and shard_path.exists():
+            _SHARD_MEMO[name] = shard_path.read_text(encoding="utf-8")
+        if _SHARD_MEMO.get(name) == payload:
+            continue
+        tmp_path = shard_path.with_suffix(".json.tmp")
+        tmp_path.write_text(payload, encoding="utf-8")
+        tmp_path.replace(shard_path)
+        _SHARD_MEMO[name] = payload
+
+    if not _STALE_SHARDS_PURGED:
+        _STALE_SHARDS_PURGED = True
+        for shard_path in _CACHE_DIR.glob("*.json"):
+            shard = json.loads(shard_path.read_text(encoding="utf-8"))
+            if isinstance(shard, dict) and shard.get("nns_version") != _NNS_VERSION:
+                shard_path.unlink()
+                _SHARD_MEMO.pop(shard_path.stem, None)
 
 
 @contextmanager

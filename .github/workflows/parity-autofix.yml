@@ -86,11 +86,7 @@ jobs:
       - name: Install Python build and test tools
         run: |
           python -m pip install -U pip
-          # numpy pinned <2.5: the R parity cache keys hash test inputs generated via
-          # multivariate_normal (LAPACK SVD). numpy 2.5.x bundles an OpenBLAS whose SVD
-          # kernels differ on some runner CPUs, changing inputs bit-for-bit and causing
-          # cache misses. Re-evaluate at the next full live-R cache regeneration.
-          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy numpy scipy
           python -m pip install hypothesis pytest-benchmark pytest-xdist
 
       - name: Install package editable
@@ -183,5 +179,5 @@ jobs:
             Python output, first divergent intermediate, and affected files.
             Native differences route through NNS-core. A DESCRIPTION/version or
             behavior change is a separate, reviewed cache regeneration. Do not
-            edit `tests/_r_cache.json` to force a pass.
+            edit the `tests/_r_cache/` shards to force a pass.
           commit-message: Parity review reports for R NNS ${{ steps.payload.outputs.r_commit }}

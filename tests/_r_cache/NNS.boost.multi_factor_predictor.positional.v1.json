@@ -1,0 +1,37 @@
+{
+  "entries": {
+    "NNS.boost.multi_factor_predictor.positional.v1:6be8c3aba4abb8ee364b75278b1c9433fd92aae15a38ea5fcf000e91648e16f2": {
+      "feature.frequency": [
+        2.0,
+        2.0,
+        1.0
+      ],
+      "feature.weights": [
+        0.4,
+        0.4,
+        0.2
+      ]
+    },
+    "NNS.boost.multi_factor_predictor.positional.v1:8b30b97a87ca830e313c3d4448b806d869a46ace42bed851b04b08b4e63ca26f": {
+      "feature.frequency": [
+        2.0,
+        2.0,
+        1.0
+      ],
+      "feature.weights": [
+        0.4,
+        0.4,
+        0.2
+      ],
+      "pred.int": null,
+      "results": [
+        -1.2195652173913,
+        -1.2195652173913,
+        -1.2195652173913,
+        -1.2195652173913
+      ]
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

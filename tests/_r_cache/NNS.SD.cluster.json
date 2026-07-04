@@ -1,0 +1,63 @@
+{
+  "entries": {
+    "NNS.SD.cluster:190f2ea6809087bb9796feb498357445e54709b8222c9b28a7279e3b85a3d6b1": {
+      "Clusters": {
+        "Cluster_1": "X_5",
+        "Cluster_2": "X_1",
+        "Cluster_3": "X_3",
+        "Cluster_4": "X_2",
+        "Cluster_5": "X_4"
+      }
+    },
+    "NNS.SD.cluster:30b4f843dd7928a0dba2510e2b3142070b163acc686854cfbebfeac9ba0ac572": {
+      "Clusters": []
+    },
+    "NNS.SD.cluster:36782b88edda85fcc9d1cef84aaaf0d72cb8ac42dfc5fa04b9c1bdc3f1ae872a": {
+      "Clusters": {
+        "Cluster_1": [
+          "X_1",
+          "X_4"
+        ],
+        "Cluster_2": "X_2",
+        "Cluster_3": "X_3"
+      }
+    },
+    "NNS.SD.cluster:5ad18c9da3c356ee40ee94b827ce8f1f57b2de302589f21fb2275ada015cc23c": {
+      "Clusters": {
+        "Cluster_1": "X_5",
+        "Cluster_2": [
+          "X_1",
+          "X_3"
+        ],
+        "Cluster_3": [
+          "X_2",
+          "X_4"
+        ]
+      }
+    },
+    "NNS.SD.cluster:a60bf9fd4778a7bf701cea07ef14cabcc336a694f98a25128bb38581f2959ce1": {
+      "Clusters": {
+        "Cluster_1": "X_5",
+        "Cluster_2": "X_1",
+        "Cluster_3": "X_3",
+        "Cluster_4": "X_2",
+        "Cluster_5": "X_4"
+      }
+    },
+    "NNS.SD.cluster:da9f4235cff2993b76040a67245ebeb382e5adf49d57b729a1c0dbeaf5d0b0fd": {
+      "Clusters": {
+        "Cluster_1": [
+          "X_1",
+          "X_4"
+        ],
+        "Cluster_2": "X_2",
+        "Cluster_3": "X_3"
+      }
+    },
+    "NNS.SD.cluster:e5d2943eabbee4302b1f400306a7afe128e503658bc4672a90a3af263f85999d": {
+      "Clusters": []
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

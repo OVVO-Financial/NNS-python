@@ -1,0 +1,60 @@
+{
+  "entries": {
+    "NNS.distance.bulk.custom:043b43605afd1de2870575ae0c6f1ad4058f3b52d2ea7f0e039801c2f7afa21d": [
+      1.45836365971657,
+      2.0
+    ],
+    "NNS.distance.bulk.custom:1ebf08266b6b08f476fc340fb146e6f78c6d1c4c8df3c55db89be4d1b87f7602": [
+      0.325912031112873,
+      0.982299707963049,
+      1.068568762951,
+      1.17784718335227
+    ],
+    "NNS.distance.bulk.custom:241483de7e43315811c76a5e802aa3353aa0168c8233c4fe0c681663de100ec2": [
+      0.297403959254523,
+      1.19898461935559,
+      0.831638760023334,
+      1.22807319688792
+    ],
+    "NNS.distance.bulk.custom:4a5f17c0068e375b3c733c7907806e06c2fae20249922ad3a5791fe4356cf97b": [
+      2.52685494771288,
+      3.0
+    ],
+    "NNS.distance.bulk.custom:52d9002f4d4aed159a9ff9d1ac6c3330acdc73dc6ce2227db18c907cfa08ef47": [
+      2.1422912713301,
+      2.49011348175303
+    ],
+    "NNS.distance.bulk.custom:56988b40073900e3316f11705b32182c08969b8e282f23fae5a6dc446e84fe8f": [
+      3.0,
+      3.0
+    ],
+    "NNS.distance.bulk.custom:716135a20f551b90db4b480bfc7fb92f8cef365d5fa1fd4490a1e7eb8af726bc": [
+      0.55998594598136,
+      1.00102640463781,
+      0.990643936695423,
+      1.10913789975809
+    ],
+    "NNS.distance.bulk.custom:79774f4dfa2470bd9311e9cc38e321d11d1fed1d5026edbdf6e14fb307e92fb7": [
+      1.0,
+      3.0
+    ],
+    "NNS.distance.bulk.custom:aebf509c55a008a8734339b9ee23263fb7720a0f10fe412536ba7f404a51bf95": [
+      1.44097133721065,
+      2.57123775601069
+    ],
+    "NNS.distance.bulk.custom:b2ddfbf11f5642b185127f7fa80ff812cdec8469a8356e7b7fe82a8b745ac1e7": [
+      1.40657762567949,
+      1.70254774087343
+    ],
+    "NNS.distance.bulk.custom:e267bb797e6506e9cf9441083fa3c3cba85c8615df378a95e263cd2db469cfd8": [
+      1.0,
+      2.0
+    ],
+    "NNS.distance.bulk.custom:e4b6ee22072146fddfae79023d1de800fb455a30e2b65745cc12df1ac1f22f99": [
+      1.90836881433119,
+      2.08739173012751
+    ]
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

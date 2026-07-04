@@ -2,15 +2,15 @@
 """Regenerate committed R parity cache entries with a local R/NNS install.
 
 CI should not run this script. It intentionally clears cache-only/offline toggles
-and invokes pytest so tests/_r.py can refresh tests/_r_cache.json as needed.
+and invokes pytest so tests/_r.py can refresh the tests/_r_cache/ shards as needed.
 
 Usage::
 
     python scripts/regenerate_r_cache.py [--fresh] [-- PYTEST_ARGS...]
 
 By default, existing cache entries are reused and only cache misses call R.
-With ``--fresh``, the existing ``tests/_r_cache.json`` is moved aside to
-``tests/_r_cache.json.bak`` and regeneration starts from an empty cache, so
+With ``--fresh``, the existing ``tests/_r_cache/`` directory is moved aside to
+``tests/_r_cache.bak/`` and regeneration starts from an empty cache, so
 every entry is produced by a live R call. ``--fresh`` refuses to run in CI and
 requires a working local R NNS install reporting ``packageVersion("NNS")`` of
 13.0 (see ``scripts/install_local_r_nns.py``).
@@ -27,10 +27,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_CACHE_PATH = Path(__file__).resolve().parents[1] / "tests" / "_r_cache.json"
-_CACHE_BACKUP_PATH = _CACHE_PATH.with_suffix(".json.bak")
+_CACHE_DIR = Path(__file__).resolve().parents[1] / "tests" / "_r_cache"
+_CACHE_BACKUP_DIR = _CACHE_DIR.with_name("_r_cache.bak")
 _NNS_VERSION = "13.0"
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _OFFLINE_TOGGLES = (
     "PYNNS_R_CACHE_ONLY",
@@ -42,58 +42,63 @@ _OFFLINE_TOGGLES = (
 
 
 def _validate_cache() -> int:
-    if not _CACHE_PATH.exists():
-        print(f"ERROR: R cache validation failed: {_CACHE_PATH} does not exist.", file=sys.stderr)
+    if not _CACHE_DIR.is_dir():
+        print(f"ERROR: R cache validation failed: {_CACHE_DIR} does not exist.", file=sys.stderr)
         return 1
-    if _CACHE_PATH.stat().st_size == 0:
-        print(f"ERROR: R cache validation failed: {_CACHE_PATH} is empty.", file=sys.stderr)
-        return 1
-
-    try:
-        cache: Any = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    shard_paths = sorted(_CACHE_DIR.glob("*.json"))
+    if not shard_paths:
         print(
-            f"ERROR: R cache validation failed: {_CACHE_PATH} is not valid JSON: {exc}.",
+            f"ERROR: R cache validation failed: {_CACHE_DIR} contains no shards.",
             file=sys.stderr,
         )
         return 1
 
-    if not isinstance(cache, dict):
-        print(
-            f"ERROR: R cache validation failed: {_CACHE_PATH} top-level value is not an object.",
-            file=sys.stderr,
-        )
-        return 1
-    if cache.get("nns_version") != _NNS_VERSION:
-        print(
-            "ERROR: R cache validation failed: "
-            f"expected nns_version {_NNS_VERSION!r}, got {cache.get('nns_version')!r}.",
-            file=sys.stderr,
-        )
-        return 1
-    if cache.get("schema_version") != _SCHEMA_VERSION:
-        print(
-            "ERROR: R cache validation failed: "
-            f"expected schema_version {_SCHEMA_VERSION!r}, got {cache.get('schema_version')!r}.",
-            file=sys.stderr,
-        )
-        return 1
+    total_entries = 0
+    for shard_path in shard_paths:
+        try:
+            shard: Any = json.loads(shard_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(
+                f"ERROR: R cache validation failed: {shard_path} is not valid JSON: {exc}.",
+                file=sys.stderr,
+            )
+            return 1
+        if not isinstance(shard, dict):
+            print(
+                f"ERROR: R cache validation failed: {shard_path} top-level value "
+                "is not an object.",
+                file=sys.stderr,
+            )
+            return 1
+        if shard.get("nns_version") != _NNS_VERSION:
+            print(
+                f"ERROR: R cache validation failed: {shard_path} "
+                f"expected nns_version {_NNS_VERSION!r}, got {shard.get('nns_version')!r}.",
+                file=sys.stderr,
+            )
+            return 1
+        if shard.get("schema_version") != _SCHEMA_VERSION:
+            print(
+                f"ERROR: R cache validation failed: {shard_path} "
+                f"expected schema_version {_SCHEMA_VERSION!r}, got "
+                f"{shard.get('schema_version')!r}.",
+                file=sys.stderr,
+            )
+            return 1
+        entries = shard.get("entries")
+        if not isinstance(entries, dict) or not entries:
+            print(
+                f"ERROR: R cache validation failed: {shard_path} entries object "
+                "is missing or empty.",
+                file=sys.stderr,
+            )
+            return 1
+        total_entries += len(entries)
 
-    entries = cache.get("entries")
-    if not isinstance(entries, dict):
-        print(
-            f"ERROR: R cache validation failed: {_CACHE_PATH} entries value is not an object.",
-            file=sys.stderr,
-        )
-        return 1
-    if not entries:
-        print(
-            f"ERROR: R cache validation failed: {_CACHE_PATH} entries object is empty.",
-            file=sys.stderr,
-        )
-        return 1
-
-    print(f"OK: {_CACHE_PATH} contains {len(entries)} entries for NNS {_NNS_VERSION}.")
+    print(
+        f"OK: {_CACHE_DIR} contains {total_entries} entries across "
+        f"{len(shard_paths)} shards for NNS {_NNS_VERSION}."
+    )
     return 0
 
 
@@ -149,7 +154,7 @@ def main() -> int:
         "--fresh",
         action="store_true",
         help=(
-            "Move the existing cache to tests/_r_cache.json.bak and regenerate every "
+            "Move the existing cache to tests/_r_cache.bak/ and regenerate every "
             "entry from a live R call. Refuses to run in CI."
         ),
     )
@@ -171,9 +176,11 @@ def main() -> int:
         verify_status = _verify_live_r_nns()
         if verify_status:
             return verify_status
-        if _CACHE_PATH.exists():
-            _CACHE_PATH.replace(_CACHE_BACKUP_PATH)
-            print(f"Moved existing cache to {_CACHE_BACKUP_PATH}; starting from empty cache.")
+        if _CACHE_DIR.is_dir():
+            if _CACHE_BACKUP_DIR.is_dir():
+                shutil.rmtree(_CACHE_BACKUP_DIR)
+            _CACHE_DIR.replace(_CACHE_BACKUP_DIR)
+            print(f"Moved existing cache to {_CACHE_BACKUP_DIR}; starting from empty cache.")
         else:
             print("No existing cache found; starting from empty cache.")
 

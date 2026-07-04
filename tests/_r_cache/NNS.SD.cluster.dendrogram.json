@@ -1,0 +1,56 @@
+{
+  "entries": {
+    "NNS.SD.cluster.dendrogram:20707a1e9e039df853ae668aba155c05f09367ad4741f40c9de2317aebf89b38": {
+      "Clusters": [],
+      "Order": {}
+    },
+    "NNS.SD.cluster.dendrogram:fea58eff7545af9d059c982d7ce102f91cc9a31d9373f93376505382df436d79": {
+      "Clusters": {
+        "Cluster_1": [
+          "X_1",
+          "X_4"
+        ],
+        "Cluster_2": "X_2",
+        "Cluster_3": "X_3"
+      },
+      "Dendrogram": {
+        "call": "hclust(d = dist_matrix, method = \"complete\")",
+        "dist.method": {},
+        "height": [
+          0.001,
+          4.001,
+          8.003
+        ],
+        "labels": [
+          "X_1",
+          "X_4",
+          "X_2",
+          "X_3"
+        ],
+        "merge": [
+          [
+            -1.0,
+            -2.0
+          ],
+          [
+            -3.0,
+            -4.0
+          ],
+          [
+            1.0,
+            2.0
+          ]
+        ],
+        "method": "complete",
+        "order": [
+          1.0,
+          4.0,
+          2.0,
+          3.0
+        ]
+      }
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

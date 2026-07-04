@@ -1,0 +1,52 @@
+{
+  "entries": {
+    "NNS.stack.mixed_factor_predictor.v1:672c55c50b36efa233a73c459777a1ec28be20d16256253a93a5848f39b52852": {
+      "NNS.dim.red.threshold": 0.26,
+      "NNS.reg.n.best": 8.0,
+      "OBJfn.dim.red": 0.75,
+      "OBJfn.reg": 2.41743400155663,
+      "dim.red": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        2.39664043071626,
+        2.39664043071626,
+        2.39664043071626
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.3506768962439,
+        3.63117282690586,
+        2.49092486157488
+      ]
+    },
+    "NNS.stack.mixed_factor_predictor.v1:e84d2b15f851334fdc3b4224c9139cb5e0c44a57446a032e61213bd3747ef36f": {
+      "NNS.dim.red.threshold": 0.26,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.75,
+      "OBJfn.reg": Infinity,
+      "dim.red": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ]
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

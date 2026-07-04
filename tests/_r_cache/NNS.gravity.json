@@ -1,0 +1,12 @@
+{
+  "entries": {
+    "NNS.gravity:2b89762f5b49340fb2a0f1de87a6450c353589094b16c60f42833c1796e8b3b7": 5.0,
+    "NNS.gravity:54d3dc821de79fb7c36421ad7ca4e7728ad57241651945eed5b4be29281a32f1": -0.04630106911542,
+    "NNS.gravity:6af0feab2a761a6bbd61aff8a4cabdb70f84d588b4c674ee227076cb5464b71f": 2.0,
+    "NNS.gravity:8c9ad906c3a961102012c972ac98fcf7ef02b0f16e4a22d8a5bccf47a2a05129": 0.0,
+    "NNS.gravity:d4043ce05a5c8fc842a29108910f3a08fd18072296044dc713c138d66dabe8df": 2.0,
+    "NNS.gravity:f26a55eecffd61526bddbc5488c38ee3c18c84ad7ed126f07a1ecc4e7c91d1eb": 5.0
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

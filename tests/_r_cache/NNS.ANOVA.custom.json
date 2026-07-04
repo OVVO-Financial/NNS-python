@@ -1,0 +1,120 @@
+{
+  "entries": {
+    "NNS.ANOVA.custom:170acc88547eb09440c1deabd2593ed582d2e6a4d169f4c7b99f143cf906278d": {
+      "Certainty": 0.722892277608824,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "NNS.ANOVA.custom:17c3ef3798fc44bf2a139e8d8bd4697d7e79371102c5146c293015518027db77": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB.2.5%": -0.581369900165134,
+      "Effect_Size_UB.97.5%": 1.10983091083341,
+      "Grand_Statistic": 0.142983064395218,
+      "Lower 95% CI": 0.123490219323256,
+      "Robust Certainty Estimate": 0.541654137158972,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534,
+      "Upper 95% CI": 0.86167646118245
+    },
+    "NNS.ANOVA.custom:50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
+    "NNS.ANOVA.custom:771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
+      "Certainty": 0.652075214441377,
+      "Control": 0.00119721507214105,
+      "Control_CDF": 0.561995329335815,
+      "Grand_Statistic": 0.126074487943006,
+      "Treatment": 0.250951760813872,
+      "Treatment_CDF": 0.437988436552643
+    },
+    "NNS.ANOVA.custom:869e561b5396396d491cae5660ac70152520d16e79d9ce87de1d8dc32242b603": {
+      "Certainty": 0.630393828439154,
+      "Control": -0.0701922297703009,
+      "Control_CDF": 0.53,
+      "Grand_Statistic": 0.0326890477149341,
+      "Treatment": 0.135570325200169,
+      "Treatment_CDF": 0.43
+    },
+    "NNS.ANOVA.custom:88bbaab2914e15c7b3224e345de1a3bd8881246cdeea7558d165a6867ebd9fdb": {
+      "Certainty": 0.764269209628382,
+      "Control": 0.00119721507214105,
+      "Control_CDF": 0.561995329335815,
+      "Grand_Statistic": 0.126074487943006,
+      "Treatment": 0.250951760813872,
+      "Treatment_CDF": 0.437988436552643
+    },
+    "NNS.ANOVA.custom:8a20576902a1d1761d7497af94b4fdac4fe764eee4f6a1bbdd936fc6230ff007": {
+      "Certainty": 0.531345077792027,
+      "Control": 0.00351158733384534,
+      "Control_CDF": 0.438389833222948,
+      "Grand_Statistic": -0.120416441730208,
+      "Treatment": -0.290180865105623,
+      "Treatment_CDF": 0.614122107233681
+    },
+    "NNS.ANOVA.custom:9da8bc56ddaf6f4048144e571a875f06166e114ae7a13ed7dd111a153805d1e0": {
+      "Certainty": 0.698395184350024,
+      "Control": -0.0044371503906452,
+      "Control_CDF": 0.53,
+      "Grand_Statistic": 0.122470212841542,
+      "Treatment": 0.24937757607373,
+      "Treatment_CDF": 0.472
+    },
+    "NNS.ANOVA.custom:9e3a40f0be5b51f43e535230efad3fa9e6513c7b5474d4702867e9d9b95bc5e8": {
+      "Certainty": 0.640422871037057,
+      "Control": 0.00351158733384534,
+      "Control_CDF": 0.562159877829514,
+      "Grand_Statistic": 0.129722952162607,
+      "Treatment": 0.255934316991368,
+      "Treatment_CDF": 0.437373319363984
+    },
+    "NNS.ANOVA.custom:a251861f51c69e3640a831f54acf1a3d1515159a5e2ff463438a71dfe0e9d7e1": 0.493476594721539,
+    "NNS.ANOVA.custom:aa80ea315c2bc295798a7f5daab339df310cc632a45a3835ce041c9343518ca0": 0.479160301265411,
+    "NNS.ANOVA.custom:b2c5a8971c7cca149de6076c4dbad3547e31643d0a4d522e6f7c86a720415465": {
+      "Certainty": 0.749954566494758,
+      "Control": 0.00351158733384534,
+      "Control_CDF": 0.562159877829514,
+      "Grand_Statistic": 0.129722952162607,
+      "Treatment": 0.255934316991368,
+      "Treatment_CDF": 0.437373319363984
+    },
+    "NNS.ANOVA.custom:c3b8b15b7e66a481f92a53f4d277f9132ac76d05cadef357b0506c11a407d19d": {
+      "Certainty": 0.650680858554691,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.533333333333333,
+      "Grand_Statistic": 0.00295335494608286,
+      "Treatment": 0.103800669480219,
+      "Treatment_CDF": 0.466666666666667
+    },
+    "NNS.ANOVA.custom:cd3963cc80a8e0f7bdad17850c7504aa71319936395e39f62750a43cde5d8a4e": [
+      [
+        1.0,
+        0.640422871037057,
+        0.621269618377858
+      ],
+      [
+        0.640422871037057,
+        1.0,
+        0.583947681223526
+      ],
+      [
+        0.621269618377858,
+        0.583947681223526,
+        1.0
+      ]
+    ],
+    "NNS.ANOVA.custom:f129e7aa1783f152f8b2657be872b2b6e85c4ac404e699e8e749847c1d0f4c64": {
+      "Certainty": 0.614235794289578,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

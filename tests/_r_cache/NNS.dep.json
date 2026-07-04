@@ -1,0 +1,134 @@
+{
+  "entries": {
+    "NNS.dep:03953abeb7681f1f696bdd950850e4088e67963e7293016222bb389a4c11d25e": {
+      "Correlation": 0.158115364056022,
+      "Dependence": 0.483239676702956
+    },
+    "NNS.dep:0f252ba5d9dcceab1b83027b0c044071c0e17bc0aed93409dbeb77a15bf2bac8": {
+      "Correlation": -0.0184703755638152,
+      "Dependence": 0.500857733023021
+    },
+    "NNS.dep:0f48d3e4610eeeaa8e118b7eaf8324269f9dc5a664dd3eca53caeb1b02bf2b55": {
+      "Correlation": 0.340994790331046,
+      "Dependence": 0.574689143325088
+    },
+    "NNS.dep:1c5f991f63262abd7386ee8bd934c36e642763a5499e66abc555efbb144599ee": {
+      "Correlation": 0.730479911123333,
+      "Dependence": 0.865652341673622
+    },
+    "NNS.dep:3ad744d8ae07d7cd93ce4c93b4360657aae295f9d1a0bb8221d2f11a68828922": {
+      "Correlation": 0.0841563484431922,
+      "Dependence": 0.728576684473429
+    },
+    "NNS.dep:3d12a64775ead63efdb50cb92de1959953cf6ff03b5ff53d46305596acbd7ac3": {
+      "Correlation": -0.0332580574255351,
+      "Dependence": 0.509945804226853
+    },
+    "NNS.dep:464a9973b44ac4a5b325f45428a1b443aba355dc06625df1ce38c8611e200667": {
+      "Correlation": 1.0,
+      "Dependence": 1.0
+    },
+    "NNS.dep:4ce133b26753f2fb88086f370f246a9a6197d6e27b2d50ba89ed5040d4ab6915": {
+      "Correlation": 1.0,
+      "Dependence": 1.0
+    },
+    "NNS.dep:5b0e61c67fc1b4a1ed17daa9aa25f54ff3a04733af69302ec634948cca361926": {
+      "Correlation": 0.458905410014107,
+      "Dependence": 0.520059230289623
+    },
+    "NNS.dep:7a4ef6ef1118a258b1953895bbab6ac71120f3e94492adaf34bad98d21865d1a": {
+      "Correlation": 0.458905410014107,
+      "Dependence": 0.525399262623011
+    },
+    "NNS.dep:81738fbfad2a73a3b58a2bebe0bfe4debcca247bce666a7d87d3951825effe77": {
+      "Correlation": 0.106389950914906,
+      "Dependence": 0.560263268183611
+    },
+    "NNS.dep:83ac7990db40fce0f2d17fda71864d7cf2f8c0bab94555e5d3b4a5d6d9c16139": {
+      "Correlation": 0.952429128721101,
+      "Dependence": 0.952429128721101
+    },
+    "NNS.dep:83fc3578e423e10a69c18f6ee3bf60eeed58bb72de087b339e6a0ac48af8a4ee": {
+      "Correlation": 0.675598206629818,
+      "Dependence": 0.8014990692559
+    },
+    "NNS.dep:8e1b5384bb943863a57f13aa3dba7094b82ebf4427d3ee171b67182a5e2d64fd": {
+      "Correlation": 0.428436742751927,
+      "Dependence": 0.771685082884324
+    },
+    "NNS.dep:90935ed7b26578067dd41346473a121e63d7b80b3a4fe187acf1161129b4e0d5": {
+      "Correlation": 0.0149362099444953,
+      "Dependence": 0.617606204844496
+    },
+    "NNS.dep:949622ffcd28c0671ff73167fba7bbd37fefdcf08f6504e8bba752d490a86067": {
+      "Correlation": 0.514070988203184,
+      "Dependence": 0.693672893775531
+    },
+    "NNS.dep:baf1b185964239b242d8b530f8ce01832e2465d2a2f841bec477823012e63baf": {
+      "Correlation": 0.227773447081524,
+      "Dependence": 0.739098096172596
+    },
+    "NNS.dep:bc7d93bb53d2e3b711b928cccccc4b0fe32546e762441efa967ceab860ffb42a": {
+      "Correlation": 0.663669421936033,
+      "Dependence": 0.865652341673622
+    },
+    "NNS.dep:bd3d9a5da3192f87819bf15d56c20b8eee8e4b7a01eea86c8487e8637a0cdb75": {
+      "Correlation": 0.435343366213159,
+      "Dependence": 0.617484506887142
+    },
+    "NNS.dep:bee5589ac47b8138524288b0eabc6833bde2179dba3c09cacf7a7b82b08ecbc9": {
+      "Correlation": 0.131981999382048,
+      "Dependence": 0.543270935892527
+    },
+    "NNS.dep:c013338a916605a4bcb8e997dd8bb8b04790b2e9ea20e19099d655080a0b0a24": {
+      "Correlation": 0.0841563484431922,
+      "Dependence": 0.728576684473429
+    },
+    "NNS.dep:cc69460b64cc0184e9620118366a8ad8e85ea4d692d1eb1c05a1fffd2cac7606": {
+      "Correlation": 0.952429128721101,
+      "Dependence": 0.952429128721101
+    },
+    "NNS.dep:d3a28b88e88385345533cd8f33363c653fe845213a7a7d96cee7edbf4d10f39d": {
+      "Correlation": -0.104784026272373,
+      "Dependence": 0.450369107574735
+    },
+    "NNS.dep:d3bcccff0fe3726bd8708f7dc40332d6f212d2a710e766711d86fa4f6ed60488": {
+      "Correlation": 0.227773447081524,
+      "Dependence": 0.739098096172596
+    },
+    "NNS.dep:d3d3953b9a1d7e93e517f04f5705684e5b44deb0b937cd7b097ded186fb599bd": {
+      "Correlation": 0.158115364056022,
+      "Dependence": 0.489870289501743
+    },
+    "NNS.dep:db9085ea34cb45c44db7350af58bf76bff0c4306307e282eda66abb81350f097": {
+      "Correlation": 0.275477928487117,
+      "Dependence": 0.648565280477705
+    },
+    "NNS.dep:e36a9f4f81486f3761d995252237aae899326d31b342c8dfdec065b3b5379c7e": {
+      "Correlation": 0.675598206629818,
+      "Dependence": 0.8014990692559
+    },
+    "NNS.dep:e4cbac1556e264b6aa576727b88bb0b7ebcf3212dcbe02ee69df0a43ebbd6bcf": {
+      "Correlation": 0.435343366213159,
+      "Dependence": 0.628916230354298
+    },
+    "NNS.dep:e5af1297db548311146e8660513335587ef7192f902ec8e1db5525b1f9fa2656": {
+      "Correlation": 0.313890030292689,
+      "Dependence": 0.57585475437319
+    },
+    "NNS.dep:eff39d7d3d567fe67622910dfd5dbdc747765442393a3ce544e4ed62fc8d2f14": {
+      "Correlation": 0.428436742751927,
+      "Dependence": 0.771685082884324
+    },
+    "NNS.dep:f5c58db90c3e64e6e462c069b1f93c5eb2e3ca95a824845ef6ce59174ce2568c": {
+      "Correlation": -0.104784026272373,
+      "Dependence": 0.450369107574735
+    },
+    "NNS.dep:fbe5d60ed5d50aabf8a2db438c95151b24ec3da340d7ce6de3de1b3d364a952b": {
+      "Correlation": 0.514070988203184,
+      "Dependence": 0.693672893775531
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

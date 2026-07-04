@@ -1,0 +1,36 @@
+{
+  "entries": {
+    "NNS.moments:4a13cf392285e68bf67581527cedadc997caff9088a51b20b27747b64b102366": {
+      "kurtosis": 1.67492109156106,
+      "mean": 1.66666666666667,
+      "skewness": 1.61281677390665,
+      "variance": 12.7666666666667
+    },
+    "NNS.moments:7e99ff48b0e8c146756687d3f6c7c989a14d5c19bc30bc69852e22c77093f460": {
+      "kurtosis": -0.282884197179067,
+      "mean": 1.66666666666667,
+      "skewness": 0.896009318837027,
+      "variance": 10.6388888888889
+    },
+    "NNS.moments:82fe7fc62d9094c002082af3e420307b00405bde9602b77366889edf333ddc9c": {
+      "kurtosis": -0.663868471161524,
+      "mean": 5.0,
+      "skewness": 0.835078676206492,
+      "variance": 18.4166666666667
+    },
+    "NNS.moments:85d1697bba15669ea7b0dfdb04628f2b917fa415ebce4b6060acc82724d9d57d": {
+      "kurtosis": -1.2830200100786,
+      "mean": 0.173134128603982,
+      "skewness": -0.370490959784843,
+      "variance": 0.452985240038263
+    },
+    "NNS.moments:97f1216ea3474840af5cf3ccab6743c816baf89f73d53cb67e5b5fa9da1536e3": {
+      "kurtosis": -1.3,
+      "mean": 0.0,
+      "skewness": 0.0,
+      "variance": 2.0
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}

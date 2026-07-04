@@ -9,7 +9,7 @@ and remains the native C++ foundation for accelerated partial-moment routines.
 Full package parity is **not** claimed. Parity is bounded by the committed tests
 and cache:
 
-- `tests/_r_cache.json` — cache-only R result fixtures (2,406 keyed entries,
+- `tests/_r_cache/` — cache-only R result fixtures sharded per R function (one JSON each,
   schema version `1`, `nns_version == "13.0"`),
 - `tests/parity/` — public behavior parity checks,
 - `tests/invariants/` — Python-native contracts and invariants, and
@@ -85,7 +85,7 @@ If full regeneration is slow or unstable, regenerate deterministic chunks one
 file at a time, for example
 `python scripts/regenerate_r_cache.py -- -n 0 tests/parity/test_core.py`, then
 continue through the remaining parity files. The committed result must remain a
-single valid `tests/_r_cache.json` with `nns_version == "13.0"`,
+valid `tests/_r_cache/` shards with `nns_version == "13.0"`,
 `schema_version == 1`, and non-empty `entries`; `scripts/regenerate_r_cache.py`
 enforces those guardrails after the pytest run.
 
@@ -130,7 +130,7 @@ NNS R API change
 ### Fix rules (applied by the maintainer; later by the agent)
 
 - Edit **`src/nns/**` only**. Never edit `extern/NNS-core/**`, `tools/NNS/**`,
-  or `tests/_r_cache.json` to make a check pass.
+  or the `tests/_r_cache/` shards to make a check pass.
 - Classify the root cause and act accordingly:
   - **Python port bug** → fix in `src/nns/**`.
   - **R changed behavior** → do not chase a cache value; cache regeneration is a

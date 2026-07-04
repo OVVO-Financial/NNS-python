@@ -1,0 +1,69 @@
+{
+  "entries": {
+    "NNS.stack.factor_predictor.v2:a0a529a8537d8c49fd9eef14c39183c78d4399bc7bf8f2772a747a2469287843": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": Infinity,
+      "OBJfn.reg": 0.75,
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ]
+    },
+    "NNS.stack.factor_predictor.v2:e4d267015a82a22cdea615f43f1ba409700cfacf48b1ea70e9f391dcac8a1ae4": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": Infinity,
+      "OBJfn.reg": 0.75,
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ]
+    },
+    "NNS.stack.factor_predictor.v2:f0e79bb89d6ce8c0fbe1e55d3cc9a87bec546194ef40d31c540484e4af43a3f4": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": Infinity,
+      "OBJfn.reg": 0.75,
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ]
+    }
+  },
+  "nns_version": "13.0",
+  "schema_version": 2
+}
