@@ -5,9 +5,9 @@ import math
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_matrix, _as_pair
 from nns.core import lpm_ratio, upm_ratio
 from nns.dependence import (
-    _as_pair,
     _copula_degree0_unsigned,
     _copula_signed,
     _directional_dep,
@@ -68,7 +68,7 @@ def causal_matrix(
     tau: int | str = 0,
 ) -> NDArray[np.float64]:
     """Return R's NNS.caus.matrix antisymmetric net-causation matrix."""
-    values = _as_matrix(x)
+    values = _as_matrix(x, "x")
     if tau != "ts":
         tau = _tau_value(tau)
     n_variables = values.shape[1]
@@ -175,14 +175,3 @@ def _cap_inf100(value: float, cap: float = 100.0) -> float:
     if abs(value) > cap:
         return math.copysign(cap, value)
     return value
-
-
-def _as_matrix(x: NDArray[np.float64]) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim != 2:
-        raise ValueError("x must be 2D.")
-    if values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError("x must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("x must contain only finite values.")
-    return values

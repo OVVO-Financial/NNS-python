@@ -6,6 +6,8 @@ from typing import Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_matrix
+
 KValue = int | Literal["all"]
 
 
@@ -230,15 +232,4 @@ def _as_vector(x: NDArray[np.float64]) -> NDArray[np.float64]:
         raise ValueError("dist_estimate must be non-empty.")
     if not np.all(np.isfinite(values)):
         raise ValueError("dist_estimate must contain only finite values.")
-    return values
-
-
-def _as_matrix(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim != 2:
-        raise ValueError(f"{name} must be 2D.")
-    if values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError(f"{name} must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
     return values

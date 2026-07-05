@@ -9,6 +9,7 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_flat_vector, _as_point_matrix, _as_vector_or_matrix
 from nns.categorical import _balance_class_training, _dense_factor_codes, encode_factor_codes
 from nns.dependence import _gravity
 from nns.regression import (
@@ -80,7 +81,7 @@ def nns_boost(
     ):
         raise ValueError("string/object predictor values require explicit factor_levels.")
 
-    x_train = _as_matrix(x_input, "ivs_train")
+    x_train = _as_vector_or_matrix(x_input, "ivs_train")
     x_test = (
         x_train.copy() if x_test_input is None else _as_point_matrix(x_test_input, x_train.shape[1])
     )
@@ -97,7 +98,7 @@ def nns_boost(
         )
         class_codes = np.unique(y_train[np.isfinite(y_train)])
     else:
-        y_train = _as_vector(dv_train, "dv_train")
+        y_train = _as_flat_vector(dv_train, "dv_train")
         class_codes = np.empty(0, dtype=np.float64)
     if x_train.shape[0] != y_train.size:
         raise ValueError("ivs_train and dv_train must have the same row count.")
@@ -663,37 +664,3 @@ def _sse(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
 
 def _accuracy(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
     return float(np.mean(predicted == actual))
-
-
-def _as_matrix(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError(f"{name} must be a non-empty numeric vector or matrix.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
-
-
-def _as_point_matrix(x: NDArray[np.float64], n_cols: int) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        if n_cols == 1:
-            values = values.reshape(-1, 1)
-        else:
-            values = values.reshape(1, -1)
-    if values.ndim != 2 or values.shape[1] != n_cols:
-        raise ValueError("ivs_test must have the same column count as ivs_train.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("ivs_test must contain only finite values.")
-    return values
-
-
-def _as_vector(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        raise ValueError(f"{name} must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
