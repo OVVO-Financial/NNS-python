@@ -361,13 +361,17 @@ Rescales inputs using NNS conventions.
 
 Closest R APIs: `NNS.FSD`, `NNS.SSD`, and `NNS.TSD`.
 
-Compute first-, second-, and third-order stochastic dominance.
+Compute first-, second-, and third-order stochastic dominance. The two samples
+may differ in length; curves are evaluated on the merged threshold grid exactly
+as the R functions do.
 
 #### `fsd_uni`, `ssd_uni`, `tsd_uni`
 
 Closest R APIs: `NNS.FSD.uni`, `NNS.SSD.uni`, and `NNS.TSD.uni`.
 
-Univariate wrappers for stochastic dominance workflows.
+Univariate wrappers for stochastic dominance workflows. Unlike R's C++ `.uni`
+routines, unequal-length samples are supported with the same merged-grid
+semantics as the pairwise tests.
 
 #### `nns_sd_cluster`
 
