@@ -7,7 +7,12 @@ from typing import Any, Literal, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _warn_unsupported
+from nns._helpers import (
+    _as_flat_vector,
+    _as_point_matrix,
+    _as_vector_or_matrix,
+    _warn_unsupported,
+)
 from nns.categorical import _balance_class_training, _dense_factor_codes
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
@@ -107,14 +112,14 @@ def nns_stack(
             factor_levels=factor_levels,
         )
 
-    x_train = _as_matrix(x_input, "ivs_train")
+    x_train = _as_vector_or_matrix(x_input, "ivs_train")
     if balance:
         y_train, class_codes = _dense_factor_codes(dv_train, levels=class_levels)
     elif type_value == "class":
         y_train, _ = _prepare_y_values(dv_train, type_value=type_value, class_levels=class_levels)
         class_codes = np.unique(y_train[np.isfinite(y_train)])
     else:
-        y_train = _as_vector(dv_train, "dv_train")
+        y_train = _as_flat_vector(dv_train, "dv_train")
         class_codes = np.empty(0, dtype=np.float64)
     if x_train.shape[0] != y_train.size:
         raise ValueError("ivs_train and dv_train must have the same row count.")
@@ -324,16 +329,19 @@ def _evaluate_method2(
         fold_scores.append(float(scores[best_index]))
 
         if stack and methods == (1, 2):
-            fit = cast("RegResult", nns_reg(
-                cv_x_train,
-                cv_y_train,
-                point_est=cv_x_test,
-                dim_red_method=dim_red_method,
-                threshold=best_threshold,
-                order=order,
-                dist=dist,
-                point_only=False,
-            ))
+            fit = cast(
+                "RegResult",
+                nns_reg(
+                    cv_x_train,
+                    cv_y_train,
+                    point_est=cv_x_test,
+                    dim_red_method=dim_red_method,
+                    threshold=best_threshold,
+                    order=order,
+                    dist=dist,
+                    point_only=False,
+                ),
+            )
             train_star = cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"]
             test_star = _xstar_for_points(
                 fit,
@@ -347,18 +355,21 @@ def _evaluate_method2(
     final_class_threshold = (
         _threshold_mode(threshold_results) if type_value == "class" else math.nan
     )
-    final_fit = cast("RegResult", nns_reg(
-        x_train,
-        y_train,
-        point_est=x_test,
-        dim_red_method=dim_red_method,
-        threshold=final_threshold,
-        order=order,
-        dist=dist,
-        point_only=False,
-        confidence_interval=pred_int,
-        type=type_value,
-    ))
+    final_fit = cast(
+        "RegResult",
+        nns_reg(
+            x_train,
+            y_train,
+            point_est=x_test,
+            dim_red_method=dim_red_method,
+            threshold=final_threshold,
+            order=order,
+            dist=dist,
+            point_only=False,
+            confidence_interval=pred_int,
+            type=type_value,
+        ),
+    )
     fitted = cast(dict[str, NDArray[np.float64]], final_fit["Fitted.xy"])
     fitted_yhat = fitted["y.hat"]
     prediction = _as_prediction(final_fit["Point.est"], x_test.shape[0])
@@ -604,16 +615,19 @@ def _fold_xstar(
             predicted = _class_threshold_round(predicted, threshold, cv_y_train)
         scores[idx] = objective_fn(predicted, cv_y_test)
     best_index = int(np.nanargmin(scores) if objective == "min" else np.nanargmax(scores))
-    fit = cast("RegResult", nns_reg(
-        cv_x_train,
-        cv_y_train,
-        point_est=cv_x_test,
-        dim_red_method=dim_red_method,
-        threshold=float(cutoffs[best_index]),
-        order=order,
-        dist=dist,
-        point_only=False,
-    ))
+    fit = cast(
+        "RegResult",
+        nns_reg(
+            cv_x_train,
+            cv_y_train,
+            point_est=cv_x_test,
+            dim_red_method=dim_red_method,
+            threshold=float(cutoffs[best_index]),
+            order=order,
+            dist=dist,
+            point_only=False,
+        ),
+    )
     return cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"], _xstar_for_points(
         fit,
         cv_x_train,
@@ -687,14 +701,17 @@ def _threshold_grid(
     elif isinstance(dim_red_method, str) and dim_red_method.lower() == "equal":
         return np.array([0.0], dtype=np.float64)
     else:
-        fit = cast("RegResult", nns_reg(
-            x,
-            y,
-            dim_red_method=dim_red_method,
-            order=order,
-            dist=dist,
-            point_only=True,
-        ))
+        fit = cast(
+            "RegResult",
+            nns_reg(
+                x,
+                y,
+                dim_red_method=dim_red_method,
+                order=order,
+                dist=dist,
+                point_only=True,
+            ),
+        )
         equation = cast(dict[str, NDArray[np.float64]], fit["equation"])
         scores = np.abs(np.round(equation["Coefficient"][:-1], 2))
     scores = np.asarray(scores, dtype=np.float64)
@@ -1005,37 +1022,3 @@ def _all_predictors_are_factor(
     if len(levels_by_column) < x.shape[1]:
         raise ValueError("factor_levels must provide levels for every predictor column.")
     return all(levels_by_column[col] is not None for col in range(x.shape[1]))
-
-
-def _as_matrix(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError(f"{name} must be a non-empty numeric vector or matrix.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
-
-
-def _as_point_matrix(x: NDArray[np.float64], n_cols: int) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        if n_cols == 1:
-            values = values.reshape(-1, 1)
-        else:
-            values = values.reshape(1, -1)
-    if values.ndim != 2 or values.shape[1] != n_cols:
-        raise ValueError("ivs_test must have the same column count as ivs_train.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("ivs_test must contain only finite values.")
-    return values
-
-
-def _as_vector(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        raise ValueError(f"{name} must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values

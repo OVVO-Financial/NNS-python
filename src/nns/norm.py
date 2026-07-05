@@ -6,6 +6,7 @@ from typing import cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_matrix
 from nns.dependence import nns_dep
 
 
@@ -39,14 +40,14 @@ def nns_norm(
       vector.
     """
     if isinstance(x, np.ndarray):
-        values = _as_matrix(x)
+        values = _as_matrix(x, "x")
     else:
         series = [_as_vector(item, index) for index, item in enumerate(x)]
         if not series:
             raise ValueError("x must be non-empty.")
         if len({item.size for item in series}) > 1:
             return _norm_unequal_series(series)
-        values = _as_matrix(np.column_stack(series))
+        values = _as_matrix(np.column_stack(series), "x")
     means = np.mean(values, axis=0)
     means = means.copy()
     means[means == 0.0] = 1e-10
@@ -96,15 +97,4 @@ def _as_vector(x: NDArray[np.float64], index: int) -> NDArray[np.float64]:
         raise ValueError(f"x[{index}] must be non-empty.")
     if not np.all(np.isfinite(values)):
         raise ValueError(f"x[{index}] must contain only finite values.")
-    return values
-
-
-def _as_matrix(x: NDArray[np.float64]) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim != 2:
-        raise ValueError("x must be 2D.")
-    if values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError("x must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("x must contain only finite values.")
     return values

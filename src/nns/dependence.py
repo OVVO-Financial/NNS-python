@@ -6,6 +6,7 @@ from collections import defaultdict
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_pair
 from nns._native import native_fn
 from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
 
@@ -409,20 +410,3 @@ def _finite_or_zero(value: float) -> float:
 
 def _is_constant(values: NDArray[np.float64]) -> bool:
     return bool(np.all(values == values[0]))
-
-
-def _as_pair(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    x_values = np.asarray(x, dtype=np.float64)
-    y_values = np.asarray(y, dtype=np.float64)
-    if x_values.ndim != 1 or y_values.ndim != 1:
-        raise ValueError("x and y must be 1D.")
-    if x_values.size == 0:
-        raise ValueError("x and y must be non-empty.")
-    if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
-    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
-        raise ValueError("x and y must contain only finite values.")
-    return x_values, y_values

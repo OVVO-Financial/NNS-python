@@ -6,6 +6,7 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_pair
 from nns._native import native_fn
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity
@@ -259,20 +260,3 @@ def _validate_noise_reduction(value: str) -> NoiseReduction:
             "noise_reduction must be one of 'mean', 'median', 'mode', 'mode_class', 'off'."
         )
     return cast(NoiseReduction, noise)
-
-
-def _as_pair(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    x_values = np.asarray(x, dtype=np.float64)
-    y_values = np.asarray(y, dtype=np.float64)
-    if x_values.ndim != 1 or y_values.ndim != 1:
-        raise ValueError("x and y must be 1D.")
-    if x_values.size == 0:
-        raise ValueError("x and y must be non-empty.")
-    if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
-    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
-        raise ValueError("x and y must contain only finite values.")
-    return x_values, y_values
