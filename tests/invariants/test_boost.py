@@ -7,6 +7,7 @@ import pytest
 
 import nns.boost as boost_module
 from nns import nns_boost
+from nns.boost import BoostResult
 
 
 def test_nns_boost_shapes_and_feature_weights() -> None:
@@ -322,7 +323,7 @@ def test_nns_boost_balance_retries_ordinary_fit_error(monkeypatch: pytest.Monkey
     original = boost_module._nns_boost_core
     calls = {"count": 0}
 
-    def fail_first(*args: Any, **kwargs: Any) -> dict[str, object]:
+    def fail_first(*args: Any, **kwargs: Any) -> BoostResult:
         calls["count"] += 1
         if calls["count"] == 1:
             raise RuntimeError("ordinary fit failure")

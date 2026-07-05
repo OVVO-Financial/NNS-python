@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,7 +16,38 @@ from nns.regression import _nns_copula_matrix as _copula_matrix
 from nns.var import upm_var
 
 NBest = int | Literal["all"] | None
-MRegResult = dict[str, Any]
+
+MRegFitted = dict[str, NDArray[np.float64] | NDArray[np.str_]]
+"""Fit table keyed ``V1..Vn`` per regressor plus ``y``, ``y.hat``, ``NNS.ID``,
+``residuals``, and (with ``confidence_interval``) ``conf.int.pos``/``conf.int.neg``.
+Column count depends on the input, so keys stay dynamic."""
+
+MRegPredInt = TypedDict(
+    "MRegPredInt",
+    {
+        "lower.pred.int": NDArray[np.float64],
+        "upper.pred.int": NDArray[np.float64],
+    },
+)
+"""Prediction interval bounds for the requested ``point_est`` rows."""
+
+MRegResult = TypedDict(
+    "MRegResult",
+    {
+        "Point.est": "NDArray[np.float64] | None",
+        "RPM": dict[str, NDArray[np.float64]],
+        "R2": NotRequired[float],
+        "rhs.partitions": NotRequired[dict[str, NDArray[np.float64]]],
+        "pred.int": NotRequired["MRegPredInt | None"],
+        "Fitted.xy": NotRequired[MRegFitted],
+    },
+)
+"""``nns_m_reg`` result.
+
+``point_only=True`` returns only ``Point.est`` and ``RPM``; the full form always
+carries the remaining keys (``pred.int`` is ``None`` unless
+``confidence_interval`` is set).
+"""
 
 
 def nns_m_reg(
@@ -482,7 +513,7 @@ def _apply_multivariate_intervals(
     point_predictions: NDArray[np.float64] | None,
     *,
     confidence_interval: float | None,
-) -> dict[str, NDArray[np.float64]] | None:
+) -> MRegPredInt | None:
     if confidence_interval is None:
         return None
     alpha = (1.0 - float(confidence_interval)) / 2.0

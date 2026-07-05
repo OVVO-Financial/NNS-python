@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from numbers import Integral
-from typing import Any, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -12,6 +12,16 @@ from nns._helpers import _warn_unsupported
 from nns.core import lpm_ratio, upm_ratio
 
 _R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
+
+class VarResult(TypedDict):
+    """``nns_var`` result. ``h=0`` returns only the interpolated matrix and names."""
+
+    interpolated_and_extrapolated: NDArray[np.float64]
+    names: list[str]
+    relevant_variables: NotRequired[NDArray[Any]]
+    univariate: NotRequired[NDArray[np.float64]]
+    multivariate: NotRequired[NDArray[np.float64]]
+    ensemble: NotRequired[NDArray[np.float64]]
 
 
 def nns_var(
@@ -26,7 +36,7 @@ def nns_var(
     status: bool = True,
     ncores: int | None = None,
     nowcast: bool = False,
-) -> dict[str, Any]:
+) -> VarResult:
     """Nonparametric VAR forecast for numeric matrix-like inputs.
 
     The public Python path returns plain arrays keyed like R's ``NNS.VAR`` output.
@@ -101,7 +111,7 @@ def _var_interpolate_and_extrapolate(
     h: int,
     tau: int | Sequence[int] | Sequence[Sequence[int]] = 1,
     names: Sequence[str] | None = None,
-) -> dict[str, object]:
+) -> VarResult:
     """Interpolate missing values and generate univariate ARMA forecasts per column."""
 
     vars_matrix = np.asarray(variables, dtype=np.float64)
@@ -158,11 +168,12 @@ def _var_interpolate_and_extrapolate(
                 plot=False,
                 point_only=True,
             )["Point.est"]
-            if fitted_missing.size:
+            if fitted_missing is not None and fitted_missing.size:
                 variable_interpolation[missing] = np.asarray(fitted_missing, dtype=np.float64)
 
         if h > 0:
             tau_i = _var_tau_for_variable(tau, j)
+            periods: NDArray[np.int64] | None
             try:
                 periods = nns_seas(
                     variable_interpolation,

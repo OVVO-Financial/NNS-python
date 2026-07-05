@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.meboot import nns_meboot
+from nns.meboot import MebootResult, nns_meboot
 from nns.var import lpm_var, upm_var
 
 
@@ -99,7 +97,7 @@ def _omit_nan_numeric(x: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.asarray(values[~np.isnan(values)], dtype=np.float64)
 
 
-def _replicate_matrix(result: dict[str, Any]) -> NDArray[np.float64]:
+def _replicate_matrix(result: MebootResult) -> NDArray[np.float64]:
     replicates = np.asarray(result.get("replicates"), dtype=np.float64)
     if replicates.ndim != 2:
         raise ValueError("NNS.meboot result does not contain a replicate matrix.")

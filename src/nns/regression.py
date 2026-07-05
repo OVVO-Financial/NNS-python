@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,11 +15,91 @@ from nns.causation import _uni_caus
 from nns.central_tendencies import nns_mode
 from nns.copula import _copula
 from nns.dependence import _gravity, nns_dep
-from nns.part import NoiseReduction, nns_part
+from nns.part import NoiseReduction, PartResult, nns_part
 from nns.smoothing import r_smooth_spline_fixed_spar
 from nns.var import lpm_var, upm_var
 
 Order = int | Literal["max"] | None
+
+if TYPE_CHECKING:
+    from nns.multivariate_regression import MRegResult
+
+# Result shapes mirror installed R NNS.reg output names, including dotted keys,
+# hence the functional TypedDict syntax.
+
+class RegPoints(TypedDict):
+    x: NDArray[np.float64]
+    y: NDArray[np.float64]
+"""Consolidated regression points; also the whole result when ``multivariate_call=True``."""
+
+DerivativeTable = TypedDict(
+    "DerivativeTable",
+    {
+        "Coefficient": NDArray[np.float64],
+        "X.Lower.Range": NDArray[np.float64],
+        "X.Upper.Range": NDArray[np.float64],
+    },
+)
+"""Piecewise slope per x-interval, as in R's ``$derivative`` table."""
+
+RegPredInt = TypedDict(
+    "RegPredInt",
+    {
+        "pred.int.neg": NDArray[np.float64],
+        "pred.int.pos": NDArray[np.float64],
+    },
+)
+"""Prediction interval bounds for the requested ``point_est`` rows."""
+
+RegFitted = TypedDict(
+    "RegFitted",
+    {
+        "x": NDArray[np.float64],
+        "y": NDArray[np.float64],
+        "y.hat": NDArray[np.float64],
+        "NNS.ID": NDArray[np.str_],
+        "gradient": NDArray[np.float64],
+        "residuals": NDArray[np.float64],
+        "standard.errors": NDArray[np.float64],
+        "conf.int.pos": NotRequired[NDArray[np.float64]],
+        "conf.int.neg": NotRequired[NDArray[np.float64]],
+    },
+)
+"""Per-observation fit table (R's ``$Fitted.xy``).
+
+The ``conf.int.*`` columns are added only when ``confidence_interval`` is set.
+"""
+
+class RegEquation(TypedDict):
+    Variable: NDArray[np.str_]
+    Coefficient: NDArray[np.float64]
+"""Dimension-reduction synthetic-regressor weights (R's ``$equation``)."""
+
+class RegXStar(TypedDict):
+    x: NDArray[np.float64]
+"""Synthetic dimension-reduction regressor (R's ``$x.star``)."""
+
+RegResult = TypedDict(
+    "RegResult",
+    {
+        "R2": float,
+        "SE": float,
+        "Prediction.Accuracy": float | None,
+        "equation": "RegEquation | None",
+        "x.star": "RegXStar | None",
+        "derivative": DerivativeTable,
+        "Point.est": NDArray[np.float64],
+        "pred.int": "RegPredInt | None",
+        "regression.points": RegPoints,
+        "Fitted.xy": RegFitted,
+    },
+)
+"""Univariate ``nns_reg`` result.
+
+``equation`` and ``x.star`` are populated only on the dimension-reduction path;
+``Prediction.Accuracy`` only in class mode; ``pred.int`` only when
+``confidence_interval`` is set; ``Point.est`` is empty unless ``point_est`` is given.
+"""
 
 
 @dataclass(frozen=True)
@@ -29,6 +109,64 @@ class FactorDesign:
     x: NDArray[np.float64]
     point_est: NDArray[np.float64] | None
     feature_names: tuple[str, ...]
+
+
+@overload
+def nns_reg(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    *,
+    factor_2_dummy: bool = ...,
+    order: Order = ...,
+    dim_red_method: object | None = ...,
+    tau: object | None = ...,
+    type: str | None = ...,
+    point_est: NDArray[np.float64] | float | None = ...,
+    return_values: bool = ...,
+    plot: bool = ...,
+    plot_regions: bool = ...,
+    residual_plot: bool = ...,
+    confidence_interval: float | None = ...,
+    threshold: float = ...,
+    n_best: object | None = ...,
+    smooth: bool = ...,
+    noise_reduction: NoiseReduction = ...,
+    dist: str = ...,
+    ncores: int | None = ...,
+    point_only: bool = ...,
+    multivariate_call: Literal[True],
+    class_levels: list[object] | None = ...,
+    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = ...,
+) -> RegPoints: ...
+
+
+@overload
+def nns_reg(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    *,
+    factor_2_dummy: bool = ...,
+    order: Order = ...,
+    dim_red_method: object | None = ...,
+    tau: object | None = ...,
+    type: str | None = ...,
+    point_est: NDArray[np.float64] | float | None = ...,
+    return_values: bool = ...,
+    plot: bool = ...,
+    plot_regions: bool = ...,
+    residual_plot: bool = ...,
+    confidence_interval: float | None = ...,
+    threshold: float = ...,
+    n_best: object | None = ...,
+    smooth: bool = ...,
+    noise_reduction: NoiseReduction = ...,
+    dist: str = ...,
+    ncores: int | None = ...,
+    point_only: bool = ...,
+    multivariate_call: Literal[False] = ...,
+    class_levels: list[object] | None = ...,
+    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = ...,
+) -> RegResult | MRegResult: ...
 
 
 def nns_reg(
@@ -56,8 +194,14 @@ def nns_reg(
     multivariate_call: bool = False,
     class_levels: list[object] | None = None,
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
-) -> dict[str, Any]:
-    """Univariate numeric port of R's NNS.reg."""
+) -> RegResult | MRegResult | RegPoints:
+    """Univariate numeric port of R's NNS.reg.
+
+    Returns :class:`RegResult` for 1-D ``x``. A 2-D ``x`` dispatches to
+    :func:`nns.multivariate_regression.nns_m_reg` and returns its
+    :class:`~nns.multivariate_regression.MRegResult`. The internal
+    ``multivariate_call=True`` contract returns bare :class:`RegPoints`.
+    """
     _warn_unsupported(
         return_values=return_values is not True,
         ncores=ncores is not None,
@@ -110,7 +254,7 @@ def nns_reg(
         dispatch_n_best = n_best
         if type_value == "class" and dispatch_n_best is None:
             dispatch_n_best = 1
-        result = nns_m_reg(
+        m_reg_result = nns_m_reg(
             np.asarray(x_for_dispatch, dtype=np.float64),
             y_matrix_values,
             factor_2_dummy=False,
@@ -128,7 +272,7 @@ def nns_reg(
             plot=plot,
             residual_plot=residual_plot,
         )
-        return result
+        return m_reg_result
 
     # tau, threshold, n_best, and dist only apply to the dim-red and
     # multivariate paths dispatched above, mirroring R's NNS.reg.
@@ -166,7 +310,7 @@ def nns_reg(
 
 
 def _maybe_render_reg(
-    result: dict[str, Any],
+    result: Mapping[str, object],
     *,
     plot: bool,
     plot_regions: bool,
@@ -237,10 +381,10 @@ def _nns_reg_univariate_core(
     confidence_interval: float | None,
     multivariate_call: bool,
     class_mode: bool,
-    equation: dict[str, NDArray[np.float64] | NDArray[np.str_]] | None,
-    x_star: dict[str, NDArray[np.float64]] | None,
+    equation: RegEquation | None,
+    x_star: RegXStar | None,
     smooth: bool = False,
-) -> dict[str, Any]:
+) -> RegResult | RegPoints:
 
     dependence = _regression_dependence(x_values, y_values)
     dep_order = _dep_reduced_order(dependence, order, y_values.size)
@@ -621,7 +765,7 @@ def _nns_reg_dimred(
     multivariate_call: bool,
     class_levels: list[object] | None = None,
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
-) -> dict[str, Any]:
+) -> RegResult | RegPoints:
     del n_best
     if factor_2_dummy:
         x, point_est, variable_names = _expand_factor_predictors_with_names(
@@ -677,7 +821,7 @@ class _DimredProjection:
         self,
         x_star: NDArray[np.float64],
         point_est: NDArray[np.float64] | None,
-        equation: dict[str, NDArray[np.float64] | NDArray[np.str_]],
+        equation: RegEquation,
     ) -> None:
         self.x_star = x_star
         self.point_est = point_est
@@ -773,8 +917,8 @@ def _dimred_projection(
     )
     if len(names) != x.shape[1]:
         raise ValueError("variable_names must match the number of x columns.")
-    equation = {
-        "Variable": np.asarray([*names, "DENOMINATOR"]),
+    equation: RegEquation = {
+        "Variable": np.asarray([*names, "DENOMINATOR"], dtype=np.str_),
         "Coefficient": np.concatenate((coef, np.array([denominator], dtype=np.float64))),
     }
     return _DimredProjection(x_star=x_star, point_est=point_star, equation=equation)
@@ -982,26 +1126,23 @@ def _partition_for_regression(
     dep_order: int | Literal["max"],
     requested_order: Order,
     noise: NoiseReduction,
-) -> dict[str, Any]:
+) -> PartResult:
     if dependence == 1.0 or dep_order == "max":
         if requested_order is None or dep_order == "max":
             return _max_order_part_map(x, y)
-        return cast(dict[str, Any], nns_part(x, y, order=int(dep_order), obs_req=0))
-    return cast(
-        dict[str, Any],
-        nns_part(
-            x,
-            y,
-            noise_reduction=noise,
-            order=int(dep_order),
-            type="XONLY",
-            obs_req=0,
-            min_obs_stop=True,
-        ),
+        return nns_part(x, y, order=int(dep_order), obs_req=0)
+    return nns_part(
+        x,
+        y,
+        noise_reduction=noise,
+        order=int(dep_order),
+        type="XONLY",
+        obs_req=0,
+        min_obs_stop=True,
     )
 
 
-def _max_order_part_map(x: NDArray[np.float64], y: NDArray[np.float64]) -> dict[str, Any]:
+def _max_order_part_map(x: NDArray[np.float64], y: NDArray[np.float64]) -> PartResult:
     quadrants = np.full(x.size, "q", dtype=str)
     seed_map = nns_part(x, y, order=1, obs_req=0)
     return {
@@ -1158,7 +1299,7 @@ def _coefficients(
     rp_y: NDArray[np.float64],
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-) -> dict[str, NDArray[np.float64]]:
+) -> DerivativeTable:
     if rp_x.size > 1:
         rise = np.diff(rp_y)
         run = np.diff(rp_x)
@@ -1197,7 +1338,7 @@ def _fitted_values(
     y: NDArray[np.float64],
     rp_x: NDArray[np.float64],
     rp_y: NDArray[np.float64],
-    coeff: dict[str, NDArray[np.float64]],
+    coeff: DerivativeTable,
     order: Order,
 ) -> NDArray[np.float64]:
     if (order is not None and _is_fcl(order)) or (
@@ -1215,7 +1356,7 @@ def _predict_points(
     y: NDArray[np.float64],
     rp_x: NDArray[np.float64],
     rp_y: NDArray[np.float64],
-    coeff: dict[str, NDArray[np.float64]],
+    coeff: DerivativeTable,
 ) -> NDArray[np.float64]:
     reg_idx = _find_interval(point_est, rp_x, rightmost_closed=True)
     coef_idx = _find_interval(point_est, coeff["X.Lower.Range"], rightmost_closed=True)
@@ -1251,7 +1392,7 @@ def _extrapolate_points(
     point_est_y: NDArray[np.float64],
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    coeff: dict[str, NDArray[np.float64]],
+    coeff: DerivativeTable,
 ) -> NDArray[np.float64]:
     out = point_est_y.astype(np.float64).copy()
     if not np.any((point_est > np.max(x)) | (point_est < np.min(x))):
@@ -1305,8 +1446,8 @@ def _fitted_table(
     y: NDArray[np.float64],
     estimate: NDArray[np.float64],
     nns_ids: NDArray[np.str_],
-    coeff: dict[str, NDArray[np.float64]],
-) -> dict[str, NDArray[np.float64] | NDArray[np.str_]]:
+    coeff: DerivativeTable,
+) -> RegFitted:
     y_hat = estimate.copy()
     if np.any(~np.isfinite(y_hat)):
         replacement = _gravity(y_hat[np.isfinite(y_hat)])
@@ -1331,20 +1472,20 @@ def _fitted_table(
 
 
 def _apply_univariate_intervals(
-    fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]],
+    fitted: RegFitted,
     point_values: NDArray[np.float64] | None,
     *,
     confidence_interval: float | None,
     class_mode: bool = False,
-) -> dict[str, NDArray[np.float64]] | None:
+) -> RegPredInt | None:
     if confidence_interval is None:
         return None
 
     alpha = (1.0 - float(confidence_interval)) / 2.0
-    y_hat = cast(NDArray[np.float64], fitted["y.hat"])
-    y = cast(NDArray[np.float64], fitted["y"])
-    residuals = cast(NDArray[np.float64], fitted["residuals"])
-    gradient = cast(NDArray[np.float64], fitted["gradient"])
+    y_hat = fitted["y.hat"]
+    y = fitted["y"]
+    residuals = fitted["residuals"]
+    gradient = fitted["gradient"]
 
     conf_pos = np.empty_like(y_hat)
     conf_neg = np.empty_like(y_hat)
@@ -1364,8 +1505,8 @@ def _apply_univariate_intervals(
     if point_values is None:
         return None
 
-    order = np.argsort(cast(NDArray[np.float64], fitted["x"]), kind="mergesort")
-    sorted_x = cast(NDArray[np.float64], fitted["x"])[order]
+    order = np.argsort(fitted["x"], kind="mergesort")
+    sorted_x = fitted["x"][order]
     row_indices: list[int] = []
     for point in point_values:
         close = np.flatnonzero(np.isclose(sorted_x, point, rtol=1e-12, atol=1e-12))
@@ -1381,12 +1522,15 @@ def _apply_univariate_intervals(
             "pred.int.pos": np.array([], dtype=np.float64),
         }
     selected = np.asarray(row_indices, dtype=np.int64)
-    pred_int = {
+    pred_int: RegPredInt = {
         "pred.int.neg": pred_neg[order][selected],
         "pred.int.pos": pred_pos[order][selected],
     }
     if class_mode:
-        return {key: _round_class_interval(values) for key, values in pred_int.items()}
+        return {
+            "pred.int.neg": _round_class_interval(pred_int["pred.int.neg"]),
+            "pred.int.pos": _round_class_interval(pred_int["pred.int.pos"]),
+        }
     return pred_int
 
 

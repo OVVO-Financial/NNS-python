@@ -356,7 +356,7 @@ def test_public_nns_var_cor_matches_r(
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values)
     assert np.array_equal(
-        cast(np.ndarray, actual_result["relevant_variables"]),
+        actual_result["relevant_variables"],
         cast(np.ndarray, expected_result["relevant_variables"]),
     )
 
@@ -381,7 +381,7 @@ def test_public_nns_var_cor_handles_missing_values_like_r() -> None:
             abs_tol=1e-8,
         )
     assert np.array_equal(
-        cast(np.ndarray, actual_result["relevant_variables"]),
+        actual_result["relevant_variables"],
         cast(np.ndarray, expected_result["relevant_variables"]),
     )
 
@@ -413,7 +413,7 @@ def test_public_nns_var_nns_dep_matches_r() -> None:
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values)
     assert np.array_equal(
-        cast(np.ndarray, actual_result["relevant_variables"]),
+        actual_result["relevant_variables"],
         cast(np.ndarray, expected_result["relevant_variables"]),
     )
 
@@ -445,7 +445,7 @@ def test_public_nns_var_nns_caus_matches_r() -> None:
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
     assert np.array_equal(
-        cast(np.ndarray, actual_result["relevant_variables"]),
+        actual_result["relevant_variables"],
         cast(np.ndarray, expected_result["relevant_variables"]),
     )
 
@@ -477,7 +477,7 @@ def test_public_nns_var_all_matches_r() -> None:
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
     assert np.array_equal(
-        cast(np.ndarray, actual_result["relevant_variables"]),
+        actual_result["relevant_variables"],
         cast(np.ndarray, expected_result["relevant_variables"]),
     )
 

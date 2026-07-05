@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import NotRequired, TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -8,7 +8,26 @@ from numpy.typing import NDArray
 from nns._helpers import _fast_lm
 from nns.dependence import nns_dep
 
-MebootResult = dict[str, NDArray[np.float64] | float | None]
+
+class MebootResult(TypedDict):
+    """``nns_meboot`` per-``rho`` result following R's NNS.meboot diagnostics.
+
+    Degenerate inputs return partial dictionaries (single-observation input
+    yields only ``x``), hence every key is optional.
+    """
+
+    x: NotRequired[NDArray[np.float64]]
+    replicates: NotRequired[NDArray[np.float64]]
+    ensemble: NotRequired[NDArray[np.float64]]
+    xx: NotRequired[NDArray[np.float64]]
+    z: NotRequired[NDArray[np.float64]]
+    dv: NotRequired[NDArray[np.float64]]
+    dvtrim: NotRequired[float]
+    xmin: NotRequired[float]
+    xmax: NotRequired[float]
+    desintxb: NotRequired[NDArray[np.float64]]
+    ordxx: NotRequired[NDArray[np.float64]]
+    kappa: NotRequired[float | None]
 
 
 def nns_meboot(
@@ -30,7 +49,7 @@ def nns_meboot(
     elaps: bool = False,
     digits: int = 6,
     random_seed: int | None = None,
-) -> dict[str, Any] | list[dict[str, Any]]:
+) -> MebootResult | list[MebootResult]:
     """Maximum-entropy bootstrap matching R's NNS.meboot structure.
 
     Stochastic draws use NumPy's RNG, so exact replicate parity with R is not
@@ -118,7 +137,7 @@ def _nns_meboot_one(
     sym: bool,
     digits: int,
     rng: np.random.Generator,
-) -> dict[str, Any]:
+) -> MebootResult:
     n = x.size
     time = np.arange(1, n + 1, dtype=np.float64)
     intercept, orig_drift = _fast_lm(time, x)
