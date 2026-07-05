@@ -315,7 +315,11 @@ NNS ANOVA-style comparison helper covering binary, multi-group, pairwise, and de
 
 Closest R API: `NNS.norm`.
 
-NNS normalization helper for numeric matrix-style inputs.
+NNS normalization helper. Accepts a 2-D matrix or, like R's list input, a
+sequence of 1-D vectors (one per variable). Equal-length vectors are
+column-stacked and normalized through the matrix path; unequal-length
+vectors force `linear=True` exactly as R does and return a list of scaled
+arrays.
 
 #### `nns_distance`
 
@@ -361,13 +365,17 @@ Rescales inputs using NNS conventions.
 
 Closest R APIs: `NNS.FSD`, `NNS.SSD`, and `NNS.TSD`.
 
-Compute first-, second-, and third-order stochastic dominance.
+Compute first-, second-, and third-order stochastic dominance. The two samples
+may differ in length; curves are evaluated on the merged threshold grid exactly
+as the R functions do.
 
 #### `fsd_uni`, `ssd_uni`, `tsd_uni`
 
 Closest R APIs: `NNS.FSD.uni`, `NNS.SSD.uni`, and `NNS.TSD.uni`.
 
-Univariate wrappers for stochastic dominance workflows.
+Univariate wrappers for stochastic dominance workflows. Unlike R's C++ `.uni`
+routines, unequal-length samples are supported with the same merged-grid
+semantics as the pairwise tests.
 
 #### `nns_sd_cluster`
 

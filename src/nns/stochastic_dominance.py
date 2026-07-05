@@ -4,6 +4,12 @@ Dominance uses strict floating-point comparisons with no tolerance, plus R's
 curve equality guard: equal LPM/CDF curves are non-dominance even when samples
 differ below meaningful double precision. Efficient-set output follows the R
 C++ routine's LPM-at-global-maximum ordering and original-index tie break.
+
+Pairwise tests accept samples of unequal length: each sample's LPM/CDF curve is
+evaluated on the merged threshold grid, exactly as R's NNS.FSD/NNS.SSD/NNS.TSD
+compute ``LPM(degree, sort(c(x, y)), sample)`` per sample. (R's C++ ``.uni``
+walkers assume equal lengths; the Python ``*_uni`` wrappers extend the same
+merged-grid semantics to unequal lengths.)
 """
 
 from __future__ import annotations
@@ -55,7 +61,7 @@ class _SDOrderStatPrecomputed:
 
 
 def fsd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """First-order stochastic dominance."""
+    """First-order stochastic dominance; ``x`` and ``y`` may differ in length."""
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
     return _sd_result(x_values, y_values, 1)
@@ -70,7 +76,7 @@ def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discret
 
 
 def ssd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """Second-order stochastic dominance."""
+    """Second-order stochastic dominance; ``x`` and ``y`` may differ in length."""
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
     return _sd_result(x_values, y_values, 2)
@@ -84,7 +90,7 @@ def ssd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
 
 
 def tsd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """Third-order stochastic dominance."""
+    """Third-order stochastic dominance; ``x`` and ``y`` may differ in length."""
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
     return _sd_result(x_values, y_values, 3)
@@ -754,8 +760,6 @@ def _dominates_uni(
     *,
     discrete: bool,
 ) -> bool:
-    if x.size != y.size:
-        raise ValueError("x and y must have the same length.")
     if np.array_equal(np.sort(x), np.sort(y)):
         return False
     if np.min(x) < np.min(y):

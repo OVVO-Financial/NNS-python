@@ -73,7 +73,14 @@ NNS Python does not plot the dendrogram; it only returns the object data.
 The stochastic-dominance implementation is deliberately pure NumPy. It mirrors
 R's C++ SD core mathematically by sorting each column once, storing prefix sums,
 and evaluating dominance on each pair's merged threshold grid rather than on one
-global all-column grid. The full prefix-pair dominance matrix remains available
+global all-column grid. Pairwise tests (`fsd`, `ssd`, `tsd`, and the `*_uni`
+wrappers) accept samples of unequal length: each sample's curve is evaluated on
+the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
+`LPM(degree, sort(c(x, y)), sample)` per sample. R's C++ `.uni` walkers assume
+equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
+intentional extension carrying the same merged-grid semantics. The
+matrix-based efficient-set and cluster routines operate on data columns and
+therefore remain equal-length by construction. The full prefix-pair dominance matrix remains available
 internally for verification and fallback. Large degree-1 discrete calls use an
 exact order-statistic dominance matrix: with equal-length empirical samples,
 one sample first-order stochastically dominates another exactly when every
