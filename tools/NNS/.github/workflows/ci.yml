@@ -1,0 +1,119 @@
+name: R-CMD-check
+
+on:
+  push:
+    branches: ["NNS-Beta-Version"]
+  pull_request:
+    branches: ["NNS-Beta-Version"]
+  workflow_dispatch:
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: windows-latest, r: 'release'}
+          - {os: windows-latest, r: 'devel'}
+          - {os: ubuntu-latest,  r: 'release'}
+          - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
+          - {os: macos-latest,   r: 'release'}
+
+    env:
+      R_REMOTES_NO_ERRORS_FROM_WARNINGS: true
+      _R_CHECK_FORCE_SUGGESTS_: false
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      RGL_USE_NULL: true
+      R_KEEP_PKG_SOURCE: yes
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev libjpeg-turbo8-dev libpng-dev libtiff5-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev xorg-dev
+
+      - name: Install dependencies on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install xquartz fribidi gsl
+          echo "PKG_CPPFLAGS=-I$(brew --prefix gsl)/include" >> "$GITHUB_ENV"
+          echo "PKG_LIBS=-L$(brew --prefix gsl)/lib -lgsl -lgslcblas -lm" >> "$GITHUB_ENV"
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - name: Check
+        uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual", "--ignore-vignettes", "--no-build-vignettes")'
+          error-on: '"error"'
+
+  ubsan-clang-docker:
+    name: UBSAN clang
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run UBSAN check inside container
+        run: |
+          docker run --rm --platform linux/x86_64 \
+            --cap-add=SYS_PTRACE \
+            -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=0" \
+            -e RGL_USE_NULL=true \
+            -v "${GITHUB_WORKSPACE}:/data" -w /data \
+            rocker/r-devel-ubsan-clang bash -lc '
+              set -euo pipefail
+
+              echo "::group::Update and Align System"
+              apt-get update -y
+              # This forces the image to sync its internal versions to avoid the libgbm1 conflict
+              DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y 
+              echo "::endgroup::"
+
+              echo "::group::Install system dependencies"
+              # Removed libgl1-mesa-dev and libglu1-mesa-dev to avoid the Sid conflict
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                cmake libgsl-dev libcurl4-openssl-dev libssl-dev libxml2-dev \
+                libjpeg-dev libpng-dev libtiff5-dev libfreetype6-dev \
+                libharfbuzz-dev libfribidi-dev
+              echo "::endgroup::"
+
+              echo "::group::Install R package dependencies"
+              RD -q -e "install.packages(c(\"remotes\", \"rcmdcheck\", \"Rfast\", \"rgl\", \"recipes\"), repos=\"https://cloud.r-project.org\", Ncpus=2)"
+              RD -q -e "remotes::install_deps(dependencies = TRUE, repos=\"https://cloud.r-project.org\")"
+              echo "::endgroup::"
+
+              echo "::group::Run R CMD check with UBSAN"
+              RD CMD check --no-manual --ignore-vignettes --no-build-vignettes . > ubsan_check.out 2> ubsan_check.err || true
+              cat ubsan_check.err
+              echo "::endgroup::"
+            '
+
+      - name: Check for UBSAN errors
+        run: |
+          if grep -iE "(runtime error|sanitizer)" ubsan_check.err; then
+            echo "::error::UBSAN detected runtime errors."
+            exit 1
+          fi
+
+      - name: Upload UBSAN logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubsan-logs
+          path: |
+            ubsan_check.out
+            ubsan_check.err
+            *.Rcheck/

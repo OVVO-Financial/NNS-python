@@ -93,8 +93,8 @@ factor_2_dummy_FR <- function(x) {
     .Call(`_NNS_factor_2_dummy_FR`, x)
 }
 
-generate.vectors <- function(x, l) {
-    .Call(`_NNS_generate_vectors`, x, l)
+generate.vectors <- function(x, l, len = -1L) {
+    .Call(`_NNS_generate_vectors`, x, l, len)
 }
 
 generate.lin.vectors <- function(x, l, h = 1L) {
@@ -123,6 +123,10 @@ downSample <- function(x, y, list = FALSE, yname = "Class") {
 
 upSample <- function(x, y, list = FALSE, yname = "Class") {
     .Call(`_NNS_upSample`, x, y, list, yname)
+}
+
+NNS_reg_points_cpp <- function(x_, y_, rpx_, rpy_, dependence, stn) {
+    .Call(`_NNS_NNS_reg_points_cpp`, x_, y_, rpx_, rpy_, dependence, stn)
 }
 
 CoLPM_nD_batch_RCPP <- function(data, targets, degree = 0.0, norm = TRUE) {
@@ -278,5 +282,9 @@ NNS_bin <- function(x, width, origin = 0, missinglast = FALSE) {
 
 stoch_superiority_cpp <- function(x, y) {
     .Call(`_NNS_stoch_superiority_cpp`, x, y)
+}
+
+NNS_mreg_reduce_cpp <- function(X, dv, ids, reducer, class_mode) {
+    .Call(`_NNS_NNS_mreg_reduce_cpp`, X, dv, ids, reducer, class_mode)
 }
 
