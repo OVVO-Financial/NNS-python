@@ -329,16 +329,19 @@ def _evaluate_method2(
         fold_scores.append(float(scores[best_index]))
 
         if stack and methods == (1, 2):
-            fit = cast("RegResult", nns_reg(
-                cv_x_train,
-                cv_y_train,
-                point_est=cv_x_test,
-                dim_red_method=dim_red_method,
-                threshold=best_threshold,
-                order=order,
-                dist=dist,
-                point_only=False,
-            ))
+            fit = cast(
+                "RegResult",
+                nns_reg(
+                    cv_x_train,
+                    cv_y_train,
+                    point_est=cv_x_test,
+                    dim_red_method=dim_red_method,
+                    threshold=best_threshold,
+                    order=order,
+                    dist=dist,
+                    point_only=False,
+                ),
+            )
             train_star = cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"]
             test_star = _xstar_for_points(
                 fit,
@@ -352,18 +355,21 @@ def _evaluate_method2(
     final_class_threshold = (
         _threshold_mode(threshold_results) if type_value == "class" else math.nan
     )
-    final_fit = cast("RegResult", nns_reg(
-        x_train,
-        y_train,
-        point_est=x_test,
-        dim_red_method=dim_red_method,
-        threshold=final_threshold,
-        order=order,
-        dist=dist,
-        point_only=False,
-        confidence_interval=pred_int,
-        type=type_value,
-    ))
+    final_fit = cast(
+        "RegResult",
+        nns_reg(
+            x_train,
+            y_train,
+            point_est=x_test,
+            dim_red_method=dim_red_method,
+            threshold=final_threshold,
+            order=order,
+            dist=dist,
+            point_only=False,
+            confidence_interval=pred_int,
+            type=type_value,
+        ),
+    )
     fitted = cast(dict[str, NDArray[np.float64]], final_fit["Fitted.xy"])
     fitted_yhat = fitted["y.hat"]
     prediction = _as_prediction(final_fit["Point.est"], x_test.shape[0])
@@ -609,16 +615,19 @@ def _fold_xstar(
             predicted = _class_threshold_round(predicted, threshold, cv_y_train)
         scores[idx] = objective_fn(predicted, cv_y_test)
     best_index = int(np.nanargmin(scores) if objective == "min" else np.nanargmax(scores))
-    fit = cast("RegResult", nns_reg(
-        cv_x_train,
-        cv_y_train,
-        point_est=cv_x_test,
-        dim_red_method=dim_red_method,
-        threshold=float(cutoffs[best_index]),
-        order=order,
-        dist=dist,
-        point_only=False,
-    ))
+    fit = cast(
+        "RegResult",
+        nns_reg(
+            cv_x_train,
+            cv_y_train,
+            point_est=cv_x_test,
+            dim_red_method=dim_red_method,
+            threshold=float(cutoffs[best_index]),
+            order=order,
+            dist=dist,
+            point_only=False,
+        ),
+    )
     return cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"], _xstar_for_points(
         fit,
         cv_x_train,
@@ -692,14 +701,17 @@ def _threshold_grid(
     elif isinstance(dim_red_method, str) and dim_red_method.lower() == "equal":
         return np.array([0.0], dtype=np.float64)
     else:
-        fit = cast("RegResult", nns_reg(
-            x,
-            y,
-            dim_red_method=dim_red_method,
-            order=order,
-            dist=dist,
-            point_only=True,
-        ))
+        fit = cast(
+            "RegResult",
+            nns_reg(
+                x,
+                y,
+                dim_red_method=dim_red_method,
+                order=order,
+                dist=dist,
+                point_only=True,
+            ),
+        )
         equation = cast(dict[str, NDArray[np.float64]], fit["equation"])
         scores = np.abs(np.round(equation["Coefficient"][:-1], 2))
     scores = np.asarray(scores, dtype=np.float64)
