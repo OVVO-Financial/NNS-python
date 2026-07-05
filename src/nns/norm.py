@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
+from typing import cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns.dependence import nns_dep
+
+
+@overload
+def nns_norm(x: NDArray[np.float64], linear: bool = ...) -> NDArray[np.float64]: ...
+
+
+@overload
+def nns_norm(
+    x: Sequence[NDArray[np.float64]],
+    linear: bool = ...,
+) -> NDArray[np.float64] | list[NDArray[np.float64]]: ...
 
 
 def nns_norm(
