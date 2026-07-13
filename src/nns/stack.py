@@ -16,13 +16,13 @@ from nns._helpers import (
 from nns.categorical import _balance_class_training, _dense_factor_codes
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
+from nns.multivariate_regression import _mreg_predict_path, _mreg_prepare_model
 from nns.regression import (
     Order,
     RegResult,
     _expand_factor_predictors,
     _normalize_type,
     _prepare_y_values,
-    _r_minmax_columns,
     _round_clamp_classes,
     nns_reg,
 )
@@ -82,10 +82,12 @@ def nns_stack(
     random_seed: int | None = None,
 ) -> StackResult:
     """Port of R's deterministic numeric/classification NNS.stack orchestration."""
-    _warn_unsupported(ncores=ncores is not None)
     # optimize_threshold defaults to True in R but the threshold search is not
-    # ported; status is R's console progress flag and NNS Python prints nothing.
-    del optimize_threshold, status
+    # ported.  Keep status/ncores live: status reports coarse expensive stages and
+    # ncores is forwarded to the shared regression engine/native kernels.
+    del optimize_threshold
+    ncores_value = 1 if ncores is None else max(1, int(ncores))
+    _warn_unsupported(ncores=ncores_value > 1)
     type_value = _normalize_type(type)
     if balance:
         type_value = "class"
@@ -173,6 +175,8 @@ def nns_stack(
         ts_test=ts_test_value,
         pred_int=pred_int,
         type_value=type_value,
+        status=status,
+        ncores=ncores_value,
     )
     method1_state = _evaluate_method1(
         x_train,
@@ -193,6 +197,8 @@ def nns_stack(
         ts_test=ts_test_value,
         pred_int=pred_int,
         type_value=type_value,
+        status=status,
+        ncores=ncores_value,
     )
 
     reg = method1_state.prediction
@@ -282,6 +288,8 @@ def _evaluate_method2(
     ts_test: int | None,
     pred_int: float | None,
     type_value: str | None,
+    status: bool = False,
+    ncores: int = 1,
 ) -> _MethodState:
     n_rows, n_cols = x_train.shape
     if 2 not in methods or n_cols <= 1:
@@ -296,6 +304,8 @@ def _evaluate_method2(
     relevant_vars = np.arange(n_cols, dtype=np.int64)
 
     for fold in range(1, folds + 1):
+        if status:
+            print(f"Method 2 fold {fold}/{folds}: calculating coefficients")
         train_idx, test_idx = _cv_split(n_rows, fold, cv_size, ts_test)
         cv_x_train = x_train[train_idx]
         cv_y_train = y_train[train_idx]
@@ -303,6 +313,9 @@ def _evaluate_method2(
         cv_y_test = y_train[test_idx]
 
         cutoffs = _threshold_grid(cv_x_train, cv_y_train, dim_red_method, order, dist)
+        if status:
+            print(f"Method 2 fold {fold}/{folds}: generating {cutoffs.size} cumulative projections")
+            print(f"Method 2 fold {fold}/{folds}: evaluating {cutoffs.size} unique candidates")
         scores = np.empty(cutoffs.size, dtype=np.float64)
         class_thresholds = np.empty(cutoffs.size, dtype=np.float64)
         for idx, cutoff in enumerate(cutoffs):
@@ -368,6 +381,7 @@ def _evaluate_method2(
             point_only=False,
             confidence_interval=pred_int,
             type=type_value,
+            ncores=ncores,
         ),
     )
     fitted = cast(dict[str, NDArray[np.float64]], final_fit["Fitted.xy"])
@@ -382,6 +396,8 @@ def _evaluate_method2(
     final_pred_int = cast(dict[str, NDArray[np.float64]] | None, final_fit["pred.int"])
     final_pred_int = _prediction_interval_or_point_estimate(final_pred_int, prediction)
 
+    if status:
+        print(f"Method 2 fold {folds}/{folds} complete")
     if stack and methods == (1, 2):
         train_star = cast(dict[str, NDArray[np.float64]], final_fit["x.star"])["x"]
         test_star = _xstar_for_points(
@@ -429,6 +445,8 @@ def _evaluate_method1(
     ts_test: int | None,
     pred_int: float | None,
     type_value: str | None,
+    status: bool = False,
+    ncores: int = 1,
 ) -> _MethodState:
     if 1 not in methods:
         obj = math.inf if objective == "min" else -math.inf
@@ -469,45 +487,37 @@ def _evaluate_method1(
             cv_x_train = cv_x_train[:, method2_state.relevant_vars]
             cv_x_test = cv_x_test[:, method2_state.relevant_vars]
 
-        setup = nns_reg(
+        if status:
+            print(f"Method 1 fold {fold}/{folds}: preparing design")
+            print(f"Method 1 fold {fold}/{folds}: building partitions and RPM")
+            kmax = min(l_value, cv_x_train.shape[0])
+            print(f"Method 1 fold {fold}/{folds}: evaluating k = 1...{kmax}")
+
+        model = _mreg_prepare_model(
             cv_x_train,
             cv_y_train,
-            point_est=cv_x_test,
-            n_best=1,
             order=order,
-            dist=dist,
-            point_only=False,
-            type=type_value,
+            noise_reduction="mode_class" if type_value == "class" else "off",
+            is_class=type_value == "class",
         )
-        fitted = cast(dict[str, NDArray[np.float64]], setup["Fitted.xy"])
-        yhat_vec = fitted["y.hat"]
-        setup_prediction = _as_prediction(setup["Point.est"], cv_x_test.shape[0])
-        path_predictions = _distance_path_predictions(
-            cv_x_train,
-            yhat_vec,
+        if status:
+            print(f"Method 1 fold {fold}/{folds}: RPM rows = {model.rpm.shape[0]}")
+        candidate_counts = [max(1, min(int(k), model.rpm.shape[0])) for k in k_candidates]
+        path_by_k = _mreg_predict_path(
+            model,
             cv_x_test,
-            min(l_value, cv_x_train.shape[0]),
-        )
-        all_prediction = _distance_bulk_prediction(
-            cv_x_train,
-            yhat_vec,
-            cv_x_test,
-            min(n_rows, cv_x_train.shape[0]),
+            k_values=candidate_counts,
+            is_class=type_value == "class",
         )
 
         scores: list[float] = []
         tested_ks: list[int] = []
         class_thresholds: list[float] = []
-        for k_value in k_candidates:
-            if k_value == 1:
-                predicted = setup_prediction
-                if type_value == "class" and np.any(np.isnan(predicted)):
-                    predicted = predicted.copy()
-                    predicted[np.isnan(predicted)] = float(np.nanmean(predicted))
-            elif k_value <= path_predictions.shape[1]:
-                predicted = path_predictions[:, k_value - 1]
-            else:
-                predicted = all_prediction
+        for k_value, k_count in zip(k_candidates, candidate_counts, strict=True):
+            predicted = path_by_k[k_count]
+            if type_value == "class" and np.any(np.isnan(predicted)):
+                predicted = predicted.copy()
+                predicted[np.isnan(predicted)] = float(np.nanmean(predicted))
             if type_value == "class":
                 threshold_value = _classification_threshold(
                     predicted,
@@ -533,6 +543,8 @@ def _evaluate_method1(
         )
         best_ks.append(tested_ks[best_index])
         fold_scores.append(float(scores_arr[best_index]))
+        if status:
+            print(f"Method 1 fold {fold}/{folds} complete")
 
     best_k = int(_round_k_mode(np.asarray(best_ks, dtype=np.float64)))
     final_class_threshold = (
@@ -561,6 +573,7 @@ def _evaluate_method1(
         point_only=False,
         confidence_interval=pred_int,
         type=type_value,
+        ncores=ncores,
     )
     fitted = cast(dict[str, NDArray[np.float64]], final_fit["Fitted.xy"])
     prediction = _as_prediction(final_fit["Point.est"], x_test.shape[0])
@@ -771,9 +784,15 @@ def _xstar_for_points(
     if coef.size != test_x.shape[1]:
         fallback = cast(dict[str, NDArray[np.float64]], fit["x.star"])["x"]
         return np.full(test_x.shape[0], float(np.mean(fallback)), dtype=np.float64)
-    joint = np.vstack((test_x, train_x))
-    norm = _r_minmax_columns(joint, zero_guard=True)
-    out = np.asarray(norm[: test_x.shape[0]] @ coef / active, dtype=np.float64)
+    train_min = np.min(train_x, axis=0)
+    train_max = np.max(train_x, axis=0)
+    denom = np.where(train_max == train_min, 1.0, train_max - train_min)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        norm = (test_x - train_min[np.newaxis, :]) / denom[np.newaxis, :]
+        out = np.asarray(norm @ coef / active, dtype=np.float64)
+    out = np.nan_to_num(
+        out, nan=np.nan, posinf=np.finfo(np.float64).max, neginf=-np.finfo(np.float64).max
+    )
     return _fill_nan_with_gravity(out)
 
 
@@ -786,8 +805,8 @@ def _cv_split(
     if ts_test is not None:
         if ts_test < 1 or ts_test > n_rows:
             raise ValueError("ts_test must be in [1, n_rows].")
-        test_idx = np.arange(0, n_rows - ts_test, dtype=np.int64)
-        train_idx = np.arange(n_rows - ts_test, n_rows, dtype=np.int64)
+        train_idx = np.arange(0, n_rows - ts_test, dtype=np.int64)
+        test_idx = np.arange(n_rows - ts_test, n_rows, dtype=np.int64)
         if train_idx.size < 2:
             raise ValueError("ts_test leaves too few training rows.")
         return train_idx, test_idx

@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nns import nns_m_reg
+from nns import nns_m_reg, nns_reg
+from nns.multivariate_regression import _find_interval_matrix_from_boundaries
 
 
 def test_nns_m_reg_shapes_and_bounds() -> None:
@@ -107,3 +108,23 @@ def test_nns_m_reg_direct_factor_dummy_path_stays_rejected() -> None:
 
     with pytest.raises(NotImplementedError, match=r"prepare_factor_predictors"):
         nns_m_reg(x, y, factor_2_dummy=True)
+
+
+def test_mreg_find_interval_final_boundary_matches_repaired_r() -> None:
+    x = np.array([[0.0], [1.0], [1.5], [2.0], [3.5], [4.0], [5.0]])
+    ids = _find_interval_matrix_from_boundaries(x, (np.array([1.0, 2.0, 3.0, 4.0]),))
+    np.testing.assert_array_equal(ids[:, 0], np.array([0, 1, 1, 2, 3, 3, 4]))
+
+
+def test_nns_reg_and_nns_m_reg_share_multivariate_outputs() -> None:
+    x0 = np.linspace(-1.0, 1.0, 12)
+    x = np.column_stack((x0, x0**2))
+    y = x0 + 0.5 * x0**2
+    point = x[[0, 4, 8]]
+
+    via_reg = nns_reg(x, y, point_est=point, n_best=2, point_only=False)
+    direct = nns_m_reg(x, y, point_est=point, n_best=2, point_only=False)
+
+    np.testing.assert_allclose(via_reg["Point.est"], direct["Point.est"], atol=1e-12)
+    np.testing.assert_allclose(via_reg["RPM"]["y.hat"], direct["RPM"]["y.hat"], atol=1e-12)
+    np.testing.assert_array_equal(via_reg["Fitted.xy"]["NNS.ID"], direct["Fitted.xy"]["NNS.ID"])

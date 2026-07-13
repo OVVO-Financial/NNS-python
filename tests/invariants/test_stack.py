@@ -351,16 +351,16 @@ def test_nns_stack_ts_test_shape_and_determinism(method: tuple[int, ...]) -> Non
     np.testing.assert_allclose(first["stack"], second["stack"])
 
 
-def test_nns_stack_ts_test_split_matches_r_sizes() -> None:
+def test_nns_stack_ts_test_split_uses_historical_prefix_for_training() -> None:
     train_idx, test_idx = _cv_split(40, fold=1, cv_size=0.25, ts_test=10)
 
-    assert train_idx.shape == (10,)
-    assert test_idx.shape == (30,)
-    np.testing.assert_array_equal(train_idx, np.arange(30, 40))
-    np.testing.assert_array_equal(test_idx, np.arange(0, 30))
+    assert train_idx.shape == (30,)
+    assert test_idx.shape == (10,)
+    np.testing.assert_array_equal(train_idx, np.arange(0, 30))
+    np.testing.assert_array_equal(test_idx, np.arange(30, 40))
 
 
-@pytest.mark.parametrize("ts_test", [0, 1, 41])
+@pytest.mark.parametrize("ts_test", [0, 39, 41])
 def test_nns_stack_invalid_ts_test_raises(ts_test: int) -> None:
     x = np.linspace(-2.0, 2.0, 40)
     variable = np.column_stack((x, np.sin(x), np.cos(x)))
@@ -368,3 +368,47 @@ def test_nns_stack_invalid_ts_test_raises(ts_test: int) -> None:
 
     with pytest.raises(ValueError):
         nns_stack(variable, y, variable[:3], cv_size=0.25, folds=1, method=1, ts_test=ts_test)
+
+
+def test_nns_stack_method1_scores_candidates_without_public_refits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    x0 = np.linspace(-1.0, 1.0, 18)
+    variable = np.column_stack((x0, x0**2))
+    y = x0 + 0.2 * x0**2
+    import nns.stack as stack_mod
+
+    calls = 0
+    original = stack_mod.nns_reg
+
+    def counting_nns_reg(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(stack_mod, "nns_reg", counting_nns_reg)
+    result = stack_mod.nns_stack(variable, y, variable[:3], folds=1, method=1)
+
+    assert result["stack"].shape == (3,)
+    # Method 1 may use the public estimator for the final selected fit, but not
+    # once per candidate k. With n=18 the candidate grid has more than one k.
+    assert calls == 1
+
+
+def test_nns_stack_xstar_projection_scaling_is_batch_invariant() -> None:
+    import nns.stack as stack_mod
+    from nns.regression import nns_reg
+
+    x0 = np.linspace(-1.0, 1.0, 24)
+    variable = np.column_stack((x0, np.sin(x0), np.cos(x0)))
+    y = 1.0 + x0 - 0.25 * np.sin(x0)
+    point = variable[5:6]
+    extreme = np.array([[10_000.0, -10_000.0, 10_000.0]])
+    fit = nns_reg(variable, y, dim_red_method="cor", point_est=point, point_only=False)
+
+    single = stack_mod._xstar_for_points(fit, variable, point, mixed_factor=False, raw_columns=0)[0]
+    batched = stack_mod._xstar_for_points(
+        fit, variable, np.vstack((point, extreme)), mixed_factor=False, raw_columns=0
+    )[0]
+
+    assert single == batched

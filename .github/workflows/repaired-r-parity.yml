@@ -1,0 +1,98 @@
+name: Repaired R parity fixtures
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/nns/**"
+      - "tests/parity/**"
+      - ".github/workflows/repaired-r-parity.yml"
+
+jobs:
+  repaired-r-fixtures:
+    runs-on: ubuntu-latest
+    env:
+      R_NNS_REPOSITORY: OVVO-Financial/NNS
+      REPAIRED_NNS_R_SHA: "54c98418c2a11499ebb1c456570d2b66c37eb817"
+      FIXTURE_DIR: tests/parity/fixtures/repaired_r_13_1_54c98418
+      R_VALIDATION_LOG_DIR: artifacts/repaired-r-validation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Install R dependencies
+        run: |
+          Rscript -e 'install.packages(c("devtools", "Rcpp", "jsonlite", "remotes", "digest", "desc"), repos = "https://cloud.r-project.org")'
+
+      - name: Validate pinned R SHA variable
+        run: |
+          if ! printf '%s' "${REPAIRED_NNS_R_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "REPAIRED_NNS_R_SHA must be a 40-character lowercase git SHA" >&2
+            exit 1
+          fi
+
+      - name: Checkout repaired R NNS reference
+        run: |
+          git clone https://github.com/${R_NNS_REPOSITORY}.git ../NNS-r
+          cd ../NNS-r
+          git checkout "${REPAIRED_NNS_R_SHA}"
+          test "$(git rev-parse HEAD)" = "${REPAIRED_NNS_R_SHA}"
+          echo "R_NNS_COMMIT=${REPAIRED_NNS_R_SHA}" >> "$GITHUB_ENV"
+
+      - name: Validate repaired R package
+        working-directory: ../NNS-r
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}"
+          Rscript "${GITHUB_WORKSPACE}/tests/parity/check_repaired_r_docs.R" 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/00-doc-contract-before-document.log"
+          Rscript -e 'Rcpp::compileAttributes()' 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/01-compileAttributes.log"
+          Rscript -e 'devtools::document()' 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/02-document.log"
+          Rscript "${GITHUB_WORKSPACE}/tests/parity/check_repaired_r_docs.R" 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/02b-doc-contract-after-document.log"
+          Rscript -e 'devtools::load_all()' 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/03-load_all.log"
+          Rscript -e 'devtools::test()' 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/04-test.log"
+          Rscript -e 'devtools::check(error_on = "error", document = FALSE)' 2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/05-check.log"
+
+      - name: Validate repaired R stack candidate invariants
+        working-directory: ../NNS-r
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}"
+          Rscript "${GITHUB_WORKSPACE}/tests/parity/check_repaired_r_stack_invariants.R" \
+            "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}" \
+            2>&1 | tee "${GITHUB_WORKSPACE}/${R_VALIDATION_LOG_DIR}/06-stack-invariants.log"
+
+      - name: Generate repaired R fixtures with reference backend
+        run: |
+          Rscript tests/parity/generate_repaired_r_fixtures.R \
+            --r-repo ../NNS-r \
+            --out "${FIXTURE_DIR}" \
+            --commit "${R_NNS_COMMIT}"
+
+      - name: Verify repaired R fixtures
+        run: uv run python tests/parity/verify_repaired_r_fixtures.py "${FIXTURE_DIR}"
+
+      - name: Run Python parity tests against repaired fixtures
+        run: uv run pytest -q tests/parity -m parity 2>&1 | tee pytest-54c98418.txt
+
+      - name: Upload R validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repaired-r-validation-${{ env.R_NNS_COMMIT }}
+          path: ${{ env.R_VALIDATION_LOG_DIR }}
+          if-no-files-found: error
+
+      - name: Upload repaired fixture artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repaired-r-13-1-54c98418-fixtures-${{ env.R_NNS_COMMIT }}
+          path: |
+            ${{ env.FIXTURE_DIR }}
+            pytest-54c98418.txt
+          if-no-files-found: error

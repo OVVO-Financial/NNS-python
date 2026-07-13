@@ -27,9 +27,12 @@ if TYPE_CHECKING:
 # Result shapes mirror installed R NNS.reg output names, including dotted keys,
 # hence the functional TypedDict syntax.
 
+
 class RegPoints(TypedDict):
     x: NDArray[np.float64]
     y: NDArray[np.float64]
+
+
 """Consolidated regression points; also the whole result when ``multivariate_call=True``."""
 
 DerivativeTable = TypedDict(
@@ -70,13 +73,19 @@ RegFitted = TypedDict(
 The ``conf.int.*`` columns are added only when ``confidence_interval`` is set.
 """
 
+
 class RegEquation(TypedDict):
     Variable: NDArray[np.str_]
     Coefficient: NDArray[np.float64]
+
+
 """Dimension-reduction synthetic-regressor weights (R's ``$equation``)."""
+
 
 class RegXStar(TypedDict):
     x: NDArray[np.float64]
+
+
 """Synthetic dimension-reduction regressor (R's ``$x.star``)."""
 
 RegResult = TypedDict(
@@ -204,7 +213,7 @@ def nns_reg(
     """
     _warn_unsupported(
         return_values=return_values is not True,
-        ncores=ncores is not None,
+        ncores=ncores is not None and int(ncores) > 1,
     )
 
     if dim_red_method is not None:
@@ -229,8 +238,11 @@ def nns_reg(
             factor_levels=factor_levels,
         )
         _maybe_render_reg(
-            result, plot=plot, plot_regions=plot_regions,
-            residual_plot=residual_plot, point_est=point_est,
+            result,
+            plot=plot,
+            plot_regions=plot_regions,
+            residual_plot=residual_plot,
+            point_est=point_est,
         )
         return result
 
@@ -269,6 +281,7 @@ def nns_reg(
             dist=dist,
             confidence_interval=confidence_interval,
             class_levels=class_levels,
+            ncores=ncores,
             plot=plot,
             residual_plot=residual_plot,
         )
@@ -303,8 +316,11 @@ def nns_reg(
         x_star=None,
     )
     _maybe_render_reg(
-        result, plot=plot, plot_regions=plot_regions,
-        residual_plot=residual_plot, point_est=point_est,
+        result,
+        plot=plot,
+        plot_regions=plot_regions,
+        residual_plot=residual_plot,
+        point_est=point_est,
     )
     return result
 

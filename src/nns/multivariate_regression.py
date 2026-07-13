@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import numpy as np
@@ -16,6 +18,109 @@ from nns.regression import _nns_copula_matrix as _copula_matrix
 from nns.var import upm_var
 
 NBest = int | Literal["all"] | None
+
+
+@dataclass(frozen=True)
+class MRegModel:
+    """Prepared multivariate NNS regression model shared by public APIs and stack."""
+
+    rpm_x: NDArray[np.float64]
+    rpm_y: NDArray[np.float64]
+    boundaries: tuple[NDArray[np.float64], ...]
+    ids: NDArray[np.str_]
+    minimums: NDArray[np.float64]
+    maximums: NDArray[np.float64]
+    feature_names: tuple[str, ...]
+    rpm: NDArray[np.float64]
+
+
+def _mreg_prepare_model(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    *,
+    order: Order,
+    noise_reduction: NoiseReduction,
+    is_class: bool,
+) -> MRegModel:
+    """Prepare the invariant multivariate RPM/partition state once.
+
+    This stripped path intentionally avoids default-k selection, fitted values,
+    external predictions, R2, residuals, confidence intervals, plots, and public
+    dictionaries so stack Method 1 can score all candidate k values without
+    rebuilding the model for every candidate.
+    """
+    x_values = np.asarray(x, dtype=np.float64)
+    y_values = np.asarray(y, dtype=np.float64).reshape(-1)
+    if x_values.ndim != 2:
+        raise ValueError("x must be a 2D numeric matrix.")
+    if x_values.shape[0] == 0 or x_values.shape[1] == 0:
+        raise ValueError("x must be non-empty.")
+    if y_values.size != x_values.shape[0]:
+        raise ValueError("x and y must have the same row count.")
+    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
+        raise ValueError("x and y must contain only finite values.")
+
+    noise = _validate_noise(noise_reduction)
+    type_value = "class" if is_class else None
+    reg_points_matrix = _regression_points_matrix(
+        x_values,
+        y_values,
+        order,
+        noise,
+        False,
+        type_value,
+    )
+    if order is None or isinstance(order, int):
+        reg_points_matrix = _unique_rows_preserve_order(reg_points_matrix)
+    boundaries = tuple(
+        np.sort(reg_points_matrix[:, col][np.isfinite(reg_points_matrix[:, col])]).astype(
+            np.float64, copy=True
+        )
+        for col in range(x_values.shape[1])
+    )
+    components = _find_interval_matrix_from_boundaries(x_values, boundaries)
+    ids = _join_ids(components)
+    rpm = _rpm_from_ids(
+        x_values,
+        y_values,
+        ids,
+        noise,
+        order_is_numeric=order is None or isinstance(order, int),
+    )
+    if is_class:
+        rpm = rpm.copy()
+        rpm[:, -1] = _round_clamp_classes(rpm[:, -1], y_values)
+    return MRegModel(
+        rpm_x=np.ascontiguousarray(rpm[:, :-1], dtype=np.float64),
+        rpm_y=np.ascontiguousarray(rpm[:, -1], dtype=np.float64),
+        boundaries=boundaries,
+        ids=ids,
+        minimums=np.min(x_values, axis=0),
+        maximums=np.max(x_values, axis=0),
+        feature_names=tuple(f"V{idx + 1}" for idx in range(x_values.shape[1])),
+        rpm=np.ascontiguousarray(rpm, dtype=np.float64),
+    )
+
+
+def _mreg_predict_path(
+    model: MRegModel,
+    x_test: NDArray[np.float64],
+    *,
+    k_values: Sequence[int],
+    is_class: bool,
+) -> dict[int, NDArray[np.float64]]:
+    """Pure-Python repaired all-k reference path using one prepared RPM."""
+    tests = np.asarray(x_test, dtype=np.float64)
+    if tests.ndim == 1:
+        tests = tests.reshape(1, -1)
+    if tests.ndim != 2 or tests.shape[1] != model.rpm_x.shape[1]:
+        raise ValueError("x_test column count must match prepared model.")
+    class_arg = "class" if is_class else None
+    out: dict[int, NDArray[np.float64]] = {}
+    for k in sorted({max(1, min(int(k), model.rpm.shape[0])) for k in k_values}):
+        out[k] = nns_distance_path_single_bulk(model.rpm, tests, k, class_arg)
+    return out
+
 
 MRegFitted = dict[str, NDArray[np.float64] | NDArray[np.str_]]
 """Fit table keyed ``V1..Vn`` per regressor plus ``y``, ``y.hat``, ``NNS.ID``,
@@ -77,7 +182,7 @@ def nns_m_reg(
         dist=dist != "L2",
         return_values=return_values is not False,
         plot_regions=plot_regions,
-        ncores=ncores is not None,
+        ncores=ncores is not None and int(ncores) > 1,
     )
     type_value = _normalize_type(type)
     x_values, y_values = _validate_inputs(
@@ -90,27 +195,29 @@ def nns_m_reg(
     point_values, point_is_matrix = _validate_point_est(point_est, x_values.shape[1])
     noise = _validate_noise(noise_reduction)
 
-    reg_points_matrix = _regression_points_matrix(
+    model = _mreg_prepare_model(
         x_values,
         y_values,
-        order,
-        noise,
-        factor_2_dummy,
-        type_value,
+        order=order,
+        noise_reduction=noise,
+        is_class=type_value == "class",
     )
-    if order is None or isinstance(order, int):
-        reg_points_matrix = _unique_rows_preserve_order(reg_points_matrix)
+    reg_points_matrix = np.full(
+        (max((boundary.size for boundary in model.boundaries), default=0), x_values.shape[1]),
+        np.nan,
+        dtype=np.float64,
+    )
+    for col, boundary in enumerate(model.boundaries):
+        reg_points_matrix[: boundary.size, col] = boundary
     if order == "max" and n_best is None:
         n_best = 1
 
-    nns_id_components = _find_interval_matrix(x_values, reg_points_matrix)
-    nns_ids = _join_ids(nns_id_components)
-    rpm, fitted_y, residuals = _rpm_and_fitted(
-        x_values,
+    nns_ids = model.ids
+    rpm = model.rpm
+    fitted_y, residuals = _fitted_from_rpm_ids(
         y_values,
         nns_ids,
-        noise,
-        order_is_numeric=order is None or isinstance(order, int),
+        rpm,
         class_mode=type_value == "class",
     )
 
@@ -182,8 +289,12 @@ def _render_m_reg(fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]]) -> 
         mask = np.isfinite(pos) & np.isfinite(neg)
         if mask.any():
             ax.fill_between(
-                index[mask], neg[mask], pos[mask],
-                color=palette.PINK, alpha=palette.CI_ALPHA_REG, linewidth=0.0,
+                index[mask],
+                neg[mask],
+                pos[mask],
+                color=palette.PINK,
+                alpha=palette.CI_ALPHA_REG,
+                linewidth=0.0,
             )
     ax.set_xlabel("Index")
     ax.set_ylabel("y (blue)   y.hat (red)")
@@ -301,15 +412,78 @@ def _find_interval_matrix(
     x: NDArray[np.float64],
     reg_points_matrix: NDArray[np.float64],
 ) -> NDArray[np.int64]:
-    out = np.empty(x.shape, dtype=np.int64)
-    for col in range(x.shape[1]):
-        breaks = np.sort(reg_points_matrix[:, col][np.isfinite(reg_points_matrix[:, col])])
-        out[:, col] = np.searchsorted(breaks, x[:, col], side="right")
-    return out
+    boundaries = tuple(
+        np.sort(reg_points_matrix[:, col][np.isfinite(reg_points_matrix[:, col])])
+        for col in range(x.shape[1])
+    )
+    return _find_interval_matrix_from_boundaries(x, boundaries)
 
 
 def _join_ids(components: NDArray[np.int64]) -> NDArray[np.str_]:
     return np.asarray([".".join(str(int(v)) for v in row) for row in components], dtype=str)
+
+
+def _find_interval_matrix_from_boundaries(
+    x: NDArray[np.float64],
+    boundaries: tuple[NDArray[np.float64], ...],
+) -> NDArray[np.int64]:
+    out = np.empty(x.shape, dtype=np.int64)
+    for col, breaks in enumerate(boundaries):
+        out[:, col] = np.searchsorted(breaks, x[:, col], side="right")
+        if breaks.size:
+            final_matches = x[:, col] == breaks[-1]
+            out[final_matches, col] = max(0, breaks.size - 1)
+    return out
+
+
+def _rpm_from_ids(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    nns_ids: NDArray[np.str_],
+    noise: NoiseReduction,
+    *,
+    order_is_numeric: bool,
+) -> NDArray[np.float64]:
+    obs = np.arange(y.size)
+    sorted_order = np.lexsort((obs, nns_ids.astype(str)))
+    sorted_ids = nns_ids[sorted_order].astype(str)
+    unique_ids, first, inverse_sorted = np.unique(
+        sorted_ids,
+        return_index=True,
+        return_inverse=True,
+    )
+
+    sorted_matrix = np.column_stack((x[sorted_order], y[sorted_order]))
+    group_values = np.empty((unique_ids.size, x.shape[1] + 1), dtype=np.float64)
+    for group_index in range(unique_ids.size):
+        rows = sorted_matrix[inverse_sorted == group_index]
+        group_values[group_index] = _aggregate_rows(rows, noise, order_is_numeric)
+    return group_values[np.argsort(first)]
+
+
+def _fitted_from_rpm_ids(
+    y: NDArray[np.float64],
+    nns_ids: NDArray[np.str_],
+    rpm: NDArray[np.float64],
+    *,
+    class_mode: bool,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    ids_str = nns_ids.astype(str)
+    _, first = np.unique(ids_str, return_index=True)
+    rpm_ids = ids_str[np.sort(first)]
+    yhat_by_id = {group_id: rpm[index, -1] for index, group_id in enumerate(rpm_ids)}
+    initial_yhat = np.asarray([yhat_by_id[group_id] for group_id in ids_str], dtype=np.float64)
+    if class_mode:
+        initial_yhat = _round_clamp_classes(initial_yhat, y)
+    residuals = initial_yhat - y
+    bias = np.empty_like(residuals)
+    for group_id in rpm_ids:
+        mask = ids_str == group_id
+        bias[mask] = _gravity(residuals[mask])
+    fitted_y = initial_yhat - bias
+    if class_mode:
+        fitted_y = _round_clamp_classes(fitted_y, y)
+    return fitted_y, fitted_y - y
 
 
 def _rpm_and_fitted(
