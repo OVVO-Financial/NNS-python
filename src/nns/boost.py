@@ -18,7 +18,8 @@ from __future__ import annotations
 import itertools
 import math
 import warnings
-from typing import Any, Callable, Literal, cast
+from collections.abc import Callable
+from typing import Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray

@@ -6,7 +6,6 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _as_pair
 from nns._native import native_fn
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity

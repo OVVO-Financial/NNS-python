@@ -103,160 +103,124 @@ E501 Line too long (102 > 100)
 100 |         if size is None:
     |
 
-UP035 [*] Import from `collections.abc` instead: `Callable`
-  --> src/nns/boost.py:21:1
-   |
-19 | import math
-20 | import warnings
-21 | from typing import Any, Callable, Literal, cast
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-22 |
-23 | import numpy as np
-   |
-help: Import from `collections.abc`
-
 RUF046 Value being cast to `int` is already an integer
-   --> src/nns/boost.py:295:38
+   --> src/nns/boost.py:296:38
     |
-294 |     def random_validation_index() -> NDArray[np.int64]:
-295 |         size = max(1, min(n_obs - 1, int(round(cv_fraction * n_obs))))
+295 |     def random_validation_index() -> NDArray[np.int64]:
+296 |         size = max(1, min(n_obs - 1, int(round(cv_fraction * n_obs))))
     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-296 |         for _ in range(200):
-297 |             idx = np.sort(rng.sample_int(n_obs, size, replace=False) - 1).astype(np.int64)
+297 |         for _ in range(200):
+298 |             idx = np.sort(rng.sample_int(n_obs, size, replace=False) - 1).astype(np.int64)
     |
 help: Remove unnecessary `int` call
 
 RUF046 Value being cast to `int` is already an integer
-   --> src/nns/boost.py:581:22
+   --> src/nns/boost.py:582:22
     |
-580 |     minimum_train_size = min(n_obs - idx.size for idx in final_splits)
-581 |     k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))
+581 |     minimum_train_size = min(n_obs - idx.size for idx in final_splits)
+582 |     k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))
     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-582 |     k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))
-583 |     k_scores = np.full(len(k_candidates), np.nan)
+583 |     k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))
+584 |     k_scores = np.full(len(k_candidates), np.nan)
     |
 help: Remove unnecessary `int` call
 
 RUF005 Consider `[*list(range(1, k_small + 1)), minimum_train_size]` instead of concatenation
-   --> src/nns/boost.py:582:39
+   --> src/nns/boost.py:583:39
     |
-580 |     minimum_train_size = min(n_obs - idx.size for idx in final_splits)
-581 |     k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))
-582 |     k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))
+581 |     minimum_train_size = min(n_obs - idx.size for idx in final_splits)
+582 |     k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))
+583 |     k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))
     |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-583 |     k_scores = np.full(len(k_candidates), np.nan)
+584 |     k_scores = np.full(len(k_candidates), np.nan)
     |
 help: Replace with `[*list(range(1, k_small + 1)), minimum_train_size]`
 
-F401 [*] `nns._helpers._as_pair` imported but unused
-  --> src/nns/part.py:9:26
-   |
- 7 | from numpy.typing import NDArray
- 8 |
- 9 | from nns._helpers import _as_pair
-   |                          ^^^^^^^^
-10 | from nns._native import native_fn
-11 | from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
-   |
-help: Remove unused import: `nns._helpers._as_pair`
-
-UP035 [*] Import from `collections.abc` instead: `Callable`
-  --> src/nns/stack.py:22:1
-   |
-20 | import math
-21 | import warnings
-22 | from typing import Any, Callable, Literal, cast
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-23 |
-24 | import numpy as np
-   |
-help: Import from `collections.abc`
-
 E501 Line too long (101 > 100)
-   --> src/nns/stack.py:100:101
+   --> src/nns/stack.py:101:101
     |
-100 | def _scalar_integer(value: Any, name: str, minimum: int = 0, allow_null: bool = False) -> int | None:
+101 | def _scalar_integer(value: Any, name: str, minimum: int = 0, allow_null: bool = False) -> int | None:
     |                                                                                                     ^
-101 |     if allow_null and value is None:
-102 |         return None
+102 |     if allow_null and value is None:
+103 |         return None
     |
 
 E501 Line too long (123 > 100)
-   --> src/nns/stack.py:255:101
+   --> src/nns/stack.py:256:101
     |
-253 |             class_values = sorted(set(dv.astype(np.float64).tolist()))
-254 |         y = np.asarray(
-255 |             [class_values.index(v) + 1 for v in (dv.tolist() if response_categorical else dv.astype(np.float64).tolist())],
+254 |             class_values = sorted(set(dv.astype(np.float64).tolist()))
+255 |         y = np.asarray(
+256 |             [class_values.index(v) + 1 for v in (dv.tolist() if response_categorical else dv.astype(np.float64).tolist())],
     |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
-256 |             dtype=np.float64,
-257 |         )
+257 |             dtype=np.float64,
+258 |         )
     |
 
 E501 Line too long (106 > 100)
-   --> src/nns/stack.py:309:101
+   --> src/nns/stack.py:310:101
     |
-307 |     if original_p == 1 and 2 in methods:
-308 |         warnings.warn(
-309 |             "Method 2 was removed because dimension reduction requires more than one original predictor.",
+308 |     if original_p == 1 and 2 in methods:
+309 |         warnings.warn(
+310 |             "Method 2 was removed because dimension reduction requires more than one original predictor.",
     |                                                                                                     ^^^^^^
-310 |             stacklevel=2,
-311 |         )
+311 |             stacklevel=2,
+312 |         )
     |
 
 E501 Line too long (108 > 100)
-   --> src/nns/stack.py:389:101
+   --> src/nns/stack.py:390:101
     |
-388 |     def decode_codes(code: NDArray[np.float64]) -> NDArray[np.float64]:
-389 |         return np.clip(np.asarray(code, dtype=np.float64), 1, n_classes).astype(np.int64).astype(np.float64)
+389 |     def decode_codes(code: NDArray[np.float64]) -> NDArray[np.float64]:
+390 |         return np.clip(np.asarray(code, dtype=np.float64), 1, n_classes).astype(np.int64).astype(np.float64)
     |                                                                                                     ^^^^^^^^
-390 |
-391 |     def decode_interval(
+391 |
+392 |     def decode_interval(
     |
 
 RUF046 Value being cast to `int` is already an integer
-   --> src/nns/stack.py:525:55
+   --> src/nns/stack.py:526:55
     |
-523 |                     for v in np.unique(y):
-524 |                         g = np.flatnonzero(y == v)
-525 |                         size = min(g.size - 1, max(1, int(round(holdout_size * g.size))))
+524 |                     for v in np.unique(y):
+525 |                         g = np.flatnonzero(y == v)
+526 |                         size = min(g.size - 1, max(1, int(round(holdout_size * g.size))))
     |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-526 |                         if size > 0:
-527 |                             validation_parts.append(rng.sample(g, size, replace=False))
+527 |                         if size > 0:
+528 |                             validation_parts.append(rng.sample(g, size, replace=False))
     |
 help: Remove unnecessary `int` call
 
 RUF046 Value being cast to `int` is already an integer
-   --> src/nns/stack.py:530:50
+   --> src/nns/stack.py:531:50
     |
-528 |                     validation = np.unique(np.concatenate(validation_parts)).astype(np.int64)
-529 |                 else:
-530 |                     size = max(1, min(n_obs - 1, int(round(holdout_size * n_obs))))
+529 |                     validation = np.unique(np.concatenate(validation_parts)).astype(np.int64)
+530 |                 else:
+531 |                     size = max(1, min(n_obs - 1, int(round(holdout_size * n_obs))))
     |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-531 |                     validation = np.sort(
-532 |                         rng.sample_int(n_obs, size, replace=False) - 1
+532 |                     validation = np.sort(
+533 |                         rng.sample_int(n_obs, size, replace=False) - 1
     |
 help: Remove unnecessary `int` call
 
 E501 Line too long (110 > 100)
-   --> src/nns/stack.py:581:101
+   --> src/nns/stack.py:582:101
     |
-579 |     splits = make_splits()
-580 |
-581 |     def coefficient_vector(design: NDArray[np.float64], response: NDArray[np.float64]) -> NDArray[np.float64]:
+580 |     splits = make_splits()
+581 |
+582 |     def coefficient_vector(design: NDArray[np.float64], response: NDArray[np.float64]) -> NDArray[np.float64]:
     |                                                                                                     ^^^^^^^^^^
-582 |         p = design.shape[1]
-583 |         if isinstance(dim_red_value, np.ndarray):
+583 |         p = design.shape[1]
+584 |         if isinstance(dim_red_value, np.ndarray):
     |
 
 RUF046 Value being cast to `int` is already an integer
-   --> src/nns/stack.py:849:26
+   --> src/nns/stack.py:850:26
     |
-847 |     reg_best_is_all = False
-848 |     if 1 in methods:
-849 |         l_small = max(1, int(math.floor(math.sqrt(n_obs))))
+848 |     reg_best_is_all = False
+849 |     if 1 in methods:
+850 |         l_small = max(1, int(math.floor(math.sqrt(n_obs))))
     |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-850 |         candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
-851 |         sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
+851 |         candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
+852 |         sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
     |
 help: Remove unnecessary `int` call
 
@@ -314,29 +278,6 @@ B023 Function definition does not bind loop variable `ts_test`
 339 |             )
     |
 
-F401 [*] `pytest` imported but unused
- --> tests/invariants/test_part.py:4:8
-  |
-3 | import numpy as np
-4 | import pytest
-  |        ^^^^^^
-5 |
-6 | from nns import nns_part
-  |
-help: Remove unused import: `pytest`
-
-F401 [*] `warnings` imported but unused
- --> tests/invariants/test_stack.py:3:8
-  |
-1 | from __future__ import annotations
-2 |
-3 | import warnings
-  |        ^^^^^^^^
-4 |
-5 | import numpy as np
-  |
-help: Remove unused import: `warnings`
-
 RUF043 Pattern passed to `match=` contains metacharacters but is neither escaped nor raw
    --> tests/parity/test_regression.py:228:42
     |
@@ -348,6 +289,6 @@ RUF043 Pattern passed to `match=` contains metacharacters but is neither escaped
     |
 help: Use a raw string or `re.escape()` to make the intention explicit
 
-Found 31 errors.
-[*] 5 fixable with the `--fix` option (14 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Found 26 errors.
+No fixes available (14 hidden fixes can be enabled with the `--unsafe-fixes` option).
 OVERALL EXIT CODE: 1
