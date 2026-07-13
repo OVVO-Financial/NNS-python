@@ -44,6 +44,9 @@ jobs:
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
+      - name: Run property tests
+        run: python -m pytest -q tests/property
+
       - name: Run plotting color-fidelity tests
         run: python -m pytest -q tests/plotting
 
