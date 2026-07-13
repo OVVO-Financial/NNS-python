@@ -32,7 +32,7 @@ jobs:
           python -m pip install -q scikit-build-core nanobind mypy "numpy<2.5" scipy matplotlib hypothesis pytest pytest-benchmark pytest-xdist
           python -m pip install -q -e .
 
-      - name: Disambiguate the duplicated SciPy import replacement
+      - name: Complete the guarded repair program
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -55,8 +55,33 @@ jobs:
           )'''
           count = text.count(old)
           if count != 1:
-              raise RuntimeError(f"Expected one repair-script block, found {count}")
-          path.write_text(text.replace(old, new, 1))
+              raise RuntimeError(f"Expected one SciPy repair block, found {count}")
+          text = text.replace(old, new, 1)
+
+          extra = r'''
+
+replace_once(
+    "src/nns/_reg_engine.py",
+    "        class_values = np.unique(y_numeric) if is_class else None\n"
+    "        class_levels = [str(v) for v in class_values] if is_class else None\n",
+    "        if is_class:\n"
+    "            class_values = np.unique(y_numeric)\n"
+    "            class_levels = [str(v) for v in class_values]\n"
+    "        else:\n"
+    "            class_values = None\n"
+    "            class_levels = None\n",
+)
+replace_once(
+    "tests/parity/test_multivariate_regression.py",
+    "        assert [float(v) for v in a] == [float(v) for v in e]\n",
+    "        assert [float(cast(Any, v)) for v in a] == [\n"
+    "            float(cast(Any, v)) for v in e\n"
+    "        ]\n",
+)
+'''
+          if extra.strip() in text:
+              raise RuntimeError("Final mypy repairs were already appended unexpectedly")
+          path.write_text(text + extra)
           PY
 
       - name: Run guarded repairs and mypy
