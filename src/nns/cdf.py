@@ -226,7 +226,8 @@ def _multivariate_target(
 
 def _matrix_names(column_count: int, names: Sequence[str] | None) -> list[str]:
     if names is None:
-        return [f"V{index + 1}" for index in range(column_count)]
+        # R's NNS.CDF labels an unnamed matrix's columns by their index ("1", "2").
+        return [str(index + 1) for index in range(column_count)]
     column_names = [str(name) for name in names]
     if len(column_names) != column_count:
         raise ValueError("names length must match the number of columns in variable.")
