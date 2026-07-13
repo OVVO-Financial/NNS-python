@@ -818,6 +818,43 @@ def _mreg_predict(
     return out
 
 
+def _mreg_predict_path(
+    xtest: NDArray[np.float64],
+    rpm_x: NDArray[np.float64],
+    rpm_yhat: NDArray[np.float64],
+    kmax: int,
+    dist: str,
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Regression predictions for every k = 1..kmax under the same rule as
+    ``_mreg_predict`` (R's NNS_mreg_predict_path_cpp)."""
+    xtest = np.asarray(xtest, dtype=np.float64)
+    if xtest.ndim == 1:
+        xtest = xtest.reshape(1, -1)
+    n = rpm_x.shape[0]
+    kmax = min(int(kmax), n)
+    m = xtest.shape[0]
+    out = np.empty((m, kmax), dtype=np.float64)
+
+    d = _mreg_distances(rpm_x, xtest, dist, mins, maxs)
+    idx = np.argsort(d, axis=1, kind="stable")
+    d_sorted = np.take_along_axis(d, idx, axis=1)
+    y_sorted = rpm_yhat[idx]
+
+    # k = 1 aggregates all exact nearest-distance ties.
+    dmin = d.min(axis=1, keepdims=True)
+    for i in range(m):
+        tied = rpm_yhat[d[i] == dmin[i, 0]]
+        finite_tied = tied[np.isfinite(tied)]
+        out[i, 0] = float(nns_gravity(finite_tied))
+
+    for k in range(2, kmax + 1):
+        w = _mreg_ensemble_weights(d_sorted[:, :k])
+        out[:, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
+    return out
+
+
 def _find_interval(
     x: NDArray[np.float64], boundaries: NDArray[np.float64]
 ) -> NDArray[np.int64]:
@@ -889,6 +926,18 @@ def _mreg_build_rpm(
         )
         yhat.append(_reduce_value(y_sorted[s:e], noise_reduction, is_class))
     return np.asarray(rows, dtype=np.float64), np.asarray(yhat, dtype=np.float64)
+
+
+def _mreg_prepare(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    order: Order,
+    noise_reduction: str,
+    is_class: bool,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Partition + RPM only (R's .nns_mreg_prepare_model): (rpm_x, rpm_yhat)."""
+    partition = _mreg_partition_matrix(x, y, order, noise_reduction, is_class)
+    return _mreg_build_rpm(x, y, partition["ids"], noise_reduction, is_class)
 
 
 def _mreg_default_nbest(
