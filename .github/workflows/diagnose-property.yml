@@ -1,0 +1,57 @@
+name: Diagnose property failures
+
+on:
+  push:
+    branches:
+      - claude/inference-comparison-4vlt4q
+    paths:
+      - .github/workflows/diagnose-property.yml
+      - tests/property/**
+      - src/nns/**
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/inference-comparison-4vlt4q
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and dependencies
+        run: |
+          python -m pip install -q -U pip
+          python -m pip install -q build scikit-build-core nanobind pytest "numpy<2.5" scipy matplotlib hypothesis pytest-benchmark pytest-xdist
+          python -m pip install -q -e .
+
+      - name: Capture property suite
+        shell: bash
+        run: |
+          set +e
+          mkdir -p diagnostics
+          python -m pytest -vv -s tests/property > diagnostics/property.log 2>&1
+          status=$?
+          echo "OVERALL EXIT CODE: ${status}" >> diagnostics/property.log
+          echo "${status}" > diagnostics/property.status
+          exit 0
+
+      - name: Commit diagnostic log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/property.log diagnostics/property.status
+          if git diff --cached --quiet; then
+            echo "Diagnostic output unchanged."
+          else
+            git commit -m "Record property-test diagnostic output"
+            git push origin HEAD:claude/inference-comparison-4vlt4q
+          fi
