@@ -1,0 +1,441 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /opt/hostedtoolcache/Python/3.12.13/x64/bin/python
+cachedir: .pytest_cache
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+hypothesis profile 'fast' -> database=None, deadline=None, max_examples=15, print_blob=True, derandomize=True, suppress_health_check=(HealthCheck.too_slow,)
+rootdir: /home/runner/work/NNS-python/NNS-python
+configfile: pyproject.toml
+plugins: benchmark-5.2.3, hypothesis-6.156.6, xdist-3.8.0
+created: 4/4 workers
+4 workers [59 items]
+
+scheduling tests via LoadScheduling
+
+tests/property/test_anova.py::test_nns_anova_binary_certainty_bounds 
+tests/property/test_arma.py::test_nns_arma_random_explicit_lag_shape 
+tests/property/test_boost.py::test_nns_boost_multiple_factor_predictor_shapes_hold 
+tests/property/test_boost.py::test_nns_boost_class_pred_int_shape_holds 
+[gw1] PASSED tests/property/test_arma.py::test_nns_arma_random_explicit_lag_shape 
+tests/property/test_arma.py::test_nns_arma_pred_int_random_explicit_lag_shape 
+[gw0] PASSED tests/property/test_anova.py::test_nns_anova_binary_certainty_bounds 
+tests/property/test_anova.py::test_nns_anova_pairwise_bounds 
+[gw0] PASSED tests/property/test_anova.py::test_nns_anova_pairwise_bounds 
+tests/property/test_anova.py::test_nns_anova_robust_bounds 
+[gw2] PASSED tests/property/test_boost.py::test_nns_boost_multiple_factor_predictor_shapes_hold 
+tests/property/test_boost.py::test_nns_boost_numeric_pred_int_shape_holds 
+[gw1] PASSED tests/property/test_arma.py::test_nns_arma_pred_int_random_explicit_lag_shape 
+tests/property/test_boost.py::test_nns_boost_numeric_bounds_hold 
+[gw3] PASSED tests/property/test_boost.py::test_nns_boost_class_pred_int_shape_holds 
+tests/property/test_boost.py::test_nns_boost_balance_class_shape_and_codes_hold 
+[gw0] PASSED tests/property/test_anova.py::test_nns_anova_robust_bounds 
+tests/property/test_cdf.py::test_nns_cdf_univariate_shape_and_range_properties 
+[gw0] PASSED tests/property/test_cdf.py::test_nns_cdf_univariate_shape_and_range_properties 
+tests/property/test_cdf.py::test_nns_cdf_multivariate_shape_properties 
+[gw0] FAILED tests/property/test_cdf.py::test_nns_cdf_multivariate_shape_properties 
+tests/property/test_classical.py::test_classical_pm_matches_numpy_and_scipy 
+[gw0] PASSED tests/property/test_classical.py::test_classical_pm_matches_numpy_and_scipy 
+tests/property/test_co_moments.py::test_co_moments_are_non_negative_and_finite 
+[gw0] PASSED tests/property/test_co_moments.py::test_co_moments_are_non_negative_and_finite 
+tests/property/test_dependence.py::test_nns_dep_bounds_hold_for_random_pairs 
+[gw0] PASSED tests/property/test_dependence.py::test_nns_dep_bounds_hold_for_random_pairs 
+tests/property/test_diff.py::test_nns_diff_identity_property 
+[gw0] PASSED tests/property/test_diff.py::test_nns_diff_identity_property 
+tests/property/test_distance.py::test_distance_predictions_are_finite 
+[gw0] PASSED tests/property/test_distance.py::test_distance_predictions_are_finite 
+tests/property/test_distance.py::test_distance_class_outputs_have_expected_shape 
+[gw0] PASSED tests/property/test_distance.py::test_distance_class_outputs_have_expected_shape 
+tests/property/test_mc.py::test_nns_mc_random_inputs_have_valid_shape 
+[gw0] PASSED tests/property/test_mc.py::test_nns_mc_random_inputs_have_valid_shape 
+tests/property/test_mc.py::test_nns_mc_same_seed_is_deterministic 
+[gw0] PASSED tests/property/test_mc.py::test_nns_mc_same_seed_is_deterministic 
+tests/property/test_meboot.py::test_nns_meboot_random_inputs_have_valid_shape 
+[gw0] PASSED tests/property/test_meboot.py::test_nns_meboot_random_inputs_have_valid_shape 
+tests/property/test_meboot.py::test_nns_meboot_same_seed_is_deterministic 
+[gw0] PASSED tests/property/test_meboot.py::test_nns_meboot_same_seed_is_deterministic 
+tests/property/test_multivariate_regression.py::test_nns_m_reg_shape_invariants_hold 
+[gw0] PASSED tests/property/test_multivariate_regression.py::test_nns_m_reg_shape_invariants_hold 
+tests/property/test_multivariate_regression.py::test_nns_m_reg_confidence_interval_shape_invariants_hold 
+[gw3] PASSED tests/property/test_boost.py::test_nns_boost_balance_class_shape_and_codes_hold 
+tests/property/test_causation.py::test_nns_causation_bounds_hold_for_random_pairs 
+[gw2] PASSED tests/property/test_boost.py::test_nns_boost_numeric_pred_int_shape_holds 
+tests/property/test_boost.py::test_nns_boost_class_shape_and_codes_hold 
+[gw3] PASSED tests/property/test_causation.py::test_nns_causation_bounds_hold_for_random_pairs 
+tests/property/test_multivariate_regression.py::test_nns_m_reg_class_confidence_interval_shape_invariants_hold 
+[gw2] PASSED tests/property/test_boost.py::test_nns_boost_class_shape_and_codes_hold 
+tests/property/test_part.py::test_nns_part_shape_invariants_hold_for_random_pairs 
+[gw2] PASSED tests/property/test_part.py::test_nns_part_shape_invariants_hold_for_random_pairs 
+tests/property/test_pm_matrix.py::test_pm_matrix_reconstruction_and_psd_properties 
+[gw2] PASSED tests/property/test_pm_matrix.py::test_pm_matrix_reconstruction_and_psd_properties 
+tests/property/test_property_smoke.py::test_reversing_preserves_length 
+[gw2] PASSED tests/property/test_property_smoke.py::test_reversing_preserves_length 
+tests/property/test_regression.py::test_nns_reg_univariate_shape_invariants_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_univariate_shape_invariants_hold 
+tests/property/test_regression.py::test_nns_reg_dim_red_shape_invariants_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_dim_red_shape_invariants_hold 
+tests/property/test_regression.py::test_nns_reg_confidence_interval_shape_invariants_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_confidence_interval_shape_invariants_hold 
+tests/property/test_regression.py::test_nns_reg_smooth_shape_invariants_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_smooth_shape_invariants_hold 
+tests/property/test_regression.py::test_nns_reg_classification_bounds_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_classification_bounds_hold 
+tests/property/test_regression.py::test_nns_reg_class_confidence_interval_shape_invariants_hold 
+[gw2] PASSED tests/property/test_regression.py::test_nns_reg_class_confidence_interval_shape_invariants_hold 
+tests/property/test_regression_helpers.py::test_nns_rescale_minmax_bounds_hold 
+[gw2] PASSED tests/property/test_regression_helpers.py::test_nns_rescale_minmax_bounds_hold 
+tests/property/test_regression_helpers.py::test_nns_rescale_riskneutral_mean_target_holds 
+[gw2] PASSED tests/property/test_regression_helpers.py::test_nns_rescale_riskneutral_mean_target_holds 
+tests/property/test_regression_helpers.py::test_var_outputs_are_inside_observed_range 
+[gw2] PASSED tests/property/test_regression_helpers.py::test_var_outputs_are_inside_observed_range 
+tests/property/test_regression_helpers.py::test_nns_mode_is_finite_and_within_observed_range 
+[gw2] PASSED tests/property/test_regression_helpers.py::test_nns_mode_is_finite_and_within_observed_range 
+tests/property/test_sd_cluster.py::test_nns_sd_cluster_structural_invariants_hold 
+[gw2] PASSED tests/property/test_sd_cluster.py::test_nns_sd_cluster_structural_invariants_hold 
+tests/property/test_seasonality.py::test_nns_seas_random_arrays_return_valid_shape 
+[gw2] PASSED tests/property/test_seasonality.py::test_nns_seas_random_arrays_return_valid_shape 
+tests/property/test_seasonality.py::test_nns_seas_constant_arrays_return_valid_shape 
+[gw2] PASSED tests/property/test_seasonality.py::test_nns_seas_constant_arrays_return_valid_shape 
+tests/property/test_seasonality.py::test_nns_seas_zero_mean_arrays_return_valid_shape 
+[gw2] PASSED tests/property/test_seasonality.py::test_nns_seas_zero_mean_arrays_return_valid_shape 
+tests/property/test_stack.py::test_nns_stack_numeric_bounds_hold 
+[gw2] PASSED tests/property/test_stack.py::test_nns_stack_numeric_bounds_hold 
+tests/property/test_stack.py::test_nns_stack_ts_test_method1_shape 
+[gw0] FAILED tests/property/test_multivariate_regression.py::test_nns_m_reg_confidence_interval_shape_invariants_hold 
+tests/property/test_multivariate_regression.py::test_nns_m_reg_classification_bounds_hold 
+[gw2] PASSED tests/property/test_stack.py::test_nns_stack_ts_test_method1_shape 
+tests/property/test_stack.py::test_nns_stack_mixed_factor_method2_shape_invariants_hold 
+[gw2] PASSED tests/property/test_stack.py::test_nns_stack_mixed_factor_method2_shape_invariants_hold 
+tests/property/test_stack.py::test_nns_stack_class_shape_and_codes_hold 
+[gw3] FAILED tests/property/test_multivariate_regression.py::test_nns_m_reg_class_confidence_interval_shape_invariants_hold 
+tests/property/test_norm.py::test_nns_norm_shape_and_finiteness_hold_for_random_matrices 
+[gw3] PASSED tests/property/test_norm.py::test_nns_norm_shape_and_finiteness_hold_for_random_matrices 
+tests/property/test_stack.py::test_nns_stack_balance_class_shape_and_codes_hold 
+[gw2] PASSED tests/property/test_stack.py::test_nns_stack_class_shape_and_codes_hold 
+tests/property/test_stack.py::test_nns_stack_class_pred_int_shape_invariants_hold 
+[gw2] PASSED tests/property/test_stack.py::test_nns_stack_class_pred_int_shape_invariants_hold 
+tests/property/test_stochastic_superiority.py::test_nns_ss_probability_invariants_hold 
+[gw3] PASSED tests/property/test_stack.py::test_nns_stack_balance_class_shape_and_codes_hold 
+tests/property/test_stochastic_dominance.py::test_sd_antisymmetry_holds_for_random_pairs 
+[gw2] PASSED tests/property/test_stochastic_superiority.py::test_nns_ss_probability_invariants_hold 
+[gw3] PASSED tests/property/test_stochastic_dominance.py::test_sd_antisymmetry_holds_for_random_pairs 
+[gw0] PASSED tests/property/test_multivariate_regression.py::test_nns_m_reg_classification_bounds_hold 
+tests/property/test_stack.py::test_nns_stack_pred_int_shape_invariants_hold 
+[gw0] PASSED tests/property/test_stack.py::test_nns_stack_pred_int_shape_invariants_hold 
+[gw1] PASSED tests/property/test_boost.py::test_nns_boost_numeric_bounds_hold 
+tests/property/test_co_moments.py::test_covariance_decomposition_holds 
+[gw1] PASSED tests/property/test_co_moments.py::test_covariance_decomposition_holds 
+tests/property/test_copula.py::test_nns_copula_bounds_hold_for_random_pairs 
+[gw1] PASSED tests/property/test_copula.py::test_nns_copula_bounds_hold_for_random_pairs 
+tests/property/test_core.py::test_partial_moments_are_non_negative_and_finite 
+[gw1] PASSED tests/property/test_core.py::test_partial_moments_are_non_negative_and_finite 
+tests/property/test_core.py::test_mean_equivalence_holds_for_finite_arrays 
+[gw1] PASSED tests/property/test_core.py::test_mean_equivalence_holds_for_finite_arrays 
+
+=================================== FAILURES ===================================
+__________________ test_nns_cdf_multivariate_shape_properties __________________
+[gw0] linux -- Python 3.12.13 /opt/hostedtoolcache/Python/3.12.13/x64/bin/python
+
+    @given(
+>       rows=st.integers(5, 30),
+                   ^^^
+        cols=st.integers(2, 4),
+        degree=st.sampled_from([0.0, 1.0, 2.0, 3.0]),
+        type_name=st.sampled_from(["cdf", "survival", "cumulative hazard"]),
+    )
+
+tests/property/test_cdf.py:37: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = 5, cols = 2, degree = 0.0, type_name = 'cdf'
+
+    @given(
+        rows=st.integers(5, 30),
+        cols=st.integers(2, 4),
+        degree=st.sampled_from([0.0, 1.0, 2.0, 3.0]),
+        type_name=st.sampled_from(["cdf", "survival", "cumulative hazard"]),
+    )
+    def test_nns_cdf_multivariate_shape_properties(
+        rows: int,
+        cols: int,
+        degree: float,
+        type_name: str,
+    ) -> None:
+        values = np.linspace(-2.0, 2.0, rows * cols, dtype=np.float64).reshape(rows, cols)
+        values = values + np.arange(cols, dtype=np.float64)
+    
+        result = nns_cdf(values, degree=degree, type=type_name)
+        function = cast(dict[str, np.ndarray], result["Function"])
+    
+        assert function["CDF"].shape == (rows,)
+>       assert list(function) == [*(f"V{index + 1}" for index in range(cols)), "CDF"]
+E       AssertionError: assert ['1', '2', 'CDF'] == ['V1', 'V2', 'CDF']
+E         
+E         At index 0 diff: '1' != 'V1'
+E         
+E         Full diff:
+E           [
+E         -     'V1',
+E         ?      -
+E         +     '1',
+E         -     'V2',
+E         ?      -
+E         +     '2',
+E               'CDF',
+E           ]
+E       Falsifying example: test_nns_cdf_multivariate_shape_properties(
+E           # The test always failed when commented parts were varied together.
+E           rows=5,  # or any other generated value
+E           cols=2,  # or any other generated value
+E           degree=0.0,  # or any other generated value
+E           type_name='cdf',  # or any other generated value
+E       )
+E       
+E       You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AEEFQQJBAEEA') as a decorator on your test case
+
+tests/property/test_cdf.py:55: AssertionError
+___________ test_nns_m_reg_confidence_interval_shape_invariants_hold ___________
+[gw0] linux -- Python 3.12.13 /opt/hostedtoolcache/Python/3.12.13/x64/bin/python
+
+    @given(matrix_arrays, st.sampled_from([0.8, 0.95]))
+>   def test_nns_m_reg_confidence_interval_shape_invariants_hold(
+                   ^^^
+        x: np.ndarray,
+        confidence_interval: float,
+    ) -> None:
+
+tests/property/test_multivariate_regression.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = array([[1., 1.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.]])
+confidence_interval = 0.8
+
+    @given(matrix_arrays, st.sampled_from([0.8, 0.95]))
+    def test_nns_m_reg_confidence_interval_shape_invariants_hold(
+        x: np.ndarray,
+        confidence_interval: float,
+    ) -> None:
+        y = 0.5 * x[:, 0] - 0.25 * x[:, 1]
+        assume(np.unique(y).size > 1)
+        assume(all(np.unique(x[:, col]).size > 1 for col in range(x.shape[1])))
+    
+        result = nns_m_reg(
+            x,
+            y,
+            order=1,
+            n_best=1,
+            point_est=x[:3],
+            confidence_interval=confidence_interval,
+        )
+    
+        assert result["Fitted.xy"]["conf.int.pos"].shape == (x.shape[0],)
+        assert result["Fitted.xy"]["conf.int.neg"].shape == (x.shape[0],)
+        assert result["pred.int"] is not None
+>       assert result["pred.int"]["lower.pred.int"].shape == (3,)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'lower.pred.int'
+E       Falsifying example: test_nns_m_reg_confidence_interval_shape_invariants_hold(
+E           # The test always failed when commented parts were varied together.
+E           x=array([[1., 1.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.]]),  # or any other generated value
+E           confidence_interval=0.8,  # or any other generated value
+E       )
+E       
+E       You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AXicc+RxZGJ0ZNCw/8AABoyOjHA2gwaUZnBkAABrdgQt') as a decorator on your test case
+
+tests/property/test_multivariate_regression.py:71: KeyError
+________ test_nns_m_reg_class_confidence_interval_shape_invariants_hold ________
+[gw3] linux -- Python 3.12.13 /opt/hostedtoolcache/Python/3.12.13/x64/bin/python
+
+    @given(matrix_arrays, st.integers(min_value=2, max_value=4), st.sampled_from([0.8, 0.95]))
+>   def test_nns_m_reg_class_confidence_interval_shape_invariants_hold(
+                   ^^^
+        x: np.ndarray,
+        n_classes: int,
+        confidence_interval: float,
+    ) -> None:
+
+tests/property/test_multivariate_regression.py:89: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = array([[1., 1.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.],
+       [0., 0.]])
+n_classes = 2, confidence_interval = 0.8
+
+    @given(matrix_arrays, st.integers(min_value=2, max_value=4), st.sampled_from([0.8, 0.95]))
+    def test_nns_m_reg_class_confidence_interval_shape_invariants_hold(
+        x: np.ndarray,
+        n_classes: int,
+        confidence_interval: float,
+    ) -> None:
+        assume(all(np.unique(x[:, col]).size > 1 for col in range(x.shape[1])))
+        classes = (np.arange(x.shape[0]) % n_classes + 1).astype(np.float64)
+    
+        result = nns_m_reg(
+            x,
+            classes,
+            order=1,
+            n_best=1,
+            type="class",
+            point_est=x[:3],
+            confidence_interval=confidence_interval,
+        )
+    
+        assert result["Fitted.xy"]["conf.int.pos"].shape == (x.shape[0],)
+        assert result["Fitted.xy"]["conf.int.neg"].shape == (x.shape[0],)
+        assert result["pred.int"] is not None
+>       assert set(result["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
+E       AssertionError: assert {'pred.int.neg', 'pred.int.pos'} == {'upper.pred.int', 'lower.pred.int'}
+E         
+E         Extra items in the left set:
+E         'pred.int.neg'
+E         'pred.int.pos'
+E         Extra items in the right set:
+E         'upper.pred.int'
+E         'lower.pred.int'
+E         
+E         Full diff:
+E           {
+E         -     'lower.pred.int',
+E         ?      ------
+E         +     'pred.int.neg',
+E         ?              ++++
+E         -     'upper.pred.int',
+E         ?      ------
+E         +     'pred.int.pos',
+E         ?              ++++
+E           }
+E       Falsifying example: test_nns_m_reg_class_confidence_interval_shape_invariants_hold(
+E           # The test always failed when commented parts were varied together.
+E           x=array([[1., 1.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.],
+E                  [0., 0.]]),  # or any other generated value
+E           n_classes=2,  # or any other generated value
+E           confidence_interval=0.8,  # or any other generated value
+E       )
+E       
+E       You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AXicc+RxZGJ0ZNCw/8AABoyOjHA2gwaUZnBkcmQAAHRYBHA=') as a decorator on your test case
+
+tests/property/test_multivariate_regression.py:110: AssertionError
+=========================== short test summary info ============================
+FAILED tests/property/test_cdf.py::test_nns_cdf_multivariate_shape_properties - AssertionError: assert ['1', '2', 'CDF'] == ['V1', 'V2', 'CDF']
+  
+  At index 0 diff: '1' != 'V1'
+  
+  Full diff:
+    [
+  -     'V1',
+  ?      -
+  +     '1',
+  -     'V2',
+  ?      -
+  +     '2',
+        'CDF',
+    ]
+Falsifying example: test_nns_cdf_multivariate_shape_properties(
+    # The test always failed when commented parts were varied together.
+    rows=5,  # or any other generated value
+    cols=2,  # or any other generated value
+    degree=0.0,  # or any other generated value
+    type_name='cdf',  # or any other generated value
+)
+
+You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AEEFQQJBAEEA') as a decorator on your test case
+FAILED tests/property/test_multivariate_regression.py::test_nns_m_reg_confidence_interval_shape_invariants_hold - KeyError: 'lower.pred.int'
+Falsifying example: test_nns_m_reg_confidence_interval_shape_invariants_hold(
+    # The test always failed when commented parts were varied together.
+    x=array([[1., 1.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.]]),  # or any other generated value
+    confidence_interval=0.8,  # or any other generated value
+)
+
+You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AXicc+RxZGJ0ZNCw/8AABoyOjHA2gwaUZnBkAABrdgQt') as a decorator on your test case
+FAILED tests/property/test_multivariate_regression.py::test_nns_m_reg_class_confidence_interval_shape_invariants_hold - AssertionError: assert {'pred.int.neg', 'pred.int.pos'} == {'upper.pred.int', 'lower.pred.int'}
+  
+  Extra items in the left set:
+  'pred.int.neg'
+  'pred.int.pos'
+  Extra items in the right set:
+  'upper.pred.int'
+  'lower.pred.int'
+  
+  Full diff:
+    {
+  -     'lower.pred.int',
+  ?      ------
+  +     'pred.int.neg',
+  ?              ++++
+  -     'upper.pred.int',
+  ?      ------
+  +     'pred.int.pos',
+  ?              ++++
+    }
+Falsifying example: test_nns_m_reg_class_confidence_interval_shape_invariants_hold(
+    # The test always failed when commented parts were varied together.
+    x=array([[1., 1.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.]]),  # or any other generated value
+    n_classes=2,  # or any other generated value
+    confidence_interval=0.8,  # or any other generated value
+)
+
+You can reproduce this example by temporarily adding @reproduce_failure('6.156.6', b'AXicc+RxZGJ0ZNCw/8AABoyOjHA2gwaUZnBkcmQAAHRYBHA=') as a decorator on your test case
+======================== 3 failed, 56 passed in 47.64s =========================
+OVERALL EXIT CODE: 1
