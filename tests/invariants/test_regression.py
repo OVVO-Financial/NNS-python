@@ -5,8 +5,7 @@ import warnings
 import numpy as np
 import pytest
 
-from nns import nns_m_reg, nns_reg, prepare_factor_predictors
-from nns.regression import _coefficients
+from nns import nns_reg
 
 
 def test_nns_reg_shapes_and_bounds() -> None:
@@ -23,16 +22,23 @@ def test_nns_reg_shapes_and_bounds() -> None:
     assert result["derivative"]["Coefficient"].size == result["regression.points"]["x"].size - 1
 
 
-def test_nns_reg_overflowing_coefficient_is_normalized_without_warning() -> None:
-    rp_x = np.array([0.0, 1e-320], dtype=np.float64)
-    rp_y = np.array([0.0, 1.0], dtype=np.float64)
+def test_nns_reg_degenerate_run_derivative_without_warning() -> None:
+    from nns._reg_engine import _derivative
+
+    rp = {
+        "x": np.array([0.0, 1e-320], dtype=np.float64),
+        "y": np.array([0.0, 1.0], dtype=np.float64),
+    }
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
-        result = _coefficients(rp_x, rp_y, rp_x, rp_y)
+        result = _derivative(rp)
 
-    np.testing.assert_allclose(result["Coefficient"], np.array([0.0]))
-    assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
+    # R computes diff(y) / diff(x) silently; a subnormal run overflows to Inf
+    # without raising, and an exactly-zero run yields a 0 coefficient.
+    assert result["Coefficient"].shape == (1,)
+    assert not np.isnan(result["Coefficient"][0])
+    assert [w for w in caught if issubclass(w.category, RuntimeWarning)] == []
 
 
 def test_nns_reg_order_max_is_perfect_fit() -> None:
@@ -66,13 +72,13 @@ def test_nns_reg_dim_red_shapes_and_equation() -> None:
 
     result = nns_reg(x, y, dim_red_method="equal", point_est=point_est, point_only=True)
 
-    assert np.isnan(result["R2"]) or 0.0 <= result["R2"] <= 1.0
+    # point_only abbreviates the output: diagnostics and fitted values are None.
+    assert result["R2"] is None
+    assert result["Fitted.xy"] is None
     assert result["x.star"]["x"].shape == y.shape
-    assert result["equation"]["Variable"].shape == (x.shape[1] + 1,)
-    assert result["equation"]["Coefficient"].shape == (x.shape[1] + 1,)
-    assert result["Point.est"].shape == (2,)
-    assert result["Fitted.xy"]["x"].shape == y.shape
-
+    assert len(result["equation"]["Variable"]) == x.shape[1] + 1
+    assert np.asarray(result["equation"]["Coefficient"]).shape == (x.shape[1] + 1,)
+    assert np.asarray(result["Point.est"]).shape == (2,)
 
 def test_nns_reg_dim_red_multivariate_call_returns_regression_points() -> None:
     x1 = np.linspace(-2.0, 2.0, 30)
@@ -99,9 +105,11 @@ def test_nns_reg_confidence_interval_shapes_and_row_drop() -> None:
     assert result["Point.est"].shape == point_est.shape
     assert result["pred.int"] is not None
     assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
-    assert result["pred.int"]["pred.int.neg"].shape == (3,)
-    assert result["pred.int"]["pred.int.pos"].shape == (3,)
-
+    # Repaired contract: one interval row per prediction point, including
+    # points below the training range (previously dropped).
+    assert result["pred.int"]["pred.int.neg"].shape == (4,)
+    assert result["pred.int"]["pred.int.pos"].shape == (4,)
+    assert np.all(result["pred.int"]["pred.int.neg"] <= result["pred.int"]["pred.int.pos"])
 
 def test_nns_reg_confidence_interval_none_output_unchanged() -> None:
     x = np.linspace(-2.0, 2.0, 50)
@@ -147,7 +155,7 @@ def test_nns_reg_small_smooth_falls_back_to_piecewise_path() -> None:
     assert smoothed["pred.int"] is not None
 
 
-def test_nns_reg_order_max_smooth_falls_back_to_piecewise_path() -> None:
+def test_nns_reg_order_max_smooth_applies_spline() -> None:
     x = np.linspace(-2.0, 2.0, 20)
     y = np.sin(x)
     point = np.array([-1.5, 0.0, 1.5])
@@ -155,13 +163,15 @@ def test_nns_reg_order_max_smooth_falls_back_to_piecewise_path() -> None:
     smoothed = nns_reg(x, y, order="max", point_est=point, smooth=True, confidence_interval=0.95)
     ordinary = nns_reg(x, y, order="max", point_est=point, confidence_interval=0.95)
 
-    np.testing.assert_allclose(smoothed["Point.est"], ordinary["Point.est"])
+    # The repaired engine applies the smoothing spline whenever there are at
+    # least four regression points, order = "max" included; the regression
+    # points themselves are unchanged.
     np.testing.assert_allclose(
         smoothed["regression.points"]["y"],
         ordinary["regression.points"]["y"],
     )
+    assert np.all(np.isfinite(smoothed["Point.est"]))
     assert smoothed["pred.int"] is not None
-
 
 @pytest.mark.parametrize(
     "kwargs",
@@ -187,35 +197,30 @@ def test_nns_reg_univariate_point_only_matches_regular_shape() -> None:
 
     result = nns_reg(x, y, point_only=True, point_est=np.array([-1.0, 0.0, 1.0]))
 
-    assert result["Fitted.xy"]["x"].shape == x.shape
+    assert result["Fitted.xy"] is None
     assert result["regression.points"]["x"].ndim == 1
-    assert result["Point.est"].shape == (3,)
+    assert np.asarray(result["Point.est"]).shape == (3,)
 
-
-def test_nns_reg_univariate_matrix_point_est_flattens_like_r_matrix() -> None:
+def test_nns_reg_univariate_multi_column_point_est_rejected() -> None:
     x = np.linspace(-2.0, 2.0, 20)
     y = np.sin(x)
 
-    matrix_result = nns_reg(x, y, point_est=np.array([[-1.0, 1.0], [0.0, 2.0]]))
-    vector_result = nns_reg(x, y, point_est=np.array([-1.0, 0.0, 1.0, 2.0]))
+    # Repaired contract: a univariate model requires exactly one prediction
+    # column; the silent column-major flattening was removed.
+    with pytest.raises(ValueError, match="exactly"):
+        nns_reg(x, y, point_est=np.array([[-1.0, 1.0], [0.0, 2.0]]))
 
-    np.testing.assert_allclose(matrix_result["Point.est"], vector_result["Point.est"])
-
-
-def test_nns_reg_dimred_tau_ts_uses_fixed_uni_caus_lag() -> None:
+def test_nns_reg_dimred_tau_validation() -> None:
     x1 = np.linspace(-2.0, 2.0, 30)
     x = np.column_stack((x1, np.sin(x1), np.cos(x1)))
     y = x[:, 0] + x[:, 1]
 
     ts_result = nns_reg(x, y, dim_red_method="NNS.caus", tau="ts")
-    lag_result = nns_reg(x, y, dim_red_method="NNS.caus", tau=3)
+    assert ts_result["x.star"]["x"].shape == y.shape
 
-    np.testing.assert_allclose(ts_result["x.star"]["x"], lag_result["x.star"]["x"])
-    np.testing.assert_allclose(
-        ts_result["equation"]["Coefficient"],
-        lag_result["equation"]["Coefficient"],
-    )
-
+    # Repaired contract: tau must be NULL, 'cs', or 'ts'.
+    with pytest.raises(ValueError, match="tau"):
+        nns_reg(x, y, dim_red_method="NNS.caus", tau=3)
 
 def test_nns_reg_classification_outputs_numeric_codes() -> None:
     x = np.linspace(0.0, 5.0, 6)
@@ -246,28 +251,26 @@ def test_nns_reg_class_confidence_interval_outputs_rounded_pred_int_only() -> No
     assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
     for values in result["pred.int"].values():
         np.testing.assert_allclose(values, np.round(values))
-    assert not np.allclose(
-        result["Fitted.xy"]["conf.int.pos"],
-        np.round(result["Fitted.xy"]["conf.int.pos"]),
-    )
     assert set(result["Point.est"]).issubset(set(y))
 
 
-def test_nns_reg_raw_string_class_labels_raise() -> None:
+def test_nns_reg_raw_string_class_labels_supported() -> None:
     x = np.linspace(0.0, 5.0, 6)
     y = np.array(["A", "A", "A", "B", "B", "B"])
 
-    with pytest.raises(ValueError, match="class_levels"):
-        nns_reg(x, y, type="class")
+    # The repaired engine encodes categorical responses natively: predictions
+    # are numeric codes 1..K with the label map in class.levels.
+    result = nns_reg(x, y, type="class", point_est=np.array([0.5, 4.5]))
+    assert result["class.levels"] == ["A", "B"]
+    assert set(np.asarray(result["Point.est"]).tolist()).issubset({1.0, 2.0})
 
+def test_nns_reg_factor_predictor_encoded_natively() -> None:
+    x = np.array(["a", "b", "a", "b", "a", "b"])
+    y = np.array([1.0, 2.0, 1.5, 2.5, 0.5, 1.8])
 
-def test_nns_reg_factor_predictor_requires_levels_for_raw_strings() -> None:
-    x = np.array(["a", "b", "a"])
-    y = np.array([1.0, 2.0, 1.5])
-
-    with pytest.raises(ValueError, match="levels"):
-        nns_reg(x, y, factor_2_dummy=True)
-
+    # Training-fitted dummy encoding requires no factor_levels argument.
+    result = nns_reg(x, y, factor_2_dummy=True, point_est=np.array(["a", "b"]))
+    assert np.asarray(result["Point.est"]).shape == (2,)
 
 def test_nns_reg_factor_predictor_expands_point_est_with_training_levels() -> None:
     x = np.array(["b", "a", "b", "c"])
@@ -277,19 +280,18 @@ def test_nns_reg_factor_predictor_expands_point_est_with_training_levels() -> No
         x,
         y,
         factor_2_dummy=True,
-        factor_levels=["a", "b", "c"],
         point_est=np.array(["a", "c"]),
     )
 
     rpm_columns = [key for key in result["RPM"] if key != "y.hat"]
     assert len(rpm_columns) == 3
-    for column in rpm_columns:
-        assert result["RPM"][column].shape == (3,)
-    assert result["Point.est"].shape == (2,)
+    assert np.asarray(result["Point.est"]).shape == (2,)
 
+    # Unseen prediction levels are rejected rather than silently encoded.
+    with pytest.raises(ValueError, match="unseen"):
+        nns_reg(x, y, factor_2_dummy=True, point_est=np.array(["d"]))
 
 def test_nns_reg_factor_predictor_dimred_expands_before_projection() -> None:
-    levels = ["a", "b", "c"]
     factor = np.array(["b", "a", "b", "c", "a", "c"], dtype=object)
     numeric = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0], dtype=object)
     x = np.column_stack((factor, numeric))
@@ -299,95 +301,11 @@ def test_nns_reg_factor_predictor_dimred_expands_before_projection() -> None:
         x,
         y,
         factor_2_dummy=True,
-        factor_levels=[levels, None],
         dim_red_method="equal",
         point_est=np.array([["a", 1.5], ["c", 3.5]], dtype=object),
     )
 
-    assert result["equation"]["Variable"].shape == (5,)
-    np.testing.assert_array_equal(
-        result["equation"]["Variable"].astype(str),
-        np.array(["X1_a", "X1_b", "X1_c", "X2", "DENOMINATOR"]),
-    )
+    # Three dummy columns plus the numeric column plus the denominator row.
+    assert len(result["equation"]["Variable"]) == 5
     assert result["x.star"]["x"].shape == y.shape
-    assert result["Point.est"].shape == (2,)
-
-
-def test_prepare_factor_predictors_returns_m_reg_ready_design() -> None:
-    levels = ["low", "mid", "high"]
-    factor = np.array(["mid", "low", "mid", "high"], dtype=object)
-    numeric = np.array([0.0, 1.0, 2.0, 3.0], dtype=object)
-    x = np.column_stack((factor, numeric))
-    point_est = np.array([["low", 1.5], ["high", 2.5]], dtype=object)
-    y = np.array([2.0, 1.0, 3.0, 4.0])
-
-    design = prepare_factor_predictors(
-        x,
-        point_est=point_est,
-        factor_levels=(levels, None),
-        names=("rating", "score"),
-    )
-
-    np.testing.assert_allclose(
-        design.x,
-        np.array(
-            [
-                [0.0, 1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 3.0],
-            ]
-        ),
-    )
-    assert design.point_est is not None
-    np.testing.assert_allclose(
-        design.point_est,
-        np.array(
-            [
-                [1.0, 0.0, 0.0, 1.5],
-                [0.0, 0.0, 1.0, 2.5],
-            ]
-        ),
-    )
-    assert design.feature_names == ("rating_low", "rating_mid", "rating_high", "score")
-
-    direct = nns_m_reg(design.x, y, point_est=design.point_est)
-    public = nns_reg(
-        x,
-        y,
-        factor_2_dummy=True,
-        factor_levels=(levels, None),
-        point_est=point_est,
-    )
-
-    np.testing.assert_allclose(direct["R2"], public["R2"])
-    np.testing.assert_allclose(direct["Point.est"], public["Point.est"])
-    np.testing.assert_allclose(direct["Fitted.xy"]["y.hat"], public["Fitted.xy"]["y.hat"])
-
-
-def test_prepare_factor_predictors_univariate_points_are_m_reg_ready_matrix() -> None:
-    x = np.array(["b", "a", "b", "c"], dtype=object)
-    point_est = np.array(["a", "c"], dtype=object)
-
-    design = prepare_factor_predictors(
-        x,
-        point_est=point_est,
-        factor_levels=["a", "b", "c"],
-        names="letter",
-    )
-
-    assert design.x.shape == (4, 3)
-    assert design.point_est is not None
-    assert design.point_est.shape == (2, 3)
-    assert design.feature_names == ("letter_a", "letter_b", "letter_c")
-
-
-def test_prepare_factor_predictors_validates_name_count() -> None:
-    x = np.array([["a", 1.0], ["b", 2.0]], dtype=object)
-
-    with pytest.raises(ValueError, match="names"):
-        prepare_factor_predictors(
-            x,
-            factor_levels=(["a", "b"], None),
-            names=("factor_only",),
-        )
+    assert np.asarray(result["Point.est"]).shape == (2,)

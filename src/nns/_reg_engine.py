@@ -21,6 +21,7 @@ R's native kernel (``NNS_mreg_predict_cpp``) to floating-point tolerance.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -176,6 +177,54 @@ def _as_train_matrix(x: Any) -> NDArray[Any]:
     return values
 
 
+def _make_names(labels: list[str]) -> list[str]:
+    """Mimic R's make.names(): sanitise to syntactically valid, unique names."""
+    out: list[str] = []
+    for raw in labels:
+        s = re.sub(r"[^0-9A-Za-z._]", ".", str(raw))
+        if s == "" or not re.match(r"^[A-Za-z.]", s) or re.match(r"^\.[0-9]", s):
+            s = "X" + s
+        out.append(s)
+    # make.unique: append .1, .2, ... to duplicates
+    seen: dict[str, int] = {}
+    unique: list[str] = []
+    for s in out:
+        if s in seen:
+            seen[s] += 1
+            unique.append(f"{s}.{seen[s]}")
+        else:
+            seen[s] = 0
+            unique.append(s)
+    return unique
+
+
+def _input_column_names(x: Any, ncol: int) -> list[str]:
+    """Column names for [x], mirroring R's .nns_reg_as_frame default naming.
+
+    A pandas frame contributes its own column labels; a bare matrix/array gets
+    R's ``as.data.frame`` defaults ``V1, V2, ...``. Blank labels fall back to
+    ``x{i}`` as in R.
+    """
+    names: list[str] | None = None
+    cols = getattr(x, "columns", None)
+    if cols is not None:
+        try:
+            names = [str(c) for c in list(cols)]
+        except TypeError:
+            names = None
+    if names is None or len(names) != ncol:
+        # R names a bare vector's column "x" and a matrix's columns V1, V2, ...
+        if ncol == 1 and np.ndim(x) < 2:
+            names = ["x"]
+        else:
+            names = [f"V{j + 1}" for j in range(ncol)]
+    names = [
+        nm if nm not in ("", "None") and nm is not None else f"x{j + 1}"
+        for j, nm in enumerate(names)
+    ]
+    return _make_names(names)
+
+
 def _prepare_points(point_est: Any, p: int) -> NDArray[Any] | None:
     if point_est is None:
         return None
@@ -201,12 +250,15 @@ def _encode_predictors(
 ) -> dict[str, Any]:
     train = _as_train_matrix(x)
     points = _prepare_points(point_est, train.shape[1])
+    column_names = _input_column_names(x, train.shape[1])
 
     train_parts: list[NDArray[np.float64]] = []
     point_parts: list[NDArray[np.float64]] | None = None if points is None else []
     metadata: list[dict[str, Any]] = []
+    encoded_names: list[str] = []
 
     for j in range(train.shape[1]):
+        nm = column_names[j]
         z = train[:, j]
         zp = None if points is None else points[:, j]
         categorical = z.dtype.kind in {"U", "S", "O", "b"} and not _numeric_like(z)
@@ -227,6 +279,9 @@ def _encode_predictors(
                     [(values_train == level).astype(np.float64) for level in levels]
                 )
                 train_parts.append(tr)
+                encoded_names.extend(
+                    f"{nm}_{sanitized}" for sanitized in _make_names(list(levels))
+                )
                 if zp is not None and point_parts is not None:
                     pt = np.column_stack(
                         [(values_point == level).astype(np.float64) for level in levels]
@@ -237,6 +292,7 @@ def _encode_predictors(
                     [levels.index(v) + 1 for v in values_train.tolist()], dtype=np.float64
                 ).reshape(-1, 1)
                 train_parts.append(codes)
+                encoded_names.append(nm)
                 if zp is not None and point_parts is not None:
                     pcodes = np.asarray(
                         [levels.index(v) + 1 for v in values_point.tolist()],
@@ -251,6 +307,7 @@ def _encode_predictors(
                     f"Predictor {j + 1} must contain only finite numeric values."
                 )
             train_parts.append(tr)
+            encoded_names.append(nm)
             if zp is not None and point_parts is not None:
                 pt = np.asarray(zp, dtype=np.float64).reshape(-1, 1)
                 if not np.all(np.isfinite(pt)):
@@ -262,7 +319,12 @@ def _encode_predictors(
 
     x_matrix = np.hstack(train_parts).astype(np.float64)
     point_matrix = None if point_parts is None else np.hstack(point_parts).astype(np.float64)
-    return {"x": x_matrix, "point_est": point_matrix, "metadata": metadata}
+    return {
+        "x": x_matrix,
+        "point_est": point_matrix,
+        "metadata": metadata,
+        "encoded_names": encoded_names,
+    }
 
 
 def _numeric_like(z: NDArray[Any]) -> bool:
@@ -447,7 +509,7 @@ def _derivative(rp: dict[str, NDArray[np.float64]]) -> dict[str, NDArray[np.floa
             "X.Upper.Range": x[:1].copy(),
         }
     run = np.diff(x)
-    with np.errstate(divide="ignore", invalid="ignore"):
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         slope = np.where(run == 0.0, 0.0, np.diff(y) / run)
     return {
         "Coefficient": slope,
@@ -456,23 +518,109 @@ def _derivative(rp: dict[str, NDArray[np.float64]]) -> dict[str, NDArray[np.floa
     }
 
 
+def _smooth_spline_predictor(
+    rx: NDArray[np.float64], ry: NDArray[np.float64], spar: float
+) -> Any:
+    """Faithful port of R's ``stats::smooth.spline(x, y, spar)``.
+
+    R ties the smoothing parameter to dependence via an explicit ``spar`` rather
+    than delegating to GCV. This reproduces R's penalized cubic B-spline fit:
+    scale x to [0, 1], place clamped cubic knots at the unique abscissas, form
+    the weighted design cross-product and the second-derivative penalty (Sigma),
+    then solve ``(X'WX + lambda * Sigma) c = X'W y`` with
+    ``lambda = ratio * 256^(3*spar - 1)`` and ``ratio`` from R's partial diagonal
+    trace. Returns a callable evaluating the fit (with R's linear extrapolation
+    beyond the data range), or ``None`` when the fit is degenerate.
+    """
+    from scipy.interpolate import BSpline  # type: ignore[import-untyped]
+    from scipy.linalg import solve  # type: ignore[import-untyped]
+
+    order = np.argsort(rx, kind="mergesort")
+    xs = np.asarray(rx, dtype=np.float64)[order]
+    ys = np.asarray(ry, dtype=np.float64)[order]
+    ux, inverse = np.unique(xs, return_inverse=True)
+    nx = ux.size
+    if nx < 4:
+        return None
+    wbar = np.bincount(inverse).astype(np.float64)
+    ybar = np.bincount(inverse, weights=ys) / wbar
+
+    x0 = ux[0]
+    r_ux = ux[-1] - ux[0]
+    if r_ux <= 0.0:
+        return None
+    xbar = (ux - x0) / r_ux
+    knot = np.concatenate(([xbar[0]] * 3, xbar, [xbar[-1]] * 3))
+    nk = nx + 2
+    k = 3
+
+    design = BSpline.design_matrix(xbar, knot, k).toarray()
+    xtwx = design.T @ (wbar[:, None] * design)
+
+    sigma = np.zeros((nk, nk), dtype=np.float64)
+    gl_x, gl_w = np.polynomial.legendre.leggauss(4)
+    unique_knots = np.unique(knot)
+    basis = [BSpline(knot, np.eye(nk)[j], k) for j in range(nk)]
+    for a, b in zip(unique_knots[:-1], unique_knots[1:]):
+        if b <= a:
+            continue
+        mid = 0.5 * (a + b)
+        half = 0.5 * (b - a)
+        pts = mid + half * gl_x
+        wts = half * gl_w
+        d2 = np.column_stack([basis[j](pts, nu=2) for j in range(nk)])
+        sigma += (d2 * wts[:, None]).T @ d2
+
+    diag_h = np.diag(xtwx)
+    diag_s = np.diag(sigma)
+    denom = float(diag_s[2 : nk - 3].sum())
+    if denom <= 0.0:
+        return None
+    ratio = float(diag_h[2 : nk - 3].sum()) / denom
+    lam = ratio * 256.0 ** (3.0 * spar - 1.0)
+
+    try:
+        coef = solve(xtwx + lam * sigma, design.T @ (wbar * ybar), assume_a="sym")
+    except np.linalg.LinAlgError:
+        return None
+    spline = BSpline(knot, coef, k, extrapolate=False)
+    edge_lo = float(spline(0.0))
+    slope_lo = float(spline(0.0, nu=1))
+    edge_hi = float(spline(1.0))
+    slope_hi = float(spline(1.0, nu=1))
+
+    def predict(xout: NDArray[np.float64]) -> NDArray[np.float64]:
+        scaled = (np.asarray(xout, dtype=np.float64) - x0) / r_ux
+        out = np.asarray(spline(np.clip(scaled, 0.0, 1.0)), dtype=np.float64)
+        lo = scaled < 0.0
+        hi = scaled > 1.0
+        if np.any(lo):
+            out[lo] = edge_lo + scaled[lo] * slope_lo
+        if np.any(hi):
+            out[hi] = edge_hi + (scaled[hi] - 1.0) * slope_hi
+        return out
+
+    return predict
+
+
 def _predict_univariate(
     xout: NDArray[np.float64],
     rp: dict[str, NDArray[np.float64]],
     smooth: bool,
     is_class: bool,
     class_values: NDArray[np.float64] | None,
+    smooth_fit: Any = None,
 ) -> NDArray[np.float64]:
     if xout.size == 0:
         return np.asarray([], dtype=np.float64)
     rx, ry = rp["x"], rp["y"]
     if rx.size == 1:
         pred = np.full(xout.size, ry[0], dtype=np.float64)
+    elif smooth and smooth_fit is not None and not is_class:
+        pred = np.asarray(smooth_fit(xout), dtype=np.float64)
     elif smooth and rx.size >= 4 and not is_class:
-        from scipy.interpolate import make_smoothing_spline  # type: ignore[import-untyped]
-
-        spline = make_smoothing_spline(rx, ry)
-        pred = np.asarray(spline(xout), dtype=np.float64)
+        # Degenerate fit (e.g. < 4 unique points): fall back to interpolation.
+        pred = np.interp(xout, rx, ry)
     else:
         pred = np.interp(xout, rx, ry)
         left = xout < rx[0]
@@ -586,21 +734,21 @@ def _dimred_coefficients(
 
     def caus_coef() -> NDArray[np.float64]:
         if tau is None:
-            tau_use: str | int = "cs"
+            tau_use = "cs"
         else:
             if not isinstance(tau, str) or tau.lower() not in {"cs", "ts"}:
                 raise ValueError("[tau] must be NULL, 'cs', or 'ts'.")
             tau_use = tau.lower()
-        from nns.causation import _tau_value, _ts_tau_values, _uni_caus
+        from nns.causation import _uni_caus
 
+        # The dim-reduction weights call R's Uni.caus() directly, which maps
+        # tau="cs" -> 0 and tau="ts" -> a fixed lag of 3 (it does not run the
+        # seasonal-period search that NNS.caus_core uses).
+        tau_lag = 3 if tau_use == "ts" else 0
         out = np.zeros(p, dtype=np.float64)
         for j in range(p):
             try:
-                if tau_use == "ts":
-                    _, y_tau = _ts_tau_values(y, x[:, j])
-                    z = float(_uni_caus(y, x[:, j], y_tau))
-                else:
-                    z = float(_uni_caus(y, x[:, j], _tau_value(tau_use)))
+                z = float(_uni_caus(y, x[:, j], tau_lag))
             except Exception:
                 z = 0.0
             out[j] = z if math.isfinite(z) else 0.0
@@ -638,6 +786,7 @@ def _dimreduce(
     dim_red_method: Any,
     tau: Any,
     threshold: Any,
+    variable_names: list[str] | None = None,
 ) -> dict[str, Any]:
     coef = _dimred_coefficients(x, y, dim_red_method, tau, threshold)
     mins = np.min(x, axis=0)
@@ -661,8 +810,13 @@ def _dimreduce(
     point_star = (
         None if np_points is None else np.asarray(np_points @ coef / denominator, dtype=np.float64)
     )
+    names = (
+        list(variable_names)
+        if variable_names is not None and len(variable_names) == x.shape[1]
+        else [f"V{j + 1}" for j in range(x.shape[1])]
+    )
     equation = {
-        "Variable": [f"x{j + 1}" for j in range(x.shape[1])] + ["DENOMINATOR"],
+        "Variable": names + ["DENOMINATOR"],
         "Coefficient": np.append(coef, float(denominator)),
     }
     return {"x_star": x_star, "point_star": point_star, "equation": equation}
@@ -890,7 +1044,15 @@ def _mreg_partition_matrix(
     for j, b in enumerate(boundaries):
         rhs[: b.size, j] = b
 
-    id_parts = [_find_interval(x[:, j], boundaries[j]) for j in range(p)]
+    if order == "max":
+        # order = "max" is a rank problem, not an interval problem: use each
+        # coordinate's exact 1-based rank (R's match) so the maximum value keeps
+        # its own ID rather than folding into the preceding interval.
+        id_parts = [
+            np.searchsorted(boundaries[j], x[:, j]).astype(np.int64) + 1 for j in range(p)
+        ]
+    else:
+        id_parts = [_find_interval(x[:, j], boundaries[j]) for j in range(p)]
     ids = np.asarray(
     [".".join(str(int(part[i])) for part in id_parts) for i in range(x.shape[0])]
     )
@@ -969,6 +1131,7 @@ def _m_reg(
     confidence_interval: float | None,
     class_values: NDArray[np.float64] | None,
     class_levels: list[str] | None,
+    variable_names: list[str] | None = None,
 ) -> dict[str, Any]:
     if x.shape[0] != y.size:
         raise ValueError(f"[X_n] has {x.shape[0]} rows but [Y] has {y.size} values.")
@@ -1013,14 +1176,25 @@ def _m_reg(
         np.unique(y) if is_class else None,
     )
 
+    names = (
+        list(variable_names)
+        if variable_names is not None and len(variable_names) == x.shape[1]
+        else [f"V{j + 1}" for j in range(x.shape[1])]
+    )
+
     rpm_dict: dict[str, NDArray[np.float64]] = {
-        f"x{j + 1}": rpm_x[:, j] for j in range(rpm_x.shape[1])
+        names[j]: rpm_x[:, j] for j in range(rpm_x.shape[1])
     }
     rpm_dict["y.hat"] = rpm_yhat
 
-    fitted_xy: dict[str, Any] = {
-        f"x{j + 1}": x[:, j] for j in range(x.shape[1])
+    # rhs.partitions is R's data.frame of per-column interval boundaries, padded
+    # with NaN to the longest column and keyed by the encoded predictor names.
+    rhs = partition["rhs"]
+    rhs_dict: dict[str, NDArray[np.float64]] = {
+        names[j]: rhs[:, j] for j in range(rhs.shape[1])
     }
+
+    fitted_xy: dict[str, Any] = {names[j]: x[:, j] for j in range(x.shape[1])}
     fitted_xy.update(
         {
             "y": y,
@@ -1035,7 +1209,7 @@ def _m_reg(
 
     out: dict[str, Any] = {
         "R2": None if point_only else metric,
-        "rhs.partitions": partition["rhs"],
+        "rhs.partitions": rhs_dict,
         "RPM": rpm_dict,
         "Point.est": point_pred,
         "pred.int": intervals["pred_int"],
@@ -1116,12 +1290,16 @@ def nns_reg_engine(
             confidence_interval=confidence_interval,
             class_values=task["class_values"],
             class_levels=task["class_levels"],
+            variable_names=encoded.get("encoded_names"),
         )
 
     synthetic_equation = None
     x_star = None
     if ex.shape[1] > 1:
-        dr = _dimreduce(ex, ep, y_numeric, dim_red_method, tau, threshold)
+        dr = _dimreduce(
+            ex, ep, y_numeric, dim_red_method, tau, threshold,
+            variable_names=encoded.get("encoded_names"),
+        )
         ux = dr["x_star"]
         up = dr["point_star"]
         synthetic_equation = dr["equation"]
@@ -1135,13 +1313,23 @@ def nns_reg_engine(
     if multivariate_call:
         return {"x": rp["x"], "y": rp["y"]}
 
+    # R ties the smoothing spline's spar to dependence and fits it once, reusing
+    # the fit for both the training and point predictions.
+    smooth_fit = None
+    if smooth and rp["x"].size >= 4 and not task["is_class"]:
+        dependence = _dependence(ux, y_numeric)
+        spar = (dependence + 0.5) / 2.0
+        smooth_fit = _smooth_spline_predictor(rp["x"], rp["y"], spar)
+
     fitted_pred = _predict_univariate(
-        ux, rp, smooth, task["is_class"], task["class_values"]
+        ux, rp, smooth, task["is_class"], task["class_values"], smooth_fit
     )
     point_pred = (
         None
         if up is None
-        else _predict_univariate(up, rp, smooth, task["is_class"], task["class_values"])
+        else _predict_univariate(
+            up, rp, smooth, task["is_class"], task["class_values"], smooth_fit
+        )
     )
 
     derivative = _derivative(rp)

@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 _CACHE_PATH = Path(__file__).with_name("_r_cache.json")
 _LOCK_PATH = _CACHE_PATH.with_suffix(".lock")
 _SCHEMA_VERSION = 1
-_NNS_VERSION = "13.0"
+_NNS_VERSION = "13.1"
 
 JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
 RValue: TypeAlias = (
@@ -1073,7 +1073,7 @@ def _call_r_reg_factor_predictor(args: dict[str, Any]) -> RValue:
         "order = order_arg, point.est = point_arg, plot = FALSE, "
         "residual.plot = FALSE, ncores = 1)\n"
         "encode <- function(x) {\n"
-        "  if (is.data.frame(x) || data.table::is.data.table(x)) {\n"
+        "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) {\n"
         "      z <- x[[nm]]\n"
         "      if (is.character(z)) return(as.character(z))\n"
@@ -1116,7 +1116,7 @@ def _call_r_reg_factor_dimred(args: dict[str, Any]) -> RValue:
         "dim.red.method = dim_arg, point.est = point_arg, plot = FALSE, "
         "residual.plot = FALSE, ncores = 1)\n"
         "encode <- function(x) {\n"
-        "  if (is.data.frame(x) || data.table::is.data.table(x)) {\n"
+        "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) {\n"
         "      z <- x[[nm]]\n"
         "      if (is.character(z)) return(as.character(z))\n"
@@ -1162,7 +1162,7 @@ def _call_r_stack_factor_predictor(args: dict[str, Any]) -> RValue:
         "ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (length(x) == 0) return(NULL)\n"
-        "  if (is.data.frame(x) || data.table::is.data.table(x)) {\n"
+        "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) as.numeric(x[[nm]])\n"
         "    return(stats::setNames(lapply(names(x), col_encode), names(x)))\n"
         "  }\n"
@@ -1209,7 +1209,7 @@ def _call_r_stack_mixed_factor_predictor(args: dict[str, Any]) -> RValue:
         "ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (length(x) == 0) return(NULL)\n"
-        "  if (is.data.frame(x) || data.table::is.data.table(x)) {\n"
+        "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) as.numeric(x[[nm]])\n"
         "    return(stats::setNames(lapply(names(x), col_encode), names(x)))\n"
         "  }\n"

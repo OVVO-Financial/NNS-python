@@ -298,6 +298,8 @@ def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
     y = np.array([1, 1, 2, 2, 3, 3, 2, 1, 3], dtype=np.float64)
     point_est = np.array([[0.0, 0.0, 1.0], [1.5, 0.8, -0.2]])
 
+    # type="class" drives the internal classification reduction; the public
+    # noise.reduction stays "off" (NNS 13.1 removed the legacy "mode_class").
     expected = _r_nns_m_reg(
         x,
         y,
@@ -305,7 +307,7 @@ def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
         1,
         point_est,
         False,
-        "mode_class",
+        "off",
         type="class",
     )
     actual = nns_reg(x, y, order=1, type="class", point_est=point_est)
@@ -348,8 +350,11 @@ def _r_nns_m_reg(
 
 def _assert_m_reg_matches(actual: dict[str, Any], expected: Any) -> None:
     assert isinstance(expected, dict)
-    assert set(actual) == set(expected)
-    for key in actual:
+    # R returns class.levels = NULL for a numeric response; jsonlite drops NULL
+    # keys, so the reference omits it while the port keeps the None-valued key.
+    assert set(expected) <= set(actual)
+    assert all(actual[key] is None for key in set(actual) - set(expected))
+    for key in expected:
         if isinstance(actual[key], dict):
             assert isinstance(expected[key], dict)
             assert set(actual[key]) == set(expected[key])
@@ -363,6 +368,10 @@ def _assert_m_reg_matches(actual: dict[str, Any], expected: Any) -> None:
                     np.testing.assert_allclose(values, _array(expected[key][column]), atol=COMPOUND)
         elif actual[key] is None:
             assert _array(expected[key]).size == 0
+        elif key == "class.levels":
+            _assert_levels_equal(actual[key], expected[key])
+        elif isinstance(actual[key], str):
+            assert actual[key] == expected[key]
         else:
             np.testing.assert_allclose(actual[key], _array(expected[key]), atol=COMPOUND)
 
@@ -388,6 +397,16 @@ def _dataset(
     else:
         y = x[:, 0] + x[:, 1] ** 2 + 0.2 * x[:, -1]
     return x, y
+
+
+def _assert_levels_equal(actual: object, expected: object) -> None:
+    """Compare class.levels, allowing numeric codes ("1.0" vs "1") to match."""
+    a = list(actual)  # type: ignore[arg-type]
+    e = list(expected)  # type: ignore[arg-type]
+    try:
+        assert [float(v) for v in a] == [float(v) for v in e]
+    except (TypeError, ValueError):
+        assert [str(v) for v in a] == [str(v) for v in e]
 
 
 def _array(value: object) -> np.ndarray:
