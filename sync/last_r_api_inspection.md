@@ -2,25 +2,26 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `DESCRIPTION`
+- `NNS_13.1.tar.gz`
+- `NNS_13.1.zip`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `pyproject.toml`
+- `tests/_r_cache.json`
+- `tools/NNS`
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- `tests/parity`
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- None mapped
 
 ## Required actions
 
-- Fresh cache required: `False`
+- Fresh cache required: `True`
 - Export review required: `False`
 - Unmapped R files present: `False`

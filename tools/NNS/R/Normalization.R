@@ -39,27 +39,27 @@ NNS.norm <- function(X,
   if(any(class(X)%in%c("tbl","data.table"))) X <- as.data.frame(X)
 
   if(any(class(X)%in%"list")){
-    if(sum(diff(sapply(X, length))) != 0) linear <- TRUE
+    if(length(unique(sapply(X, length))) > 1) linear <- TRUE
     m <- sapply(X, mean)
-  } else { 
+  } else {
     X <- apply(X, 2, unlist)
-    m <- Rfast::colmeans(X)
+    m <- colMeans(X)
   }
-  
-  
+
+
   m[m==0] <- 1e-10
   RG <- m %o% (1 / m)
-  
+
   if(!linear){
-    if(any(class(X)%in%"list")) do.call(cbind, X) else (X)
+    if(any(class(X)%in%"list")) X_mat <- do.call(cbind, X) else X_mat <- X
     if(length(m) < 10){
-      scale.factor <- abs(cor(X))
+      scale.factor <- abs(cor(X_mat))
     } else {
-      scale.factor <- abs(NNS.dep(X)$Dependence)
+      scale.factor <- abs(NNS.dep(X_mat)$Dependence)
     }
-    scales <- Rfast::colmeans(RG * scale.factor)
+    scales <- colMeans(RG * scale.factor)
   } else {
-    scales <- Rfast::colmeans(RG)
+    scales <- colMeans(RG)
   }
   
 
@@ -90,7 +90,8 @@ NNS.norm <- function(X,
   if(any(class(X_Normalized)%in%"list")){
     names(X_Normalized) <- paste0(names(X), " Normalized")
   } else {
-    labels <- c(colnames(X), paste0(colnames(X), " Normalized"))
+    base.names <- if(any(class(X)%in%"list")) names(X) else colnames(X)
+    labels <- c(base.names, paste0(base.names, " Normalized"))
     colnames(X_Normalized) <- labels[(n + 1) : (2 * n)]
     rows <- rownames(X_Normalized)
   }
@@ -130,6 +131,6 @@ NNS.norm <- function(X,
     
   }
   
-  return(X_Normalized)
+  return(.NNS.out(X_Normalized))
   
 }
