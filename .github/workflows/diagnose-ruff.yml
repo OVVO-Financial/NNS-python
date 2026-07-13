@@ -54,3 +54,5 @@ jobs:
             git commit -m "Apply safe ruff fixes and record remaining findings"
             git push origin HEAD:claude/inference-comparison-4vlt4q
           fi
+
+# Triggered after guarded behavior-preserving source repairs.
