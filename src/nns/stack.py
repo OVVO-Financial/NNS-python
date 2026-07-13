@@ -30,6 +30,7 @@ from nns._reg_engine import (
     _validate_order,
     nns_reg_engine,
 )
+from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.dependence import nns_dep
 
@@ -149,7 +150,16 @@ def nns_stack(
     folds_value = cast(int, _scalar_integer(folds, "folds", minimum=1))
     ts_test_value = _scalar_integer(ts_test, "ts.test", minimum=1, allow_null=True)
 
-    rng = np.random.default_rng(None if seed is None else _scalar_integer(seed, "seed", minimum=0))
+    # R sets its Mersenne-Twister stream once via set.seed(seed) and draws every
+    # split from it. Reproduce that stream exactly for deterministic parity; when
+    # seed is NULL R leaves the global stream untouched (non-deterministic), so
+    # the port seeds from system entropy.
+    seed_value = (
+        _scalar_integer(seed, "seed", minimum=0)
+        if seed is not None
+        else int(np.random.SeedSequence().generate_state(1)[0])
+    )
+    rng = RRNG(seed_value)
 
     if not isinstance(objective, str) or objective.lower() not in {"min", "max"}:
         raise ValueError("[objective] must be exactly 'min' or 'max'.")
@@ -408,10 +418,10 @@ def nns_stack(
             )
         smallest = min(g.size for g in groups)
         largest = max(g.size for g in groups)
-        down = np.concatenate([rng.choice(g, smallest, replace=False) for g in groups])
-        up = np.concatenate([rng.choice(g, largest, replace=True) for g in groups])
+        down = np.concatenate([rng.sample(g, smallest, replace=False) for g in groups])
+        up = np.concatenate([rng.sample(g, largest, replace=True) for g in groups])
         combined = np.concatenate([down, up])
-        return rng.permutation(combined).astype(np.int64)
+        return rng.sample(combined).astype(np.int64)
 
     def numeric_design(
         train: NDArray[Any], test: NDArray[Any]
@@ -503,7 +513,7 @@ def nns_stack(
 
         holdout_size = cv_size
         if holdout_size is None and folds_value == 1:
-            holdout_size = round(float(rng.uniform(0.20, 1.0 / 3.0)), 3)
+            holdout_size = round(float(rng.runif(0.20, 1.0 / 3.0)), 3)
 
         if holdout_size is not None:
             out = []
@@ -514,11 +524,13 @@ def nns_stack(
                         g = np.flatnonzero(y == v)
                         size = min(g.size - 1, max(1, int(round(holdout_size * g.size))))
                         if size > 0:
-                            validation_parts.append(rng.choice(g, size, replace=False))
+                            validation_parts.append(rng.sample(g, size, replace=False))
                     validation = np.unique(np.concatenate(validation_parts)).astype(np.int64)
                 else:
                     size = max(1, min(n_obs - 1, int(round(holdout_size * n_obs))))
-                    validation = np.sort(rng.choice(n_obs, size, replace=False)).astype(np.int64)
+                    validation = np.sort(
+                        rng.sample_int(n_obs, size, replace=False) - 1
+                    ).astype(np.int64)
                 training = np.setdiff1d(all_index, validation)
                 if training.size < 3 or not has_all_classes(y[training]):
                     raise ValueError(
@@ -549,10 +561,10 @@ def nns_stack(
         if is_class:
             for v in np.unique(y):
                 g = np.flatnonzero(y == v)
-                shuffled = rng.permutation(g)
+                shuffled = rng.sample(g)
                 fold_id[shuffled] = np.resize(np.arange(1, use_folds + 1), g.size)
         else:
-            shuffled = rng.permutation(all_index)
+            shuffled = rng.sample(all_index)
             fold_id[shuffled] = np.resize(np.arange(1, use_folds + 1), n_obs)
         out = []
         for b in range(1, use_folds + 1):

@@ -558,13 +558,18 @@ def test_nns_stack_factor_like_class_matches_r() -> None:
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
 
 
-def test_nns_stack_raw_character_class_raises() -> None:
+def test_nns_stack_raw_character_class_encodes_like_r() -> None:
+    # R's NNS.stack codes character class labels 1..K (base 1) natively; the
+    # port matches and exposes the mapping via class.levels.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="class_levels"):
-        nns_stack(variable, labels, variable[:3], type="class", cv_size=0.25, folds=1)
+    result = nns_stack(variable, labels, variable[:3], type="class", cv_size=0.25, folds=1)
+
+    assert list(result["class.levels"]) == ["A", "B"]
+    codes = np.asarray(result["stack"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
 
 
 @pytest.mark.parity
@@ -742,22 +747,34 @@ def test_nns_stack_balance_type_none_forces_class_path() -> None:
     )
 
 
-def test_nns_stack_balance_raw_character_class_raises() -> None:
+def test_nns_stack_balance_raw_character_class_encodes_like_r() -> None:
+    # balance=TRUE still codes raw character labels natively, matching R.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="levels"):
-        nns_stack(
-            variable,
-            labels,
-            variable[:3],
-            type="class",
-            cv_size=0.25,
-            folds=1,
-            balance=True,
-            random_seed=1,
-        )
+    result = nns_stack(
+        variable,
+        labels,
+        variable[:3],
+        type="class",
+        cv_size=0.25,
+        folds=1,
+        balance=True,
+        random_seed=1,
+    )
+
+    assert list(result["class.levels"]) == ["A", "B"]
+    codes = np.asarray(result["stack"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
+
+
+# Out-of-fold objective scores (and the probability threshold derived from the
+# OOF ensemble) depend on the validation-split draw. Under random holdout / k-fold
+# splits the port's numpy Generator diverges from R's Mersenne sample(), so those
+# scalars match only distributionally even though the final (whole-training) fits
+# and predictions match R exactly. See the RNG note in nns/stack.py.
+_RNG_DEPENDENT_KEYS = {"OBJfn.reg", "OBJfn.dim.red", "probability.threshold"}
 
 
 def _assert_stack_matches(
@@ -765,17 +782,39 @@ def _assert_stack_matches(
     expected: Any,
     *,
     exact_probability_threshold: bool = True,
+    exact_objective: bool = True,
 ) -> None:
     assert isinstance(expected, dict)
     assert set(actual) == set(expected)
     for key in actual:
+        if key in _RNG_DEPENDENT_KEYS and not exact_objective:
+            # Random-split OOF scalar: assert finiteness agrees with R, not value.
+            actual_finite = actual[key] is not None and np.isfinite(float(actual[key]))
+            expected_finite = bool(np.all(np.isfinite(_numeric(expected[key]))))
+            assert actual_finite == expected_finite
+            continue
         if key == "probability.threshold" and not exact_probability_threshold:
             assert np.isfinite(float(actual[key]))
             assert 0.0 <= float(actual[key]) <= 1.0
             assert np.isfinite(float(_numeric(expected[key])))
             continue
         if actual[key] is None:
-            assert expected[key] is None or expected[key] == {}
+            # R uses a scalar NA_real_ placeholder for an absent method's
+            # predictions/interval; the port surfaces that as None.
+            expected_value = expected[key]
+            if expected_value is None or expected_value == {}:
+                continue
+            expected_arr = _numeric(expected_value)
+            assert expected_arr.size == 0 or np.all(np.isnan(expected_arr))
+        elif key == "weights":
+            # R returns the named vector c(reg=, dim.red=); jsonlite serializes
+            # it as a plain array, while the port keeps the named dict.
+            actual_weights = np.array(
+                [actual[key]["reg"], actual[key]["dim.red"]], dtype=np.float64
+            )
+            np.testing.assert_allclose(actual_weights, _numeric(expected[key]), atol=COMPOUND)
+        elif key == "class.levels":
+            assert [str(v) for v in actual[key]] == [str(v) for v in expected[key]]
         elif isinstance(actual[key], dict):
             assert isinstance(expected[key], dict)
             assert set(actual[key]) == set(expected[key])
@@ -815,6 +854,10 @@ def _assert_stack_class_structure(
     assert isinstance(expected, dict)
     assert set(actual) == set(expected)
     for key in ("reg", "dim.red", "stack"):
+        if actual[key] is None:
+            # Absent method: R returns a scalar NA_real_, the port returns None.
+            assert np.all(np.isnan(_numeric(expected[key])))
+            continue
         actual_values = np.asarray(actual[key], dtype=np.float64)
         expected_values = _numeric(expected[key])
         if expected_values.shape == ():
