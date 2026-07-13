@@ -1,0 +1,132 @@
+
+============================================================
+RUNNING: examples/vignettes/dependence_nonlinear_association.py
+============================================================
+linear:      r=1.0000  dep=1.0000
+sine:        r=0.2028  dep=0.8149
+asymmetric dependence  D(y|x)=0.8149  D(x|y)=0.4082
+pm matrix keys: ['clpm', 'cov.matrix', 'cupm', 'dlpm', 'dupm', 'names']
+copula (near-independent): 0.2664
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/descriptive_distributional_tools.py
+============================================================
+population moments: {'mean': 0.0899, 'variance': 0.8199, 'skewness': -0.0368, 'kurtosis': 0.0062}
+continuous mode: -0.3707
+discrete modes: [2. 3. 4.]
+covariance (reconstructed):
+ [[ 0.823987 -0.006598]
+ [-0.006598  1.188496]]
+quantile table (threshold -> CDF):
+  p=0.05  threshold=-1.4389  cdf=0.0500
+  p=0.15  threshold=-0.7070  cdf=0.1500
+  p=0.25  threshold=-0.4936  cdf=0.2500
+  p=0.35  threshold=-0.3042  cdf=0.3500
+  p=0.45  threshold=-0.1472  cdf=0.4500
+  p=0.55  threshold=+0.1354  cdf=0.5500
+  p=0.65  threshold=+0.3877  cdf=0.6500
+  p=0.75  threshold=+0.7917  cdf=0.7500
+  p=0.85  threshold=+1.0839  cdf=0.8500
+  p=0.95  threshold=+1.5679  cdf=0.9500
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/hypothesis_anova_stochastic_superiority.py
+============================================================
+ANOVA certainty (equal means): 0.9582
+ANOVA certainty (shifted means): 0.1993
+stochastic superiority p_gt/p_tie/p_star: 0.2495 0.0 0.2495
+discrete p_tie (ties present): 0.2029
+bootstrap CI [lower, upper] (range-checked): 0.2128 0.2925
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/normalization_rescaling.py
+============================================================
+linear-normalized column means: [5.193858 5.193858 5.193858 5.193858]
+min-max range: 5.0 10.0
+risk-neutral terminal mean vs forward: 103.0455 103.0455
+risk-neutral discounted mean vs S0: 100.0 100.0
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/overview.py
+============================================================
+partial-moment variance vs numpy: 1.015379 1.015379
+moments: {'mean': -0.0255, 'variance': 1.015, 'skewness': -0.0354, 'kurtosis': -0.0075}
+Pearson r (near zero): -0.0213
+NNS dependence: 0.7258
+covariance matrix keys: ['clpm', 'cov.matrix', 'cupm', 'dlpm', 'dupm', 'names']
+multivariate copula: 0.561
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/partial_moments.py
+============================================================
+mean (partial moments): 0.081915
+sample variance (PM vs numpy): 0.809119 0.809119
+CDF at [-1, 0, 1]: [0.09 0.49 0.82]
+VaR quantiles: [-1.2703 -0.5106  0.0166  0.8267  1.5325]
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/portfolio_stochastic_dominance.py
+============================================================
+FSD(y, x): 1  FSD(x, y): 0
+SSD(y, x): 1  TSD(y, x): 1
+efficient set (asset indices): [2, 0, 1]
+SD clusters: {'Cluster_1': ['C', 'A', 'B']}
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/regression_boosting_stacking_causality.py
+============================================================
+regression R2: 1.0
+regression point estimates: [-8.0217e+00  1.0000e-04  7.9617e+00]
+stack reg:     [-2.673398 -2.618227 -2.59879  -2.472459 -2.408232]
+stack dim.red: [-3.013334 -2.878934 -2.731728 -2.579698 -2.39391 ]
+stack stack:   [-3.013334 -2.878934 -2.731728 -2.579698 -2.39391 ]
+boost results: [-2.963055 -2.874436 -2.873685 -2.526879 -2.517697]
+boost feature.weights: {'x1': 0.6666666666666666, 'x2': 0.3333333333333333}
+boost feature.frequency: {'x1': 2, 'x2': 1}
+causation x|y: 0.3769  y|x: 0.3117
+net causation C(y--->x): 0.1897
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/simulation_bootstrap_riskneutral.py
+============================================================
+meboot ensemble shape: (80,)
+meboot replicate groups: 80
+MC rho groups: [np.str_('rho = 1'), np.str_('rho = 0.5'), np.str_('rho = 0'), np.str_('rho = -0.5'), np.str_('rho = -1')]
+MC ensemble length: 80
+Note: bootstrap/MC outputs are stochastic; only structure is asserted here.
+EXIT CODE: 0
+
+============================================================
+RUNNING: examples/vignettes/time_series_forecasting.py
+============================================================
+Traceback (most recent call last):
+  File "/home/runner/work/NNS-python/NNS-python/examples/vignettes/time_series_forecasting.py", line 70, in <module>
+    main()
+  File "/home/runner/work/NNS-python/NNS-python/examples/vignettes/time_series_forecasting.py", line 34, in main
+    np.testing.assert_allclose(
+  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 1768, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/numpy/testing/_private/utils.py", line 983, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError: 
+Not equal to tolerance rtol=1e-07, atol=1e-09
+
+Mismatched elements: 3 / 4 (75%)
+Mismatch at indices:
+ [0]: 125.25 (ACTUAL), 128.5 (DESIRED)
+ [1]: 107.75 (ACTUAL), 113.5 (DESIRED)
+ [2]: 158.75 (ACTUAL), 155.5 (DESIRED)
+Max absolute difference among violations: 5.75
+Max relative difference among violations: 0.05066079
+ ACTUAL: array([125.25    , 107.75    , 158.75    , 213.666667])
+ DESIRED: array([128.5     , 113.5     , 155.5     , 213.666667])
+EXIT CODE: 1
+OVERALL EXIT CODE: 1
