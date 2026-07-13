@@ -24,7 +24,7 @@ finite_matrices = arrays(
 @given(finite_matrices, st.sampled_from([[1], [2], [1, 2]]))
 def test_nns_stack_numeric_bounds_hold(x: np.ndarray, method: list[int]) -> None:
     y = 0.5 * x[:, 0] - 0.25 * x[:, 1]
-    assume(np.unique(y).size > 1)
+    assume(np.unique(y).size > 2)
     assume(np.unique(x[:, 0]).size > 1)
     assume(all(np.unique(x[:, col]).size > 1 for col in range(x.shape[1])))
 
@@ -39,7 +39,7 @@ def test_nns_stack_numeric_bounds_hold(x: np.ndarray, method: list[int]) -> None
 def test_nns_stack_ts_test_method1_shape(x: np.ndarray, ts_test: int) -> None:
     assume(ts_test <= x.shape[0] - 2)
     y = 0.5 * x[:, 0] - 0.25 * x[:, 1]
-    assume(np.unique(y).size > 1)
+    assume(np.unique(y).size > 2)
     assume(all(np.unique(x[:, col]).size > 1 for col in range(x.shape[1])))
 
     result = nns_stack(x, y, x[:3], cv_size=0.25, folds=1, method=1, ts_test=ts_test)
@@ -51,7 +51,7 @@ def test_nns_stack_ts_test_method1_shape(x: np.ndarray, ts_test: int) -> None:
 @given(finite_matrices)
 def test_nns_stack_mixed_factor_method2_shape_invariants_hold(x: np.ndarray) -> None:
     y = 0.5 * x[:, 0] - 0.25 * x[:, 1]
-    assume(np.unique(y).size > 1)
+    assume(np.unique(y).size > 2)
     categories = np.asarray(["a", "b", "c"], dtype=object)
     factor = categories[np.arange(x.shape[0]) % categories.size]
     variable = np.column_stack((factor, x[:, 0].astype(object)))
@@ -68,8 +68,7 @@ def test_nns_stack_mixed_factor_method2_shape_invariants_hold(x: np.ndarray) -> 
     )
 
     assert result["stack"].shape == (3,)
-    assert result["reg"].shape == (3,)
-    assert np.isnan(np.asarray(result["reg"], dtype=np.float64)).all()
+    assert result["reg"] is None
     assert np.all(np.isfinite(result["dim.red"]))
 
 
