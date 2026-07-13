@@ -11,6 +11,7 @@ def test_nns_stack_method1_uses_pooled_oof_selection_not_fold_mode(
 ) -> None:
     """Method 1 must score conceptual candidates after pooling all folds."""
 
+    import nns._stack_method1_runtime as runtime_mod
     import nns.stack as stack_mod
 
     x = np.arange(12, dtype=np.float64)
@@ -38,6 +39,11 @@ def test_nns_stack_method1_uses_pooled_oof_selection_not_fold_mode(
         ]
     )
     monkeypatch.setattr(stack_mod, "_mreg_predict_path", lambda *_args, **_kwargs: next(paths))
+    monkeypatch.setattr(
+        runtime_mod,
+        "nns_distance_path_single_bulk",
+        lambda _rpm, points, _k, _type: np.full(np.asarray(points).shape[0], 50.0),
+    )
 
     selected: list[int | str | None] = []
 
@@ -63,6 +69,7 @@ def test_nns_stack_method1_all_is_not_encoded_as_training_row_count(
 ) -> None:
     """ALL remains conceptual until it resolves against the prepared RPM."""
 
+    import nns._stack_method1_runtime as runtime_mod
     import nns.stack as stack_mod
 
     x = np.linspace(-1.0, 1.0, 16)
@@ -82,6 +89,11 @@ def test_nns_stack_method1_all_is_not_encoded_as_training_row_count(
         return {k: np.zeros(n) for k in ks}
 
     monkeypatch.setattr(stack_mod, "_mreg_predict_path", fake_path)
+    monkeypatch.setattr(
+        runtime_mod,
+        "nns_distance_path_single_bulk",
+        lambda _rpm, points, _k, _type: np.zeros(np.asarray(points).shape[0]),
+    )
     nns_stack(variable, y, variable[:2], folds=1, method=1)
 
     assert requested_paths
