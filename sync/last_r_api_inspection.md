@@ -2,22 +2,19 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `R/Boost.R`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `src/nns/boost.py`
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- `tests/docs/test_vignette_examples.py`
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- `NNS.boost`
 
 ## Required actions
 
