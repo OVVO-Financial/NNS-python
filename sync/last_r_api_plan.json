@@ -1,22 +1,26 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "R/Boost.R",
+    "R/Partition_Map.R",
+    "R/Stack.R",
+    "src/NNS_distance.cpp"
   ],
   "affected_python_modules": [
-    "src/nns/arma.py"
+    "src/nns/boost.py",
+    "src/nns/stack.py"
   ],
   "parity_tests": [
-    "tests/parity/test_practical_examples.py",
-    "tests/parity/test_r13_smoke.py"
+    "tests/docs/test_vignette_examples.py"
   ],
   "cache_scope": [
-    "NNS.ARMA",
-    "NNS.ARMA.optim",
-    "NNS.VAR"
+    "NNS.boost",
+    "NNS.stack"
   ],
   "requires_fresh_cache": false,
   "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/Partition_Map.R"
+  ],
   "warnings": []
 }

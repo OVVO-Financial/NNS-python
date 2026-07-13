@@ -2,25 +2,31 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `R/Boost.R`
+- `R/Partition_Map.R`
+- `R/Stack.R`
+- `src/NNS_distance.cpp`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `src/nns/boost.py`
+- `src/nns/stack.py`
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- `tests/docs/test_vignette_examples.py`
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- `NNS.boost`
+- `NNS.stack`
 
 ## Required actions
 
 - Fresh cache required: `False`
 - Export review required: `False`
-- Unmapped R files present: `False`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/Partition_Map.R`
