@@ -2,22 +2,28 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `NNS_13.1.tar.gz`
+- `NNS_13.1.zip`
+- `R/Boost.R`
+- `R/Stack.R`
+- `man/NNS.boost.Rd`
+- `man/NNS.stack.Rd`
+- `src/NNS.dll`
+- `tests/testthat/Rplots.pdf`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `src/nns/boost.py`
+- `src/nns/stack.py`
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- `tests/docs/test_vignette_examples.py`
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- `NNS.boost`
+- `NNS.stack`
 
 ## Required actions
 
