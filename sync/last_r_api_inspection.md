@@ -2,11 +2,12 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `R/Regression.R`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- `src/nns/multivariate_regression.py`
+- `src/nns/regression.py`
 
 ## Parity tests to run
 
@@ -15,9 +16,8 @@
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- `NNS.M.reg`
+- `NNS.reg`
 
 ## Required actions
 
