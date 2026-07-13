@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    file = Path(path)
+    text = file.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(
+            f"{path}: expected exactly one match, found {count}\nOLD:\n{old}"
+        )
+    file.write_text(text.replace(old, new, 1))
+
+
+replace_once(
+    "src/nns/_reg_engine.py",
+    "import math\nimport re\n",
+    "import math\nimport re\nfrom itertools import pairwise\n",
+)
+replace_once(
+    "src/nns/_reg_engine.py",
+    "ord_value = max(1, int(math.floor(dep * 10 + 0.5)))",
+    "ord_value = max(1, math.floor(dep * 10 + 0.5))",
+)
+replace_once(
+    "src/nns/_reg_engine.py",
+    "ord_value = max(1, int(math.floor(ord_value / 2)))",
+    "ord_value = max(1, math.floor(ord_value / 2))",
+)
+replace_once(
+    "src/nns/_reg_engine.py",
+    "for a, b in zip(unique_knots[:-1], unique_knots[1:]):",
+    "for a, b in pairwise(unique_knots):",
+)
+replace_once(
+    "src/nns/_reg_engine.py",
+    '"Variable": names + ["DENOMINATOR"],',
+    '"Variable": [*names, "DENOMINATOR"],',
+)
+replace_once(
+    "src/nns/_reg_engine.py",
+    "k = max(1, int(math.floor((1.0 - dep) * math.sqrt(x.shape[0]))))",
+    "k = max(1, math.floor((1.0 - dep) * math.sqrt(x.shape[0])))",
+)
+
+replace_once(
+    "src/nns/_rrng.py",
+    "v1 = int(math.floor(self.unif_rand() * 65536))",
+    "v1 = math.floor(self.unif_rand() * 65536)",
+)
+replace_once(
+    "src/nns/_rrng.py",
+    "bits = int(math.ceil(math.log2(dn)))",
+    "bits = math.ceil(math.log2(dn))",
+)
+replace_once(
+    "src/nns/_rrng.py",
+    "    def sample_int(self, n: int, size: int | None = None, replace: bool = False) -> NDArray[np.int64]:\n",
+    "    def sample_int(\n"
+    "        self, n: int, size: int | None = None, replace: bool = False\n"
+    "    ) -> NDArray[np.int64]:\n",
+)
+
+replace_once(
+    "src/nns/boost.py",
+    "size = max(1, min(n_obs - 1, int(round(cv_fraction * n_obs))))",
+    "size = max(1, min(n_obs - 1, round(cv_fraction * n_obs)))",
+)
+replace_once(
+    "src/nns/boost.py",
+    "k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))",
+    "k_small = max(1, math.floor(math.sqrt(minimum_train_size)))",
+)
+replace_once(
+    "src/nns/boost.py",
+    "k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))",
+    "k_candidates = list(dict.fromkeys([*range(1, k_small + 1), minimum_train_size]))",
+)
+
+replace_once(
+    "src/nns/stack.py",
+    "def _scalar_integer(value: Any, name: str, minimum: int = 0, allow_null: bool = False) -> int | None:\n",
+    "def _scalar_integer(\n"
+    "    value: Any, name: str, minimum: int = 0, allow_null: bool = False\n"
+    ") -> int | None:\n",
+)
+replace_once(
+    "src/nns/stack.py",
+    "            [class_values.index(v) + 1 for v in (dv.tolist() if response_categorical else dv.astype(np.float64).tolist())],\n",
+    "            [\n"
+    "                class_values.index(v) + 1\n"
+    "                for v in (\n"
+    "                    dv.tolist()\n"
+    "                    if response_categorical\n"
+    "                    else dv.astype(np.float64).tolist()\n"
+    "                )\n"
+    "            ],\n",
+)
+replace_once(
+    "src/nns/stack.py",
+    '            "Method 2 was removed because dimension reduction requires more than one original predictor.",\n',
+    '            "Method 2 was removed because dimension reduction requires more than "\n'
+    '            "one original predictor.",\n',
+)
+replace_once(
+    "src/nns/stack.py",
+    "        return np.clip(np.asarray(code, dtype=np.float64), 1, n_classes).astype(np.int64).astype(np.float64)\n",
+    "        return (\n"
+    "            np.clip(np.asarray(code, dtype=np.float64), 1, n_classes)\n"
+    "            .astype(np.int64)\n"
+    "            .astype(np.float64)\n"
+    "        )\n",
+)
+replace_once(
+    "src/nns/stack.py",
+    "size = min(g.size - 1, max(1, int(round(holdout_size * g.size))))",
+    "size = min(g.size - 1, max(1, round(holdout_size * g.size)))",
+)
+replace_once(
+    "src/nns/stack.py",
+    "size = max(1, min(n_obs - 1, int(round(holdout_size * n_obs))))",
+    "size = max(1, min(n_obs - 1, round(holdout_size * n_obs)))",
+)
+replace_once(
+    "src/nns/stack.py",
+    "    def coefficient_vector(design: NDArray[np.float64], response: NDArray[np.float64]) -> NDArray[np.float64]:\n",
+    "    def coefficient_vector(\n"
+    "        design: NDArray[np.float64], response: NDArray[np.float64]\n"
+    "    ) -> NDArray[np.float64]:\n",
+)
+replace_once(
+    "src/nns/stack.py",
+    "l_small = max(1, int(math.floor(math.sqrt(n_obs))))",
+    "l_small = max(1, math.floor(math.sqrt(n_obs)))",
+)
+
+replace_once(
+    "src/nns/var.py",
+    "    _METHOD1_GUARD_MESSAGE = (\n",
+    "    method1_guard_message = (\n",
+)
+replace_once(
+    "src/nns/var.py",
+    '''        def run_var_stack(stack_obj_fn: Any, stack_objective: str) -> dict[str, Any]:
+            return nns_stack(
+                lagged_iv,
+                lagged_dv,
+                ivs_test=ivs_test,
+                obj_fn=cast(Any, stack_obj_fn),
+                objective=cast(Any, stack_objective),
+                folds=1,
+                method=(1, 2),
+                order=None,
+                stack=True,
+                dim_red_method=cast(Any, dim_red_threshold_method),
+                ts_test=ts_test,
+            )
+
+        try:
+            result = run_var_stack(var_obj_fn, objective_value)
+        except ValueError as error:
+            if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
+                raise
+            result = run_var_stack(mse_obj_fn, "min")
+''',
+    '''        def run_var_stack(
+            stack_obj_fn: Any,
+            stack_objective: str,
+            stack_iv: np.ndarray,
+            stack_dv: np.ndarray,
+            stack_test: np.ndarray,
+            stack_ts_test: int,
+        ) -> dict[str, Any]:
+            return nns_stack(
+                stack_iv,
+                stack_dv,
+                ivs_test=stack_test,
+                obj_fn=cast(Any, stack_obj_fn),
+                objective=cast(Any, stack_objective),
+                folds=1,
+                method=(1, 2),
+                order=None,
+                stack=True,
+                dim_red_method=cast(Any, dim_red_threshold_method),
+                ts_test=stack_ts_test,
+            )
+
+        try:
+            result = run_var_stack(
+                var_obj_fn, objective_value, lagged_iv, lagged_dv, ivs_test, ts_test
+            )
+        except ValueError as error:
+            if not (use_default_objective and str(error) == method1_guard_message):
+                raise
+            result = run_var_stack(
+                mse_obj_fn, "min", lagged_iv, lagged_dv, ivs_test, ts_test
+            )
+''',
+)
+
+replace_once(
+    "tests/parity/test_regression.py",
+    'with pytest.raises(ValueError, match="noise.reduction"):',
+    'with pytest.raises(ValueError, match=r"noise\\.reduction"):',
+)
