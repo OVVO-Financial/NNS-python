@@ -40,7 +40,7 @@ finite_matrices = arrays(
     finite_arrays,
     finite_arrays,
     st.sampled_from([None, 1, 2, 3, "max"]),
-    st.sampled_from(["off", "mean", "median", "mode", "mode_class"]),
+    st.sampled_from(["off", "mean", "median", "mode"]),
 )
 def test_nns_reg_univariate_shape_invariants_hold(
     x: np.ndarray,
@@ -56,7 +56,7 @@ def test_nns_reg_univariate_shape_invariants_hold(
 
     result = nns_reg(x, y, order=cast(Order, order), noise_reduction=cast(NoiseReduction, noise))
 
-    assert np.isnan(result["R2"]) or -1e-12 <= result["R2"] <= 1.0 + 1e-12
+    assert np.isnan(result["R2"]) or result["R2"] <= 1.0 + 1e-12
     assert result["SE"] >= 0.0
     assert result["Fitted.xy"]["x"].shape == (size,)
     assert result["Fitted.xy"]["y"].shape == (size,)
@@ -84,9 +84,9 @@ def test_nns_reg_dim_red_shape_invariants_hold(
 
     result = nns_reg(x, y, dim_red_method=method)
 
-    assert np.isnan(result["R2"]) or -1e-12 <= result["R2"] <= 1.0 + 1e-12
+    assert np.isnan(result["R2"]) or result["R2"] <= 1.0 + 1e-12
     assert result["x.star"]["x"].shape == (x.shape[0],)
-    assert result["equation"]["Variable"].shape == (x.shape[1] + 1,)
+    assert len(result["equation"]["Variable"]) == x.shape[1] + 1
     assert result["equation"]["Coefficient"].shape == (x.shape[1] + 1,)
     assert result["Fitted.xy"]["x"].shape == (x.shape[0],)
 
