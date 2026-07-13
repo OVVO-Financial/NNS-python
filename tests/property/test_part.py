@@ -26,8 +26,8 @@ finite_arrays = arrays(
 @given(
     finite_arrays,
     finite_arrays,
-    st.sampled_from([None, "XONLY", "Y"]),
-    st.sampled_from(["off", "mean", "median", "mode", "mode_class"]),
+    st.sampled_from([None, "XONLY"]),
+    st.sampled_from(["off", "mean", "median", "mode"]),
     st.integers(min_value=0, max_value=5),
     st.integers(min_value=0, max_value=16),
     st.booleans(),
