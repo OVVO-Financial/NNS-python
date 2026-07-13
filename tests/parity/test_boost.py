@@ -329,7 +329,6 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         variable[:5],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None),
         feature_importance=False,
     )
 
@@ -361,7 +360,6 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         variable[:5],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None),
         features_only=True,
         feature_importance=False,
     )
@@ -405,7 +403,6 @@ def test_nns_boost_multiple_factor_predictors_match_r_positional(
         variable[:4],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None, ["down", "up"]),
         features_only=features_only,
         feature_importance=False,
         random_seed=1,

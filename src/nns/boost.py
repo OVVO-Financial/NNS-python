@@ -40,6 +40,16 @@ def _scalar_logical(value: Any, name: str) -> bool:
     return bool(value)
 
 
+def _column_is_numeric(column: NDArray[Any]) -> bool:
+    if column.dtype.kind in {"f", "i", "u"}:
+        return True
+    try:
+        np.asarray(column, dtype=np.float64)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _scalar_integer(
     value: Any, name: str, minimum: int = 0, allow_null: bool = False
 ) -> int | None:
@@ -318,9 +328,11 @@ def nns_boost(
         test_index: NDArray[np.int64],
     ) -> NDArray[np.float64]:
         cols = list(feature_index)
-        train_x = x[np.ix_(train_index, cols)].astype(np.float64)
+        # Preserve categorical columns as-is; nns_reg_engine one-hot encodes them
+        # (factor.2.dummy) per learner exactly as R's NNS.boost does.
+        train_x = x[np.ix_(train_index, cols)]
         train_y = y[train_index]
-        test_x = x[np.ix_(test_index, cols)].astype(np.float64)
+        test_x = x[np.ix_(test_index, cols)]
         bx, by = balance_training(train_x, train_y)
         fit = nns_reg_engine(
             bx,
@@ -488,10 +500,38 @@ def nns_boost(
         print("\nGenerating Final Estimate")
 
     # ----------------------------------------------------------------------
-    # Frequency-weighted synthetic X*
+    # Frequency-weighted synthetic X*. Categorical features are one-hot encoded
+    # with training levels only; each active dummy inherits its source feature's
+    # weight so a categorical feature's total row contribution equals its weight.
     # ----------------------------------------------------------------------
-    design_train = x.astype(np.float64)
-    design_test = z.astype(np.float64)
+    def numeric_design(
+        train_cols: NDArray[Any], test_cols: NDArray[Any]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], list[str]]:
+        train_blocks: list[NDArray[np.float64]] = []
+        test_blocks: list[NDArray[np.float64]] = []
+        source: list[str] = []
+        for j in range(n_features):
+            tr = train_cols[:, j]
+            te = test_cols[:, j]
+            categorical = tr.dtype.kind in {"U", "S", "O", "b"} and not _column_is_numeric(tr)
+            if categorical:
+                tr_str = np.asarray([str(v) for v in tr.tolist()])
+                te_str = np.asarray([str(v) for v in te.tolist()])
+                levels = sorted(set(tr_str.tolist()))
+                train_blocks.append(
+                    np.column_stack([(tr_str == lv).astype(np.float64) for lv in levels])
+                )
+                test_blocks.append(
+                    np.column_stack([(te_str == lv).astype(np.float64) for lv in levels])
+                )
+                source.extend([feature_names[j]] * len(levels))
+            else:
+                train_blocks.append(np.asarray(tr, dtype=np.float64).reshape(-1, 1))
+                test_blocks.append(np.asarray(te, dtype=np.float64).reshape(-1, 1))
+                source.append(feature_names[j])
+        return np.hstack(train_blocks), np.hstack(test_blocks), source
+
+    design_train, design_test, source_feature = numeric_design(x, z)
     if np.any(~np.isfinite(design_train)):
         raise ValueError("[IVs.train] contains missing or non-finite values.")
     if np.any(~np.isfinite(design_test)):
@@ -504,9 +544,9 @@ def nns_boost(
     train_norm = (design_train - tmin) / trange
     test_norm = (design_test - tmin) / trange
 
-    coef_design = np.zeros(n_features, dtype=np.float64)
-    for name, w in feature_weights_named.items():
-        coef_design[feature_names.index(name)] = w
+    coef_design = np.asarray(
+        [feature_weights_named.get(src, 0.0) for src in source_feature], dtype=np.float64
+    )
     if not np.any(coef_design > 0):
         raise ValueError("No positive feature weights were available for the final estimate.")
 
