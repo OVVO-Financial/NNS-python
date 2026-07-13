@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 EXPECTED_REPOSITORY = "OVVO-Financial/NNS"
-EXPECTED_SCHEMA = "repaired_r_13_1_54c98418"
+EXPECTED_SCHEMA = "repaired_r_13_1_21be6d92"
 EXPECTED_REFERENCE_OPTIONS = {
     "NNS.native.stack": False,
     "NNS.native.mreg": False,
@@ -54,7 +54,7 @@ def main() -> int:
     parser.add_argument(
         "--dest",
         type=Path,
-        default=Path("tests/parity/fixtures/repaired_r_13_1_54c98418"),
+        default=Path("tests/parity/fixtures/repaired_r_13_1_21be6d92"),
     )
     args = parser.parse_args()
     artifact_dir = args.artifact or args.artifact_dir
