@@ -1071,7 +1071,12 @@ def _as_point_est(point_est: NDArray[np.float64] | float | None) -> NDArray[np.f
 
 
 def _regression_dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
-    dep = nns_dep(x, y, asym=True)["Dependence"]
+    # Mirrors R Regression.R's tryCatch chain: NNS.dep error -> 0.1, copula
+    # error -> keep the NNS.dep component, NA -> 0.1.
+    try:
+        dep = nns_dep(x, y, asym=True)["Dependence"]
+    except (ValueError, FloatingPointError, ZeroDivisionError):
+        dep = 0.1
     try:
         scaled = np.column_stack(
             (
