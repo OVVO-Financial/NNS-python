@@ -5,8 +5,8 @@ Python translation of the R NNS "Forecasting" vignette
 ``nns_arma``, ``nns_arma_optim``, and ``nns_var``.
 
 The nonseasonal nonlinear ARMA forecast on the AirPassengers-style series is
-the deterministic value verified against live R NNS 13.0 (PR #3):
-``[128.5, 113.5, 155.5, 213.6667]``.
+the deterministic value verified against the repaired R NNS 13.1 implementation:
+``[125.25, 107.75, 158.75, 213.6667]``.
 
 Run with::
 
@@ -28,11 +28,11 @@ def main() -> None:
         dtype=float,
     )
 
-    # Deterministic forecasts (match live R NNS 13.0).
+    # Deterministic forecasts matching repaired R NNS 13.1.
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
     seasonal = nns_arma(series, h=6, seasonal_factor=12, method="lin")
     np.testing.assert_allclose(
-        nonseasonal, [128.5, 113.5, 155.5, 213.66666666666666], atol=1e-9
+        nonseasonal, [125.25, 107.75, 158.75, 213.66666666666666], atol=1e-9
     )
     np.testing.assert_allclose(seasonal, [118.0, 134.0, 150.0, 141.0, 129.0, 163.0], atol=1e-9)
 
