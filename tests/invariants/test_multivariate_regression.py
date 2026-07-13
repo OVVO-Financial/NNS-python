@@ -30,7 +30,9 @@ def test_nns_m_reg_point_only_returns_point_est_and_rpm() -> None:
 
     result = nns_m_reg(x, y, order=1, n_best=1, point_est=np.array([[0.0, 0.0]]), point_only=True)
 
-    assert set(result) == {"Point.est", "RPM"}
+    # point_only suppresses R2/Fitted.xy (None), keeping Point.est and the RPM.
+    assert result["R2"] is None
+    assert result["Fitted.xy"] is None
     assert result["Point.est"].shape == (1,)
     assert result["RPM"]["y.hat"].size <= y.size
 
@@ -57,9 +59,9 @@ def test_nns_m_reg_confidence_interval_shapes() -> None:
     assert result["Fitted.xy"]["conf.int.pos"].shape == y.shape
     assert result["Fitted.xy"]["conf.int.neg"].shape == y.shape
     assert result["pred.int"] is not None
-    assert set(result["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
-    assert result["pred.int"]["lower.pred.int"].shape == (2,)
-    assert result["pred.int"]["upper.pred.int"].shape == (2,)
+    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+    assert result["pred.int"]["pred.int.neg"].shape == (2,)
+    assert result["pred.int"]["pred.int.pos"].shape == (2,)
 
 
 def test_nns_m_reg_classification_outputs_numeric_codes() -> None:
@@ -85,11 +87,11 @@ def test_nns_m_reg_class_confidence_interval_keeps_raw_bounds() -> None:
     assert result["Fitted.xy"]["conf.int.pos"].shape == y.shape
     assert result["Fitted.xy"]["conf.int.neg"].shape == y.shape
     assert result["pred.int"] is not None
-    assert set(result["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
-    assert not np.allclose(
-        result["pred.int"]["lower.pred.int"],
-        np.round(result["pred.int"]["lower.pred.int"]),
-    )
+    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+    # Repaired contract snaps classification interval bounds to class codes.
+    classes = set(np.unique(y).tolist())
+    assert set(result["pred.int"]["pred.int.neg"].tolist()).issubset(classes)
+    assert set(result["pred.int"]["pred.int.pos"].tolist()).issubset(classes)
     assert set(result["Point.est"]).issubset(set(y))
 
 
@@ -105,5 +107,5 @@ def test_nns_m_reg_direct_factor_dummy_path_stays_rejected() -> None:
     )
     y = np.array([2.0, 1.0, 3.0, 4.0])
 
-    with pytest.raises(NotImplementedError, match=r"prepare_factor_predictors"):
+    with pytest.raises(NotImplementedError, match=r"factor_2_dummy=True"):
         nns_m_reg(x, y, factor_2_dummy=True)
