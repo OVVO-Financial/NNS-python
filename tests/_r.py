@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 _CACHE_PATH = Path(__file__).with_name("_r_cache.json")
 _LOCK_PATH = _CACHE_PATH.with_suffix(".lock")
 _SCHEMA_VERSION = 1
-_NNS_VERSION = "13.1"
+_NNS_VERSION = "13.1-21be6d9"
 
 JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
 RValue: TypeAlias = (

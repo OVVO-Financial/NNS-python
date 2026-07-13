@@ -196,19 +196,15 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
         random_seed=123,
         class_levels=_IRIS_CLASS_LEVELS,
     )
-    y_test = _array(expected["y_test"])
-
-    np.testing.assert_allclose(stack["stack"], y_test, atol=EXACT)
-    np.testing.assert_allclose(stack["reg"], np.full(y_test.shape, 2.0), atol=EXACT)
-    np.testing.assert_allclose(stack["dim.red"], y_test, atol=EXACT)
-
-    # NNS Python recovers the true holdout labels above, while installed R NNS 13.0's
-    # balanced stacked reference collapses to a single repeated class. Assert the
-    # collapse (a documented R-side parity gap against the live 13.0 fixture)
-    # without hardcoding a class code.
+    # With the reproduced R RNG and the pooled Method-1 coverage rule, the port
+    # now reproduces R's balanced-stack result exactly: the ts-style single-fold
+    # holdout collapses every component to one repeated class in both languages.
     r_stack = _array(expected["stack"]["results"])
-    assert r_stack.shape == y_test.shape
-    np.testing.assert_allclose(r_stack, np.full(y_test.shape, r_stack.flat[0]), atol=EXACT)
+    collapsed = np.full(r_stack.shape, r_stack.flat[0])
+    np.testing.assert_allclose(r_stack, collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["stack"], collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["reg"], collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["dim.red"], collapsed, atol=EXACT)
 
 
 @pytest.mark.parity
