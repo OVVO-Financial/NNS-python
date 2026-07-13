@@ -257,8 +257,8 @@ def test_nns_boost_stochastic_epoch_path_matches_r_structure() -> None:
             dtype=np.float64,
         ).shape
     )
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.weights"].values()), dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.frequency"].values()), dtype=np.float64).ndim == 1
     assert actual["pred.int"] is None
 
 
@@ -299,8 +299,8 @@ def test_nns_boost_stochastic_epoch_ts_test_matches_r_structure() -> None:
             dtype=np.float64,
         ).shape
     )
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.weights"].values()), dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.frequency"].values()), dtype=np.float64).ndim == 1
     assert actual["pred.int"] is None
 
 
