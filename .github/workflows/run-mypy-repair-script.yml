@@ -32,6 +32,33 @@ jobs:
           python -m pip install -q scikit-build-core nanobind mypy "numpy<2.5" scipy matplotlib hypothesis pytest pytest-benchmark pytest-xdist
           python -m pip install -q -e .
 
+      - name: Disambiguate the duplicated SciPy import replacement
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/apply_mypy_repairs.py")
+          text = path.read_text()
+          old = '''replace_once(
+              "src/nns/_reg_engine.py",
+              "    from scipy import stats  # type: ignore[import-untyped]\\n",
+              "    from scipy import stats\\n",
+          )'''
+          new = '''replace_once(
+              "src/nns/_reg_engine.py",
+              'def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:\\n'
+              '    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""\\n'
+              '    from scipy import stats  # type: ignore[import-untyped]\\n',
+              'def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:\\n'
+              '    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""\\n'
+              '    from scipy import stats\\n',
+          )'''
+          count = text.count(old)
+          if count != 1:
+              raise RuntimeError(f"Expected one repair-script block, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Run guarded repairs and mypy
         shell: bash
         run: |
