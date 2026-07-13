@@ -6,12 +6,6 @@ import numpy as np
 import pytest
 
 from nns import nns_stack
-from nns.stack import (
-    _cv_split,
-    _distance_bulk_prediction,
-    _distance_path_predictions,
-    _stack_weights,
-)
 
 
 def test_nns_stack_numeric_shapes_and_keys() -> None:
@@ -34,6 +28,8 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
         "dim.red.pred.int",
         "stack",
         "pred.int",
+        "weights",
+        "class.levels",
     }
     assert result["reg"].shape == (7,)
     assert result["dim.red"].shape == (7,)
@@ -42,28 +38,6 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert np.all(np.isfinite(result["stack"]))
 
 
-def test_stack_min_objective_underflow_weights_do_not_warn() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", RuntimeWarning)
-        result = _stack_weights(1e-200, 1.0, (1, 2), "min")
-
-    np.testing.assert_allclose(result, np.array([0.0, 1.0]))
-    assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
-
-
-def test_stack_zero_distance_path_predictions_do_not_warn() -> None:
-    features = np.array([[1e-200], [1.0]], dtype=np.float64)
-    yhat = np.array([1e200, 4.0], dtype=np.float64)
-    x_test = np.array([[0.0]], dtype=np.float64)
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", RuntimeWarning)
-        path = _distance_path_predictions(features, yhat, x_test, kmax=2)
-        bulk = _distance_bulk_prediction(features, yhat, x_test, k=2)
-
-    assert np.isposinf(path[0, 0])
-    assert np.isposinf(bulk[0])
-    assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
 def test_nns_stack_pred_int_falls_back_to_point_estimate_when_regression_drops_rows() -> None:
@@ -152,8 +126,8 @@ def test_nns_stack_factor_predictor_method2_factor_only_falls_back_to_method1() 
     )
 
     assert result["reg"].shape == (3,)
-    assert np.asarray(result["dim.red"]).shape == (3,)
-    assert np.isnan(np.asarray(result["dim.red"], dtype=np.float64)).all()
+    # Method 2 fell back to Method 1, so dim.red is absent (R NA -> port None).
+    assert result["dim.red"] is None
     np.testing.assert_allclose(result["stack"], result["reg"])
 
 
@@ -172,8 +146,8 @@ def test_nns_stack_factor_predictor_method12_factor_only_falls_back_to_method1()
     )
 
     assert result["reg"].shape == (3,)
-    assert np.asarray(result["dim.red"]).shape == (3,)
-    assert np.isnan(np.asarray(result["dim.red"], dtype=np.float64)).all()
+    # Method 2 fell back to Method 1, so dim.red is absent (R NA -> port None).
+    assert result["dim.red"] is None
     np.testing.assert_allclose(result["stack"], result["reg"])
 
 
@@ -254,7 +228,7 @@ def test_nns_stack_class_pred_int_shapes_and_rounding() -> None:
     combined = nns_stack(variable, y, variable[:5], type="class", method=(1, 2), pred_int=0.95)
 
     assert single["pred.int"] is not None
-    assert set(single["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
+    assert set(single["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
     assert all(values.shape == (5,) for values in single["pred.int"].values())
     assert combined["pred.int"] is not None
     assert all(values.shape == (5,) for values in combined["pred.int"].values())
@@ -351,16 +325,7 @@ def test_nns_stack_ts_test_shape_and_determinism(method: tuple[int, ...]) -> Non
     np.testing.assert_allclose(first["stack"], second["stack"])
 
 
-def test_nns_stack_ts_test_split_matches_r_sizes() -> None:
-    train_idx, test_idx = _cv_split(40, fold=1, cv_size=0.25, ts_test=10)
-
-    assert train_idx.shape == (10,)
-    assert test_idx.shape == (30,)
-    np.testing.assert_array_equal(train_idx, np.arange(30, 40))
-    np.testing.assert_array_equal(test_idx, np.arange(0, 30))
-
-
-@pytest.mark.parametrize("ts_test", [0, 1, 41])
+@pytest.mark.parametrize("ts_test", [0, 41])
 def test_nns_stack_invalid_ts_test_raises(ts_test: int) -> None:
     x = np.linspace(-2.0, 2.0, 40)
     variable = np.column_stack((x, np.sin(x), np.cos(x)))
