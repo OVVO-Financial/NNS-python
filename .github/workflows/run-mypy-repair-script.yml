@@ -1,0 +1,65 @@
+name: Run guarded mypy repair script
+
+on:
+  push:
+    branches:
+      - claude/inference-comparison-4vlt4q
+    paths:
+      - .github/workflows/run-mypy-repair-script.yml
+      - scripts/apply_mypy_repairs.py
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/inference-comparison-4vlt4q
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and mypy dependencies
+        run: |
+          python -m pip install -q -U pip
+          python -m pip install -q scikit-build-core nanobind mypy "numpy<2.5" scipy matplotlib hypothesis pytest pytest-benchmark pytest-xdist
+          python -m pip install -q -e .
+
+      - name: Run guarded repairs and mypy
+        shell: bash
+        run: |
+          set +e
+          mkdir -p diagnostics
+          python scripts/apply_mypy_repairs.py > diagnostics/apply-mypy.log 2>&1
+          repair_status=$?
+          if [ "${repair_status}" -eq 0 ]; then
+            mypy >> diagnostics/apply-mypy.log 2>&1
+            status=$?
+          else
+            status=${repair_status}
+          fi
+          echo "OVERALL EXIT CODE: ${status}" >> diagnostics/apply-mypy.log
+          echo "${status}" > diagnostics/apply-mypy.status
+          exit 0
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$(cat diagnostics/apply-mypy.status)" = "0" ]; then
+            git rm .github/workflows/run-mypy-repair-script.yml
+            git rm scripts/apply_mypy_repairs.py
+            git add src tests diagnostics/apply-mypy.log diagnostics/apply-mypy.status
+            git commit -m "Resolve mypy findings with explicit type narrowing"
+          else
+            git add diagnostics/apply-mypy.log diagnostics/apply-mypy.status
+            git commit -m "Record guarded mypy repair failure"
+          fi
+          git push origin HEAD:claude/inference-comparison-4vlt4q
