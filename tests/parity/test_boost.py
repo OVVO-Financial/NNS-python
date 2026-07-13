@@ -67,7 +67,6 @@ def test_nns_boost_ivs_test_none_matches_r() -> None:
         learner_trials=10,
         cv_size=0.25,
         feature_importance=False,
-        random_seed=4,
     )
 
     _assert_boost_matches(actual, expected)
@@ -130,7 +129,6 @@ def test_nns_boost_deterministic_wider_feature_set_matches_r() -> None:
         learner_trials=100,
         cv_size=0.25,
         feature_importance=False,
-        random_seed=4,
     )
 
     _assert_boost_matches(actual, expected)
@@ -973,7 +971,13 @@ def _assert_boost_class_structure(
     else:
         assert actual["pred.int"] is None
         assert expected["pred.int"] is None
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(expected["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
-    assert np.asarray(expected["feature.frequency"], dtype=np.float64).ndim == 1
+    # The port keeps feature.weights/frequency as named dicts; R serializes the
+    # named vector as a plain array.
+    def _weight_values(value: Any) -> np.ndarray:
+        raw = list(value.values()) if isinstance(value, dict) else value
+        return np.asarray(raw, dtype=np.float64)
+
+    assert _weight_values(actual["feature.weights"]).ndim == 1
+    assert _weight_values(expected["feature.weights"]).ndim == 1
+    assert _weight_values(actual["feature.frequency"]).ndim == 1
+    assert _weight_values(expected["feature.frequency"]).ndim == 1
