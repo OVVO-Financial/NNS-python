@@ -26,7 +26,8 @@ def test_r_nns_13_regression_points_smoke_value() -> None:
     )
 
     np.testing.assert_allclose(result["x"], np.array([1.0, 2.0]), atol=EXACT)
-    np.testing.assert_allclose(result["y"], np.array([148.0, 141.5]), atol=EXACT)
+    # Live R 13.1 regression points for this 2-point series.
+    np.testing.assert_allclose(result["y"], np.array([148.0, 138.25]), atol=EXACT)
 
 
 @pytest.mark.parity
@@ -91,9 +92,10 @@ def test_r_nns_13_arma_airline_smoke_values() -> None:
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
 
     np.testing.assert_allclose(seasonal, np.array([118, 134, 150, 141, 129, 163]), atol=EXACT)
+    # Live R 13.1 NNS.ARMA nonseasonal forecast.
     np.testing.assert_allclose(
         nonseasonal,
-        np.array([128.5, 113.5, 155.5, 213.66666666666666]),
+        np.array([125.25, 107.75, 158.75, 213.66666666666666]),
         atol=COMPOUND,
     )
 
@@ -116,14 +118,15 @@ def test_r_nns_13_seeded_stack_smoke_sample() -> None:
         random_seed=123,
     )
 
+    # Live R 13.1 values under the reproduced Mersenne-Twister split stream.
     np.testing.assert_allclose(
-        result["stack"], np.array([1.0, 1.09216537, 1.18423356]), atol=COMPOUND
+        result["stack"], np.array([1.0, 1.09179031, 1.18433667]), atol=COMPOUND
     )
     np.testing.assert_allclose(
         result["reg"], np.array([1.0, 1.13692627, 1.13692627]), atol=COMPOUND
     )
     np.testing.assert_allclose(
-        result["dim.red"], np.array([1.0, 1.09196524, 1.18444508]), atol=COMPOUND
+        result["dim.red"], np.array([1.0, 1.09179031, 1.18433667]), atol=COMPOUND
     )
     np.testing.assert_allclose(result["NNS.reg.n.best"], 1.0, atol=EXACT)
-    np.testing.assert_allclose(result["NNS.dim.red.threshold"], 0.0, atol=EXACT)
+    np.testing.assert_allclose(result["NNS.dim.red.threshold"], 1.0, atol=EXACT)

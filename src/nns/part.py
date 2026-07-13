@@ -135,6 +135,8 @@ def nns_part(
     dropped (complete-case handling keeps infinities), and ``order='max'``
     returns the explicit maximum partition representation without recursion.
     """
+    if type is not None and (not isinstance(type, str) or type.lower() != "xonly"):
+        raise ValueError("[type] must be NULL or 'XONLY'.")
     x_values, y_values = _part_pair(x, y)
     noise = _validate_noise_reduction(noise_reduction)
     if obs_req is None:
