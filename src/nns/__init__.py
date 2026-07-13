@@ -59,7 +59,7 @@ _EXPORTS = {
     "nns_meboot": ("nns.meboot", "nns_meboot"),
     "nns_norm": ("nns.norm", "nns_norm"),
     "nns_part": ("nns.part", "nns_part"),
-    "nns_reg": ("nns.regression", "nns_reg"),
+    "nns_reg": ("nns._public_reg", "nns_reg"),
     "nns_rescale": ("nns.central_tendencies", "nns_rescale"),
     "nns_seas": ("nns.seasonality", "nns_seas"),
     "nns_sd_cluster": ("nns.stochastic_dominance", "nns_sd_cluster"),
