@@ -4,9 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-EXPECTED_SCHEMA = "repaired_r_13_1_54c98418"
+EXPECTED_SCHEMA = "repaired_r_13_1_21be6d92"
 EXPECTED_REPOSITORY = "OVVO-Financial/NNS"
-EXPECTED_R_SHA = "54c98418c2a11499ebb1c456570d2b66c37eb817"
+EXPECTED_R_SHA = "21be6d92d8ad23f0848191b094aded0dd6df8f74"
 REQUIRED_FAMILIES = {"part", "reg", "mreg", "stack", "boost", "var"}
 
 REQUIRED_METADATA = {
@@ -26,7 +26,7 @@ def main() -> int:
     fixture_dir = (
         Path(sys.argv[1])
         if len(sys.argv) > 1
-        else Path("tests/parity/fixtures/repaired_r_13_1_54c98418")
+        else Path("tests/parity/fixtures/repaired_r_13_1_21be6d92")
     )
     metadata_path = fixture_dir / "metadata.json"
     fixtures_path = fixture_dir / "fixtures.json"
