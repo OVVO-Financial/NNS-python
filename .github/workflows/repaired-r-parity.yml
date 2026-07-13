@@ -13,9 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       R_NNS_REPOSITORY: OVVO-Financial/NNS
-      REPAIRED_NNS_R_SHA: "54c98418c2a11499ebb1c456570d2b66c37eb817"
-      FIXTURE_DIR: tests/parity/fixtures/repaired_r_13_1_54c98418
+      REPAIRED_NNS_R_SHA: "21be6d92d8ad23f0848191b094aded0dd6df8f74"
+      FIXTURE_DIR: tests/parity/fixtures/repaired_r_13_1_21be6d92
       R_VALIDATION_LOG_DIR: artifacts/repaired-r-validation
+      PYTEST_LOG: pytest-21be6d92.txt
     steps:
       - uses: actions/checkout@v4
 
@@ -78,7 +79,7 @@ jobs:
         run: uv run python tests/parity/verify_repaired_r_fixtures.py "${FIXTURE_DIR}"
 
       - name: Run Python parity tests against repaired fixtures
-        run: uv run pytest -q tests/parity -m parity 2>&1 | tee pytest-54c98418.txt
+        run: uv run pytest -q tests/parity -m parity 2>&1 | tee "${PYTEST_LOG}"
 
       - name: Upload R validation logs
         if: always()
@@ -89,10 +90,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload repaired fixture artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: repaired-r-13-1-54c98418-fixtures-${{ env.R_NNS_COMMIT }}
+          name: repaired-r-13-1-21be6d92-fixtures-${{ env.R_NNS_COMMIT }}
           path: |
             ${{ env.FIXTURE_DIR }}
-            pytest-54c98418.txt
-          if-no-files-found: error
+            ${{ env.PYTEST_LOG }}
+          if-no-files-found: warn
