@@ -385,7 +385,7 @@ def _resolve_n_best(
     if n_best is not None:
         return max(1, int(n_best))
     dependence = _copula_matrix(np.column_stack((x, y)))
-    return max(1, math.floor((1.0 - dependence) * math.sqrt(x.shape[1])))
+    return max(1, math.floor((1.0 - dependence) * math.sqrt(x.shape[0])))
 
 
 def _k_as_count(k: KValue, row_count: int) -> int:
