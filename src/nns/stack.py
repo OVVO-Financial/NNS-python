@@ -850,14 +850,7 @@ def nns_stack(
         candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
         sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
         count_list = {cid: np.zeros(n_obs, dtype=np.int64) for cid in candidate_ids}
-
-        def early_stop(scores: list[float], k: int) -> bool:
-            if k < 4:
-                return False
-            s, s1, s2 = scores[k - 1], scores[k - 2], scores[k - 3]
-            if objective_value == "min":
-                return s >= s1 and s >= s2
-            return s <= s1 and s <= s2
+        fold_small_kmax: list[int] = []
 
         for b, split in enumerate(splits):
             train_idx = split["train"]
@@ -903,18 +896,12 @@ def nns_stack(
                 else:
                     small_raw = []
 
-            # Per-fold evaluation with early stopping bounds which candidates
-            # this fold contributes to.
-            fold_scores: list[float] = []
-            stopped_at = len(small_raw)
-            for k in range(1, len(small_raw) + 1):
-                s, _ = evaluate_raw(small_raw[k - 1], y[valid_idx])
-                fold_scores.append(s)
-                if early_stop(fold_scores, k):
-                    stopped_at = k
-                    break
+            fold_small_kmax.append(len(small_raw))
 
-            for k in range(1, stopped_at + 1):
+            # Aggregate every available local candidate for this fold. No
+            # fold-specific early stopping is allowed because it would create
+            # incomparable OOF coverage across candidates (NNS#44).
+            for k in range(1, len(small_raw) + 1):
                 raw = small_raw[k - 1]
                 good = np.isfinite(raw)
                 if np.any(good):
@@ -931,29 +918,63 @@ def nns_stack(
             if status:
                 print(f"Method 1 folds remaining = {len(splits) - b - 1}")
 
-        candidate_scores: dict[str, float] = {}
-        candidate_thresholds: dict[str, float] = {}
+        common_small_kmax = min(fold_small_kmax) if fold_small_kmax else 0
+        if common_small_kmax < 1:
+            raise ValueError("No Method 1 local candidate was available in every fold.")
+
+        candidate_scores = {cid: float("nan") for cid in candidate_ids}
+        candidate_thresholds = {cid: 0.5 for cid in candidate_ids}
         candidate_raws: dict[str, NDArray[np.float64]] = {}
-        for cid in candidate_ids:
+
+        # Candidate k=1 defines the required complete OOF coverage pattern; a
+        # candidate competes only when it covers exactly the same observations.
+        reference_count = count_list["1"]
+
+        def score_method1_candidate(cid: str) -> bool:
+            count_vec = count_list[cid]
+            covered = count_vec > 0
             raw = np.full(n_obs, np.nan)
-            has = count_list[cid] > 0
-            raw[has] = sum_list[cid][has] / count_list[cid][has]
+            raw[covered] = sum_list[cid][covered] / count_vec[covered]
             candidate_raws[cid] = raw
-            valid = has & np.isfinite(raw)
-            if not np.any(valid):
-                # No out-of-fold coverage (early stopping excluded this k in
-                # every fold): mark invalid rather than scoring an empty
-                # vector as 0 (OVVO-Financial/NNS#44).
+            complete_coverage = np.array_equal(count_vec, reference_count)
+            valid = covered & np.isfinite(raw)
+            if not complete_coverage or not np.any(valid):
                 candidate_scores[cid] = float("nan")
                 candidate_thresholds[cid] = 0.5
-                continue
+                return False
             s, t = evaluate_raw(raw[valid], y[valid])
             candidate_scores[cid] = s
             candidate_thresholds[cid] = t
+            return math.isfinite(s)
 
-        valid_ids = [cid for cid in candidate_ids if math.isfinite(candidate_scores[cid])]
+        evaluated_small_ids: list[str] = []
+        for k in range(1, common_small_kmax + 1):
+            cid = str(k)
+            if not score_method1_candidate(cid):
+                break
+            evaluated_small_ids.append(cid)
+            if len(evaluated_small_ids) >= 4:
+                recent = [candidate_scores[i] for i in evaluated_small_ids[-3:]]
+                stop_local = (
+                    recent[2] >= recent[1] and recent[2] >= recent[0]
+                    if objective_value == "min"
+                    else recent[2] <= recent[1] and recent[2] <= recent[0]
+                )
+                if stop_local:
+                    break
+
+        # ALL is a separate limit condition, always scored after the local
+        # sequence and never subject to the diminishing-returns stop.
+        all_usable = score_method1_candidate("all")
+
+        eligible_ids = list(evaluated_small_ids)
+        if all_usable:
+            eligible_ids.append("all")
+        valid_ids = [cid for cid in eligible_ids if math.isfinite(candidate_scores[cid])]
         if not valid_ids:
-            raise ValueError("No Method 1 candidate produced a finite OOF objective.")
+            raise ValueError(
+                "No Method 1 candidate produced a finite complete-coverage OOF objective."
+            )
         best_val = (
             min(candidate_scores[cid] for cid in valid_ids)
             if objective_value == "min"
