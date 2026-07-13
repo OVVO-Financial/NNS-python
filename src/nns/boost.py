@@ -85,6 +85,7 @@ def nns_boost(
     status: bool = False,
     seed: int | None = 123,
     random_seed: int | None = None,
+    class_levels: list[Any] | None = None,
     # Legacy compatibility (ignored):
     ncores: int | None = None,
 ) -> BoostResult:
@@ -189,7 +190,17 @@ def nns_boost(
                 dtype=np.float64,
             )
         else:
-            levels = sorted(set(str(v) for v in dv.tolist()))
+            observed = set(str(v) for v in dv.tolist())
+            if class_levels is not None:
+                levels = [str(level) for level in class_levels]
+                unseen = observed - set(levels)
+                if unseen:
+                    raise ValueError(
+                        "[DV.train] contains levels absent from class_levels: "
+                        + ", ".join(sorted(unseen))
+                    )
+            else:
+                levels = sorted(observed)
             class_values = levels
             y = np.asarray(
                 [levels.index(str(v)) + 1 for v in dv.tolist()], dtype=np.float64

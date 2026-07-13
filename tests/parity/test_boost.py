@@ -674,13 +674,14 @@ def test_nns_boost_class_stable_metadata_matches_r_when_n_best_is_structural() -
     assert isinstance(expected, dict)
     expected_dict = cast(dict[str, Any], expected)
     np.testing.assert_allclose(actual["results"], expected_dict["results"], atol=COMPOUND)
+    # Port keeps feature.weights/frequency as named dicts; R serializes an array.
     np.testing.assert_allclose(
-        actual["feature.weights"],
+        list(actual["feature.weights"].values()),
         expected_dict["feature.weights"],
         atol=COMPOUND,
     )
     np.testing.assert_allclose(
-        actual["feature.frequency"],
+        list(actual["feature.frequency"].values()),
         expected_dict["feature.frequency"],
         atol=COMPOUND,
     )
