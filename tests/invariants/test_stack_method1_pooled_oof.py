@@ -3,10 +3,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nns._stack_method1 import Method1FoldPredictions, select_method1_candidate
+from nns._stack_method1 import CandidateId, Method1FoldPredictions, select_method1_candidate
 
 
-def _sse(predicted: np.ndarray, actual: np.ndarray) -> tuple[float, float]:
+def _sse(
+    _candidate: CandidateId,
+    predicted: np.ndarray,
+    actual: np.ndarray,
+) -> tuple[float, float]:
     return float(np.sum((predicted - actual) ** 2)), 0.5
 
 
@@ -27,7 +31,6 @@ def test_method1_requires_identical_complete_oof_coverage() -> None:
             predictions={
                 1: np.array([3.0, 4.0, 5.0]),
                 2: np.array([3.0, 4.0, 5.0]),
-                # Candidate 3 is intentionally absent in this fold.
                 "all": np.array([3.0, 4.0, 5.0]),
             },
         ),
