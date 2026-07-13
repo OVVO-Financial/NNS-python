@@ -280,7 +280,7 @@ def _var_multivariate_stack_stage(
     # user obj.fn, objective == "min") may fall back to plain MSE when every
     # Method 1 candidate is non-finite. A user objective is never overridden.
     use_default_objective = obj_fn is None and objective_value == "min"
-    _METHOD1_GUARD_MESSAGE = (
+    method1_guard_message = (
         "No Method 1 candidate produced a finite complete-coverage OOF objective."
     )
     dim_red_value = dim_red_method.lower()
@@ -323,11 +323,18 @@ def _var_multivariate_stack_stage(
             actual_values = np.asarray(actual, dtype=np.float64)
             return float(np.mean((predicted_values - actual_values) ** 2))
 
-        def run_var_stack(stack_obj_fn: Any, stack_objective: str) -> dict[str, Any]:
+        def run_var_stack(
+            stack_obj_fn: Any,
+            stack_objective: str,
+            stack_iv: np.ndarray,
+            stack_dv: np.ndarray,
+            stack_test: np.ndarray,
+            stack_ts_test: int,
+        ) -> dict[str, Any]:
             return nns_stack(
-                lagged_iv,
-                lagged_dv,
-                ivs_test=ivs_test,
+                stack_iv,
+                stack_dv,
+                ivs_test=stack_test,
                 obj_fn=cast(Any, stack_obj_fn),
                 objective=cast(Any, stack_objective),
                 folds=1,
@@ -335,15 +342,19 @@ def _var_multivariate_stack_stage(
                 order=None,
                 stack=True,
                 dim_red_method=cast(Any, dim_red_threshold_method),
-                ts_test=ts_test,
+                ts_test=stack_ts_test,
             )
 
         try:
-            result = run_var_stack(var_obj_fn, objective_value)
+            result = run_var_stack(
+                var_obj_fn, objective_value, lagged_iv, lagged_dv, ivs_test, ts_test
+            )
         except ValueError as error:
-            if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
+            if not (use_default_objective and str(error) == method1_guard_message):
                 raise
-            result = run_var_stack(mse_obj_fn, "min")
+            result = run_var_stack(
+                mse_obj_fn, "min", lagged_iv, lagged_dv, ivs_test, ts_test
+            )
 
         nns_dv = np.asarray(result["stack"], dtype=np.float64)
         nns_dv = nns_dv[:h].copy()

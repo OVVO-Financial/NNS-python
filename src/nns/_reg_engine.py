@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 import re
+from itertools import pairwise
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -409,9 +410,9 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
 
 def _default_order(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
     dep = _dependence(x, y)
-    ord_value = max(1, int(math.floor(dep * 10 + 0.5)))
+    ord_value = max(1, math.floor(dep * 10 + 0.5))
     if y.size < 100:
-        ord_value = max(1, int(math.floor(ord_value / 2)))
+        ord_value = max(1, math.floor(ord_value / 2))
     return ord_value
 
 
@@ -561,7 +562,7 @@ def _smooth_spline_predictor(
     gl_x, gl_w = np.polynomial.legendre.leggauss(4)
     unique_knots = np.unique(knot)
     basis = [BSpline(knot, np.eye(nk)[j], k) for j in range(nk)]
-    for a, b in zip(unique_knots[:-1], unique_knots[1:]):
+    for a, b in pairwise(unique_knots):
         if b <= a:
             continue
         mid = 0.5 * (a + b)
@@ -816,7 +817,7 @@ def _dimreduce(
         else [f"V{j + 1}" for j in range(x.shape[1])]
     )
     equation = {
-        "Variable": names + ["DENOMINATOR"],
+        "Variable": [*names, "DENOMINATOR"],
         "Coefficient": np.append(coef, float(denominator)),
     }
     return {"x_star": x_star, "point_star": point_star, "equation": equation}
@@ -1113,7 +1114,7 @@ def _mreg_default_nbest(
         dep = float("nan")
     if not math.isfinite(dep):
         dep = 0.5
-    k = max(1, int(math.floor((1.0 - dep) * math.sqrt(x.shape[0]))))
+    k = max(1, math.floor((1.0 - dep) * math.sqrt(x.shape[0])))
     return min(k, rpm_rows)
 
 

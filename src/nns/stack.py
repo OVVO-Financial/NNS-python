@@ -98,7 +98,9 @@ def _scalar_logical(value: Any, name: str) -> bool:
     return bool(value)
 
 
-def _scalar_integer(value: Any, name: str, minimum: int = 0, allow_null: bool = False) -> int | None:
+def _scalar_integer(
+    value: Any, name: str, minimum: int = 0, allow_null: bool = False
+) -> int | None:
     if allow_null and value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, np.integer, float, np.floating)):
@@ -253,7 +255,14 @@ def nns_stack(
         else:
             class_values = sorted(set(dv.astype(np.float64).tolist()))
         y = np.asarray(
-            [class_values.index(v) + 1 for v in (dv.tolist() if response_categorical else dv.astype(np.float64).tolist())],
+            [
+                class_values.index(v) + 1
+                for v in (
+                    dv.tolist()
+                    if response_categorical
+                    else dv.astype(np.float64).tolist()
+                )
+            ],
             dtype=np.float64,
         )
         if np.unique(y).size < 2:
@@ -307,7 +316,8 @@ def nns_stack(
 
     if original_p == 1 and 2 in methods:
         warnings.warn(
-            "Method 2 was removed because dimension reduction requires more than one original predictor.",
+            "Method 2 was removed because dimension reduction requires more than "
+            "one original predictor.",
             stacklevel=2,
         )
         methods = [m for m in methods if m != 2] or [1]
@@ -387,7 +397,11 @@ def nns_stack(
         return score(predicted, actual), threshold
 
     def decode_codes(code: NDArray[np.float64]) -> NDArray[np.float64]:
-        return np.clip(np.asarray(code, dtype=np.float64), 1, n_classes).astype(np.int64).astype(np.float64)
+        return (
+            np.clip(np.asarray(code, dtype=np.float64), 1, n_classes)
+            .astype(np.int64)
+            .astype(np.float64)
+        )
 
     def decode_interval(
         interval: dict[str, NDArray[np.float64]] | None, threshold: float
@@ -523,12 +537,12 @@ def nns_stack(
                     validation_parts = []
                     for v in np.unique(y):
                         g = np.flatnonzero(y == v)
-                        size = min(g.size - 1, max(1, int(round(holdout_size * g.size))))
+                        size = min(g.size - 1, max(1, round(holdout_size * g.size)))
                         if size > 0:
                             validation_parts.append(rng.sample(g, size, replace=False))
                     validation = np.unique(np.concatenate(validation_parts)).astype(np.int64)
                 else:
-                    size = max(1, min(n_obs - 1, int(round(holdout_size * n_obs))))
+                    size = max(1, min(n_obs - 1, round(holdout_size * n_obs)))
                     validation = np.sort(
                         rng.sample_int(n_obs, size, replace=False) - 1
                     ).astype(np.int64)
@@ -579,7 +593,9 @@ def nns_stack(
 
     splits = make_splits()
 
-    def coefficient_vector(design: NDArray[np.float64], response: NDArray[np.float64]) -> NDArray[np.float64]:
+    def coefficient_vector(
+        design: NDArray[np.float64], response: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
         p = design.shape[1]
         if isinstance(dim_red_value, np.ndarray):
             coef = dim_red_value.astype(np.float64).copy()
@@ -847,7 +863,7 @@ def nns_stack(
 
     reg_best_is_all = False
     if 1 in methods:
-        l_small = max(1, int(math.floor(math.sqrt(n_obs))))
+        l_small = max(1, math.floor(math.sqrt(n_obs)))
         candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
         sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
         count_list = {cid: np.zeros(n_obs, dtype=np.int64) for cid in candidate_ids}

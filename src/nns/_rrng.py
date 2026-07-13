@@ -80,7 +80,7 @@ class RRNG:
         v = 0
         n = 0
         while n <= bits:
-            v1 = int(math.floor(self.unif_rand() * 65536))
+            v1 = math.floor(self.unif_rand() * 65536)
             v = 65536 * v + v1
             n += 16
         return float(v & ((1 << bits) - 1))
@@ -89,13 +89,15 @@ class RRNG:
         """R's R_unif_index with the default "Rejection" sampler (R >= 3.6)."""
         if dn <= 0:
             return 0.0
-        bits = int(math.ceil(math.log2(dn)))
+        bits = math.ceil(math.log2(dn))
         while True:
             dv = self._rbits(bits)
             if dn > dv:
                 return dv
 
-    def sample_int(self, n: int, size: int | None = None, replace: bool = False) -> NDArray[np.int64]:
+    def sample_int(
+        self, n: int, size: int | None = None, replace: bool = False
+    ) -> NDArray[np.int64]:
         """R's ``sample.int(n, size, replace)`` returning 1-based draws."""
         if size is None:
             size = n

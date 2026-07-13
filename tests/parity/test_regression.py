@@ -225,7 +225,7 @@ def test_nns_reg_mode_class_noise_reduction_rejected_like_r() -> None:
     # "mode_class" option was removed and now raises in both languages.
     x = np.linspace(-2.0, 2.0, 30)
     y = x * x
-    with pytest.raises(ValueError, match="noise.reduction"):
+    with pytest.raises(ValueError, match=r"noise\.reduction"):
         nns_reg(x, y, noise_reduction="mode_class")
 
 

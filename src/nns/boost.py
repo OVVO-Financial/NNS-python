@@ -293,7 +293,7 @@ def nns_boost(
         return not is_class or set(np.unique(train_y).tolist()) == set(np.unique(y).tolist())
 
     def random_validation_index() -> NDArray[np.int64]:
-        size = max(1, min(n_obs - 1, int(round(cv_fraction * n_obs))))
+        size = max(1, min(n_obs - 1, round(cv_fraction * n_obs)))
         for _ in range(200):
             idx = np.sort(rng.sample_int(n_obs, size, replace=False) - 1).astype(np.int64)
             mask = np.ones(n_obs, dtype=bool)
@@ -579,8 +579,8 @@ def nns_boost(
         final_splits = [random_validation_index() for _ in range(5)]
 
     minimum_train_size = min(n_obs - idx.size for idx in final_splits)
-    k_small = max(1, int(math.floor(math.sqrt(minimum_train_size))))
-    k_candidates = list(dict.fromkeys(list(range(1, k_small + 1)) + [minimum_train_size]))
+    k_small = max(1, math.floor(math.sqrt(minimum_train_size)))
+    k_candidates = list(dict.fromkeys([*range(1, k_small + 1), minimum_train_size]))
     k_scores = np.full(len(k_candidates), np.nan)
 
     for ki, k_value in enumerate(k_candidates):
