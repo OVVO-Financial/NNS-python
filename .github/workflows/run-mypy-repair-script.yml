@@ -115,3 +115,5 @@ replace_once(
             git commit -m "Record guarded mypy repair failure"
           fi
           git push origin HEAD:claude/inference-comparison-4vlt4q
+
+# Final trigger after the runner queue cleared.
