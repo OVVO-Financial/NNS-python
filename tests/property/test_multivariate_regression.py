@@ -68,8 +68,8 @@ def test_nns_m_reg_confidence_interval_shape_invariants_hold(
     assert result["Fitted.xy"]["conf.int.pos"].shape == (x.shape[0],)
     assert result["Fitted.xy"]["conf.int.neg"].shape == (x.shape[0],)
     assert result["pred.int"] is not None
-    assert result["pred.int"]["lower.pred.int"].shape == (3,)
-    assert result["pred.int"]["upper.pred.int"].shape == (3,)
+    assert result["pred.int"]["pred.int.neg"].shape == (3,)
+    assert result["pred.int"]["pred.int.pos"].shape == (3,)
 
 
 @given(matrix_arrays, st.integers(min_value=2, max_value=4))
@@ -107,8 +107,8 @@ def test_nns_m_reg_class_confidence_interval_shape_invariants_hold(
     assert result["Fitted.xy"]["conf.int.pos"].shape == (x.shape[0],)
     assert result["Fitted.xy"]["conf.int.neg"].shape == (x.shape[0],)
     assert result["pred.int"] is not None
-    assert set(result["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
-    assert result["pred.int"]["lower.pred.int"].shape == (3,)
-    assert result["pred.int"]["upper.pred.int"].shape == (3,)
-    assert np.all(np.isfinite(result["pred.int"]["lower.pred.int"]))
-    assert np.all(np.isfinite(result["pred.int"]["upper.pred.int"]))
+    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+    assert result["pred.int"]["pred.int.neg"].shape == (3,)
+    assert result["pred.int"]["pred.int.pos"].shape == (3,)
+    assert np.all(np.isfinite(result["pred.int"]["pred.int.neg"]))
+    assert np.all(np.isfinite(result["pred.int"]["pred.int.pos"]))
