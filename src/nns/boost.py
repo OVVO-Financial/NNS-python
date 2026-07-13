@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._reg_engine import nns_reg_engine
+from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 
 Objective = Literal["min", "max"]
@@ -73,19 +74,28 @@ def nns_boost(
     pred_int: float | None = None,
     status: bool = False,
     seed: int | None = 123,
+    random_seed: int | None = None,
     # Legacy compatibility (ignored):
     ncores: int | None = None,
 ) -> BoostResult:
     del ncores, feature_importance
+    # random_seed is an accepted alias for seed (matches nns_stack).
+    if random_seed is not None and seed == 123:
+        seed = random_seed
 
     balance = _scalar_logical(balance, "balance")
     extreme = _scalar_logical(extreme, "extreme")
     features_only = _scalar_logical(features_only, "features.only")
     status = _scalar_logical(status, "status")
 
-    rng = np.random.default_rng(
-        None if seed is None else _scalar_integer(seed, "seed", minimum=0)
+    # Reproduce R's Mersenne-Twister stream (set.seed(seed)) so the CV split,
+    # balance resampling, and random feature subsets match R exactly.
+    seed_value = (
+        _scalar_integer(seed, "seed", minimum=0)
+        if seed is not None
+        else int(np.random.SeedSequence().generate_state(1)[0])
     )
+    rng = RRNG(seed_value)
 
     if not isinstance(objective, str) or objective.lower() not in {"min", "max"}:
         raise ValueError("[objective] must be exactly 'min' or 'max'.")
@@ -217,7 +227,7 @@ def nns_boost(
 
     if epochs_value is None:
         epochs_value = 2 * n_obs
-    cv_fraction = float(rng.uniform(0.2, 1.0 / 3.0)) if cv_size is None else cv_size
+    cv_fraction = float(rng.runif(0.2, 1.0 / 3.0)) if cv_size is None else cv_size
 
     # ----------------------------------------------------------------------
     # Helpers
@@ -263,7 +273,7 @@ def nns_boost(
     def random_validation_index() -> NDArray[np.int64]:
         size = max(1, min(n_obs - 1, int(round(cv_fraction * n_obs))))
         for _ in range(200):
-            idx = np.sort(rng.choice(n_obs, size=size, replace=False)).astype(np.int64)
+            idx = np.sort(rng.sample_int(n_obs, size, replace=False) - 1).astype(np.int64)
             mask = np.ones(n_obs, dtype=bool)
             mask[idx] = False
             if has_all_classes(y[mask]):
@@ -297,8 +307,8 @@ def nns_boost(
             )
         smallest = min(g.size for g in groups)
         largest = max(g.size for g in groups)
-        down = np.concatenate([rng.choice(g, smallest, replace=False) for g in groups])
-        up = np.concatenate([rng.choice(g, largest, replace=True) for g in groups])
+        down = np.concatenate([rng.sample(g, smallest, replace=False) for g in groups])
+        up = np.concatenate([rng.sample(g, largest, replace=True) for g in groups])
         idx = np.sort(np.concatenate([down, up]))
         return train_x[idx], train_y[idx]
 
@@ -350,8 +360,8 @@ def nns_boost(
         max_attempts = max(1000, target * 200)
         while len(test_features) < target and attempts < max_attempts:
             attempts += 1
-            k = int(rng.integers(1, n_features + 1))
-            candidate = tuple(sorted(rng.choice(n_features, size=k, replace=False).tolist()))
+            k = int(rng.sample_int(n_features, 1)[0])
+            candidate = tuple(sorted((rng.sample_int(n_features, k, replace=False) - 1).tolist()))
             if candidate not in seen:
                 seen.add(candidate)
                 test_features.append(candidate)
@@ -433,9 +443,11 @@ def nns_boost(
         for j in range(epochs_value):
             if status:
                 print(f"% of epochs = {(j + 1) / epochs_value:.3f}", end="\r")
-            k = int(rng.integers(1, n_features + 1))
+            k = int(rng.sample_int(n_features, 1)[0])
             subset = tuple(
-                sorted(rng.choice(n_features, size=k, replace=False, p=feature_prob).tolist())
+                sorted(
+                    (rng.sample_int_prob_noreplace(n_features, k, feature_prob) - 1).tolist()
+                )
             )
             predicted = fit_subset(subset, train_index, validation_index)
             new_result = score(predicted, actual)

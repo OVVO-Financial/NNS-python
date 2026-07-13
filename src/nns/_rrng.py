@@ -123,3 +123,33 @@ class RRNG:
         values = np.asarray(values)
         idx = self.sample_int(values.size, size, replace)
         return values[idx - 1]
+
+    def sample_int_prob_noreplace(
+        self, n: int, size: int, prob: NDArray[np.float64]
+    ) -> NDArray[np.int64]:
+        """R's weighted ``sample.int(n, size, replace=FALSE, prob=p)``.
+
+        Reproduces R's ProbSampleNoReplace: each draw picks an element with
+        probability proportional to the remaining weights, then removes it.
+        Returns 1-based indices.
+        """
+        perm = list(range(1, n + 1))
+        weights = [float(w) for w in prob]
+        total = sum(weights)
+        out = np.empty(size, dtype=np.int64)
+        remaining = n
+        for i in range(size):
+            rt = total * self.unif_rand()
+            mass = 0.0
+            j = 0
+            while j < remaining - 1:
+                mass += weights[j]
+                if rt <= mass:
+                    break
+                j += 1
+            out[i] = perm[j]
+            total -= weights[j]
+            del weights[j]
+            del perm[j]
+            remaining -= 1
+        return out

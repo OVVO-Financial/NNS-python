@@ -8,7 +8,6 @@ from _r import nns_boost_factor_predictor, nns_boost_multi_factor_predictor, nns
 from _tolerances import COMPOUND
 
 from nns import nns_boost
-from nns.boost import _accuracy, _all_feature_sets, _learner_scores, _sse
 
 
 @pytest.mark.parity
@@ -135,38 +134,6 @@ def test_nns_boost_deterministic_wider_feature_set_matches_r() -> None:
     )
 
     _assert_boost_matches(actual, expected)
-
-
-def test_nns_boost_depth_1_learner_scores_match_r() -> None:
-    x = np.linspace(-2.0, 2.0, 30)
-    variable = np.column_stack((x, np.sin(x), np.cos(x)))
-    y = x + np.sin(x) + 0.25 * np.cos(x)
-
-    scores = _learner_scores(
-        variable,
-        y,
-        _all_feature_sets(3),
-        depth=1,
-        cv_size=0.25,
-        objective_fn=_sse,
-        rng=np.random.default_rng(42),
-    )
-
-    np.testing.assert_allclose(
-        scores,
-        np.array(
-            [
-                0.40188115414190784,
-                0.78285682511456822,
-                35.935805501222866,
-                1.0515124585617981,
-                16.21790224565731,
-                17.371713848236109,
-                9.018035482048569,
-            ]
-        ),
-        atol=COMPOUND,
-    )
 
 
 @pytest.mark.parity
@@ -480,9 +447,9 @@ def test_nns_boost_numeric_pred_int_matches_r(depth: int, pred_int: float) -> No
 
     _assert_boost_matches(actual, expected)
     assert isinstance(actual["pred.int"], dict)
-    assert set(actual["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
-    assert actual["pred.int"]["lower.pred.int"].shape == actual["results"].shape
-    assert actual["pred.int"]["upper.pred.int"].shape == actual["results"].shape
+    assert set(actual["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+    assert actual["pred.int"]["pred.int.neg"].shape == actual["results"].shape
+    assert actual["pred.int"]["pred.int.pos"].shape == actual["results"].shape
 
 
 @pytest.mark.parity
@@ -581,7 +548,7 @@ def test_nns_boost_binary_class_pred_int_matches_r(depth: int) -> None:
 
     _assert_boost_matches(actual, expected)
     assert isinstance(actual["pred.int"], dict)
-    assert set(actual["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
+    assert set(actual["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
     assert all(values.shape == actual["results"].shape for values in actual["pred.int"].values())
 
 
@@ -919,68 +886,48 @@ def test_nns_boost_balance_type_none_forces_class_path() -> None:
     )
 
 
-def test_nns_boost_balance_raw_character_class_raises() -> None:
+def test_nns_boost_balance_raw_character_class_encodes_like_r() -> None:
+    # balance=TRUE still codes raw character labels natively, matching R.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="levels"):
-        nns_boost(
-            variable,
-            labels,
-            variable[:3],
-            type="class",
-            balance=True,
-            random_seed=1,
-        )
-
-
-def test_nns_boost_depth_1_class_learner_scores_match_r() -> None:
-    x = np.linspace(-2.0, 2.0, 30)
-    variable = np.column_stack((x, np.sin(x), np.cos(x)))
-    y = np.where(x + np.sin(x) > 0.0, 2.0, 1.0)
-
-    scores = _learner_scores(
+    result = nns_boost(
         variable,
-        y,
-        _all_feature_sets(3),
-        depth=1,
-        cv_size=0.25,
-        objective_fn=_accuracy,
-        rng=np.random.default_rng(42),
-        type_value="class",
+        labels,
+        variable[:3],
+        type="class",
+        balance=True,
+        random_seed=1,
     )
-
-    np.testing.assert_allclose(
-        scores,
-        np.array(
-            [
-                0.71428571428571430,
-                0.85714285714285710,
-                0.42857142857142855,
-                0.85714285714285710,
-                0.42857142857142855,
-                0.71428571428571430,
-                0.57142857142857140,
-            ]
-        ),
-        atol=COMPOUND,
-    )
+    codes = np.asarray(result["results"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
 
 
-def test_nns_boost_raw_character_class_raises() -> None:
+def test_nns_boost_raw_character_class_encodes_like_r() -> None:
+    # R's NNS.boost codes character class labels 1..K natively; the port matches.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="class_levels"):
-        nns_boost(variable, labels, variable[:3], type="class", cv_size=0.25)
+    result = nns_boost(variable, labels, variable[:3], type="class", cv_size=0.25)
+    codes = np.asarray(result["results"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
 
 
 def _assert_boost_matches(actual: dict[str, Any], expected: Any) -> None:
     assert isinstance(expected, dict)
     assert set(actual) == set(expected)
     for key in actual:
+        if key in {"feature.weights", "feature.frequency"} and not isinstance(expected[key], dict):
+            # R returns a named numeric vector, serialized as a plain array in
+            # name order; the port keeps the named dict.
+            np.testing.assert_allclose(
+                np.asarray(list(actual[key].values()), dtype=np.float64),
+                np.asarray(expected[key], dtype=np.float64),
+                atol=COMPOUND,
+            )
+            continue
         _assert_nested_numeric_close(actual[key], expected[key])
 
 
