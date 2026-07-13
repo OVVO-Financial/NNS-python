@@ -1,22 +1,34 @@
 {
   "changed_files": [
-    "R/ARMA.R"
+    "R/Boost.R",
+    "R/Multivariate_Regression.R",
+    "R/Partition_Map.R",
+    "R/Regression.R",
+    "R/Stack.R"
   ],
   "affected_python_modules": [
-    "src/nns/arma.py"
+    "src/nns/boost.py",
+    "src/nns/multivariate_regression.py",
+    "src/nns/regression.py",
+    "src/nns/stack.py"
   ],
   "parity_tests": [
+    "tests/docs/test_vignette_examples.py",
     "tests/parity/test_practical_examples.py",
     "tests/parity/test_r13_smoke.py"
   ],
   "cache_scope": [
-    "NNS.ARMA",
-    "NNS.ARMA.optim",
-    "NNS.VAR"
+    "NNS.M.reg",
+    "NNS.boost",
+    "NNS.reg",
+    "NNS.stack"
   ],
   "requires_fresh_cache": false,
   "requires_export_review": false,
-  "has_unmapped_r_files": false,
-  "unmapped_r_files": [],
+  "has_unmapped_r_files": true,
+  "unmapped_r_files": [
+    "R/Multivariate_Regression.R",
+    "R/Partition_Map.R"
+  ],
   "warnings": []
 }
