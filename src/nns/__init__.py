@@ -91,3 +91,15 @@ def __getattr__(name: str) -> Any:
     value = getattr(import_module(module_name), attr_name)
     globals()[name] = value
     return value
+
+
+# Install the repaired Method 1 implementation at package import time so both
+# ``from nns import nns_stack`` and ``from nns.stack import nns_stack`` share
+# the same pooled-OOF semantics without changing the public stack signature.
+from importlib import import_module as _import_module
+
+_stack_module = _import_module("nns.stack")
+_stack_runtime = _import_module("nns._stack_method1_runtime")
+_stack_module._evaluate_method1 = _stack_runtime.evaluate_method1
+
+del _import_module, _stack_module, _stack_runtime
