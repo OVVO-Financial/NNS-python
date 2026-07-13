@@ -1,0 +1,49 @@
+name: Run guarded ruff repair script
+
+on:
+  push:
+    branches:
+      - claude/inference-comparison-4vlt4q
+    paths:
+      - .github/workflows/run-ruff-repair-script.yml
+      - scripts/apply_ruff_repairs.py
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/inference-comparison-4vlt4q
+          fetch-depth: 0
+
+      - name: Run guarded repairs
+        shell: bash
+        run: |
+          set +e
+          mkdir -p diagnostics
+          python scripts/apply_ruff_repairs.py > diagnostics/apply-ruff.log 2>&1
+          status=$?
+          echo "OVERALL EXIT CODE: ${status}" >> diagnostics/apply-ruff.log
+          echo "${status}" > diagnostics/apply-ruff.status
+          exit 0
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$(cat diagnostics/apply-ruff.status)" = "0" ]; then
+            git rm .github/workflows/apply-ruff-repairs.yml
+            git rm .github/workflows/run-ruff-repair-script.yml
+            git rm scripts/apply_ruff_repairs.py
+            git add src tests diagnostics/apply-ruff.log diagnostics/apply-ruff.status
+            git commit -m "Apply guarded behavior-preserving ruff repairs"
+          else
+            git add diagnostics/apply-ruff.log diagnostics/apply-ruff.status
+            git commit -m "Record guarded ruff repair failure"
+          fi
+          git push origin HEAD:claude/inference-comparison-4vlt4q
