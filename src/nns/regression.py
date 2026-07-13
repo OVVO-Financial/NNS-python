@@ -173,6 +173,60 @@ def nns_reg(
     x: NDArray[Any],
     y: NDArray[Any],
     *,
+    factor_2_dummy: bool = True,
+    order: Order = None,
+    dim_red_method: object | None = None,
+    tau: object | None = None,
+    type: str | None = None,
+    point_est: NDArray[np.float64] | float | None = None,
+    return_values: bool = True,
+    plot: bool = False,
+    plot_regions: bool = False,
+    residual_plot: bool = False,
+    confidence_interval: float | None = None,
+    threshold: float = 0.0,
+    n_best: object | None = None,
+    smooth: bool = False,
+    noise_reduction: NoiseReduction = "off",
+    dist: str = "L2",
+    ncores: int | None = None,
+    point_only: bool = False,
+    multivariate_call: bool = False,
+    class_levels: list[object] | None = None,
+    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
+) -> Any:
+    """Repaired NNS.reg port: one consistent prediction rule, real distance
+    dispatch, training-fitted encodings, predictive R2. Plotting arguments and
+    the legacy class_levels/factor_levels emulation parameters are accepted for
+    API compatibility and ignored."""
+    from nns._reg_engine import nns_reg_engine
+
+    del return_values, plot, plot_regions, residual_plot, ncores
+    del class_levels, factor_levels
+    return nns_reg_engine(
+        x,
+        y,
+        factor_2_dummy=factor_2_dummy,
+        order=order,
+        dim_red_method=dim_red_method,
+        tau=tau,
+        type=type,
+        point_est=point_est,
+        confidence_interval=confidence_interval,
+        threshold=threshold,
+        n_best=n_best,
+        smooth=smooth,
+        noise_reduction=cast(str, noise_reduction),
+        dist=dist,
+        point_only=point_only,
+        multivariate_call=multivariate_call,
+    )
+
+
+def _nns_reg_legacy(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    *,
     factor_2_dummy: bool = False,
     order: Order = None,
     dim_red_method: object | None = None,
