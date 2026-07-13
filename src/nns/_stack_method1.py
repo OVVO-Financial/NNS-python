@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 CandidateId: TypeAlias = int | Literal["all"]
 Objective: TypeAlias = Literal["min", "max"]
 CandidateEvaluator: TypeAlias = Callable[
-    [NDArray[np.float64], NDArray[np.float64]], tuple[float, float]
+    [CandidateId, NDArray[np.float64], NDArray[np.float64]], tuple[float, float]
 ]
 
 
@@ -119,7 +119,7 @@ def select_method1_candidate(
             complete[candidate] = False
             continue
 
-        score, threshold = evaluator(raw[valid], actual_values[valid])
+        score, threshold = evaluator(candidate, raw[valid], actual_values[valid])
         score_value = float(score)
         threshold_value = float(threshold)
         if not math.isfinite(score_value):
