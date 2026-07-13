@@ -405,7 +405,9 @@ def test_nns_boost_multiple_factor_predictors_match_r_positional(
         cv_size=0.25,
         features_only=features_only,
         feature_importance=False,
-        random_seed=1,
+        # No random_seed override: R's NNS.boost defaults to seed = 123L and the
+        # R reference sets no external seed, so the port must use its matching
+        # default seed (123) to reproduce the same Mersenne-Twister CV split.
     )
 
     _assert_boost_matches(actual, expected)

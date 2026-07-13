@@ -276,6 +276,13 @@ def _var_multivariate_stack_stage(
     objective_value = objective.lower()
     if objective_value not in {"min", "max"}:
         raise ValueError("objective must be 'min' or 'max'.")
+    # Mirror R NNS.VAR: only the built-in co-movement ratio objective (no
+    # user obj.fn, objective == "min") may fall back to plain MSE when every
+    # Method 1 candidate is non-finite. A user objective is never overridden.
+    use_default_objective = obj_fn is None and objective_value == "min"
+    _METHOD1_GUARD_MESSAGE = (
+        "No Method 1 candidate produced a finite complete-coverage OOF objective."
+    )
     dim_red_value = dim_red_method.lower()
     dim_red_threshold_method = str(dim_red_method)
     for i in range(n_vars):
@@ -311,19 +318,32 @@ def _var_multivariate_stack_stage(
                 return float("inf")
             return float(np.mean((predicted_values - actual_values) ** 2) / divisor)
 
-        result = nns_stack(
-            lagged_iv,
-            lagged_dv,
-            ivs_test=ivs_test,
-            obj_fn=cast(Any, var_obj_fn),
-            objective=cast(Any, objective_value),
-            folds=1,
-            method=(1, 2),
-            order=None,
-            stack=True,
-            dim_red_method=cast(Any, dim_red_threshold_method),
-            ts_test=ts_test,
-        )
+        def mse_obj_fn(predicted: np.ndarray, actual: np.ndarray) -> float:
+            predicted_values = np.asarray(predicted, dtype=np.float64)
+            actual_values = np.asarray(actual, dtype=np.float64)
+            return float(np.mean((predicted_values - actual_values) ** 2))
+
+        def run_var_stack(stack_obj_fn: Any, stack_objective: str) -> dict[str, Any]:
+            return nns_stack(
+                lagged_iv,
+                lagged_dv,
+                ivs_test=ivs_test,
+                obj_fn=cast(Any, stack_obj_fn),
+                objective=cast(Any, stack_objective),
+                folds=1,
+                method=(1, 2),
+                order=None,
+                stack=True,
+                dim_red_method=cast(Any, dim_red_threshold_method),
+                ts_test=ts_test,
+            )
+
+        try:
+            result = run_var_stack(var_obj_fn, objective_value)
+        except ValueError as error:
+            if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
+                raise
+            result = run_var_stack(mse_obj_fn, "min")
 
         nns_dv = np.asarray(result["stack"], dtype=np.float64)
         nns_dv = nns_dv[:h].copy()
