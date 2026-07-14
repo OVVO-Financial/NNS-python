@@ -77,7 +77,7 @@ def _spearman_scores(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[
     y_rank = _rank_average(y)
     scores = np.empty(x.shape[1], dtype=np.float64)
     for col in range(x.shape[1]):
-        scores[col] = abs(round(_pearson(_rank_average(x[:, col]), y_rank), 2))
+        scores[col] = abs(_pearson(_rank_average(x[:, col]), y_rank))
     scores[~np.isfinite(scores)] = 0.0
     return scores
 
