@@ -4,92 +4,65 @@ on:
   pull_request:
   push:
 
-permissions:
-  contents: write
-
 jobs:
-  guarded-mypy-repair:
+  native-backend:
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
     steps:
-      - name: Check out branch
+      - name: Check out repo
         uses: actions/checkout@v4
-        with:
-          ref: claude/inference-comparison-4vlt4q
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install package and mypy dependencies
+      - name: Install build tools
         run: |
-          python -m pip install -q -U pip
-          python -m pip install -q scikit-build-core nanobind mypy "numpy<2.5" scipy matplotlib hypothesis pytest pytest-benchmark pytest-xdist
-          python -m pip install -q -e .
+          python -m pip install -U pip
+          # numpy pinned <2.5: the R parity cache keys hash test inputs generated via
+          # multivariate_normal (LAPACK SVD). numpy 2.5.x bundles an OpenBLAS whose SVD
+          # kernels differ on some runner CPUs, changing inputs bit-for-bit and causing
+          # cache misses. Re-evaluate at the next full live-R cache regeneration.
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
 
-      - name: Complete guarded repair program
+      - name: Install package editable
+        run: python -m pip install -e .
+
+      - name: Run native import smoke test
+        run: python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+
+      - name: Run invariants without Rscript
+        run: python -m pytest -q tests/invariants
+
+      - name: Run parity from committed R cache
+        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run property tests
+        run: python -m pytest -q tests/property
+
+      - name: Run plotting color-fidelity tests
+        run: python -m pytest -q tests/plotting
+
+      - name: Run vignette examples
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          if [ -f tests/docs/test_vignette_examples.py ]; then
+            python -m pytest -q tests/docs/test_vignette_examples.py
+          else
+            echo "No docs vignette test present; skipping."
+          fi
 
-          path = Path("scripts/apply_mypy_repairs.py")
-          text = path.read_text()
-          old = '''replace_once(
-              "src/nns/_reg_engine.py",
-              "    from scipy import stats  # type: ignore[import-untyped]\\n",
-              "    from scipy import stats\\n",
-          )'''
-          new = '''replace_once(
-              "src/nns/_reg_engine.py",
-              'def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:\\n'
-              '    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""\\n'
-              '    from scipy import stats  # type: ignore[import-untyped]\\n',
-              'def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:\\n'
-              '    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""\\n'
-              '    from scipy import stats\\n',
-          )'''
-          if text.count(old) != 1:
-              raise RuntimeError("Could not uniquely disambiguate the SciPy repair")
-          text = text.replace(old, new, 1)
-          text += r'''
+      - name: Run ruff
+        run: ruff check .
 
-replace_once(
-    "src/nns/_reg_engine.py",
-    "        class_values = np.unique(y_numeric) if is_class else None\n"
-    "        class_levels = [str(v) for v in class_values] if is_class else None\n",
-    "        if is_class:\n"
-    "            class_values = np.unique(y_numeric)\n"
-    "            class_levels = [str(v) for v in class_values]\n"
-    "        else:\n"
-    "            class_values = None\n"
-    "            class_levels = None\n",
-)
-replace_once(
-    "tests/parity/test_multivariate_regression.py",
-    "        assert [float(v) for v in a] == [float(v) for v in e]\n",
-    "        assert [float(cast(Any, v)) for v in a] == [\n"
-    "            float(cast(Any, v)) for v in e\n"
-    "        ]\n",
-)
-'''
-          path.write_text(text)
-          PY
+      - name: Run mypy
+        run: mypy
 
-      - name: Apply repairs and verify mypy
-        run: |
-          python scripts/apply_mypy_repairs.py
-          mypy
-
-      - name: Commit repaired source and remove temporary diagnostics
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/workflows/run-mypy-repair-script.yml
-          git rm -f .github/workflows/diagnose-mypy.yml
-          git rm -f scripts/apply_mypy_repairs.py
-          git rm -f diagnostics/mypy.log diagnostics/mypy.status
-          git rm -f diagnostics/apply-mypy.log diagnostics/apply-mypy.status
-          git add src tests
-          git commit -m "Resolve mypy findings with explicit type narrowing"
-          git push origin HEAD:claude/inference-comparison-4vlt4q
+      - name: Build distributions
+        run: python -m build
