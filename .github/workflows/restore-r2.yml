@@ -61,7 +61,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ "$(cat diagnostics/r2-test.status)" = "0" ]; then
-            git rm .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py
+            git rm .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py diagnostics/r2-test.log diagnostics/r2-test.status
             git add src tests
             git commit -m "Restore bounded Racine-Hastie R2 for NNS regression"
           else
