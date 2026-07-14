@@ -645,7 +645,7 @@ def nns_stack(
             coef = np.ones(p, dtype=np.float64)
         elif dim_red_value == "all":
             coef = np.mean(
-                np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1
+                np.column_stack((caus_coef(), dep_coef(), cor_coef())), axis=1
             )
         else:
             raise ValueError("Unsupported [dim.red.method].")
