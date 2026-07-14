@@ -1,0 +1,20 @@
+bringing up nodes...
+bringing up nodes...
+
+..F...........                                                           [100%]
+=================================== FAILURES ===================================
+________________ test_r2_is_squared_observed_fitted_correlation ________________
+[gw0] linux -- Python 3.11.15 /opt/hostedtoolcache/Python/3.11.15/x64/bin/python
+
+    def test_r2_is_squared_observed_fitted_correlation() -> None:
+        actual = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+        predicted = np.array([8.0, 4.0, 0.0, -4.0, -8.0])
+        expected = float(np.corrcoef(actual, predicted)[0, 1] ** 2)
+    
+>       assert expected == 1.0
+E       assert 0.9999999999999998 == 1.0
+
+tests/invariants/test_racine_hastie_r2.py:21: AssertionError
+=========================== short test summary info ============================
+FAILED tests/invariants/test_racine_hastie_r2.py::test_r2_is_squared_observed_fitted_correlation - assert 0.9999999999999998 == 1.0
+1 failed, 13 passed in 2.91s
