@@ -1,0 +1,75 @@
+name: PR118 live R internal diagnostics
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev libjpeg-dev libpng-dev libtiff5-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev xorg-dev
+          curl -fL https://raw.githubusercontent.com/OVVO-Financial/NNS/1d4d1e9ccc872ccc25eacfc7153a5ff8c4abd172/NNS_13.1.tar.gz -o /tmp/NNS_13.1.tar.gz
+          mkdir -p /tmp/nns && tar -xzf /tmp/NNS_13.1.tar.gz -C /tmp/nns --strip-components=1
+          Rscript -e "options(repos=c(CRAN='https://cloud.r-project.org')); install.packages(c('remotes','jsonlite')); remotes::install_deps('/tmp/nns', dependencies=NA, upgrade='never')"
+          R CMD INSTALL /tmp/NNS_13.1.tar.gz
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest 'numpy<2.5' scipy hypothesis pytest-benchmark pytest-xdist
+          python -m pip install -e . --force-reinstall --no-deps
+      - name: Compare causation internals
+        run: |
+          Rscript - <<'RS' > live-r-debug.txt
+          library(NNS)
+          t <- 1:70
+          x <- sin(2*pi*t/7)
+          y <- c(tail(x,1),head(x,-1)) + .05*cos(t/3)
+          tau <- 7
+          make_tau <- function(v,tau){
+            n <- length(v); z <- vector('list',tau+1)
+            for(i in 0:tau) z[[i+1]] <- v[(tau-i+1):(n-i)]
+            do.call(cbind,z)
+          }
+          xn <- unlist(NNS.norm(make_tau(x,tau))[,1])
+          yn <- unlist(NNS.norm(make_tau(y,tau))[,1])
+          xy <- NNS.norm(cbind(xn,yn))
+          cat('R periods x',NNS.seas(x,plot=FALSE)$periods,'\n')
+          cat('R periods y',NNS.seas(y,plot=FALSE)$periods,'\n')
+          cat('R xn head',head(xn,8),'\n')
+          cat('R yn head',head(yn,8),'\n')
+          cat('R xy head',as.numeric(head(xy,4)),'\n')
+          cat('R Uni xy',Uni.caus(x,y,tau,plot=FALSE),'\n')
+          cat('R Uni yx',Uni.caus(y,x,tau,plot=FALSE),'\n')
+          cat('R caus',NNS.caus(x,y,tau='ts',plot=FALSE),'\n')
+          v <- cbind(seq(-2,17),seq(1,39,2))
+          z <- NNS.VAR(v,h=3,tau=2,dim.red.method='all',status=FALSE,ncores=1)
+          cat('R VAR multi',as.numeric(as.matrix(z$multivariate)),'\n')
+          RS
+          python - <<'PY' >> live-r-debug.txt
+          import numpy as np
+          from nns import nns_causation,nns_norm,nns_var
+          from nns.causation import _tau_normalized,_uni_caus
+          from nns.seasonality import nns_seas
+          t=np.arange(1,71,dtype=float); x=np.sin(2*np.pi*t/7); y=np.roll(x,1)+.05*np.cos(t/3)
+          xn,yn=_tau_normalized(x,y,7); xy=nns_norm(np.column_stack((xn,yn)))
+          print('PY periods x',nns_seas(x,plot=False)['periods'].tolist())
+          print('PY periods y',nns_seas(y,plot=False)['periods'].tolist())
+          print('PY xn head',xn[:8].tolist()); print('PY yn head',yn[:8].tolist()); print('PY xy head',xy[:4].ravel(order='F').tolist())
+          print('PY Uni xy',_uni_caus(x,y,7)); print('PY Uni yx',_uni_caus(y,x,7)); print('PY caus',list(nns_causation(x,y,tau='ts').values()))
+          v=np.column_stack((np.arange(-2.,18.),np.arange(1.,40.,2.)))
+          for m in ['cor','NNS.dep','NNS.caus','all']:
+            z=nns_var(v,3,tau=2,dim_red_method=m); print('PY VAR',m,z['multivariate'].ravel(order='F').tolist())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr118-live-r-debug
+          path: live-r-debug.txt
