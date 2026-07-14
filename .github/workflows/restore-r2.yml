@@ -1,0 +1,55 @@
+name: Restore Racine-Hastie R2
+
+on:
+  push:
+    branches:
+      - claude/inference-comparison-4vlt4q
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  restore-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/inference-comparison-4vlt4q
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and test tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install -e .
+
+      - name: Apply guarded implementation and cache migration
+        run: python scripts/restore_racine_hastie_r2.py
+
+      - name: Run focused R2 tests
+        run: python -m pytest -q tests/invariants/test_racine_hastie_r2.py tests/property/test_regression.py tests/property/test_multivariate_regression.py
+
+      - name: Run cached R parity
+        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run quality gates
+        run: |
+          ruff check .
+          mypy
+
+      - name: Commit restoration and remove temporary machinery
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py
+          git add src tests
+          git commit -m "Restore bounded Racine-Hastie R2 for NNS regression"
+          git push origin HEAD:claude/inference-comparison-4vlt4q
