@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Regenerate committed R parity cache entries with the installed R/NNS package.
 
-CI should not run this script. It intentionally clears cache-only/offline toggles
-and invokes pytest so tests/_r.py can refresh tests/_r_cache.json as needed.
+The script may run locally or in a dedicated GitHub Actions cache-regeneration
+workflow. Ordinary CI should continue consuming the committed cache only.
 
 Usage::
 
-    python scripts/regenerate_r_cache.py [--fresh] [-- PYTEST_ARGS...]
+    python scripts/regenerate_r_cache.py [--fresh] [--allow-ci] [-- PYTEST_ARGS...]
 
 By default, existing cache entries are reused and only cache misses call R.
 With ``--fresh``, the script detects the installed R NNS version, updates the
 cache-version marker in ``tests/_r.py``, moves the old cache aside, and rebuilds
 every entry from live R calls. No source-code edit is needed when NNS advances
-to a new version.
+to a new version. In CI, ``--fresh`` additionally requires ``--allow-ci`` so an
+ordinary test job cannot accidentally rewrite the committed reference cache.
 """
 
 from __future__ import annotations
@@ -161,7 +162,7 @@ def _set_cache_version(version: str) -> int:
         print(f"ERROR: could not read {_R_HELPER_PATH}: {exc}", file=sys.stderr)
         return 1
 
-    replacement = f'_NNS_VERSION = {version!r}'
+    replacement = f"_NNS_VERSION = {version!r}"
     updated, count = _VERSION_ASSIGNMENT.subn(replacement, source, count=1)
     if count != 1:
         print(
@@ -189,6 +190,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--allow-ci",
+        action="store_true",
+        help=(
+            "Permit --fresh inside a dedicated CI cache-regeneration workflow. "
+            "Has no effect outside CI and does not permit regeneration unless --fresh is set."
+        ),
+    )
+    parser.add_argument(
         "pytest_args",
         nargs="*",
         help="Arguments passed to pytest after an optional '--' separator.",
@@ -197,10 +206,10 @@ def main() -> int:
 
     expected_version: str | None = None
     if parsed.fresh:
-        if _running_in_ci():
+        if _running_in_ci() and not parsed.allow_ci:
             print(
-                "ERROR: --fresh must not run in CI; it deletes the committed cache "
-                "and requires a local R NNS install.",
+                "ERROR: --fresh in CI requires the explicit --allow-ci flag. "
+                "Ordinary CI must consume the committed cache rather than rewrite it.",
                 file=sys.stderr,
             )
             return 1
