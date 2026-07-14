@@ -36,6 +36,21 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert np.all(np.isfinite(result["stack"]))
 
 
+def test_nns_stack_accepts_duplicate_predictor_columns() -> None:
+    # Parity with nns_reg: the cbind(x, x) dimension trick must work for
+    # nns_stack too. R NNS.stack historically rejected duplicate predictor
+    # names ("[IVs.train] predictor names must be unique."); the Python port
+    # never had that restriction and must keep accepting duplicate columns in
+    # both the training matrix and the point-estimate matrix.
+    rng = np.random.default_rng(123)
+    x = rng.standard_normal(60)
+    y = rng.standard_normal(60)
+    variable = np.column_stack((x, x))
+
+    result = nns_stack(variable, y, variable[:5], method=(1,), folds=2, cv_size=0.25)
+
+    assert result["reg"].shape == (5,)
+    assert np.all(np.isfinite(result["reg"]))
 
 
 def test_nns_stack_pred_int_falls_back_to_point_estimate_when_regression_drops_rows() -> None:
