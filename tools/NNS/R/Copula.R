@@ -105,7 +105,7 @@ NNS.copula <- function (
   discrete_D_pm <- DPM_nD(data = X, target = target, degree = 0, norm = TRUE)
   if(continuous) continuous_D_pm <- DPM_nD(data = X, target = target, degree = 1, norm = TRUE) else continuous_D_pm <- discrete_D_pm
   
-  indep_D_pm <- 1-(0.5^n)
+  indep_D_pm <- 1 - 2*(0.5^n)  # both fully-aligned orthants are concordant; was 1-(0.5^n)
   
   n_dim_discrete_dep <- abs(discrete_D_pm - indep_D_pm)/indep_D_pm 
   n_dim_continuous_dep <- abs(continuous_D_pm - indep_D_pm)/indep_D_pm

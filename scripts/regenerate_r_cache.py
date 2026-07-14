@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Regenerate committed R parity cache entries with a local R/NNS install.
+"""Regenerate committed R parity cache entries with the installed R/NNS package.
 
-CI should not run this script. It intentionally clears cache-only/offline toggles
-and invokes pytest so tests/_r.py can refresh tests/_r_cache.json as needed.
+The script may run locally or in a dedicated GitHub Actions cache-regeneration
+workflow. Ordinary CI should continue consuming the committed cache only.
 
 Usage::
 
-    python scripts/regenerate_r_cache.py [--fresh] [-- PYTEST_ARGS...]
+    python scripts/regenerate_r_cache.py [--fresh] [--allow-ci] [-- PYTEST_ARGS...]
 
 By default, existing cache entries are reused and only cache misses call R.
-With ``--fresh``, the existing ``tests/_r_cache.json`` is moved aside to
-``tests/_r_cache.json.bak`` and regeneration starts from an empty cache, so
-every entry is produced by a live R call. ``--fresh`` refuses to run in CI and
-requires a working local R NNS install reporting ``packageVersion("NNS")`` of
-13.0 (see ``scripts/install_local_r_nns.py``).
+With ``--fresh``, the script detects the installed R NNS version, updates the
+cache-version marker in ``tests/_r.py``, moves the old cache aside, and rebuilds
+every entry from live R calls. No source-code edit is needed when NNS advances
+to a new version. In CI, ``--fresh`` additionally requires ``--allow-ci`` so an
+ordinary test job cannot accidentally rewrite the committed reference cache.
 """
 
 from __future__ import annotations
@@ -21,16 +21,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-_CACHE_PATH = Path(__file__).resolve().parents[1] / "tests" / "_r_cache.json"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_CACHE_PATH = _REPO_ROOT / "tests" / "_r_cache.json"
 _CACHE_BACKUP_PATH = _CACHE_PATH.with_suffix(".json.bak")
-_NNS_VERSION = "13.0"
+_R_HELPER_PATH = _REPO_ROOT / "tests" / "_r.py"
 _SCHEMA_VERSION = 1
+_VERSION_ASSIGNMENT = re.compile(
+    r'^_NNS_VERSION\s*=\s*["\'][^"\']+["\']\s*$',
+    flags=re.MULTILINE,
+)
 
 _OFFLINE_TOGGLES = (
     "PYNNS_R_CACHE_ONLY",
@@ -41,7 +47,7 @@ _OFFLINE_TOGGLES = (
 )
 
 
-def _validate_cache() -> int:
+def _validate_cache(expected_version: str | None = None) -> int:
     if not _CACHE_PATH.exists():
         print(f"ERROR: R cache validation failed: {_CACHE_PATH} does not exist.", file=sys.stderr)
         return 1
@@ -64,10 +70,18 @@ def _validate_cache() -> int:
             file=sys.stderr,
         )
         return 1
-    if cache.get("nns_version") != _NNS_VERSION:
+
+    cache_version = cache.get("nns_version")
+    if not isinstance(cache_version, str) or not cache_version.strip():
+        print(
+            "ERROR: R cache validation failed: nns_version must be a non-empty string.",
+            file=sys.stderr,
+        )
+        return 1
+    if expected_version is not None and cache_version != expected_version:
         print(
             "ERROR: R cache validation failed: "
-            f"expected nns_version {_NNS_VERSION!r}, got {cache.get('nns_version')!r}.",
+            f"expected nns_version {expected_version!r}, got {cache_version!r}.",
             file=sys.stderr,
         )
         return 1
@@ -93,7 +107,7 @@ def _validate_cache() -> int:
         )
         return 1
 
-    print(f"OK: {_CACHE_PATH} contains {len(entries)} entries for NNS {_NNS_VERSION}.")
+    print(f"OK: {_CACHE_PATH} contains {len(entries)} entries for NNS {cache_version}.")
     return 0
 
 
@@ -103,17 +117,18 @@ def _running_in_ci() -> bool:
     )
 
 
-def _verify_live_r_nns() -> int:
-    """Confirm a local R NNS install reports the expected version before a fresh run."""
+def _live_r_nns_version() -> str | None:
+    """Return the installed R NNS version, or ``None`` after printing an error."""
 
     rscript = shutil.which("Rscript")
     if rscript is None:
         print(
-            "ERROR: --fresh requires Rscript on PATH; "
-            "run scripts/install_local_r_nns.py first.",
+            "ERROR: --fresh requires Rscript on PATH. Install R and the desired "
+            "NNS package first (scripts/install_local_r_nns.py can install a source or binary).",
             file=sys.stderr,
         )
-        return 1
+        return None
+
     probe = subprocess.run(
         [
             rscript,
@@ -126,20 +141,41 @@ def _verify_live_r_nns() -> int:
         check=False,
     )
     if probe.returncode != 0:
-        print(
-            "ERROR: --fresh could not load R NNS:\n" + probe.stderr,
-            file=sys.stderr,
-        )
-        return 1
+        print("ERROR: --fresh could not load R NNS:\n" + probe.stderr, file=sys.stderr)
+        return None
+
     version = probe.stdout.strip()
-    if version != _NNS_VERSION:
+    if not version:
+        print("ERROR: installed R NNS reported an empty version.", file=sys.stderr)
+        return None
+
+    print(f"OK: live R NNS {version} detected for fresh regeneration.")
+    return version
+
+
+def _set_cache_version(version: str) -> int:
+    """Update tests/_r.py so cache metadata follows the installed R package."""
+
+    try:
+        source = _R_HELPER_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR: could not read {_R_HELPER_PATH}: {exc}", file=sys.stderr)
+        return 1
+
+    replacement = f"_NNS_VERSION = {version!r}"
+    updated, count = _VERSION_ASSIGNMENT.subn(replacement, source, count=1)
+    if count != 1:
         print(
-            f"ERROR: --fresh requires R NNS {_NNS_VERSION!r}; "
-            f"installed version is {version!r}.",
+            f"ERROR: could not find exactly one _NNS_VERSION assignment in {_R_HELPER_PATH}.",
             file=sys.stderr,
         )
         return 1
-    print(f"OK: live R NNS {version} detected for fresh regeneration.")
+
+    if updated != source:
+        _R_HELPER_PATH.write_text(updated, encoding="utf-8")
+        print(f"Updated {_R_HELPER_PATH} cache marker to NNS {version}.")
+    else:
+        print(f"Cache marker already targets NNS {version}.")
     return 0
 
 
@@ -149,8 +185,16 @@ def main() -> int:
         "--fresh",
         action="store_true",
         help=(
-            "Move the existing cache to tests/_r_cache.json.bak and regenerate every "
-            "entry from a live R call. Refuses to run in CI."
+            "Detect the installed R NNS version, update the cache marker, move the old "
+            "cache to tests/_r_cache.json.bak, and regenerate every entry from live R."
+        ),
+    )
+    parser.add_argument(
+        "--allow-ci",
+        action="store_true",
+        help=(
+            "Permit --fresh inside a dedicated CI cache-regeneration workflow. "
+            "Has no effect outside CI and does not permit regeneration unless --fresh is set."
         ),
     )
     parser.add_argument(
@@ -160,17 +204,22 @@ def main() -> int:
     )
     parsed = parser.parse_args()
 
+    expected_version: str | None = None
     if parsed.fresh:
-        if _running_in_ci():
+        if _running_in_ci() and not parsed.allow_ci:
             print(
-                "ERROR: --fresh must not run in CI; it deletes the committed cache "
-                "and requires a local R NNS install.",
+                "ERROR: --fresh in CI requires the explicit --allow-ci flag. "
+                "Ordinary CI must consume the committed cache rather than rewrite it.",
                 file=sys.stderr,
             )
             return 1
-        verify_status = _verify_live_r_nns()
-        if verify_status:
-            return verify_status
+
+        expected_version = _live_r_nns_version()
+        if expected_version is None:
+            return 1
+        if _set_cache_version(expected_version):
+            return 1
+
         if _CACHE_PATH.exists():
             _CACHE_PATH.replace(_CACHE_BACKUP_PATH)
             print(f"Moved existing cache to {_CACHE_BACKUP_PATH}; starting from empty cache.")
@@ -188,7 +237,7 @@ def main() -> int:
         args = ["tests/parity"]
 
     pytest_status = subprocess.call([sys.executable, "-m", "pytest", "-q", *args], env=env)
-    validation_status = _validate_cache()
+    validation_status = _validate_cache(expected_version)
     return pytest_status if pytest_status else validation_status
 
 

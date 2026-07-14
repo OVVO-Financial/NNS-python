@@ -676,8 +676,12 @@ double dep_copula_signed(const double* x, const double* y, std::size_t n) {
   const double dpm_d1 = nd_dpm_deg1_norm(x, y, n, tx, ty);
   const double discrete_dep = clamp01(std::abs(d0_co - 0.5) / 0.5);
   const double continuous_dep = clamp01(std::abs(c1_cupm + c1_clpm - 0.5) / 0.5);
-  const double nd_disc = std::abs(dpm_d0 - 0.75) / 0.75;
-  const double nd_cont = std::abs(dpm_d1 - 0.75) / 0.75;
+  // Bivariate discordant independence null is 1 - 2*0.5^2 = 0.5 (DPM counts a
+  // point concordant when all-below OR all-above the target), not 1 - 0.5^2 =
+  // 0.75. The old 0.75 anchor left a fixed 1/3 residual per discordant term and
+  // a ~0.41 dependence floor that never vanished for independent data.
+  const double nd_disc = std::abs(dpm_d0 - 0.5) / 0.5;
+  const double nd_cont = std::abs(dpm_d1 - 0.5) / 0.5;
   const double copula = std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
   return copula * dep_ols_sign(x, y, n);
 }
@@ -688,7 +692,8 @@ double dep_copula_degree0_unsigned(const double* x, const double* y, std::size_t
       nns::co_upm(0.0, 0.0, x, y, n, n, tx, ty) + nns::co_lpm(0.0, 0.0, x, y, n, n, tx, ty);
   const double dpm_d0 = nd_dpm_deg0(x, y, n, tx, ty);
   const double disc_dep = clamp01(std::abs(d0_co - 0.5) / 0.5);
-  const double nd_disc = std::abs(dpm_d0 - 0.75) / 0.75;
+  // Bivariate discordant independence null is 1 - 2*0.5^2 = 0.5, not 0.75.
+  const double nd_disc = std::abs(dpm_d0 - 0.5) / 0.5;
   return std::sqrt((disc_dep + nd_disc) / 2.0);
 }
 
@@ -901,7 +906,10 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
   const double indep_co = 0.25 * (dd * dd - dd);
   const double discrete_dep = clamp01(std::abs(disc_co - indep_co) / indep_co);
   const double continuous_dep = clamp01(std::abs(cont_co - indep_co) / indep_co);
-  const double indep_d = 1.0 - std::pow(0.5, dd);
+  // DPM_nD counts a point concordant when all-below OR all-above the target
+  // (both fully-aligned orthants), so under independence
+  // P(discordant) = 1 - 2*0.5^d (0.5 when d == 2), not 1 - 0.5^d.
+  const double indep_d = 1.0 - 2.0 * std::pow(0.5, dd);
   const double nd_disc = std::abs(disc_d - indep_d) / indep_d;
   const double nd_cont = std::abs(cont_d - indep_d) / indep_d;
   return std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);

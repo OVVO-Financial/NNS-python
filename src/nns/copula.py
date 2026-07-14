@@ -86,7 +86,12 @@ def _copula(
     discrete_dep = min(max(abs(discrete_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
     continuous_dep = min(max(abs(continuous_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
 
-    indep_d_pm = 1.0 - 0.5**n
+    # DPM_nD counts a point as concordant when it is all-below OR all-above the
+    # target (both fully-aligned orthants), so under independence
+    # P(discordant) = 1 - 2*0.5**n (0.5 when n == 2), not 1 - 0.5**n. The old
+    # 1 - 0.5**n anchor left a non-vanishing dependence floor for independent
+    # data.
+    indep_d_pm = 1.0 - 2.0 * 0.5**n
     n_dim_discrete_dep = abs(discrete_d_pm - indep_d_pm) / indep_d_pm
     n_dim_continuous_dep = abs(continuous_d_pm - indep_d_pm) / indep_d_pm
 

@@ -7,6 +7,7 @@ import pytest
 
 from nns import nns_arma, nns_arma_optim, nns_var
 from nns.arma import _default_arma_optim_objective, _numeric_seasonal_weights
+from nns.meboot import _target_rho
 
 
 def test_nns_arma_output_length_matches_h() -> None:
@@ -47,6 +48,20 @@ def test_numeric_seasonal_weights_constant_subsample_is_finite() -> None:
 
     forecast = nns_arma(variable, h=8, seasonal_factor=4, method="lin")
     assert np.isfinite(forecast).all()
+
+
+def test_target_rho_uses_finite_candidate_when_midpoint_is_degenerate() -> None:
+    # With tied three-point residuals, the 50/50 blend can be constant even though
+    # the endpoint rank arrangements are valid. A non-finite midpoint must not
+    # abort correlation targeting when a finite candidate exists.
+    orig_res = np.array([-1.0, 2.0, -1.0], dtype=np.float64)
+    res_mat = np.array([[0.0], [1.0], [1.0]], dtype=np.float64)
+
+    result = _target_rho(res_mat, orig_res, rho=1.0, type_="spearman")
+
+    assert result.shape == (3, 1)
+    assert np.all(np.isfinite(result))
+    assert np.ptp(result[:, 0]) > 0.0
 
 
 @pytest.mark.stochastic

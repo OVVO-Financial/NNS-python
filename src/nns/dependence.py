@@ -161,8 +161,13 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
 
     discrete_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
     continuous_dep = min(max(abs(c1_cupm + c1_clpm - 0.5) / 0.5, 0.0), 1.0)
-    nd_disc_dep = abs(dpm_d0 - 0.75) / 0.75
-    nd_cont_dep = abs(dpm_d1 - 0.75) / 0.75
+    # DPM_nD counts a point as concordant when it is all-below OR all-above the
+    # target (both fully-aligned orthants), so under independence the discordant
+    # null is 1 - 2*0.5**n = 0.5 for the bivariate copula, not 1 - 0.5**n = 0.75.
+    # The old 0.75 anchor left a fixed 1/3 residual per discordant term, i.e. a
+    # ~0.41 dependence floor that never vanished for independent data.
+    nd_disc_dep = abs(dpm_d0 - 0.5) / 0.5
+    nd_cont_dep = abs(dpm_d1 - 0.5) / 0.5
 
     copula = math.sqrt((discrete_dep + continuous_dep + nd_disc_dep + nd_cont_dep) / 4.0)
     return copula * _ols_sign(x, y)
@@ -178,7 +183,9 @@ def _copula_degree0_unsigned(x: NDArray[np.float64], y: NDArray[np.float64]) -> 
     target = np.array([target_x, target_y], dtype=np.float64)
     dpm_d0 = _dpm_nd(data, target, 0.0, norm=True)
     disc_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
-    nd_disc = abs(dpm_d0 - 0.75) / 0.75
+    # Bivariate discordant independence null is 1 - 2*0.5**2 = 0.5 (see
+    # _copula_signed); the old 0.75 anchor never vanished for independent data.
+    nd_disc = abs(dpm_d0 - 0.5) / 0.5
     return math.sqrt((disc_dep + nd_disc) / 2.0)
 
 
