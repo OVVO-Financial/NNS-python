@@ -14,4 +14,4 @@ on:
         required: true
         type: string
       source_tarball:
-        description: Source package filename at the R repository root
+        description
