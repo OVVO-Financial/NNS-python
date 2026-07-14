@@ -18,9 +18,9 @@ def test_r2_is_squared_observed_fitted_correlation() -> None:
     predicted = np.array([8.0, 4.0, 0.0, -4.0, -8.0])
     expected = float(np.corrcoef(actual, predicted)[0, 1] ** 2)
 
-    assert expected == 1.0
-    assert engine_r2(actual, predicted) == expected
-    assert legacy_r2(actual, predicted) == expected
+    np.testing.assert_allclose(expected, 1.0, atol=1e-14)
+    np.testing.assert_allclose(engine_r2(actual, predicted), expected, atol=1e-14)
+    np.testing.assert_allclose(legacy_r2(actual, predicted), expected, atol=1e-14)
 
 
 def test_r2_never_inherits_negative_predictive_r2() -> None:
@@ -30,7 +30,7 @@ def test_r2_never_inherits_negative_predictive_r2() -> None:
     assert _predictive_r2(actual, predicted) < 0.0
     for value in (engine_r2(actual, predicted), legacy_r2(actual, predicted)):
         assert 0.0 <= value <= 1.0
-        assert value == 1.0
+        np.testing.assert_allclose(value, 1.0, atol=1e-14)
 
 
 def test_r2_constant_series_degeneracy_is_explicit() -> None:
