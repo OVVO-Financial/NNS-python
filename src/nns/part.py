@@ -6,7 +6,6 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _as_pair
 from nns._native import native_fn
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity
@@ -41,28 +40,119 @@ PartResult = TypedDict(
 )
 
 
+def _part_pair(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Equal-length 1D pair with complete-case NA handling; infinities kept."""
+    x_values = np.asarray(x, dtype=np.float64)
+    y_values = np.asarray(y, dtype=np.float64)
+    if x_values.ndim != 1 or y_values.ndim != 1:
+        raise ValueError("x and y must be 1D.")
+    if x_values.size != y_values.size:
+        raise ValueError("x and y must have the same length.")
+    if x_values.size == 0:
+        raise ValueError("x and y must be non-empty.")
+    complete = ~(np.isnan(x_values) | np.isnan(y_values))
+    if not np.all(complete):
+        x_values = x_values[complete]
+        y_values = y_values[complete]
+    if x_values.size == 0:
+        raise ValueError("x and y must contain at least one complete (non-missing) pair.")
+    return x_values, y_values
+
+
+def _part_max(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    type_value: str | None,
+    noise: NoiseReduction,
+) -> PartResult:
+    """R NNS.part order='max': explicit maximum partition representation."""
+    from nns.central_tendencies import nns_gravity, nns_mode
+
+    if type_value is None:
+        quadrants = np.asarray([f"q{i + 1}" for i in range(x.size)])
+        result: PartResult = {
+            "order": int(x.size),
+            "dt": {
+                "x": x.copy(),
+                "y": y.copy(),
+                "quadrant": quadrants,
+                "prior.quadrant": np.full(x.size, "pq"),
+            },
+            "regression.points": {
+                "x": x.copy(),
+                "y": y.copy(),
+                "quadrant": quadrants,
+            },
+        }
+        return result
+
+    def reducer(z: NDArray[np.float64]) -> float:
+        if noise == "mean":
+            return float(np.mean(z))
+        if noise == "median":
+            return float(np.median(z))
+        if noise in ("mode", "mode_class"):
+            return float(nns_mode(z, discrete=True, multi=False))
+        return float(nns_gravity(z))
+
+    unique_x = np.unique(x)
+    y_by_x = np.asarray([reducer(y[x == v]) for v in unique_x], dtype=np.float64)
+    match_id = np.searchsorted(unique_x, x) + 1
+    result = {
+        "order": int(unique_x.size),
+        "dt": {
+            "x": x.copy(),
+            "y": y.copy(),
+            "quadrant": np.asarray([f"q{i}" for i in match_id]),
+            "prior.quadrant": np.full(x.size, "pq"),
+        },
+        "regression.points": {
+            "x": unique_x,
+            "y": y_by_x,
+            "quadrant": np.asarray([f"q{i + 1}" for i in range(unique_x.size)]),
+        },
+    }
+    return result
+
+
 def nns_part(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
     *,
     type: str | None = None,
-    order: int | None = None,
+    order: int | str | None = None,
     obs_req: int | None = 8,
     min_obs_stop: bool = True,
     noise_reduction: NoiseReduction = "off",
 ) -> PartResult:
-    """Return R's NNS.part partition map as NumPy arrays."""
-    x_values, y_values = _as_pair(x, y)
+    """Return R's NNS.part partition map as NumPy arrays.
+
+    Mirrors the repaired R NNS.part: pairs with NA/NaN in either variable are
+    dropped (complete-case handling keeps infinities), and ``order='max'``
+    returns the explicit maximum partition representation without recursion.
+    """
+    if type is not None and (not isinstance(type, str) or type.lower() != "xonly"):
+        raise ValueError("[type] must be NULL or 'XONLY'.")
+    x_values, y_values = _part_pair(x, y)
     noise = _validate_noise_reduction(noise_reduction)
     if obs_req is None:
         obs_req = 8
     if obs_req < 0:
         raise ValueError("obs_req must be non-negative.")
+
+    if isinstance(order, str):
+        if order.lower() != "max":
+            raise ValueError("order must be None, 'max', or a positive integer.")
+        return _part_max(x_values, y_values, type, noise)
+
     if order is None:
         max_order = max(math.ceil(math.log2(max(1, x_values.size))), 1)
     else:
         if isinstance(order, bool) or not isinstance(order, int):
-            raise TypeError("order must be an integer or None.")
+            raise TypeError("order must be an integer, 'max', or None.")
         max_order = order
         if max_order == 0:
             max_order = 1
@@ -218,26 +308,28 @@ def _regression_points(
 
 
 def _aggregate_x(values: NDArray[np.float64], noise: NoiseReduction) -> float:
+    # R mean()/median() propagate infinities; gravity/mode filter to finite
+    # values internally, matching NNS.gravity / NNS.mode.
+    if noise == "mean":
+        return float(np.mean(values))
+    if noise == "median":
+        return float(np.median(values))
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         return float("nan")
-    if noise == "mean":
-        return float(np.mean(finite))
-    if noise == "median":
-        return float(np.median(finite))
     if noise == "mode":
         return _mode(finite)
     return _gravity(finite)
 
 
 def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
+    if noise == "mean":
+        return float(np.mean(values))
+    if noise == "median":
+        return float(np.median(values))
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         return float("nan")
-    if noise == "mean":
-        return float(np.mean(finite))
-    if noise == "median":
-        return float(np.median(finite))
     if noise in {"mode", "mode_class"}:
         return _mode(finite)
     return _gravity(finite)

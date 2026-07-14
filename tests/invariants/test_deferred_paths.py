@@ -9,9 +9,6 @@ API_STATUS = ROOT / "docs" / "api_status.md"
 
 
 EXPECTED_DEFERRED_FRAGMENTS = {
-    "threshold on the n_features > 10 stochastic epoch path": (
-        "`threshold` on the `n_features > 10` stochastic path"
-    ),
     "direct nns_m_reg factor_2_dummy=True": "direct `factor_2_dummy=True` raw predictor path",
 }
 

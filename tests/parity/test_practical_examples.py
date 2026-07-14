@@ -196,30 +196,33 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
         random_seed=123,
         class_levels=_IRIS_CLASS_LEVELS,
     )
-    y_test = _array(expected["y_test"])
-
-    np.testing.assert_allclose(stack["stack"], y_test, atol=EXACT)
-    np.testing.assert_allclose(stack["reg"], np.full(y_test.shape, 2.0), atol=EXACT)
-    np.testing.assert_allclose(stack["dim.red"], y_test, atol=EXACT)
-
-    # NNS Python recovers the true holdout labels above, while installed R NNS 13.0's
-    # balanced stacked reference collapses to a single repeated class. Assert the
-    # collapse (a documented R-side parity gap against the live 13.0 fixture)
-    # without hardcoding a class code.
+    # With the reproduced R RNG and the pooled Method-1 coverage rule, the port
+    # now reproduces R's balanced-stack result exactly: the ts-style single-fold
+    # holdout collapses every component to one repeated class in both languages.
     r_stack = _array(expected["stack"]["results"])
-    assert r_stack.shape == y_test.shape
-    np.testing.assert_allclose(r_stack, np.full(y_test.shape, r_stack.flat[0]), atol=EXACT)
+    collapsed = np.full(r_stack.shape, r_stack.flat[0])
+    np.testing.assert_allclose(r_stack, collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["stack"], collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["reg"], collapsed, atol=EXACT)
+    np.testing.assert_allclose(stack["dim.red"], collapsed, atol=EXACT)
 
 
 @pytest.mark.parity
 @pytest.mark.practical
 @pytest.mark.xfail(
     reason=(
-        "Stochastic sampling gap: balanced NNS.boost draws CV indices, feature "
-        "subsets, and up/down-sampled class rows from R's RNG, which NNS Python "
-        "cannot reproduce bit-for-bit with NumPy's RNG. Both implementations "
-        "miss the all-class-3 holdout; deterministic boost paths are covered "
-        "by the strict parity tests in test_boost.py."
+        "Verified R sampling edge in the balanced NNS.boost path. Reference: "
+        "R 4.3.3, NNS 13.1, RNGkind() = c('Mersenne-Twister','Inversion',"
+        "'Rejection') (sample.kind = 'Rejection'), set.seed(123) with NNS.boost's "
+        "own internal seed = 123L, iris factor levels ordered "
+        "setosa < versicolor < virginica. NNS Python reproduces R's Mersenne-"
+        "Twister stream and Rejection sample.int bit-for-bit on every "
+        "deterministic and single-draw boost path (see the strict parity tests "
+        "in test_boost.py), but balance = TRUE issues many interleaved per-class "
+        "sample() draws (down-sample without replacement + up-sample with "
+        "replacement, for every learner trial and epoch), and that exact draw "
+        "ordering is not reproduced step-for-step. R predicts the all-class-3 "
+        "holdout as 3s; the port's split lands one holdout on class 2."
     ),
     strict=True,
 )
@@ -238,9 +241,13 @@ def test_iris_boost_classification_vignette_gap_is_explicit() -> None:
     expected_boost = cast(dict[str, object], expected["boost"])
     y_test = _array(expected["y_test"])
 
+    # The port's balanced-boost split diverges from R's (see the xfail above):
+    # R nails the all-class-3 holdout exactly, while the port lands one holdout
+    # observation on class 2. This test pins that explicit, characterized gap.
     assert not np.array_equal(_array(actual["results"]), _array(expected_boost["results"]))
     assert not np.array_equal(_array(actual["results"]), y_test)
-    assert not np.array_equal(_array(expected_boost["results"]), y_test)
+    # R reproduces the vignette's holdout perfectly under seed 123.
+    assert np.array_equal(_array(expected_boost["results"]), y_test)
     assert set(actual) == {"results", "feature_weights", "feature_frequency"}
 
 
@@ -298,10 +305,17 @@ def _iris_boost_diagnostics(expected: dict[str, Any]) -> dict[str, object]:
         random_seed=123,
         class_levels=_IRIS_CLASS_LEVELS,
     )
+    def _values(v: object) -> np.ndarray:
+        # feature.weights / feature.frequency are named dicts in NNS Python
+        # (R serializes the equivalent named numeric vector as a plain array).
+        if isinstance(v, dict):
+            return np.asarray(list(v.values()), dtype=np.float64)
+        return np.asarray(v, dtype=np.float64)
+
     return {
         "results": np.asarray(boost["results"], dtype=np.float64),
-        "feature_weights": np.asarray(boost["feature.weights"], dtype=np.float64),
-        "feature_frequency": np.asarray(boost["feature.frequency"], dtype=np.float64),
+        "feature_weights": _values(boost["feature.weights"]),
+        "feature_frequency": _values(boost["feature.frequency"]),
     }
 
 

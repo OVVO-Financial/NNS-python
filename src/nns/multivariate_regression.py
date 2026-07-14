@@ -71,7 +71,11 @@ def nns_m_reg(
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
 ) -> MRegResult:
-    """Multivariate numeric regression matching R's NNS.M.reg path."""
+    """Multivariate numeric regression matching R's NNS.M.reg path.
+
+    Delegates to the repaired :func:`nns._reg_engine.nns_reg_engine`, whose
+    multivariate branch is the authoritative port of R's ``NNS.M.reg``.
+    """
     _warn_unsupported(
         location=location is not None,
         dist=dist != "L2",
@@ -79,82 +83,46 @@ def nns_m_reg(
         plot_regions=plot_regions,
         ncores=ncores is not None,
     )
-    type_value = _normalize_type(type)
-    x_values, y_values = _validate_inputs(
-        x,
-        y,
-        factor_2_dummy,
-        type_value=type_value,
-        class_levels=class_levels,
-    )
-    point_values, point_is_matrix = _validate_point_est(point_est, x_values.shape[1])
-    noise = _validate_noise(noise_reduction)
-
-    reg_points_matrix = _regression_points_matrix(
-        x_values,
-        y_values,
-        order,
-        noise,
-        factor_2_dummy,
-        type_value,
-    )
-    if order is None or isinstance(order, int):
-        reg_points_matrix = _unique_rows_preserve_order(reg_points_matrix)
-    if order == "max" and n_best is None:
-        n_best = 1
-
-    nns_id_components = _find_interval_matrix(x_values, reg_points_matrix)
-    nns_ids = _join_ids(nns_id_components)
-    rpm, fitted_y, residuals = _rpm_and_fitted(
-        x_values,
-        y_values,
-        nns_ids,
-        noise,
-        order_is_numeric=order is None or isinstance(order, int),
-        class_mode=type_value == "class",
-    )
-
-    k = _resolve_n_best(n_best, x_values, y_values, rpm)
-    if _k_as_count(k, rpm.shape[0]) > 1 and not point_only:
-        fitted_y = nns_distance_path_single_bulk(rpm, x_values, k, type_value)
-        if type_value == "class":
-            fitted_y = _round_clamp_classes(fitted_y, y_values)
-        residuals = fitted_y - y_values
-
-    if point_values is None:
-        point_predictions: NDArray[np.float64] | None = None
-    else:
-        point_predictions = _predict_points(
-            point_values,
-            point_is_matrix,
-            x_values,
-            rpm,
-            k,
-            type_value,
+    if factor_2_dummy:
+        raise NotImplementedError(
+            "direct nns_m_reg factor_2_dummy=True is rejected because installed R's "
+            "internal NNS.M.reg raw factor path errors; use nns_reg(..., "
+            "factor_2_dummy=True, factor_levels=...) instead."
         )
-        if type_value == "class":
-            point_predictions = _round_clamp_classes(point_predictions, y_values)
+    type_value = _normalize_type(type)
+    from nns._reg_engine import nns_reg_engine
 
-    if point_only:
-        return {"Point.est": _point_output(point_predictions), "RPM": _rpm_dict(rpm)}
+    x_values = np.asarray(x, dtype=np.float64)
+    if x_values.ndim == 1:
+        x_values = x_values.reshape(-1, 1)
+    if x_values.shape[1] < 2:
+        raise ValueError("nns_m_reg requires at least two predictor columns.")
 
-    fitted = _fitted_dict(x_values, y_values, fitted_y, nns_ids, residuals)
-    pred_int = _apply_multivariate_intervals(
-        fitted,
-        point_predictions,
-        confidence_interval=confidence_interval,
+    # class_levels fixes the categorical y ordering; encode to 1..K codes so the
+    # engine (which sorts unique labels) reproduces the requested mapping.
+    y_for_engine: Any = y
+    if class_levels is not None:
+        levels = [str(level) for level in class_levels]
+        y_str = [str(v) for v in np.asarray(y).ravel().tolist()]
+        y_for_engine = np.asarray([levels.index(v) + 1 for v in y_str], dtype=np.float64)
+
+    result = cast(
+        "MRegResult",
+        nns_reg_engine(
+            x_values,
+            y_for_engine,
+            order=order,
+            n_best=cast(Any, n_best),
+            type=type_value,
+            point_est=None if point_est is None else np.asarray(point_est, dtype=np.float64),
+            point_only=point_only,
+            noise_reduction=noise_reduction,
+            dist=dist,
+            confidence_interval=confidence_interval,
+        ),
     )
-    r2 = _class_accuracy(y_values, fitted_y) if type_value == "class" else _r2(y_values, fitted_y)
-    result: MRegResult = {
-        "R2": r2,
-        "rhs.partitions": _rhs_partitions_dict(reg_points_matrix),
-        "RPM": _rpm_dict(rpm),
-        "Point.est": _point_output(point_predictions),
-        "pred.int": pred_int,
-        "Fitted.xy": fitted,
-    }
-    if plot or residual_plot:
-        _render_m_reg(fitted)
+    if (plot or residual_plot) and isinstance(result.get("Fitted.xy"), dict):
+        _render_m_reg(cast(Any, result["Fitted.xy"]))
     return result
 
 

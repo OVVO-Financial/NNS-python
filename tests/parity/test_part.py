@@ -64,13 +64,17 @@ def test_nns_part_matches_r(
 
 
 @pytest.mark.parity
-def test_nns_part_installed_r_collapses_any_non_null_type_to_xonly() -> None:
+def test_nns_part_installed_r_rejects_non_xonly_type() -> None:
+    # Repaired R restricts NNS.part type to NULL or 'XONLY'; the port matches by
+    # raising instead of silently collapsing an arbitrary type to XONLY.
     x = np.arange(1.0, 9.0)
     y = x[::-1]
 
-    expected = nns("NNS.part", x.tolist(), y.tolist(), False, "Y", 2, 0, False, "off")
-    actual = nns_part(x, y, type="Y", order=2, obs_req=0, min_obs_stop=False)
+    with pytest.raises(ValueError, match="XONLY"):
+        nns_part(x, y, type="Y", order=2, obs_req=0, min_obs_stop=False)
 
+    expected = nns("NNS.part", x.tolist(), y.tolist(), False, "XONLY", 2, 0, False, "off")
+    actual = nns_part(x, y, type="XONLY", order=2, obs_req=0, min_obs_stop=False)
     _assert_part_matches(actual, expected)
 
 

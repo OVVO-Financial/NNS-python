@@ -52,4 +52,4 @@ def test_nns_cdf_multivariate_shape_properties(
     function = cast(dict[str, np.ndarray], result["Function"])
 
     assert function["CDF"].shape == (rows,)
-    assert list(function) == [*(f"V{index + 1}" for index in range(cols)), "CDF"]
+    assert list(function) == [*(str(index + 1) for index in range(cols)), "CDF"]

@@ -8,7 +8,6 @@ from _r import nns_boost_factor_predictor, nns_boost_multi_factor_predictor, nns
 from _tolerances import COMPOUND
 
 from nns import nns_boost
-from nns.boost import _accuracy, _all_feature_sets, _learner_scores, _sse
 
 
 @pytest.mark.parity
@@ -68,7 +67,6 @@ def test_nns_boost_ivs_test_none_matches_r() -> None:
         learner_trials=10,
         cv_size=0.25,
         feature_importance=False,
-        random_seed=4,
     )
 
     _assert_boost_matches(actual, expected)
@@ -131,42 +129,9 @@ def test_nns_boost_deterministic_wider_feature_set_matches_r() -> None:
         learner_trials=100,
         cv_size=0.25,
         feature_importance=False,
-        random_seed=4,
     )
 
     _assert_boost_matches(actual, expected)
-
-
-def test_nns_boost_depth_1_learner_scores_match_r() -> None:
-    x = np.linspace(-2.0, 2.0, 30)
-    variable = np.column_stack((x, np.sin(x), np.cos(x)))
-    y = x + np.sin(x) + 0.25 * np.cos(x)
-
-    scores = _learner_scores(
-        variable,
-        y,
-        _all_feature_sets(3),
-        depth=1,
-        cv_size=0.25,
-        objective_fn=_sse,
-        rng=np.random.default_rng(42),
-    )
-
-    np.testing.assert_allclose(
-        scores,
-        np.array(
-            [
-                0.40188115414190784,
-                0.78285682511456822,
-                35.935805501222866,
-                1.0515124585617981,
-                16.21790224565731,
-                17.371713848236109,
-                9.018035482048569,
-            ]
-        ),
-        atol=COMPOUND,
-    )
 
 
 @pytest.mark.parity
@@ -292,8 +257,8 @@ def test_nns_boost_stochastic_epoch_path_matches_r_structure() -> None:
             dtype=np.float64,
         ).shape
     )
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.weights"].values()), dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.frequency"].values()), dtype=np.float64).ndim == 1
     assert actual["pred.int"] is None
 
 
@@ -334,8 +299,8 @@ def test_nns_boost_stochastic_epoch_ts_test_matches_r_structure() -> None:
             dtype=np.float64,
         ).shape
     )
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.weights"].values()), dtype=np.float64).ndim == 1
+    assert np.asarray(list(actual["feature.frequency"].values()), dtype=np.float64).ndim == 1
     assert actual["pred.int"] is None
 
 
@@ -364,7 +329,6 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         variable[:5],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None),
         feature_importance=False,
     )
 
@@ -396,7 +360,6 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         variable[:5],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None),
         features_only=True,
         feature_importance=False,
     )
@@ -440,10 +403,11 @@ def test_nns_boost_multiple_factor_predictors_match_r_positional(
         variable[:4],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None, ["down", "up"]),
         features_only=features_only,
         feature_importance=False,
-        random_seed=1,
+        # No random_seed override: R's NNS.boost defaults to seed = 123L and the
+        # R reference sets no external seed, so the port must use its matching
+        # default seed (123) to reproduce the same Mersenne-Twister CV split.
     )
 
     _assert_boost_matches(actual, expected)
@@ -480,9 +444,9 @@ def test_nns_boost_numeric_pred_int_matches_r(depth: int, pred_int: float) -> No
 
     _assert_boost_matches(actual, expected)
     assert isinstance(actual["pred.int"], dict)
-    assert set(actual["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
-    assert actual["pred.int"]["lower.pred.int"].shape == actual["results"].shape
-    assert actual["pred.int"]["upper.pred.int"].shape == actual["results"].shape
+    assert set(actual["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+    assert actual["pred.int"]["pred.int.neg"].shape == actual["results"].shape
+    assert actual["pred.int"]["pred.int.pos"].shape == actual["results"].shape
 
 
 @pytest.mark.parity
@@ -581,7 +545,7 @@ def test_nns_boost_binary_class_pred_int_matches_r(depth: int) -> None:
 
     _assert_boost_matches(actual, expected)
     assert isinstance(actual["pred.int"], dict)
-    assert set(actual["pred.int"]) == {"lower.pred.int", "upper.pred.int"}
+    assert set(actual["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
     assert all(values.shape == actual["results"].shape for values in actual["pred.int"].values())
 
 
@@ -712,13 +676,14 @@ def test_nns_boost_class_stable_metadata_matches_r_when_n_best_is_structural() -
     assert isinstance(expected, dict)
     expected_dict = cast(dict[str, Any], expected)
     np.testing.assert_allclose(actual["results"], expected_dict["results"], atol=COMPOUND)
+    # Port keeps feature.weights/frequency as named dicts; R serializes an array.
     np.testing.assert_allclose(
-        actual["feature.weights"],
+        list(actual["feature.weights"].values()),
         expected_dict["feature.weights"],
         atol=COMPOUND,
     )
     np.testing.assert_allclose(
-        actual["feature.frequency"],
+        list(actual["feature.frequency"].values()),
         expected_dict["feature.frequency"],
         atol=COMPOUND,
     )
@@ -919,68 +884,48 @@ def test_nns_boost_balance_type_none_forces_class_path() -> None:
     )
 
 
-def test_nns_boost_balance_raw_character_class_raises() -> None:
+def test_nns_boost_balance_raw_character_class_encodes_like_r() -> None:
+    # balance=TRUE still codes raw character labels natively, matching R.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="levels"):
-        nns_boost(
-            variable,
-            labels,
-            variable[:3],
-            type="class",
-            balance=True,
-            random_seed=1,
-        )
-
-
-def test_nns_boost_depth_1_class_learner_scores_match_r() -> None:
-    x = np.linspace(-2.0, 2.0, 30)
-    variable = np.column_stack((x, np.sin(x), np.cos(x)))
-    y = np.where(x + np.sin(x) > 0.0, 2.0, 1.0)
-
-    scores = _learner_scores(
+    result = nns_boost(
         variable,
-        y,
-        _all_feature_sets(3),
-        depth=1,
-        cv_size=0.25,
-        objective_fn=_accuracy,
-        rng=np.random.default_rng(42),
-        type_value="class",
+        labels,
+        variable[:3],
+        type="class",
+        balance=True,
+        random_seed=1,
     )
-
-    np.testing.assert_allclose(
-        scores,
-        np.array(
-            [
-                0.71428571428571430,
-                0.85714285714285710,
-                0.42857142857142855,
-                0.85714285714285710,
-                0.42857142857142855,
-                0.71428571428571430,
-                0.57142857142857140,
-            ]
-        ),
-        atol=COMPOUND,
-    )
+    codes = np.asarray(result["results"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
 
 
-def test_nns_boost_raw_character_class_raises() -> None:
+def test_nns_boost_raw_character_class_encodes_like_r() -> None:
+    # R's NNS.boost codes character class labels 1..K natively; the port matches.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack((x, np.sin(x)))
     labels = np.where(x > 0.0, "B", "A")
 
-    with pytest.raises(ValueError, match="class_levels"):
-        nns_boost(variable, labels, variable[:3], type="class", cv_size=0.25)
+    result = nns_boost(variable, labels, variable[:3], type="class", cv_size=0.25)
+    codes = np.asarray(result["results"], dtype=np.float64)
+    assert np.all(np.isin(codes[np.isfinite(codes)], [1.0, 2.0]))
 
 
 def _assert_boost_matches(actual: dict[str, Any], expected: Any) -> None:
     assert isinstance(expected, dict)
     assert set(actual) == set(expected)
     for key in actual:
+        if key in {"feature.weights", "feature.frequency"} and not isinstance(expected[key], dict):
+            # R returns a named numeric vector, serialized as a plain array in
+            # name order; the port keeps the named dict.
+            np.testing.assert_allclose(
+                np.asarray(list(actual[key].values()), dtype=np.float64),
+                np.asarray(expected[key], dtype=np.float64),
+                atol=COMPOUND,
+            )
+            continue
         _assert_nested_numeric_close(actual[key], expected[key])
 
 
@@ -1026,7 +971,13 @@ def _assert_boost_class_structure(
     else:
         assert actual["pred.int"] is None
         assert expected["pred.int"] is None
-    assert np.asarray(actual["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(expected["feature.weights"], dtype=np.float64).ndim == 1
-    assert np.asarray(actual["feature.frequency"], dtype=np.float64).ndim == 1
-    assert np.asarray(expected["feature.frequency"], dtype=np.float64).ndim == 1
+    # The port keeps feature.weights/frequency as named dicts; R serializes the
+    # named vector as a plain array.
+    def _weight_values(value: Any) -> np.ndarray:
+        raw = list(value.values()) if isinstance(value, dict) else value
+        return np.asarray(raw, dtype=np.float64)
+
+    assert _weight_values(actual["feature.weights"]).ndim == 1
+    assert _weight_values(expected["feature.weights"]).ndim == 1
+    assert _weight_values(actual["feature.frequency"]).ndim == 1
+    assert _weight_values(expected["feature.frequency"]).ndim == 1

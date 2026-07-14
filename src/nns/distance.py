@@ -95,12 +95,12 @@ def nns_distance_bulk(
         raise ValueError("x_test column count must match rpm feature column count.")
 
     k_value = _resolve_k(k, features.shape[0])
-    rpm_rows = _r_column_major_as_row_chunks(features)
-    test_rows = _r_column_major_as_row_chunks(tests)
-    diff = rpm_rows[np.newaxis, :, :] - test_rows[:, np.newaxis, :]
+    # NNS_distance_bulk_cpp: raw (un-normalized) d^2 + |d| distance with simple
+    # 1/d weights over the k nearest regression points.
+    diff = features[np.newaxis, :, :] - tests[:, np.newaxis, :]
     distances = np.sum(diff * diff + np.abs(diff), axis=2)
     distances[distances == 0.0] = 1e-12
-    order = np.argsort(distances, axis=1, kind="quicksort")[:, :k_value]
+    order = np.argsort(distances, axis=1, kind="stable")[:, :k_value]
 
     predictions = np.empty(tests.shape[0], dtype=np.float64)
     for row_index, row_order in enumerate(order):
@@ -109,10 +109,6 @@ def nns_distance_bulk(
         weights = 1.0 / row_distances
         predictions[row_index] = float(np.dot(row_y, weights) / np.sum(weights))
     return predictions
-
-
-def _r_column_major_as_row_chunks(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    return cast(NDArray[np.float64], np.ravel(values, order="F").reshape(values.shape, order="C"))
 
 
 def _rescale_joint(

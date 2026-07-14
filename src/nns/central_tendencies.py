@@ -266,4 +266,5 @@ def _nearest_int_half_up(value: float) -> float:
 
 def _nearest_int_half_up_array(values: NDArray[np.float64]) -> NDArray[np.float64]:
     floors = np.floor(values)
-    return np.where(values - floors < 0.5, floors, np.ceil(values)).astype(np.float64)
+    with np.errstate(invalid="ignore"):
+        return np.where(values - floors < 0.5, floors, np.ceil(values)).astype(np.float64)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from nns import nns_part
 
@@ -39,8 +38,12 @@ def test_nns_part_order_is_bounded() -> None:
     assert 0 <= result["order"] <= int(np.floor(np.log2(x.size)))
 
 
-def test_nns_part_rejects_order_max_instead_of_matching_installed_r_useless_na_path() -> None:
+def test_nns_part_order_max_returns_maximum_partition() -> None:
+    # The repaired NNS.part supports order="max" (the kNN-equivalent maximum
+    # partition) instead of rejecting it.
     x = np.linspace(0.0, 1.0, 10)
 
-    with pytest.raises(TypeError):
-        nns_part(x, x, order="max")
+    result = nns_part(x, x, order="max")
+
+    assert set(result) == {"order", "dt", "regression.points"}
+    assert np.asarray(result["regression.points"]["x"]).size == x.size

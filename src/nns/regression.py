@@ -173,6 +173,61 @@ def nns_reg(
     x: NDArray[Any],
     y: NDArray[Any],
     *,
+    factor_2_dummy: bool = True,
+    order: Order = None,
+    dim_red_method: object | None = None,
+    tau: object | None = None,
+    type: str | None = None,
+    point_est: NDArray[np.float64] | float | None = None,
+    return_values: bool = True,
+    plot: bool = False,
+    plot_regions: bool = False,
+    residual_plot: bool = False,
+    confidence_interval: float | None = None,
+    threshold: float = 0.0,
+    n_best: object | None = None,
+    smooth: bool = False,
+    noise_reduction: NoiseReduction = "off",
+    dist: str = "L2",
+    ncores: int | None = None,
+    point_only: bool = False,
+    multivariate_call: bool = False,
+    class_levels: list[object] | None = None,
+    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
+) -> Any:
+    """Repaired NNS.reg port with the original bounded Racine-Hastie R2.
+
+    Plotting arguments and the legacy class_levels/factor_levels emulation
+    parameters are accepted for API compatibility and ignored.
+    """
+    from nns._reg_engine import nns_reg_engine
+
+    del return_values, plot, plot_regions, residual_plot, ncores
+    del class_levels, factor_levels
+    return nns_reg_engine(
+        x,
+        y,
+        factor_2_dummy=factor_2_dummy,
+        order=order,
+        dim_red_method=dim_red_method,
+        tau=tau,
+        type=type,
+        point_est=point_est,
+        confidence_interval=confidence_interval,
+        threshold=threshold,
+        n_best=n_best,
+        smooth=smooth,
+        noise_reduction=cast(str, noise_reduction),
+        dist=dist,
+        point_only=point_only,
+        multivariate_call=multivariate_call,
+    )
+
+
+def _nns_reg_legacy(
+    x: NDArray[Any],
+    y: NDArray[Any],
+    *,
     factor_2_dummy: bool = False,
     order: Order = None,
     dim_red_method: object | None = None,
@@ -1544,7 +1599,11 @@ def _round_class_interval(values: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _r2(y: NDArray[np.float64], y_hat: NDArray[np.float64]) -> float:
-    y_mean = float(np.mean(y))
-    numerator = float(np.sum((y - y_mean) * (y_hat - y_mean)) ** 2)
-    denominator = float(np.sum((y - y_mean) ** 2) * np.sum((y_hat - y_mean) ** 2))
-    return numerator / denominator if denominator > 0.0 else float("nan")
+    """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
+    y_centered = y - float(np.mean(y))
+    y_hat_centered = y_hat - float(np.mean(y_hat))
+    denominator = float(np.sum(y_centered**2) * np.sum(y_hat_centered**2))
+    if denominator == 0.0:
+        return 1.0 if np.array_equal(y, y_hat) else 0.0
+    numerator = float(np.sum(y_centered * y_hat_centered) ** 2)
+    return float(np.clip(numerator / denominator, 0.0, 1.0))
