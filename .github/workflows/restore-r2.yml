@@ -71,9 +71,9 @@ jobs:
           ruff=$(cat diagnostics/ruff.status)
           mypy=$(cat diagnostics/mypy.status)
           if [ "${focused}" = "0" ] && [ "${parity}" = "0" ] && [ "${ruff}" = "0" ] && [ "${mypy}" = "0" ]; then
-            git rm .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py diagnostics/r2-test.log diagnostics/r2-test.status
-            git rm -f diagnostics/parity.log diagnostics/parity.status diagnostics/ruff.log diagnostics/ruff.status diagnostics/mypy.log diagnostics/mypy.status
-            git add src tests
+            git rm -f --ignore-unmatch .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py
+            git rm -f --ignore-unmatch diagnostics/r2-test.log diagnostics/r2-test.status diagnostics/parity.log diagnostics/parity.status diagnostics/ruff.log diagnostics/ruff.status diagnostics/mypy.log diagnostics/mypy.status
+            git add -A
             git commit -m "Restore bounded Racine-Hastie R2 for NNS regression"
           else
             git add diagnostics
