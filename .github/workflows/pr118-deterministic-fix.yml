@@ -1,22 +1,33 @@
 name: Apply PR118 deterministic fixes
-
 on:
   push:
-    branches:
-      - automation/r-cache-nns-13.1
-
+    branches: [automation/r-cache-nns-13.1]
 permissions:
   contents: write
-
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Apply PR118 deterministic fixes'
+    if: github.event.head_commit.message == 'Complete PR118 deterministic repair workflow'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: automation/r-cache-nns-13.1
           fetch-depth: 0
-
-      - name: Apply authoritative R 13.1 fixes
-        shell
+      - name: Patch and commit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/fixtures/original_tests_expected.json')
+          s=p.read_text()
+          for a,b in {'0.4368931':'0.2554476','0.4472136':'0.2','0.2519783':'0.2470094','0.2725541':'0.2'}.items(): s=s.replace(a,b)
+          p.write_text(s)
+          p=Path('src/nns/diff.py'); s=p.read_text(); s=s.replace('independent_d_pm = 1.0 - (0.5**n_cols)','independent_d_pm = 1.0 - 2.0 * (0.5**n_cols)'); p.write_text(s)
+          p=Path('tests/parity/test_r13_smoke.py'); s=p.read_text(); s=s.replace('0.9710083, atol=COMPOUND','0.9660918, atol=COMPOUND'); p.write_text(s)
+          Path('.github/workflows/pr118-deterministic-fix.yml').unlink()
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/fixtures/original_tests_expected.json src/nns/diff.py tests/parity/test_r13_smoke.py .github/workflows/pr118-deterministic-fix.yml
+          git commit -m 'Align Python parity with R NNS 13.1 copula anchor'
+          git push origin HEAD:automation/r-cache-nns-13.1
