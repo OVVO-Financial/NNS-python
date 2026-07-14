@@ -2,25 +2,28 @@
 
 ## Changed files
 
-- `R/ARMA.R`
+- `R/Copula.R`
+- `src/NNS_dep.cpp`
+- `tests/testthat/test_Copula.R`
 
 ## Affected Python modules
 
-- `src/nns/arma.py`
+- None mapped
 
 ## Parity tests to run
 
-- `tests/parity/test_practical_examples.py`
-- `tests/parity/test_r13_smoke.py`
+- None mapped
 
 ## Cache scope
 
-- `NNS.ARMA`
-- `NNS.ARMA.optim`
-- `NNS.VAR`
+- None mapped
 
 ## Required actions
 
 - Fresh cache required: `False`
 - Export review required: `False`
-- Unmapped R files present: `False`
+- Unmapped R files present: `True`
+
+## Unmapped R files
+
+- `R/Copula.R`
