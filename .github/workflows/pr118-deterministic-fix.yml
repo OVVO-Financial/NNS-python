@@ -1,0 +1,22 @@
+name: Apply PR118 deterministic fixes
+
+on:
+  push:
+    branches:
+      - automation/r-cache-nns-13.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Apply PR118 deterministic fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/r-cache-nns-13.1
+          fetch-depth: 0
+
+      - name: Apply authoritative R 13.1 fixes
+        shell
