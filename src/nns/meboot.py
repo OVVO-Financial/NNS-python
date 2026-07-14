@@ -320,12 +320,6 @@ def _target_rho(
                 return np.inf
             return abs(float(corr) - rho)
 
-        candidates: list[tuple[float, float]] = []
-        for candidate_t in (0.0, 0.5, 1.0):
-            candidate_value = objective(candidate_t)
-            if np.isfinite(candidate_value):
-                candidates.append((float(candidate_value), candidate_t))
-
         opt = minimize_scalar(
             objective,
             bounds=(0.0, 1.0),
@@ -333,11 +327,21 @@ def _target_rho(
             options={"xatol": 0.01, "maxiter": 20},
         )
         if np.isfinite(opt.fun):
-            candidates.append((float(opt.fun), float(opt.x)))
-        if not candidates:
-            raise ValueError("function cannot be evaluated at initial parameters")
-
-        _, t = min(candidates, key=lambda candidate: (candidate[0], abs(candidate[1] - 0.5)))
+            t = float(opt.x)
+        else:
+            candidates = [
+                (float(candidate_value), candidate_t)
+                for candidate_t in (0.0, 0.5, 1.0)
+                if np.isfinite(candidate_value := objective(candidate_t))
+            ]
+            if candidates:
+                _, t = min(candidates, key=lambda candidate: candidate[0])
+            else:
+                # A constant bootstrap column has no defined correlation for any
+                # blend. Keep the rank-aligned endpoint rather than aborting the
+                # entire Monte Carlo ensemble; the replicate remains finite and
+                # is handled by the later variance/CLT adjustments.
+                t = 0.0
         out[:, j] = t * m_values + (1.0 - t) * e_values
 
     return out
