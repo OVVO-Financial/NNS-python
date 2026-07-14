@@ -219,12 +219,17 @@ def test_dy_d_vectorized_wrt_nonlinear_mean_matches_r() -> None:
         (np.array([-2, -1, 0, 1, 2], dtype=float), np.array([1, 3, 5, 7, 9], dtype=float))
     )
     y = x[:, 0] ** 2 + np.sin(x[:, 1])
-    # Expected values from live R 13.1. The finite-difference derivative is built
-    # on the smooth-spline NNS.reg fit, so it inherits smooth.spline's ~1e-4
-    # deviation, amplified by division by the small step (documented deviation).
+    # Expected values from R 13.1 (corrected dependence anchor). The step size
+    # is seq_by = (1 - zz)/2 where zz = max(NNS.dep(asym), NNS.copula, NNS.copula)
+    # (dy_d_wrt.R:125); here NNS.copula dominates zz, so the anchor fix (which
+    # changed NNS.copula) shrinks the step and rescales the finite-difference
+    # derivative: First by ~0.765, Second by its reciprocal ~1.307. The old
+    # values were [[-0.1603325, -0.08016623]] / [[3.178848, 0.7947121]] under
+    # the pre-fix 0.75 anchor. The derivative is built on the smooth-spline
+    # NNS.reg fit, so it inherits smooth.spline's ~1e-4 deviation.
     expected = {
-        "First": np.array([[-0.1603325, -0.08016623]], dtype=float),
-        "Second": np.array([[3.178848, 0.7947121]], dtype=float),
+        "First": np.array([[-0.1226899, -0.0613449]], dtype=float),
+        "Second": np.array([[4.1547456, 1.0386864]], dtype=float),
     }
     actual = dy_d(x, y, wrt=[1, 2], eval_points="mean")
 

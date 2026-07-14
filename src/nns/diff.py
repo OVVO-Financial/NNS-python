@@ -556,7 +556,7 @@ def _nns_copula_matrix(values: NDArray[np.float64]) -> float:
 
     discrete_d_pm = _dpm_nd(data, target, 0.0, norm=True)
     continuous_d_pm = _dpm_nd(data, target, 1.0, norm=True)
-    independent_d_pm = 1.0 - (0.5**n_cols)
+    independent_d_pm = 1.0 - 2.0 * (0.5**n_cols)
     n_dim_discrete_dep = abs(discrete_d_pm - independent_d_pm) / independent_d_pm
     n_dim_continuous_dep = abs(continuous_d_pm - independent_d_pm) / independent_d_pm
 

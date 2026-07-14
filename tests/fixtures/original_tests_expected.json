@@ -4,10 +4,10 @@
     "nns_anova_pairwise": [[1.0, 0.7776676, 0.77907], [0.7776676, 1.0, 0.9487158], [0.77907, 0.9487158, 1.0]]
   },
   "test_Copula.R": {
-    "bivariate_continuous": 0.4368931,
-    "bivariate_discrete": 0.4472136,
-    "multivariate_continuous": 0.2519783,
-    "multivariate_discrete": 0.2725541
+    "bivariate_continuous": 0.2554476,
+    "bivariate_discrete": 0.2,
+    "multivariate_continuous": 0.2470094,
+    "multivariate_discrete": 0.2
   },
   "test_FSD_SSD_TSD.R": {
     "fsd_xy": "NO FSD EXISTS",

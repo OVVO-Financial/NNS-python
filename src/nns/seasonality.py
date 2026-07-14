@@ -225,10 +225,7 @@ def _cv_stat(values: NDArray[np.float64], var_cov: float, exact_cv: bool) -> flo
 
 
 def _mean(values: NDArray[np.float64]) -> float:
-    if values.size >= 16:
-        mean = float(np.sum(values)) / float(values.size)
-        if abs(mean) > 1e-12:
-            return mean
+    # Match R NNS_seas_cpp::vec_mean exactly: sequential accumulation.
     total = 0.0
     for value in values:
         total += float(value)
@@ -243,15 +240,12 @@ def _mean_exact(values: NDArray[np.float64]) -> float:
 
 
 def _sample_sd_from_mean(values: NDArray[np.float64], mean: float, *, exact: bool = False) -> float:
-    if not exact and values.size >= 16 and abs(mean) > 1e-12:
-        ss = float(np.dot(values, values)) - float(values.size) * mean * mean
-        if ss < 0.0:
-            ss = 0.0
-    else:
-        ss = 0.0
-        for value in values:
-            delta = float(value) - mean
-            ss += delta * delta
+    del exact
+    # Match R NNS_seas_cpp::vec_sd exactly: sequential squared deviations.
+    ss = 0.0
+    for value in values:
+        delta = float(value) - mean
+        ss += delta * delta
     return math.sqrt(ss / float(values.size - 1))
 
 
