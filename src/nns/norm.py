@@ -48,7 +48,7 @@ def nns_norm(
         if len({item.size for item in series}) > 1:
             return _norm_unequal_series(series)
         values = _as_matrix(np.column_stack(series), "x")
-    means = np.mean(values, axis=0)
+    means = np.mean(values.astype(np.longdouble), axis=0).astype(np.float64)
     means = means.copy()
     means[means == 0.0] = 1e-10
     ratio_grid = means[:, np.newaxis] * (1.0 / means[np.newaxis, :])
