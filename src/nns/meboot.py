@@ -320,17 +320,24 @@ def _target_rho(
                 return np.inf
             return abs(float(corr) - rho)
 
-        if not np.isfinite(objective(0.5)):
-            raise ValueError("function cannot be evaluated at initial parameters")
+        candidates: list[tuple[float, float]] = []
+        for candidate_t in (0.0, 0.5, 1.0):
+            candidate_value = objective(candidate_t)
+            if np.isfinite(candidate_value):
+                candidates.append((float(candidate_value), candidate_t))
+
         opt = minimize_scalar(
             objective,
             bounds=(0.0, 1.0),
             method="bounded",
             options={"xatol": 0.01, "maxiter": 20},
         )
-        if not np.isfinite(opt.fun):
+        if np.isfinite(opt.fun):
+            candidates.append((float(opt.fun), float(opt.x)))
+        if not candidates:
             raise ValueError("function cannot be evaluated at initial parameters")
-        t = float(opt.x)
+
+        _, t = min(candidates, key=lambda candidate: (candidate[0], abs(candidate[1] - 0.5)))
         out[:, j] = t * m_values + (1.0 - t) * e_values
 
     return out
