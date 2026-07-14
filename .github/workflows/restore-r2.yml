@@ -34,38 +34,49 @@ jobs:
       - name: Apply guarded implementation and cache migration
         run: python scripts/restore_racine_hastie_r2.py
 
-      - name: Run focused R2 tests and record result
+      - name: Run validation gates and record each result
         shell: bash
         run: |
           set +e
           mkdir -p diagnostics
-          python -m pytest -q tests/invariants/test_racine_hastie_r2.py tests/property/test_regression.py tests/property/test_multivariate_regression.py > diagnostics/r2-test.log 2>&1
-          status=$?
-          echo "${status}" > diagnostics/r2-test.status
-          cat diagnostics/r2-test.log
-          exit 0
 
-      - name: Run cached R parity and quality gates when focused tests pass
-        shell: bash
-        run: |
-          if [ "$(cat diagnostics/r2-test.status)" != "0" ]; then
-            echo "Focused R2 tests failed; skipping downstream gates."
-            exit 0
+          python -m pytest -q tests/invariants/test_racine_hastie_r2.py tests/property/test_regression.py tests/property/test_multivariate_regression.py > diagnostics/r2-test.log 2>&1
+          echo "$?" > diagnostics/r2-test.status
+
+          if [ "$(cat diagnostics/r2-test.status)" = "0" ]; then
+            NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity > diagnostics/parity.log 2>&1
+            echo "$?" > diagnostics/parity.status
+            ruff check . > diagnostics/ruff.log 2>&1
+            echo "$?" > diagnostics/ruff.status
+            mypy > diagnostics/mypy.log 2>&1
+            echo "$?" > diagnostics/mypy.status
+          else
+            echo "skipped" > diagnostics/parity.status
+            echo "skipped" > diagnostics/ruff.status
+            echo "skipped" > diagnostics/mypy.status
           fi
-          NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
-          ruff check .
-          mypy
+
+          cat diagnostics/r2-test.log
+          [ -f diagnostics/parity.log ] && cat diagnostics/parity.log
+          [ -f diagnostics/ruff.log ] && cat diagnostics/ruff.log
+          [ -f diagnostics/mypy.log ] && cat diagnostics/mypy.log
+          exit 0
 
       - name: Commit result
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ "$(cat diagnostics/r2-test.status)" = "0" ]; then
+          focused=$(cat diagnostics/r2-test.status)
+          parity=$(cat diagnostics/parity.status)
+          ruff=$(cat diagnostics/ruff.status)
+          mypy=$(cat diagnostics/mypy.status)
+          if [ "${focused}" = "0" ] && [ "${parity}" = "0" ] && [ "${ruff}" = "0" ] && [ "${mypy}" = "0" ]; then
             git rm .github/workflows/restore-r2.yml scripts/restore_racine_hastie_r2.py diagnostics/r2-test.log diagnostics/r2-test.status
+            git rm -f diagnostics/parity.log diagnostics/parity.status diagnostics/ruff.log diagnostics/ruff.status diagnostics/mypy.log diagnostics/mypy.status
             git add src tests
             git commit -m "Restore bounded Racine-Hastie R2 for NNS regression"
           else
-            git add diagnostics/r2-test.log diagnostics/r2-test.status
-            git commit -m "Record Racine-Hastie R2 test failure"
+            git add diagnostics
+            git commit -m "Record Racine-Hastie R2 validation failure"
           fi
           git push origin HEAD:claude/inference-comparison-4vlt4q
