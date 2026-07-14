@@ -78,6 +78,6 @@
     "pm_matrix_50x500_seconds": 0.0072,
     "sd_efficient_set_50x252_degree2_seconds": 0.0044
   },
-  "nns_version": "12.1",
+  "nns_version": "13.0",
   "schema_version": 1
 }
