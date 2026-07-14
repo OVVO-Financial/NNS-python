@@ -896,7 +896,6 @@ def test_nns_boost_factor_predictor_50x2(
         variable[:10],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None),
         feature_importance=False,
     )
 
@@ -926,7 +925,6 @@ def test_nns_boost_multi_factor_predictor_50x3(
         variable[:10],
         learner_trials=10,
         cv_size=0.25,
-        factor_levels=(["low", "mid", "high"], None, ["down", "up"]),
         feature_importance=False,
         random_seed=1,
     )
