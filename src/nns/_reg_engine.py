@@ -908,8 +908,9 @@ def _mreg_distances(
 ) -> NDArray[np.float64]:
     """(m, n) distance matrix under the repaired metric."""
     if dist == "FACTOR":
-        return np.mean(
-            rpm_x[None, :, :] != xtest[:, None, :], axis=2, dtype=np.float64
+        return cast(
+            NDArray[np.float64],
+            np.mean(rpm_x[None, :, :] != xtest[:, None, :], axis=2, dtype=np.float64),
         )
     ranges = maxs - mins
     active = np.isfinite(ranges) & (ranges > 0)
