@@ -91,7 +91,7 @@ static double copula_signed(const std::vector<double>& xv,
   double dpm_d1 = c1_total > 0.0 ? c1_dpm / c1_total : 0.0;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  constexpr double indep_D  = 0.5;  // 1 - 2*0.5^2 (both aligned orthants concordant); was 0.75
   
   double discrete_dep   = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double continuous_dep = std::min(1.0, std::max(0.0, std::abs(co_d1 - indep_Co) / indep_Co));
@@ -130,7 +130,7 @@ static double copula_degree0_unsigned(const std::vector<double>& xv,
   double dpm_d0 = dpm_d0_count * inv_n;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  constexpr double indep_D  = 0.5;  // 1 - 2*0.5^2 (both aligned orthants concordant); was 0.75
   
   double disc_dep = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double nd_disc  = std::abs(dpm_d0 - indep_D) / indep_D;
