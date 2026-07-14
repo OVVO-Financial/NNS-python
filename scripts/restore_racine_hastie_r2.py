@@ -111,17 +111,29 @@ def numeric_vector(value: Any) -> list[float] | None:
         return None
 
 
+def is_encoded_r_null(value: Any) -> bool:
+    return value is None or value == [] or value == ""
+
+
 def migrate(node: Any) -> int:
     updated = 0
     if isinstance(node, dict):
         fitted = node.get("Fitted.xy")
         class_levels = node.get("class.levels")
         prediction_accuracy = node.get("Prediction.Accuracy")
-        is_continuous = prediction_accuracy is None and class_levels in (None, [], "")
+        is_continuous = is_encoded_r_null(prediction_accuracy) and is_encoded_r_null(
+            class_levels
+        )
         if is_continuous and "R2" in node and isinstance(fitted, dict):
             actual = numeric_vector(fitted.get("y"))
             predicted = numeric_vector(fitted.get("y.hat"))
-            if actual is not None and predicted is not None and len(actual) == len(predicted) and actual:
+            valid_vectors = (
+                actual is not None
+                and predicted is not None
+                and len(actual) == len(predicted)
+                and bool(actual)
+            )
+            if valid_vectors:
                 node["R2"] = squared_correlation(actual, predicted)
                 updated += 1
         for value in node.values():
