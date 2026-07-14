@@ -1,0 +1,31 @@
+name: PR118 targeted parity diagnostics
+on:
+  push:
+    branches: [automation/r-cache-nns-13.1]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install -U pip
+          python -m pip install build scikit-build-core nanobind pytest 'numpy<2.5' scipy hypothesis pytest-benchmark pytest-xdist
+          python -m pip install -e . --force-reinstall --no-deps
+      - name: Run targeted parity
+        continue-on-error: true
+        run: |
+          NNS_R_CACHE_ONLY=1 python -m pytest -q \
+            tests/parity/test_original_dependence.py \
+            tests/parity/test_diff.py \
+            tests/parity/test_r13_smoke.py \
+            tests/parity/test_var.py \
+            tests/parity/test_causation.py > pr118-targeted.log 2>&1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr118-targeted-diagnostics
+          path: pr118-targeted.log
