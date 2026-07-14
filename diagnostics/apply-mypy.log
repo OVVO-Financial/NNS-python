@@ -1,4 +1,0 @@
-src/nns/_reg_engine.py:157: error: Item "None" of "ndarray[tuple[Any, ...], dtype[float64]] | None" has no attribute "__iter__" (not iterable)  [union-attr]
-tests/parity/test_multivariate_regression.py:408: error: Argument 1 to "float" has incompatible type "object"; expected "str | Buffer | SupportsFloat | SupportsIndex"  [arg-type]
-Found 2 errors in 2 files (checked 169 source files)
-OVERALL EXIT CODE: 1
