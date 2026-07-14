@@ -40,7 +40,7 @@ def test_nns_m_reg_shape_invariants_hold(
 
     result = nns_m_reg(x, y, order=cast(Order, order), noise_reduction=cast(NoiseReduction, noise))
 
-    assert np.isnan(result["R2"]) or result["R2"] <= 1.0 + 1e-12
+    assert 0.0 <= result["R2"] <= 1.0
     assert result["Fitted.xy"]["y"].shape == (x.shape[0],)
     assert result["Fitted.xy"]["y.hat"].shape == (x.shape[0],)
     assert result["Fitted.xy"]["NNS.ID"].shape == (x.shape[0],)

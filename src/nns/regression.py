@@ -195,10 +195,11 @@ def nns_reg(
     class_levels: list[object] | None = None,
     factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None = None,
 ) -> Any:
-    """Repaired NNS.reg port: one consistent prediction rule, real distance
-    dispatch, training-fitted encodings, predictive R2. Plotting arguments and
-    the legacy class_levels/factor_levels emulation parameters are accepted for
-    API compatibility and ignored."""
+    """Repaired NNS.reg port with the original bounded Racine-Hastie R2.
+
+    Plotting arguments and the legacy class_levels/factor_levels emulation
+    parameters are accepted for API compatibility and ignored.
+    """
     from nns._reg_engine import nns_reg_engine
 
     del return_values, plot, plot_regions, residual_plot, ncores
@@ -1598,7 +1599,11 @@ def _round_class_interval(values: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _r2(y: NDArray[np.float64], y_hat: NDArray[np.float64]) -> float:
-    y_mean = float(np.mean(y))
-    numerator = float(np.sum((y - y_mean) * (y_hat - y_mean)) ** 2)
-    denominator = float(np.sum((y - y_mean) ** 2) * np.sum((y_hat - y_mean) ** 2))
-    return numerator / denominator if denominator > 0.0 else float("nan")
+    """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
+    y_centered = y - float(np.mean(y))
+    y_hat_centered = y_hat - float(np.mean(y_hat))
+    denominator = float(np.sum(y_centered**2) * np.sum(y_hat_centered**2))
+    if denominator == 0.0:
+        return 1.0 if np.array_equal(y, y_hat) else 0.0
+    numerator = float(np.sum(y_centered * y_hat_centered) ** 2)
+    return float(np.clip(numerator / denominator, 0.0, 1.0))

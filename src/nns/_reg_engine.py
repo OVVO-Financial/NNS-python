@@ -642,11 +642,14 @@ def _predict_univariate(
 # --------------------------------------------------------------------------
 
 def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
-    sse = float(np.sum((actual - predicted) ** 2))
-    sst = float(np.sum((actual - np.mean(actual)) ** 2))
-    if sst == 0.0:
-        return 1.0 if sse == 0.0 else 0.0
-    return 1.0 - sse / sst
+    """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
+    actual_centered = actual - float(np.mean(actual))
+    predicted_centered = predicted - float(np.mean(predicted))
+    denominator = float(np.sum(actual_centered**2) * np.sum(predicted_centered**2))
+    if denominator == 0.0:
+        return 1.0 if np.array_equal(actual, predicted) else 0.0
+    numerator = float(np.sum(actual_centered * predicted_centered) ** 2)
+    return float(np.clip(numerator / denominator, 0.0, 1.0))
 
 
 def _intervals(

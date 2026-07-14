@@ -56,7 +56,7 @@ def test_nns_reg_univariate_shape_invariants_hold(
 
     result = nns_reg(x, y, order=cast(Order, order), noise_reduction=cast(NoiseReduction, noise))
 
-    assert np.isnan(result["R2"]) or result["R2"] <= 1.0 + 1e-12
+    assert 0.0 <= result["R2"] <= 1.0
     assert result["SE"] >= 0.0
     assert result["Fitted.xy"]["x"].shape == (size,)
     assert result["Fitted.xy"]["y"].shape == (size,)
@@ -84,7 +84,7 @@ def test_nns_reg_dim_red_shape_invariants_hold(
 
     result = nns_reg(x, y, dim_red_method=method)
 
-    assert np.isnan(result["R2"]) or result["R2"] <= 1.0 + 1e-12
+    assert 0.0 <= result["R2"] <= 1.0
     assert result["x.star"]["x"].shape == (x.shape[0],)
     assert len(result["equation"]["Variable"]) == x.shape[1] + 1
     assert result["equation"]["Coefficient"].shape == (x.shape[1] + 1,)
