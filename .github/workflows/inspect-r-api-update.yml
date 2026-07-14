@@ -217,7 +217,6 @@ jobs:
             - Windows binary verified: `${{ steps.package.outputs.windows_binary }}`
 
             The workflow installed the exact source tarball, regenerated all live-R parity fixtures, then reran invariants and the complete parity suite in committed-cache-only mode.
-          labels: automated,r-parity-cache
           add-paths: |
             tests/_r.py
             tests/_r_cache.json
