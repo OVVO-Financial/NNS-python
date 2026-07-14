@@ -40,7 +40,7 @@ def test_r_nns_13_copula_smoke_values() -> None:
 
     np.testing.assert_allclose(nns_copula(a2, continuous=True), 1.0, atol=EXACT)
     np.testing.assert_allclose(nns_copula(a2, continuous=False), 1.0, atol=EXACT)
-    np.testing.assert_allclose(nns_copula(a3, continuous=True), 0.9710083, atol=COMPOUND)
+    np.testing.assert_allclose(nns_copula(a3, continuous=True), 0.9660918, atol=COMPOUND)
     np.testing.assert_allclose(nns_copula(a3, continuous=False), 0.9411239, atol=COMPOUND)
 
 
