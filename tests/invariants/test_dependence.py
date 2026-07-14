@@ -52,3 +52,27 @@ def test_nns_dep_asym_can_be_directional() -> None:
     y = x**2
 
     assert nns_dep(x, y, asym=True) != pytest.approx(nns_dep(y, x, asym=True), abs=EXACT)
+
+
+def test_nns_dep_independence_null_is_consistent() -> None:
+    # The discordant partial-moment independence anchor is 1 - 2*0.5**n = 0.5
+    # for the bivariate copula (both fully-aligned orthants are concordant),
+    # not 1 - 0.5**n = 0.75. With the correct anchor the dependence of
+    # independent data is a *consistent* estimator: it decays toward 0 as the
+    # sample grows. The old 0.75 anchor left a fixed ~0.41 floor that never
+    # vanished, so a large-sample independent mean well under it (and clearly
+    # below the small-sample mean) can only hold with the corrected anchor.
+    rng = np.random.default_rng(0)
+
+    def mean_independent_dep(n: int, reps: int = 8) -> float:
+        vals = [
+            nns_dep(rng.standard_normal(n), rng.standard_normal(n))["Dependence"]
+            for _ in range(reps)
+        ]
+        return float(np.mean(vals))
+
+    small = mean_independent_dep(200)
+    large = mean_independent_dep(4000)
+
+    assert large < small  # consistent: decays with sample size
+    assert large < 0.35  # unreachable under the old non-vanishing ~0.41 floor
