@@ -1,0 +1,26 @@
+name: Temporary parity diagnostics
+
+on:
+  push:
+    branches:
+      - automation/r-cache-nns-13.1
+
+permissions:
+  contents: read
+
+jobs:
+  parity-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install
