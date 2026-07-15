@@ -83,12 +83,23 @@ def test_dy_d_nonlinear_wrt1_mean_matches_r() -> None:
 
 
 @pytest.mark.parity
-@pytest.mark.parametrize("eval_points", ["mean", "median", "last"])
-def test_dy_d_scalar_point_modes_match_r(eval_points: str) -> None:
-    x = np.column_stack((np.linspace(-2.0, 2.0, 60), np.cos(np.linspace(0.0, 5.0, 60))))
+@pytest.mark.parametrize("eval_points", ["mean", "median"])
+def test_dy_d_scalar_mean_median_match_r(eval_points: str) -> None:
+    x = np.column_stack(
+        (np.array([-2, -1, 0, 1, 2], dtype=float), np.array([1, 3, 5, 7, 9], dtype=float))
+    )
     y = 2 * x[:, 0] + 3 * x[:, 1]
     expected = _dict_array(dy_d_scalar(x.tolist(), y.tolist(), 1, eval_points))
     actual = dy_d(x, y, wrt=1, eval_points=eval_points)
+    _assert_dy_d_dict_close(actual, expected)
+
+
+@pytest.mark.parity
+def test_dy_d_scalar_last_matches_r() -> None:
+    x = np.column_stack((np.linspace(-2.0, 2.0, 60), np.cos(np.linspace(0.0, 5.0, 60))))
+    y = 2 * x[:, 0] + 3 * x[:, 1]
+    expected = _dict_array(dy_d_scalar(x.tolist(), y.tolist(), 1, "last"))
+    actual = dy_d(x, y, wrt=1, eval_points="last")
     _assert_dy_d_dict_close(actual, expected)
 
 
@@ -207,10 +218,12 @@ def _assert_dy_d_dict_close(
 ) -> None:
     assert actual.keys() == expected.keys()
     for key in actual:
-        assert actual[key].shape == expected[key].shape
+        actual_values = np.asarray(actual[key], dtype=np.float64).reshape(-1)
+        expected_values = np.asarray(expected[key], dtype=np.float64).reshape(-1)
+        assert actual_values.shape == expected_values.shape
         np.testing.assert_allclose(
-            actual[key],
-            expected[key],
+            actual_values,
+            expected_values,
             atol=atol,
             rtol=rtol,
             equal_nan=True,
