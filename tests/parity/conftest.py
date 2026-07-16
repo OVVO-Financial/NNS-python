@@ -1,6 +1,5 @@
 import pytest
 
-
 _OBSOLETE_BOOST_SEED_INVARIANCE_TEST = (
     "tests/parity/test_boost.py::test_nns_boost_ivs_test_none_is_seed_invariant"
 )
