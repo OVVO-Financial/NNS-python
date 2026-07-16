@@ -19,8 +19,8 @@ from nns import (
     lpm,
     lpm_ratio,
     lpm_var,
-    nns_moments,
     nns_mode,
+    nns_moments,
     pm_matrix,
     upm,
 )
