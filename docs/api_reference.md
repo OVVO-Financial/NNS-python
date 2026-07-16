@@ -227,7 +227,7 @@ Computes a matrix representation of causation relationships.
 
 Closest R API: `NNS.reg`.
 
-Bivariate NNS regression and classification. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and public factor-expansion paths.
+Bivariate NNS regression and classification. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and public factor-expansion paths.
 
 Returns Python-native structures, generally dictionaries containing estimates, diagnostics, residuals, intervals, and related arrays.
 
@@ -241,13 +241,13 @@ Multivariate regression and classification surface. Numeric and class paths are 
 
 Closest R API: `NNS.stack`.
 
-Stacked ensemble API for numeric and classification workflows.
+Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias.
 
 #### `nns_boost`
 
 Closest R API: `NNS.boost`.
 
-Boosted ensemble API. Deterministic and stochastic structures are implemented. The high-feature stochastic threshold path is guarded to make an installed-R failure explicit.
+Boosted ensemble API. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Deterministic and stochastic structures are implemented. The high-feature stochastic threshold path is guarded to make an installed-R failure explicit.
 
 ### Categorical and factor helpers
 

@@ -28,6 +28,7 @@ from numpy.typing import NDArray
 from nns._reg_engine import (
     _mreg_predict_path,
     _mreg_prepare,
+    _validate_dist,
     _validate_order,
     nns_reg_engine,
 )
@@ -124,7 +125,7 @@ def nns_stack(
     obj_fn: Callable[[NDArray[np.float64], NDArray[np.float64]], float] | None = None,
     objective: Objective = "min",
     optimize_threshold: bool = True,
-    dist: str = "L2",
+    dist: str | None = None,
     cv_size: float | None = None,
     balance: bool = False,
     ts_test: int | None = None,
@@ -194,16 +195,7 @@ def nns_stack(
         if not math.isfinite(pred_int) or pred_int <= 0 or pred_int >= 1:
             raise ValueError("[pred.int] must be a finite scalar strictly between 0 and 1.")
 
-    if not isinstance(dist, str) or dist.lower() not in {"l2", "l1", "dtw", "factor"}:
-        raise ValueError("[dist] must be one character value among 'L2', 'L1', 'DTW', 'FACTOR'.")
-    if dist.lower() != "l2":
-        raise ValueError(
-            "The corrected NNS.stack currently supports dist = 'L2' only. "
-            "The production multivariate NNS.reg path does not yet implement "
-            "distinct L1, DTW, or FACTOR estimators, so those values are "
-            "rejected rather than silently treated as L2."
-        )
-    dist_value = "L2"
+    dist_value = _validate_dist(dist)
 
     # ----------------------------------------------------------------------
     # Input data and response coding

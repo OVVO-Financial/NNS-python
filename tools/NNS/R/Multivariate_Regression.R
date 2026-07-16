@@ -1,8 +1,8 @@
 NNS.M.reg <- function (X_n, Y, factor.2.dummy = TRUE, order = NULL, n.best = NULL, type = NULL, point.est = NULL, point.only = FALSE,
-                       plot = FALSE, residual.plot = TRUE, location = NULL, noise.reduction = 'off', dist = "L2",
+                       plot = FALSE, residual.plot = TRUE, location = NULL, noise.reduction = 'off', dist = NULL,
                        return.values = FALSE, plot.regions = FALSE, ncores = NULL, confidence.interval = NULL){
   
-  dist <- tolower(dist)
+  dist <- if (is.null(dist)) "nns" else tolower(dist)
   
   ### For Multiple regressions
   ###  Turn each column into numeric values

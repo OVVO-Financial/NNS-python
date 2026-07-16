@@ -157,6 +157,7 @@ def _var_interpolate_and_extrapolate(
                 folds=5,
                 method=1,
                 status=False,
+                dist="L2",
             )["stack"]
             variable_interpolation[missing] = np.asarray(fill, dtype=np.float64)
         else:
@@ -167,6 +168,7 @@ def _var_interpolate_and_extrapolate(
                 point_est=np.asarray(missing, dtype=np.float64) + 1,
                 plot=False,
                 point_only=True,
+                dist="L2",
             )["Point.est"]
             if fitted_missing is not None and fitted_missing.size:
                 variable_interpolation[missing] = np.asarray(fitted_missing, dtype=np.float64)
