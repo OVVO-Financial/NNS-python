@@ -39,7 +39,7 @@ def test_nns_stack_numeric_matches_r(method: list[int], stack: bool) -> None:
         method=method,
         stack=stack,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -73,7 +73,7 @@ def test_nns_stack_equal_dim_red_matches_r() -> None:
         order=2,
         stack=False,
         dim_red_method="equal",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -108,7 +108,7 @@ def test_nns_stack_factor_predictor_method1_matches_r() -> None:
         method=1,
         stack=True,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -143,7 +143,7 @@ def test_nns_stack_factor_predictor_method2_factor_only_matches_r_fallback() -> 
         method=2,
         stack=True,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -178,7 +178,7 @@ def test_nns_stack_factor_predictor_method12_factor_only_matches_r_fallback() ->
         method=(1, 2),
         stack=True,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -219,7 +219,7 @@ def test_nns_stack_mixed_factor_predictor_method2_matches_r() -> None:
         method=2,
         stack=True,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -260,7 +260,7 @@ def test_nns_stack_mixed_factor_predictor_method12_matches_r() -> None:
         method=(1, 2),
         stack=True,
         dim_red_method="cor",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -299,7 +299,7 @@ def test_nns_stack_ts_test_matches_r(method: list[int], ts_test: int) -> None:
         stack=True,
         dim_red_method="cor",
         ts_test=ts_test,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -336,7 +336,7 @@ def test_nns_stack_var_like_ts_test_matches_r() -> None:
         stack=True,
         dim_red_method="cor",
         ts_test=ts_test,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -372,7 +372,7 @@ def test_nns_stack_pred_int_matches_r(method: list[int]) -> None:
         stack=True,
         dim_red_method="cor",
         pred_int=0.95,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -408,7 +408,7 @@ def test_nns_stack_binary_class_matches_r(method: list[int]) -> None:
         stack=True,
         dim_red_method="cor",
         type="class",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -446,7 +446,7 @@ def test_nns_stack_binary_class_pred_int_matches_r(method: list[int]) -> None:
         dim_red_method="cor",
         type="class",
         pred_int=0.95,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -489,7 +489,7 @@ def test_nns_stack_multiclass_matches_r(method: list[int]) -> None:
         stack=True,
         dim_red_method="cor",
         type="class",
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -529,7 +529,7 @@ def test_nns_stack_factor_like_class_pred_int_matches_r() -> None:
         type="class",
         class_levels=["A", "B", "C"],
         pred_int=0.95,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -567,7 +567,7 @@ def test_nns_stack_factor_like_class_matches_r() -> None:
         dim_red_method="cor",
         type="class",
         class_levels=["A", "B", "C"],
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_matches(actual, expected, exact_probability_threshold=False)
@@ -622,7 +622,7 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
         type="class",
         balance=True,
         random_seed=42,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
@@ -665,7 +665,7 @@ def test_nns_stack_balance_multiclass_and_factor_structure() -> None:
         class_levels=["A", "B", "C"],
         balance=True,
         random_seed=7,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_class_structure(
@@ -712,7 +712,7 @@ def test_nns_stack_balance_class_pred_int_matches_r_structure() -> None:
         balance=True,
         random_seed=42,
         pred_int=0.95,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_class_structure(
@@ -755,7 +755,7 @@ def test_nns_stack_balance_type_none_forces_class_path() -> None:
         method=1,
         balance=True,
         random_seed=9,
-        dist="L2",
+        dist=None,
     )
 
     _assert_stack_class_structure(

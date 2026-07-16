@@ -38,12 +38,12 @@ def test_nns_reg_multivariate_call_matches_r(order: int | None) -> None:
         None,
         False,
         "off",
-        "L2",
+        None,
         None,
         False,
         True,
     )
-    actual = nns_reg(x, y, order=order, multivariate_call=True, dist="L2")
+    actual = nns_reg(x, y, order=order, multivariate_call=True, dist=None)
     expected_dict = cast(dict[str, Any], expected)
 
     assert set(actual) == set(expected_dict)
@@ -108,7 +108,7 @@ def test_nns_m_reg_matches_r(
         point_only=point_only,
         noise_reduction=cast(NoiseReduction, noise),
         ncores=1,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -152,7 +152,7 @@ def test_nns_m_reg_confidence_interval_matches_r(
         point_est=point_est,
         confidence_interval=confidence_interval,
         ncores=1,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -188,7 +188,7 @@ def test_nns_m_reg_classification_matches_r(
         type="class",
         point_est=point_est,
         ncores=1,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -226,7 +226,7 @@ def test_nns_m_reg_class_confidence_interval_matches_r(
         point_est=point_est,
         confidence_interval=0.95,
         ncores=1,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -258,7 +258,7 @@ def test_nns_m_reg_factor_levels_return_numeric_codes() -> None:
         type="class",
         point_est=point_est,
         class_levels=levels,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -292,7 +292,7 @@ def test_nns_m_reg_factor_levels_class_confidence_interval_matches_r() -> None:
         point_est=point_est,
         confidence_interval=0.95,
         class_levels=levels,
-        dist="L2",
+        dist=None,
     )
 
     _assert_m_reg_matches(actual, expected)
@@ -316,7 +316,7 @@ def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
         "off",
         type="class",
     )
-    actual = nns_reg(x, y, order=1, type="class", point_est=point_est, dist="L2")
+    actual = nns_reg(x, y, order=1, type="class", point_est=point_est, dist=None)
 
     _assert_m_reg_matches(actual, expected)
 
@@ -346,7 +346,7 @@ def _r_nns_m_reg(
         False,
         None,
         noise,
-        "L2",
+        None,
         False,
         False,
         1,

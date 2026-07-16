@@ -83,8 +83,8 @@ def test_regression_residuals_example_matches_installed_r() -> None:
     x = _matrix(expected["x"])
     y = _array(expected["y"])
 
-    model = nns_reg(x, y, residual_plot=False, dist="L2")
-    stack = nns_stack(x, y, x, method=1, dist="L2")
+    model = nns_reg(x, y, residual_plot=False, dist=None)
+    stack = nns_stack(x, y, x, method=1, dist=None)
     stack_residuals = np.asarray(stack["stack"], dtype=np.float64) - y
 
     actual = {
@@ -398,9 +398,9 @@ def _r_regression_residuals() -> dict[str, Any]:
         noise <- 0.25 * rnorm(n)
         y <- x1 + x2 + noise
         x <- cbind(x1, x2)
-        model <- NNS.reg(x, y, residual.plot = FALSE, dist = 'L2', plot = FALSE)
+        model <- NNS.reg(x, y, residual.plot = FALSE, dist = NULL, plot = FALSE)
         stack <- NNS.stack(
-          x, y, IVs.test = x, method = 1, dist = 'L2',
+          x, y, IVs.test = x, method = 1, dist = NULL,
           status = FALSE, ncores = 1
         )$stack
         out <- list(

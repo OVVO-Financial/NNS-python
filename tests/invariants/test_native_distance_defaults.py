@@ -154,3 +154,66 @@ def test_nns_boost_l2_propagates_to_learner_trials_and_final_stack(
     assert seen_stack
     assert set(seen_engine) == {"L2"}
     assert set(seen_stack) == {"L2"}
+
+
+def test_derivative_helpers_delegate_with_native_distance(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nns.diff as diff_mod
+
+    seen_reg: list[str | None] = []
+    seen_stack: list[str | None] = []
+
+    def fake_reg(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        seen_reg.append(kwargs.get("dist"))
+        point_est = kwargs.get("point_est")
+        if kwargs.get("point_only"):
+            return {"Point.est": np.zeros(np.asarray(point_est).size)}
+        return {"Fitted.xy": {"gradient": np.array([1.0, 2.0, 3.0])}}
+
+    def fake_stack(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        seen_stack.append(kwargs.get("dist"))
+        test = np.asarray(kwargs.get("ivs_test", args[2] if len(args) > 2 else []))
+        return {"stack": np.zeros(test.shape[0])}
+
+    monkeypatch.setattr("nns.regression.nns_reg", fake_reg)
+    monkeypatch.setattr("nns.stack.nns_stack", fake_stack)
+    x = np.linspace(0.0, 1.0, 9)
+    y = x**2
+    assert diff_mod.dy_dx(x, y, eval_point="overall") == pytest.approx(2.0)
+    diff_mod._dy_dx_numeric(x, y, np.array([0.25, 0.5]))
+    diff_mod._dy_d_stack_estimates(x.reshape(-1, 1), y, x[:2].reshape(-1, 1))
+    assert seen_reg
+    assert seen_stack
+    assert set(seen_reg) == {None}
+    assert set(seen_stack) == {None}
+
+
+def test_package_source_has_no_hard_coded_l2_delegations() -> None:
+    import ast
+    from pathlib import Path
+
+    package_root = Path(__file__).resolve().parents[2] / "src" / "nns"
+    delegated = {"nns_reg", "nns_m_reg", "nns_stack", "nns_boost", "nns_reg_engine"}
+    violations: list[str] = []
+    for source in package_root.rglob("*.py"):
+        tree = ast.parse(source.read_text(), filename=str(source))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            else:
+                name = ""
+            if name not in delegated:
+                continue
+            for kw in node.keywords:
+                if (
+                    kw.arg == "dist"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value == "L2"
+                ):
+                    rel = source.relative_to(package_root.parents[1])
+                    violations.append(f"{rel}:{node.lineno} {name}(dist='L2')")
+    assert violations == []

@@ -186,7 +186,7 @@ def dy_dx(
             x_values,
             y_values,
             plot=False,
-            dist="L2",
+            dist=None,
         )
         fitted = result["Fitted.xy"]
         if not isinstance(fitted, dict):
@@ -528,7 +528,7 @@ def _dy_dx_numeric(
         point_only=True,
         smooth=True,
         plot=False,
-        dist="L2",
+        dist=None,
     )
     estimates = np.asarray(reg_output["Point.est"], dtype=np.float64).reshape(3, -1).T
     eval_col = deriv_points[:, 1]
@@ -705,7 +705,7 @@ def _dy_d_stack_estimates(
         order=None,
         folds=1,
         ncores=1,
-        dist="L2",
+        dist=None,
     )
     return np.asarray(result["stack"], dtype=np.float64).reshape(-1)
 

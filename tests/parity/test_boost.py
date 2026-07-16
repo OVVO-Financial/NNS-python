@@ -35,7 +35,7 @@ def test_nns_boost_numeric_matches_r(depth: int | None) -> None:
         cv_size=0.25,
         depth=depth,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -68,7 +68,7 @@ def test_nns_boost_ivs_test_none_matches_r() -> None:
         learner_trials=10,
         cv_size=0.25,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -91,7 +91,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
             learner_trials=10,
             cv_size=0.25,
             feature_importance=False,
-        dist="L2",
+        dist=None,
         )["results"],
         dtype=np.float64,
     )
@@ -104,7 +104,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
                 cv_size=0.25,
                 feature_importance=False,
                 random_seed=seed,
-            dist="L2",
+            dist=None,
             )["results"],
             dtype=np.float64,
         )
@@ -133,7 +133,7 @@ def test_nns_boost_deterministic_wider_feature_set_matches_r() -> None:
         learner_trials=100,
         cv_size=0.25,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -162,7 +162,7 @@ def test_nns_boost_features_only_matches_r() -> None:
         cv_size=0.25,
         features_only=True,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -193,7 +193,7 @@ def test_nns_boost_ts_test_deterministic_matches_r(ts_test: int) -> None:
         cv_size=0.25,
         ts_test=ts_test,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -224,7 +224,7 @@ def test_nns_boost_ts_test_features_only_matches_r() -> None:
         features_only=True,
         ts_test=5,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -255,7 +255,7 @@ def test_nns_boost_stochastic_epoch_path_matches_r_structure() -> None:
         cv_size=0.25,
         random_seed=4,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     assert set(actual) == set(cast(dict[str, object], expected))
@@ -298,7 +298,7 @@ def test_nns_boost_stochastic_epoch_ts_test_matches_r_structure() -> None:
         ts_test=5,
         random_seed=5,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     assert set(actual) == set(cast(dict[str, object], expected))
@@ -340,7 +340,7 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         learner_trials=10,
         cv_size=0.25,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -373,7 +373,7 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         cv_size=0.25,
         features_only=True,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -420,7 +420,7 @@ def test_nns_boost_multiple_factor_predictors_match_r_positional(
         # No random_seed override: R's NNS.boost defaults to seed = 123L and the
         # R reference sets no external seed, so the port must use its matching
         # default seed (123) to reproduce the same Mersenne-Twister CV split.
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -453,7 +453,7 @@ def test_nns_boost_numeric_pred_int_matches_r(depth: int, pred_int: float) -> No
         depth=depth,
         pred_int=pred_int,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -488,7 +488,7 @@ def test_nns_boost_features_only_ignores_pred_int_like_r() -> None:
         features_only=True,
         pred_int=0.95,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     assert set(actual) == {"feature.weights", "feature.frequency"}
@@ -522,7 +522,7 @@ def test_nns_boost_binary_class_matches_r(depth: int | None) -> None:
         depth=depth,
         type="class",
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -557,7 +557,7 @@ def test_nns_boost_binary_class_pred_int_matches_r(depth: int) -> None:
         type="class",
         pred_int=0.95,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -592,7 +592,7 @@ def test_nns_boost_multiclass_matches_r(depth: int) -> None:
         depth=depth,
         type="class",
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -626,7 +626,7 @@ def test_nns_boost_features_only_ignores_class_pred_int_like_r() -> None:
         type="class",
         pred_int=0.95,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     assert set(actual) == {"feature.weights", "feature.frequency"}
@@ -660,7 +660,7 @@ def test_nns_boost_factor_like_class_matches_r() -> None:
         type="class",
         class_levels=["A", "B", "C"],
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -691,7 +691,7 @@ def test_nns_boost_class_stable_metadata_matches_r_when_n_best_is_structural() -
         depth=1,
         type="class",
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     assert isinstance(expected, dict)
@@ -736,7 +736,7 @@ def test_nns_boost_class_features_only_matches_r() -> None:
         type="class",
         features_only=True,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_matches(actual, expected)
@@ -774,7 +774,7 @@ def test_nns_boost_balance_binary_class_matches_r_structure(depth: int) -> None:
         balance=True,
         random_seed=42,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
@@ -813,7 +813,7 @@ def test_nns_boost_balance_multiclass_and_factor_structure() -> None:
         balance=True,
         random_seed=7,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_class_structure(
@@ -857,7 +857,7 @@ def test_nns_boost_balance_class_pred_int_matches_r_structure() -> None:
         random_seed=42,
         pred_int=0.95,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_class_structure(
@@ -899,7 +899,7 @@ def test_nns_boost_balance_type_none_forces_class_path() -> None:
         balance=True,
         random_seed=9,
         feature_importance=False,
-        dist="L2",
+        dist=None,
     )
 
     _assert_boost_class_structure(
