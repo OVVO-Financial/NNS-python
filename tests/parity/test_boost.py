@@ -63,6 +63,7 @@ def test_nns_boost_ivs_test_none_matches_r() -> None:
         learner_trials=10,
         cv_size=0.25,
         feature_importance=False,
+        random_seed=123,
     )
 
     _assert_boost_matches(actual, expected)
