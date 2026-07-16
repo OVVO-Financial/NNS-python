@@ -2,7 +2,26 @@ canonical_source:
   repository: OVVO-Financial/NNS
   branch: NNS-Beta-Version
   directory: vignettes
-  policy: R defines the statistical narrative, datasets, and section order.
+  policy: R defines the statistical narrative, datasets, section order, and interpretation.
+
+acceptance_criteria:
+  section_order: Preserve the R vignette section order and statistical narrative.
+  demonstrations: Reproduce every executable R demonstration supported by Python.
+  same_data: Use the same R datasets or committed faithful equivalents.
+  figures: Generate equivalent figures instead of replacing graphics with console summaries.
+  returned_structures: Display important returned structures and numerical results.
+  explicit_gaps: Label genuine R/Python API gaps at the point where the R section uses them.
+  instructional_form: Numbered Python files are Jupytext-style instructional scripts, not smoke tests.
+
+runtime:
+  default: Full R-equivalent demonstrations and parameter grids.
+  fast_mode: Set NNS_VIGNETTE_FAST=1 only for CI runtime reduction; section coverage is unchanged.
+  figures: examples/vignettes/output/<python-file-stem>/
+
+datasets:
+  - examples/data/iris.csv
+  - examples/data/mtcars.csv
+  - examples/data/AirPassengers.csv
 
 examples:
   - id: '01'

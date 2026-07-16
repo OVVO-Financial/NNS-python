@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_DIR = ROOT / "examples" / "vignettes"
+DATA_DIR = ROOT / "examples" / "data"
 EXPECTED = {
     "01": ("NNSvignette_01_Overview.Rmd", "01_overview.py"),
     "02": ("NNSvignette_02_Partial_Moments.Rmd", "02_partial_moments.py"),
@@ -23,13 +24,42 @@ def test_canonical_vignette_set_is_complete_and_ordered() -> None:
     assert numbered == [python for _, python in EXPECTED.values()]
 
 
-def test_each_python_entrypoint_names_its_r_source() -> None:
+def test_each_python_vignette_is_instructional_not_a_wrapper() -> None:
     for r_source, python_name in EXPECTED.values():
         text = (EXAMPLE_DIR / python_name).read_text(encoding="utf-8")
         assert r_source in text
+        assert "# %% [markdown]" in text
+        assert "save_figure(" in text
+        assert "def main()" in text
+        assert len(text.splitlines()) >= 90
+        assert "from overview import main" not in text
+        assert "from time_series_forecasting import main" not in text
 
 
 def test_manifest_matches_the_canonical_pairs() -> None:
     text = (EXAMPLE_DIR / "manifest.yml").read_text(encoding="utf-8")
     pairs = re.findall(r"\n\s+r: (\S+)\n\s+python: (\S+)", text)
     assert pairs == list(EXPECTED.values())
+    for criterion in (
+        "section_order",
+        "same_data",
+        "figures",
+        "returned_structures",
+        "explicit_gaps",
+    ):
+        assert criterion in text
+
+
+def test_exact_r_datasets_are_committed_locally() -> None:
+    expected_rows = {"iris.csv": 151, "mtcars.csv": 33, "AirPassengers.csv": 145}
+    for filename, line_count in expected_rows.items():
+        path = DATA_DIR / filename
+        assert path.exists()
+        assert len(path.read_text(encoding="utf-8").splitlines()) == line_count
+
+
+def test_parity_ledger_covers_all_nine_vignettes() -> None:
+    text = (EXAMPLE_DIR / "PARITY.md").read_text(encoding="utf-8")
+    for vignette_id, (_, python_name) in EXPECTED.items():
+        assert f"## {vignette_id}" in text
+        assert python_name in text
