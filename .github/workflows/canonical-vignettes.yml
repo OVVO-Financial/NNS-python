@@ -1,0 +1,22 @@
+name: Canonical vignette examples
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-vignettes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run canonical vignette checks
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          git clone -q --depth 1 --branch "$REF_NAME" "https://github.com/$REPOSITORY.git" repo
+          cd repo
+          python -m pip install -q -e . pytest
+          python -m pytest -q tests/docs/test_canonical_vignette_manifest.py tests/docs/test_vignette_examples.py
