@@ -4,7 +4,7 @@ from typing import Any
 
 from nns.pm_matrix import pm_matrix as pm_matrix
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 _EXPORTS = {
     "BoostResult": ("nns.boost", "BoostResult"),
@@ -78,16 +78,3 @@ _EXPORTS = {
     "upm_var": ("nns.var", "upm_var"),
     "var_pm": ("nns.classical", "var_pm"),
 }
-
-__all__ = sorted((*_EXPORTS, "pm_matrix"))
-
-
-def __getattr__(name: str) -> Any:
-    if name not in _EXPORTS:
-        raise AttributeError(f"module 'nns' has no attribute {name!r}")
-    module_name, attr_name = _EXPORTS[name]
-    from importlib import import_module
-
-    value = getattr(import_module(module_name), attr_name)
-    globals()[name] = value
-    return value
