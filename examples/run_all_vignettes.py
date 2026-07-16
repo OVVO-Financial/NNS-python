@@ -1,21 +1,14 @@
-"""Run every NNS Python vignette end to end and print its output.
+"""Run the nine canonical NNS Python vignettes in R curriculum order.
 
-This is a single, IDLE-friendly driver for the vignette example scripts in
-``examples/vignettes/``. Open it in IDLE and press **F5** (or run
-``python examples/run_all_vignettes.py`` from a terminal) to execute all
-vignettes in the documented order and print each one's output, so you can
-compare it against the R NNS vignettes PDF.
-
-Each vignette also self-checks with assertions, so this driver reports PASS/FAIL
-per vignette and a final summary, and exits non-zero if any vignette fails.
-
-Requires the package to be importable (``pip install -e .`` from the repo root).
+The R package is the source of truth. The numbered Python entry points under
+``examples/vignettes`` follow the same 01-09 topic sequence and self-check with
+assertions. This driver reports PASS/FAIL and exits non-zero on failure.
 """
-
 from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -23,32 +16,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VIGNETTE_DIR = REPO_ROOT / "examples" / "vignettes"
 
-# Ordered to match the R NNS vignettes PDF.
-# (number, title, example-script stem)
 VIGNETTES = [
-    ("00", "Overview", "overview"),
-    ("01", "Partial moments", "partial_moments"),
-    ("02", "Descriptive & distributional tools",
-     "descriptive_distributional_tools"),
-    ("03", "Dependence & nonlinear association",
-     "dependence_nonlinear_association"),
-    ("04", "Normalization & rescaling",
-     "normalization_rescaling"),
-    ("05", "Hypothesis, ANOVA & stochastic superiority",
-     "hypothesis_anova_stochastic_superiority"),
-    ("06", "Regression, boosting, stacking & causality",
-     "regression_boosting_stacking_causality"),
-    ("07", "Time series forecasting",
-     "time_series_forecasting"),
-    ("08", "Simulation, bootstrap & risk-neutral",
-     "simulation_bootstrap_riskneutral"),
-    ("09", "Portfolio & stochastic dominance",
-     "portfolio_stochastic_dominance"),
+    ("01", "Overview", "01_overview"),
+    ("02", "Partial Moments", "02_partial_moments"),
+    ("03", "Correlation and Dependence", "03_correlation_and_dependence"),
+    ("04", "Normalization and Rescaling", "04_normalization_and_rescaling"),
+    ("05", "Sampling and Simulation", "05_sampling_and_simulation"),
+    ("06", "Comparing Distributions", "06_comparing_distributions"),
+    ("07", "Clustering and Regression", "07_clustering_and_regression"),
+    ("08", "Classification", "08_classification"),
+    ("09", "Forecasting", "09_forecasting"),
 ]
 
 
-def _load_vignette_main(stem):
-    """Import an example script by path and return its ``main`` callable."""
+def _load_vignette_main(stem: str):
     path = VIGNETTE_DIR / f"{stem}.py"
     spec = importlib.util.spec_from_file_location(f"nns_vignette_{stem}", path)
     if spec is None or spec.loader is None:
@@ -59,10 +40,12 @@ def _load_vignette_main(stem):
 
 
 def run() -> int:
-    # Match the cwd the test suite uses so any relative paths resolve.
     os.chdir(REPO_ROOT)
+    # Numbered compatibility entry points import maintained sibling scripts.
+    if str(VIGNETTE_DIR) not in sys.path:
+        sys.path.insert(0, str(VIGNETTE_DIR))
 
-    results = []
+    results: list[tuple[str, str, bool, float]] = []
     for number, title, stem in VIGNETTES:
         banner = f"  Vignette {number}: {title}  "
         rule = "=" * max(len(banner), 60)
@@ -78,11 +61,10 @@ def run() -> int:
         except Exception:
             ok = False
             print(traceback.format_exc())
-        elapsed = time.perf_counter() - start
-        results.append((number, title, ok, elapsed))
+        results.append((number, title, ok, time.perf_counter() - start))
 
     print("\n" + "=" * 60)
-    print("  Vignette verification summary")
+    print("  Canonical vignette verification summary")
     print("=" * 60)
     passed = 0
     for number, title, ok, elapsed in results:
@@ -91,8 +73,6 @@ def run() -> int:
         print(f"  [{status}] {number}  {title}  ({elapsed:.2f}s)")
     print("-" * 60)
     print(f"  {passed}/{len(results)} vignettes passed")
-    if passed != len(results):
-        print("  Some vignettes FAILED — see tracebacks above.")
     return 0 if passed == len(results) else 1
 
 
