@@ -1,0 +1,43 @@
+canonical_source:
+  repository: OVVO-Financial/NNS
+  branch: NNS-Beta-Version
+  directory: vignettes
+  policy: R defines the statistical narrative, datasets, and section order.
+
+examples:
+  - id: '01'
+    topic: Overview
+    r: NNSvignette_01_Overview.Rmd
+    python: 01_overview.py
+  - id: '02'
+    topic: Partial Moments
+    r: NNSvignette_02_Partial_Moments.Rmd
+    python: 02_partial_moments.py
+  - id: '03'
+    topic: Correlation and Dependence
+    r: NNSvignette_03_Correlation_and_Dependence.Rmd
+    python: 03_correlation_and_dependence.py
+  - id: '04'
+    topic: Normalization and Rescaling
+    r: NNSvignette_04_Normalization_and_Rescaling.Rmd
+    python: 04_normalization_and_rescaling.py
+  - id: '05'
+    topic: Sampling and Simulation
+    r: NNSvignette_05_Sampling.Rmd
+    python: 05_sampling_and_simulation.py
+  - id: '06'
+    topic: Comparing Distributions
+    r: NNSvignette_06_Comparing_Distributions.Rmd
+    python: 06_comparing_distributions.py
+  - id: '07'
+    topic: Clustering and Regression
+    r: NNSvignette_07_Clustering_and_Regression.Rmd
+    python: 07_clustering_and_regression.py
+  - id: '08'
+    topic: Classification
+    r: NNSvignette_08_Classification.Rmd
+    python: 08_classification.py
+  - id: '09'
+    topic: Forecasting
+    r: NNSvignette_09_Forecasting.Rmd
+    python: 09_forecasting.py
