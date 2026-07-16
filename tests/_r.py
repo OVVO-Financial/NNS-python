@@ -91,6 +91,7 @@ def nns_stack_numeric(
     class_levels: Sequence[object] | None = None,
     balance: bool = False,
     seed: int | None = None,
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -106,6 +107,7 @@ def nns_stack_numeric(
         "pred_int": pred_int,
         "type": type,
         "class_levels": class_levels,
+        "dist": dist,
     }
     if balance:
         args["balance"] = True
@@ -145,6 +147,7 @@ def nns_boost_numeric(
     ts_test: int | None = None,
     epochs: int | None = None,
     seed: int | None = None,
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -159,6 +162,7 @@ def nns_boost_numeric(
         "class_levels": class_levels,
         "ts_test": ts_test,
         "epochs": epochs,
+        "dist": dist,
     }
     if balance:
         args["balance"] = True
@@ -194,6 +198,7 @@ def nns_boost_factor_predictor(
     cv_size: float,
     depth: int | str | None,
     features_only: bool,
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x_factor": x_factor,
@@ -206,6 +211,7 @@ def nns_boost_factor_predictor(
         "cv_size": cv_size,
         "depth": depth,
         "features_only": features_only,
+        "dist": dist,
     }
     key = _cache_key("NNS.boost.factor_predictor", (args,))
     cache, refresh = _cache_state()
@@ -240,6 +246,7 @@ def nns_boost_multi_factor_predictor(
     cv_size: float,
     depth: int | str | None,
     features_only: bool,
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x_first": x_first,
@@ -255,6 +262,7 @@ def nns_boost_multi_factor_predictor(
         "cv_size": cv_size,
         "depth": depth,
         "features_only": features_only,
+        "dist": dist,
     }
     key = _cache_key("NNS.boost.multi_factor_predictor.positional.v1", (args,))
     cache, refresh = _cache_state()
@@ -281,6 +289,7 @@ def nns_reg_factor_predictor(
     *,
     levels: Sequence[object],
     order: int | str | None = None,
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -288,6 +297,7 @@ def nns_reg_factor_predictor(
         "point_est": point_est,
         "levels": levels,
         "order": order,
+        "dist": dist,
     }
     key = _cache_key("NNS.reg.factor_predictor.v2", (args,))
     cache, refresh = _cache_state()
@@ -316,6 +326,7 @@ def nns_reg_factor_dimred(
     *,
     levels: Sequence[object],
     dim_red_method: str | list[float],
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -325,6 +336,7 @@ def nns_reg_factor_dimred(
         "point_z": point_z,
         "levels": levels,
         "dim_red_method": dim_red_method,
+        "dist": dist,
     }
     key = _cache_key("NNS.reg.factor_dimred", (args,))
     cache, refresh = _cache_state()
@@ -356,6 +368,7 @@ def nns_stack_factor_predictor(
     order: int | str | None,
     stack: bool,
     dim_red_method: str | list[float],
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -368,6 +381,7 @@ def nns_stack_factor_predictor(
         "order": order,
         "stack": stack,
         "dim_red_method": dim_red_method,
+        "dist": dist,
     }
     key = _cache_key("NNS.stack.factor_predictor.v2", (args,))
     cache, refresh = _cache_state()
@@ -401,6 +415,7 @@ def nns_stack_mixed_factor_predictor(
     order: int | str | None,
     stack: bool,
     dim_red_method: str | list[float],
+    dist: str | None = None,
 ) -> RValue:
     args = {
         "x": x,
@@ -415,6 +430,7 @@ def nns_stack_mixed_factor_predictor(
         "order": order,
         "stack": stack,
         "dim_red_method": dim_red_method,
+        "dist": dist,
     }
     key = _cache_key("NNS.stack.mixed_factor_predictor.v1", (args,))
     cache, refresh = _cache_state()
@@ -975,6 +991,12 @@ def _call_r_stack_numeric(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "mat <- function(z) do.call(rbind, lapply(z, as.numeric))\n"
         "order_arg <- args$order\n"
         "if (length(order_arg) == 0) order_arg <- NULL\n"
@@ -1001,7 +1023,7 @@ def _call_r_stack_numeric(args: dict[str, Any]) -> RValue:
         "stack = isTRUE(as.logical(unlist(args$stack))), "
         "dim.red.method = dim_arg, pred.int = pred_arg, ts.test = ts_arg, "
         "type = type_arg, balance = isTRUE(as.logical(unlist(args$balance))), "
-        "status = FALSE, ncores = 1)\n"
+        "dist = dist_arg, status = FALSE, ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
@@ -1062,6 +1084,12 @@ def _call_r_reg_factor_predictor(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "point_arg <- args$point_est\n"
         "if (length(point_arg) == 0) point_arg <- NULL else "
         "point_arg <- factor(unlist(point_arg), levels = unlist(args$levels))\n"
@@ -1070,7 +1098,7 @@ def _call_r_reg_factor_predictor(args: dict[str, Any]) -> RValue:
         "x <- factor(unlist(args$x), levels = unlist(args$levels))\n"
         "result <- NNS.reg(x, as.numeric(unlist(args$y)), factor.2.dummy = TRUE, "
         "order = order_arg, point.est = point_arg, plot = FALSE, "
-        "residual.plot = FALSE, ncores = 1)\n"
+        "residual.plot = FALSE, dist = dist_arg, ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) {\n"
@@ -1105,6 +1133,12 @@ def _call_r_reg_factor_dimred(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "dim_arg <- args$dim_red_method\n"
         "if (is.list(dim_arg)) dim_arg <- as.numeric(unlist(dim_arg))\n"
         "x <- data.frame(cat = factor(unlist(args$x), levels = unlist(args$levels)), "
@@ -1113,7 +1147,7 @@ def _call_r_reg_factor_dimred(args: dict[str, Any]) -> RValue:
         "levels = unlist(args$levels)), z = as.numeric(unlist(args$point_z)))\n"
         "result <- NNS.reg(x, as.numeric(unlist(args$y)), factor.2.dummy = TRUE, "
         "dim.red.method = dim_arg, point.est = point_arg, plot = FALSE, "
-        "residual.plot = FALSE, ncores = 1)\n"
+        "residual.plot = FALSE, dist = dist_arg, ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
         "    col_encode <- function(nm) {\n"
@@ -1148,6 +1182,12 @@ def _call_r_stack_factor_predictor(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "order_arg <- args$order\n"
         "if (length(order_arg) == 0) order_arg <- NULL\n"
         "dim_arg <- args$dim_red_method\n"
@@ -1158,7 +1198,7 @@ def _call_r_stack_factor_predictor(args: dict[str, Any]) -> RValue:
         "CV.size = as.numeric(args$cv_size), folds = as.integer(args$folds), "
         "method = as.numeric(unlist(args$method)), order = order_arg, "
         "stack = as.logical(args$stack), dim.red.method = dim_arg, status = FALSE, "
-        "ncores = 1)\n"
+        "dist = dist_arg, ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (length(x) == 0) return(NULL)\n"
         "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
@@ -1191,6 +1231,12 @@ def _call_r_stack_mixed_factor_predictor(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "order_arg <- args$order\n"
         "if (length(order_arg) == 0) order_arg <- NULL\n"
         "dim_arg <- args$dim_red_method\n"
@@ -1205,7 +1251,7 @@ def _call_r_stack_mixed_factor_predictor(args: dict[str, Any]) -> RValue:
         "CV.size = as.numeric(args$cv_size), folds = as.integer(args$folds), "
         "method = as.numeric(unlist(args$method)), order = order_arg, "
         "stack = as.logical(args$stack), dim.red.method = dim_arg, status = FALSE, "
-        "ncores = 1)\n"
+        "dist = dist_arg, ncores = 1)\n"
         "encode <- function(x) {\n"
         "  if (length(x) == 0) return(NULL)\n"
         "  if (is.data.frame(x) || inherits(x, \"data.table\")) {\n"
@@ -1238,6 +1284,12 @@ def _call_r_boost_numeric(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "mat <- function(z) {\n"
         "  out <- do.call(rbind, lapply(z, as.numeric))\n"
         "  colnames(out) <- paste0('X', seq_len(ncol(out)))\n"
@@ -1265,7 +1317,7 @@ def _call_r_boost_numeric(args: dict[str, Any]) -> RValue:
         "pred.int = if (length(args$pred_int) == 0) NULL else as.numeric(args$pred_int), "
         "features.only = isTRUE(as.logical(unlist(args$features_only))), "
         "feature.importance = FALSE, "
-        "balance = isTRUE(as.logical(unlist(args$balance))), status = FALSE)\n"
+        "balance = isTRUE(as.logical(unlist(args$balance))), dist = dist_arg, status = FALSE)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
@@ -1293,6 +1345,12 @@ def _call_r_boost_factor_predictor(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "depth_arg <- args$depth\n"
         "if (length(depth_arg) == 0) depth_arg <- NULL\n"
         "levels_arg <- as.character(unlist(args$levels))\n"
@@ -1307,7 +1365,7 @@ def _call_r_boost_factor_predictor(args: dict[str, Any]) -> RValue:
         "learner.trials = as.integer(args$learner_trials), "
         "CV.size = as.numeric(args$cv_size), depth = depth_arg, "
         "features.only = isTRUE(as.logical(unlist(args$features_only))), "
-        "feature.importance = FALSE, status = FALSE)\n"
+        "feature.importance = FALSE, dist = dist_arg, status = FALSE)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
@@ -1335,6 +1393,12 @@ def _call_r_boost_multi_factor_predictor(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
+        "dist_arg <- args$dist\n"
+        "if (length(dist_arg) == 0 || is.null(dist_arg)) {\n"
+        "  dist_arg <- NULL\n"
+        "} else {\n"
+        "  dist_arg <- as.character(unlist(dist_arg))[1]\n"
+        "}\n"
         "depth_arg <- args$depth\n"
         "if (length(depth_arg) == 0) depth_arg <- NULL\n"
         "first_levels <- as.character(unlist(args$first_levels))\n"
@@ -1352,7 +1416,7 @@ def _call_r_boost_multi_factor_predictor(args: dict[str, Any]) -> RValue:
         "learner.trials = as.integer(args$learner_trials), "
         "CV.size = as.numeric(args$cv_size), depth = depth_arg, "
         "features.only = isTRUE(as.logical(unlist(args$features_only))), "
-        "feature.importance = FALSE, status = FALSE)\n"
+        "feature.importance = FALSE, dist = dist_arg, status = FALSE)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
