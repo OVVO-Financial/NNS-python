@@ -17,7 +17,11 @@ def main() -> None:
     full = nns_part(x, y, order=4, obs_req=0)
     x_only = nns_part(x, y, type="XONLY", order=4, obs_req=0)
     assert full["order"] == 4 and x_only["order"] == 4
-    assert set(np.unique(x_only["dt"]["quadrant"])) <= {"1", "2"}
+
+    # X-only partition paths may contain multiple levels (for example q1121),
+    # but every branch after the root must be a left/right label: 1 or 2.
+    quadrant_paths = np.asarray(x_only["dt"]["quadrant"], dtype=str)
+    assert all(set(path.removeprefix("q")) <= {"1", "2"} for path in quadrant_paths)
 
     points = np.array([-6.0, -2.0, 0.0, 2.0, 6.0])
     univariate = nns_reg(x, y, point_est=points, confidence_interval=None)
