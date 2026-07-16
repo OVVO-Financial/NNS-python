@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 from nns._reg_engine import nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
+from nns.stack import nns_stack
 
 Objective = Literal["min", "max"]
 
@@ -87,10 +88,10 @@ def nns_boost(
     seed: int | None = 123,
     random_seed: int | None = None,
     class_levels: list[Any] | None = None,
-    # Legacy compatibility (ignored):
+    # Passed to the delegated NNS.stack final stage.
     ncores: int | None = None,
 ) -> BoostResult:
-    del ncores, feature_importance
+    del feature_importance
     # random_seed is an accepted alias for seed (matches nns_stack).
     if random_seed is not None and seed == 123:
         seed = random_seed
@@ -571,73 +572,47 @@ def nns_boost(
         return np.column_stack((v, v))
 
     # ----------------------------------------------------------------------
-    # Local n.best selection
+    # Final estimate via NNS.stack Method 1 on duplicated synthetic X*.
+    #
+    # X* is univariate. Duplicating it invokes the multivariate NNS.reg path
+    # used by NNS.stack so n.best is selected on the regression-point matrix.
+    # NNS.boost has already performed feature screening and constructed X*, so
+    # method=(1,) uses only the NNS.reg component and stack=False prevents a
+    # second dimension-reduction stage.
+    #
+    # optimize_threshold=False preserves NNS.boost's existing 0.5 class
+    # rounding convention. The realized cv_fraction is reused for five
+    # repeated holdouts; for ts_test, one terminal chronological fold is used.
     # ----------------------------------------------------------------------
-    if ts_test_value is not None:
-        final_splits = [validation_index]
-    else:
-        final_splits = [random_validation_index() for _ in range(5)]
+    if status:
+        print("\nGenerating Final Estimate with NNS.stack Method 1")
 
-    minimum_train_size = min(n_obs - idx.size for idx in final_splits)
-    k_small = max(1, math.floor(math.sqrt(minimum_train_size)))
-    k_candidates = list(dict.fromkeys([*range(1, k_small + 1), minimum_train_size]))
-    k_scores = np.full(len(k_candidates), np.nan)
-
-    for ki, k_value in enumerate(k_candidates):
-        split_scores = np.full(len(final_splits), np.nan)
-        for b, test_idx in enumerate(final_splits):
-            tr_idx = np.setdiff1d(all_index, test_idx)
-            bx, by = balance_training(xstar_frame(xstar_train[tr_idx]), y[tr_idx])
-            fit = nns_reg_engine(
-                bx,
-                by,
-                point_est=xstar_frame(xstar_train[test_idx]),
-                n_best=min(k_value, bx.shape[0]),
-                order=depth_value,
-                type="CLASS" if is_class else None,
-                factor_2_dummy=False,
-                dist="L2",
-                point_only=True,
-            )
-            pred = sanitize_predictions(np.asarray(fit["Point.est"], dtype=np.float64), by)
-            split_scores[b] = score(pred, y[test_idx])
-        finite_scores = split_scores[np.isfinite(split_scores)]
-        if finite_scores.size:
-            k_scores[ki] = float(np.mean(finite_scores))
-        if status:
-            print(
-                f"Current NNS.reg(..., n.best = {k_value}) | mean eval(obj.fn) = "
-                f"{k_scores[ki]:.6g} | Iterations Remaining = {len(k_candidates) - ki - 1}"
-            )
-
-    finite_k = np.flatnonzero(np.isfinite(k_scores))
-    if finite_k.size == 0:
-        raise ValueError("No n.best candidate produced a finite objective value.")
-    if objective_value == "min":
-        best_k = k_candidates[int(finite_k[int(np.argmin(k_scores[finite_k]))])]
-    else:
-        best_k = k_candidates[int(finite_k[int(np.argmax(k_scores[finite_k]))])]
-
-    # ----------------------------------------------------------------------
-    # Final fit
-    # ----------------------------------------------------------------------
-    bx, by = balance_training(xstar_frame(xstar_train), y)
-    final_fit = nns_reg_engine(
-        bx,
-        by,
-        point_est=xstar_frame(xstar_test),
-        n_best=min(best_k, bx.shape[0]),
-        order=depth_value,
+    final_stack = nns_stack(
+        xstar_frame(xstar_train),
+        y,
+        xstar_frame(xstar_test),
         type="CLASS" if is_class else None,
-        factor_2_dummy=False,
+        obj_fn=obj_fn,
+        objective=objective_value,
+        optimize_threshold=False,
         dist="L2",
-        point_only=False,
-        confidence_interval=pred_int,
+        cv_size=cv_fraction,
+        balance=balance,
+        ts_test=ts_test_value,
+        folds=1 if ts_test_value is not None else 5,
+        order=depth_value,
+        method=(1,),
+        stack=False,
+        pred_int=pred_int,
+        status=status,
+        ncores=ncores,
+        seed=seed_value,
     )
+
     estimates_code = sanitize_predictions(
-        np.asarray(final_fit["Point.est"], dtype=np.float64), by
+        np.asarray(final_stack["reg"], dtype=np.float64), y
     )
-    pred_int_out = final_fit["pred.int"]
+    pred_int_out = final_stack["reg.pred.int"]
 
     if is_class:
         n_classes = len(cast(list[Any], class_values))
