@@ -64,7 +64,7 @@ def nns_m_reg(
     residual_plot: bool = False,
     location: object | None = None,
     noise_reduction: NoiseReduction = "off",
-    dist: str = "L2",
+    dist: str | None = None,
     return_values: bool = False,
     plot_regions: bool = False,
     ncores: int | None = None,
@@ -78,7 +78,7 @@ def nns_m_reg(
     """
     _warn_unsupported(
         location=location is not None,
-        dist=dist != "L2",
+        dist=False,
         return_values=return_values is not False,
         plot_regions=plot_regions,
         ncores=ncores is not None,

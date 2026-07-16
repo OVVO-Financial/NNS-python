@@ -21,7 +21,7 @@
 #' \code{k Nearest Neighbors} algorithm.  Different values of \code{n.best} are tested using cross-validation in \link{NNS.stack}.
 #' @param smooth logical; \code{FALSE} (default) Applies a smoothing spline instead of local linear fit to regression points.
 #' @param noise.reduction the method of determining regression points options: ("mean", "median", "mode", "off"); In low signal:noise situations,\code{(noise.reduction = "mean")}  uses means for \link{NNS.dep} restricted partitions, \code{(noise.reduction = "median")} uses medians instead of means for \link{NNS.dep} restricted partitions, while \code{(noise.reduction = "mode")}  uses modes instead of means for \link{NNS.dep} restricted partitions.  \code{(noise.reduction = "off")} uses an overall central tendency measure for partitions.
-#' @param dist options:("L1", "L2", "FACTOR") the method of distance calculation; Selects the distance calculation used. \code{dist = "L2"} (default) selects the Euclidean distance and \code{(dist = "L1")} selects the Manhattan distance; \code{(dist = "FACTOR")} uses a frequency.
+#' @param dist options:(NULL, "NNS", "L1", "L2", "FACTOR") the method of distance calculation; \code{dist = NULL} is the default and selects the native blended NNS distance; \code{dist = "NNS"} is the explicit alias. \code{dist = "L2"} selects Euclidean distance, \code{dist = "L1"} selects Manhattan distance, and \code{dist = "FACTOR"} uses a frequency.
 #' @param ncores integer; value specifying the number of cores to be used in the parallelized  procedure. If NULL (default), the number of cores to be used is equal to the number of cores of the machine - 1.
 #' @param multivariate.call Internal argument for multivariate regressions.
 #' @param point.only Internal argument for abbreviated output.
@@ -143,7 +143,7 @@ NNS.reg = function (x, y,
                     n.best = NULL,
                     smooth = FALSE,
                     noise.reduction = "off",
-                    dist = "L2",
+                    dist = NULL,
                     ncores = NULL,
                     point.only = FALSE,
                     multivariate.call = FALSE){
@@ -155,7 +155,7 @@ NNS.reg = function (x, y,
   
   if(plot.regions && !is.null(order) && order == "max") stop('Please reduce the "order" or set "plot.regions = FALSE".')
   
-  dist <- tolower(dist)
+  dist <- if (is.null(dist)) "nns" else tolower(dist)
   
   if(any(class(x)%in%c("tbl","data.table")) && ncol(x)==1) x <- as.vector(unlist(x))
   if(any(class(y)%in%c("tbl","data.table")) && ncol(y)==1) y <- as.vector(unlist(y))

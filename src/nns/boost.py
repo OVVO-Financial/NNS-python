@@ -24,7 +24,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._reg_engine import nns_reg_engine
+from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.stack import nns_stack
@@ -80,6 +80,7 @@ def nns_boost(
     threshold: float | None = None,
     obj_fn: Callable[[NDArray[np.float64], NDArray[np.float64]], float] | None = None,
     objective: Objective = "min",
+    dist: str | None = None,
     extreme: bool = False,
     features_only: bool = False,
     feature_importance: bool = False,
@@ -113,6 +114,7 @@ def nns_boost(
     if not isinstance(objective, str) or objective.lower() not in {"min", "max"}:
         raise ValueError("[objective] must be exactly 'min' or 'max'.")
     objective_value: Objective = cast(Objective, objective.lower())
+    dist_value = _validate_dist(dist)
 
     if type is not None:
         if not isinstance(type, str) or type.lower() != "class":
@@ -355,6 +357,7 @@ def nns_boost(
             order=depth_value,
             type="CLASS" if is_class else None,
             point_only=True,
+            dist=dist_value,
         )
         return sanitize_predictions(
             np.asarray(fit["Point.est"], dtype=np.float64), by
@@ -595,7 +598,7 @@ def nns_boost(
         obj_fn=obj_fn,
         objective=objective_value,
         optimize_threshold=False,
-        dist="L2",
+        dist=dist_value,
         cv_size=cv_fraction,
         balance=balance,
         ts_test=ts_test_value,

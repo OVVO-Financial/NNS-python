@@ -158,6 +158,7 @@ dictionaries of NumPy arrays. `multivariate_call=True` returns R's internal
 two-column regression-point structure as `{"x": ..., "y": ...}` for
 `nns_m_reg`, including after dimension-reduction projection. Matrix `x` without
 dimension reduction dispatches to `nns_m_reg`.
+`dist=None` is the default for `nns_reg`, `nns_m_reg`, `nns_stack`, and `nns_boost` and selects the native blended NNS distance, with `dist="NNS"` as the explicit alias. Continuous predictors use range-normalized coordinate differences and sum `abs(z) + z**2` across non-zero-range columns; explicit `dist="L1"`, `dist="L2"`, and `dist="FACTOR"` keep their legacy behavior.
 Classification is supported for numeric/logical/factor-like class-code targets.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R

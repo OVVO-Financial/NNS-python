@@ -4,7 +4,7 @@ Python port of the audited R implementation (R/Regression.R,
 R/Multivariate_Regression.R at the NNS 13.1 Beta repair revision):
 
 - one consistent prediction rule for fitted values and point estimates,
-- real range-normalized L1/L2/FACTOR distance dispatch,
+- real range-normalized NNS/L1/L2/FACTOR distance dispatch,
 - training-fitted encodings and dimension-reduction normalization
   (batch-independent predictions),
 - restricted automatic classification (factor/character/logical or exact
@@ -78,11 +78,13 @@ def _validate_nbest(n_best: Any) -> NBest:
 
 
 def _validate_dist(dist: Any) -> str:
+    if dist is None:
+        return "NNS"
     if not isinstance(dist, str):
-        raise ValueError("[dist] must be one of 'L1', 'L2', or 'FACTOR'.")
+        raise ValueError("[dist] must be one of None, 'NNS', 'L1', 'L2', or 'FACTOR'.")
     value = dist.upper()
-    if value not in {"L1", "L2", "FACTOR"}:
-        raise ValueError("[dist] must be one of 'L1', 'L2', or 'FACTOR'.")
+    if value not in {"NNS", "L1", "L2", "FACTOR"}:
+        raise ValueError("[dist] must be one of None, 'NNS', 'L1', 'L2', or 'FACTOR'.")
     return value
 
 
@@ -917,6 +919,8 @@ def _mreg_distances(
     if not np.any(active):
         return np.zeros((xtest.shape[0], rpm_x.shape[0]), dtype=np.float64)
     z = (xtest[:, None, active] - rpm_x[None, :, active]) / ranges[active]
+    if dist == "NNS":
+        return np.sum(np.abs(z) + z * z, axis=2)
     if dist == "L1":
         return np.sum(np.abs(z), axis=2)
     return np.sqrt(np.sum(z * z, axis=2))
@@ -1248,7 +1252,7 @@ def nns_reg_engine(
     n_best: Any = None,
     smooth: bool = False,
     noise_reduction: str = "off",
-    dist: str = "L2",
+    dist: str | None = None,
     point_only: bool = False,
     multivariate_call: bool = False,
 ) -> dict[str, Any]:

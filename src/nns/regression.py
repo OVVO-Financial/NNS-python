@@ -131,7 +131,7 @@ def nns_reg(
     n_best: object | None = ...,
     smooth: bool = ...,
     noise_reduction: NoiseReduction = ...,
-    dist: str = ...,
+    dist: str | None = ...,
     ncores: int | None = ...,
     point_only: bool = ...,
     multivariate_call: Literal[True],
@@ -160,7 +160,7 @@ def nns_reg(
     n_best: object | None = ...,
     smooth: bool = ...,
     noise_reduction: NoiseReduction = ...,
-    dist: str = ...,
+    dist: str | None = ...,
     ncores: int | None = ...,
     point_only: bool = ...,
     multivariate_call: Literal[False] = ...,
@@ -188,7 +188,7 @@ def nns_reg(
     n_best: object | None = None,
     smooth: bool = False,
     noise_reduction: NoiseReduction = "off",
-    dist: str = "L2",
+    dist: str | None = None,
     ncores: int | None = None,
     point_only: bool = False,
     multivariate_call: bool = False,
@@ -243,7 +243,7 @@ def _nns_reg_legacy(
     n_best: object | None = None,
     smooth: bool = False,
     noise_reduction: NoiseReduction = "off",
-    dist: str = "L2",
+    dist: str | None = None,
     ncores: int | None = None,
     point_only: bool = False,
     multivariate_call: bool = False,
@@ -815,7 +815,7 @@ def _nns_reg_dimred(
     n_best: object | None,
     smooth: bool,
     noise_reduction: NoiseReduction,
-    dist: str,
+    dist: str | None,
     point_only: bool,
     multivariate_call: bool,
     class_levels: list[object] | None = None,
@@ -931,7 +931,7 @@ def _dimred_projection(
     tau: object | None,
     threshold: float,
     point_est: NDArray[np.float64] | None,
-    dist: str,
+    dist: str | None,
     variable_names: Sequence[str] | None = None,
 ) -> _DimredProjection:
     coef = _dimred_coefficients(x, y, dim_red_method=dim_red_method, tau=tau)
@@ -1081,10 +1081,10 @@ def _project_dimred_points(
     coef: NDArray[np.float64],
     active_count: int,
     *,
-    dist: str,
+    dist: str | None,
 ) -> NDArray[np.float64]:
     joint = np.vstack((point_est, x))
-    if dist.lower() != "factor":
+    if dist is None or dist.lower() != "factor":
         joint = _r_minmax_columns(joint, zero_guard=True)
     point_norm = joint[: point_est.shape[0]]
     return np.asarray(point_norm @ coef / active_count, dtype=np.float64)

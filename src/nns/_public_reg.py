@@ -27,7 +27,7 @@ def nns_reg(
     n_best: Any = None,
     smooth: bool = False,
     noise_reduction: Any = "off",
-    dist: str = "L2",
+    dist: str | None = None,
     ncores: int | None = None,
     point_only: bool = False,
     multivariate_call: bool = False,
@@ -39,7 +39,7 @@ def nns_reg(
     Plot flags are handled strictly as side effects and therefore cannot alter
     the statistical return value used by the parity suite.
     """
-    result = _nns_reg(
+    result = _nns_reg(  # type: ignore[misc]
         x,
         y,
         factor_2_dummy=factor_2_dummy,
