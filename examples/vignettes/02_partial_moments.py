@@ -19,7 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from examples._vignette_support import empirical_cdf, output_dir, save_figure, section, show, subsection
+from examples._vignette_support import (
+    empirical_cdf,
+    output_dir,
+    save_figure,
+    section,
+    show,
+    subsection,
+)
 from nns import (
     co_lpm,
     co_upm,

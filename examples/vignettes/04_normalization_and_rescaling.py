@@ -17,6 +17,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _vignette_support import gap, output_dir, save_figure, section, show, subsection, table
+
 from nns import nns_norm, nns_rescale
 
 OUT = output_dir(__file__)
@@ -24,7 +25,11 @@ OUT = output_dir(__file__)
 
 def describe_columns(values: np.ndarray) -> list[tuple[str, float, float]]:
     return [
-        (f"column_{index + 1}", float(np.mean(values[:, index])), float(np.std(values[:, index], ddof=1)))
+        (
+            f"column_{index + 1}",
+            float(np.mean(values[:, index])),
+            float(np.std(values[:, index], ddof=1)),
+        )
         for index in range(values.shape[1])
     ]
 
@@ -152,7 +157,7 @@ def main() -> None:
     pair_lin = np.asarray(nns_norm(pair, linear=True))
     pair_nonlin = np.asarray(nns_norm(pair, linear=False))
     pair_minmax = np.column_stack(
-        ((pair[:, i] - pair[:, i].min()) / np.ptp(pair[:, i]) for i in range(pair.shape[1]))
+        [(pair[:, i] - pair[:, i].min()) / np.ptp(pair[:, i]) for i in range(pair.shape[1])]
     )
 
     fig, axes = plt.subplots(2, 2, figsize=(11, 8))

@@ -16,7 +16,6 @@ from __future__ import annotations
 # lagged seasonal components. The R vignette moves from a fixed seasonal factor
 # to validation-based selection, automatic seasonality, and finally
 # ``NNS.ARMA.optim``.
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -108,7 +107,9 @@ def main() -> None:
     linear_rmse = rmse(linear, actual)
     print(f"Linear seasonal-factor-12 RMSE: {linear_rmse:.6f}")
     show("Linear forecast", linear_raw)
-    forecast_figure(training, actual, linear, "Linear NNS.ARMA, seasonal factor 12", "01_linear.png")
+    forecast_figure(
+        training, actual, linear, "Linear NNS.ARMA, seasonal factor 12", "01_linear.png"
+    )
 
     # %% [markdown]
     # ## Nonlinear regression

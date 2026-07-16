@@ -17,13 +17,11 @@ from __future__ import annotations
 # continuous model, with the response encoded as classes beginning at 1. The R
 # vignette emphasizes that these are multidimensional partitions rather than a
 # sequence of one-variable tree splits.
-
 import matplotlib.pyplot as plt
 import numpy as np
 
 from examples._vignette_support import (
     fast_mode,
-    gap,
     load_iris,
     note,
     output_dir,
@@ -89,10 +87,8 @@ def main() -> None:
     # ## NNS partitions used by the classifier
     #
     # The R vignette prints ``NNS.reg(... )$rhs.partitions`` for all four
-    # predictors. Python currently returns the fitted reduction and equation but
-    # not the internal per-predictor partition list. We therefore expose the
-    # closest public diagnostic explicitly instead of pretending the object is
-    # present.
+    # predictors; the Python multivariate result returns the same per-predictor
+    # partition list.
     subsection("NNS partitions")
     base_fit = nns_reg(
         iris_x,
@@ -103,11 +99,7 @@ def main() -> None:
         class_levels=levels,
     )
     show("Classification regression result", base_fit)
-    gap(
-        "R exposes NNS.reg(... )$rhs.partitions for every predictor. The Python "
-        "public result does not yet expose that internal list. The two-dimensional "
-        "NNS.part result above is the supported public partition diagnostic."
-    )
+    show("Per-predictor partitions (rhs.partitions)", base_fit["rhs.partitions"])
 
     # %% [markdown]
     # ## NNS.boost()
@@ -141,7 +133,9 @@ def main() -> None:
     axes[0].set_xticks(np.arange(len(weight_values)), labels_for_plot, rotation=35, ha="right")
     axes[0].set_title("Boost feature weights")
     axes[1].bar(np.arange(len(frequency_values)), frequency_values)
-    axes[1].set_xticks(np.arange(len(frequency_values)), list(frequencies.keys()), rotation=35, ha="right")
+    axes[1].set_xticks(
+        np.arange(len(frequency_values)), list(frequencies.keys()), rotation=35, ha="right"
+    )
     axes[1].set_title("Boost feature frequency")
     save_figure(fig, OUT, "02_boost_feature_diagnostics.png")
 

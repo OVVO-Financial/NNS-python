@@ -69,12 +69,14 @@ Preserves partition orders 1–4, X-only partitions, clusters used in regression
 univariate and full-grid multivariate regression, interpolation/extrapolation,
 dimension reduction, thresholding, classification, `NNS.stack`, duplicated
 predictor dimensions, smoothing, and univariate/multivariate imputation. The
-exact iris data are committed locally. Six figure groups and important model
+exact iris data are committed locally. Nine figure groups and important model
 objects are produced.
 
-**Known gaps:** Python does not yet expose R's Voronoi tessellation side effect or
-`NNS.reg(... )$rhs.partitions`; both are labeled in the relevant sections and
-supported public partition diagnostics are shown instead.
+**Known gaps:** Python does not yet expose R's Voronoi tessellation side effect;
+the partitions are drawn directly from the returned quadrant memberships instead.
+The multivariate `rhs.partitions` and `RPM` structures are exposed and displayed.
+R's closing bootstrap multiple-imputation section is narrative (no executable
+chunk) and is summarized rather than reinvented.
 
 ## 08 — `08_classification.py`
 
@@ -83,9 +85,9 @@ Preserves the splits-versus-partitions narrative, exact iris holdout rows
 `NNS.stack` cross-validation, and the depth/nearest-neighbor/extreme controls.
 Feature diagnostics, holdout paths, and returned model structures are displayed.
 
-**Known gaps:** Python does not yet expose `rhs.partitions`. Balanced boosting
-has a documented bit-for-bit RNG ordering gap from R's interleaved class draws;
-the procedure and diagnostics remain equivalent.
+**Known gaps:** Balanced boosting has a documented bit-for-bit RNG ordering gap
+from R's interleaved class draws; the procedure and diagnostics remain
+equivalent. The multivariate `rhs.partitions` structure is exposed and displayed.
 
 ## 09 — `09_forecasting.py`
 

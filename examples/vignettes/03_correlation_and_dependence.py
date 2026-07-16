@@ -16,7 +16,15 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from examples._vignette_support import gap, output_dir, partition_scatter, save_figure, section, show, subsection
+from examples._vignette_support import (
+    gap,
+    output_dir,
+    partition_scatter,
+    save_figure,
+    section,
+    show,
+    subsection,
+)
 from nns import nns_copula, nns_dep, nns_part
 
 OUT = output_dir(__file__)
@@ -140,7 +148,13 @@ def main() -> None:
     pairs = [(0, 1), (0, 2), (1, 2)]
     for ax, (left, right) in zip(axes, pairs, strict=True):
         ax.scatter(independent[:, left], independent[:, right], s=8, alpha=0.35, label="sample")
-        ax.scatter(reference[:, left], reference[:, right], s=8, alpha=0.15, label="independence overlay")
+        ax.scatter(
+            reference[:, left],
+            reference[:, right],
+            s=8,
+            alpha=0.15,
+            label="independence overlay",
+        )
         ax.set_title(f"X{left + 1} vs X{right + 1}")
     axes[0].legend()
     fig.suptitle(f"Multivariate NNS copula dependence = {dependence:.4f}")

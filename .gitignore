@@ -35,3 +35,6 @@ Rplots.pdf
 
 # MkDocs build output
 /site/
+
+# Generated vignette figures
+/examples/vignettes/output/

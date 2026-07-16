@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from pprint import pformat
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import matplotlib
 
@@ -68,12 +69,17 @@ def show(label: str, value: Any, *, precision: int = 6) -> None:
 
 def _compact(value: Any) -> Any:
     if isinstance(value, np.ndarray):
+        numeric = np.issubdtype(value.dtype, np.number)
         if value.size <= 20:
-            return np.round(value, 6).tolist()
+            return np.round(value, 6).tolist() if numeric else value.tolist()
+        flat = value.reshape(-1)
+        head, tail = flat[:5], flat[-5:]
+        if numeric:
+            head, tail = np.round(head, 6), np.round(tail, 6)
         return {
             "shape": list(value.shape),
-            "head": np.round(value.reshape(-1)[:5], 6).tolist(),
-            "tail": np.round(value.reshape(-1)[-5:], 6).tolist(),
+            "head": head.tolist(),
+            "tail": tail.tolist(),
         }
     if isinstance(value, dict):
         return {key: _compact(item) for key, item in value.items()}
@@ -86,12 +92,17 @@ def table(headers: Sequence[str], rows: Iterable[Sequence[Any]], *, precision: i
     rendered = []
     for row in rows:
         rendered.append(
-            [f"{item:.{precision}f}" if isinstance(item, (float, np.floating)) else str(item) for item in row]
+            [
+                f"{item:.{precision}f}" if isinstance(item, (float, np.floating)) else str(item)
+                for item in row
+            ]
         )
     widths = [len(str(header)) for header in headers]
     for row in rendered:
         widths = [max(width, len(cell)) for width, cell in zip(widths, row, strict=True)]
-    print("  ".join(str(header).ljust(width) for header, width in zip(headers, widths, strict=True)))
+    print(
+        "  ".join(str(header).ljust(width) for header, width in zip(headers, widths, strict=True))
+    )
     print("  ".join("-" * width for width in widths))
     for row in rendered:
         print("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)))
