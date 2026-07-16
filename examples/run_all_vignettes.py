@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -40,8 +41,11 @@ def _load_vignette_main(stem: str):
 
 def run() -> int:
     os.chdir(REPO_ROOT)
-    results: list[tuple[str, str, bool, float]] = []
+    # Numbered compatibility entry points import maintained sibling scripts.
+    if str(VIGNETTE_DIR) not in sys.path:
+        sys.path.insert(0, str(VIGNETTE_DIR))
 
+    results: list[tuple[str, str, bool, float]] = []
     for number, title, stem in VIGNETTES:
         banner = f"  Vignette {number}: {title}  "
         rule = "=" * max(len(banner), 60)
