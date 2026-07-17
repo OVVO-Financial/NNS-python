@@ -695,17 +695,23 @@ def _dy_d_stack_estimates(
 ) -> NDArray[np.float64]:
     from nns.stack import nns_stack
 
+    # R's fd.estimates reduces every predictor row to its mean (``xstar``) and
+    # duplicates that single column (the increasing-dimensions trick) so that
+    # NNS.stack(method = 1) operates on a one-dimensional projection of x.
+    xstar_train = np.asarray(x, dtype=np.float64).mean(axis=1)
+    train_design = np.column_stack((xstar_train, xstar_train))
+    xstar_test = np.asarray(test_points, dtype=np.float64).mean(axis=1)
+    test_design = np.column_stack((xstar_test, xstar_test))
+
     result = nns_stack(
-        ivs_train=x,
+        ivs_train=train_design,
         dv_train=y,
-        ivs_test=test_points,
-        method=(1, 2),
-        dim_red_method="equal",
+        ivs_test=test_design,
+        method=1,
         status=False,
         order=None,
         folds=1,
         ncores=1,
-        dist=None,
     )
     return np.asarray(result["stack"], dtype=np.float64).reshape(-1)
 
