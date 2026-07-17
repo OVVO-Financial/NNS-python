@@ -65,6 +65,8 @@ _EXPORTS = {
     "nns_seas": ("nns.seasonality", "nns_seas"),
     "nns_sd_cluster": ("nns.stochastic_dominance", "nns_sd_cluster"),
     "nns_stack": ("nns.stack", "nns_stack"),
+    "nns_stack_fit": ("nns.stack", "nns_stack_fit"),
+    "nns_stack_predict": ("nns.stack", "nns_stack_predict"),
     "nns_ss": ("nns.stochastic_superiority", "nns_ss"),
     "nns_var": ("nns.var", "nns_var"),
     "prepare_factor_predictors": ("nns.regression", "prepare_factor_predictors"),

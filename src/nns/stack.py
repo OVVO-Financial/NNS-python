@@ -138,6 +138,8 @@ def nns_stack(
     status: bool = False,
     ncores: int | None = None,
     seed: int | None = 123,
+    fitted: dict[str, Any] | None = None,
+    return_fit: bool = False,
     # Legacy compatibility (ignored):
     class_levels: Any = None,
     factor_levels: Any = None,
@@ -763,55 +765,60 @@ def nns_stack(
     dim_full_xstar_test: NDArray[np.float64] | None = None
 
     if 2 in methods:
-        dim_sum = np.zeros((n_obs, encoded_p))
-        dim_count = np.zeros((n_obs, encoded_p), dtype=np.int64)
+        if fitted is not None:
+            dim_best_count = int(fitted["dim_best_count"])
+            dim_best_score = float(fitted.get("dim_best_score", float("nan")))
+            dim_component_threshold = float(fitted["dim_component_threshold"])
+        else:
+            dim_sum = np.zeros((n_obs, encoded_p))
+            dim_count = np.zeros((n_obs, encoded_p), dtype=np.int64)
 
-        for b, split in enumerate(splits):
-            train_idx = split["train"]
-            valid_idx = split["validation"]
-            fold_design = numeric_design(x[train_idx], x[valid_idx])
-            coef_fold = coefficient_vector(fold_design["train"], y[train_idx])
-            balanced_idx = balance_indices(y[train_idx])
+            for b, split in enumerate(splits):
+                train_idx = split["train"]
+                valid_idx = split["validation"]
+                fold_design = numeric_design(x[train_idx], x[valid_idx])
+                coef_fold = coefficient_vector(fold_design["train"], y[train_idx])
+                balanced_idx = balance_indices(y[train_idx])
 
-            for m in range(1, encoded_p + 1):
-                active = active_coefficients(coef_fold, m)
-                xs_train, xs_test = project_xstar(
-                    fold_design["train"], fold_design["test"], active
-                )
-                fit = fit_univariate_raw(
-                    xs_train[balanced_idx],
-                    y_fit_all[train_idx][balanced_idx],
-                    xs_test,
-                    point_only=True,
-                    allow_failure=True,
-                )
-                good = np.isfinite(fit["raw"])
-                if np.any(good):
-                    rows = valid_idx[good]
-                    dim_sum[rows, m - 1] += fit["raw"][good]
-                    dim_count[rows, m - 1] += 1
-            if status:
-                print(f"Dimension-reduction folds remaining = {len(splits) - b - 1}")
+                for m in range(1, encoded_p + 1):
+                    active = active_coefficients(coef_fold, m)
+                    xs_train, xs_test = project_xstar(
+                        fold_design["train"], fold_design["test"], active
+                    )
+                    fit = fit_univariate_raw(
+                        xs_train[balanced_idx],
+                        y_fit_all[train_idx][balanced_idx],
+                        xs_test,
+                        point_only=True,
+                        allow_failure=True,
+                    )
+                    good = np.isfinite(fit["raw"])
+                    if np.any(good):
+                        rows = valid_idx[good]
+                        dim_sum[rows, m - 1] += fit["raw"][good]
+                        dim_count[rows, m - 1] += 1
+                if status:
+                    print(f"Dimension-reduction folds remaining = {len(splits) - b - 1}")
 
-        dim_scores = np.full(encoded_p, np.nan)
-        dim_thresholds = np.full(encoded_p, 0.5)
-        dim_raws: list[NDArray[np.float64]] = []
-        for m in range(encoded_p):
-            cand = candidate_from_oof(dim_sum, dim_count, m)
-            dim_scores[m] = cand["score"]
-            dim_thresholds[m] = cand["threshold"]
-            dim_raws.append(cand["raw"])
-            if status:
-                print(
-                    f"Current dimension count = {m + 1} | OOF eval(obj.fn) = "
-                    f"{cand['score']:.6g} | Iterations remaining = {encoded_p - m - 1}"
-                )
+            dim_scores = np.full(encoded_p, np.nan)
+            dim_thresholds = np.full(encoded_p, 0.5)
+            dim_raws: list[NDArray[np.float64]] = []
+            for m in range(encoded_p):
+                cand = candidate_from_oof(dim_sum, dim_count, m)
+                dim_scores[m] = cand["score"]
+                dim_thresholds[m] = cand["threshold"]
+                dim_raws.append(cand["raw"])
+                if status:
+                    print(
+                        f"Current dimension count = {m + 1} | OOF eval(obj.fn) = "
+                        f"{cand['score']:.6g} | Iterations remaining = {encoded_p - m - 1}"
+                    )
 
-        best_idx = select_best(dim_scores)
-        dim_best_count = best_idx + 1
-        dim_best_score = float(dim_scores[best_idx])
-        dim_component_threshold = float(dim_thresholds[best_idx])
-        dim_oof_raw = dim_raws[best_idx]
+            best_idx = select_best(dim_scores)
+            dim_best_count = best_idx + 1
+            dim_best_score = float(dim_scores[best_idx])
+            dim_component_threshold = float(dim_thresholds[best_idx])
+            dim_oof_raw = dim_raws[best_idx]
 
         dim_full_coef = active_coefficients(
             coefficient_vector(full_design["train"], y), dim_best_count
@@ -855,153 +862,159 @@ def nns_stack(
 
     reg_best_is_all = False
     if 1 in methods:
-        l_small = max(1, math.floor(math.sqrt(n_obs)))
-        candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
-        sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
-        count_list = {cid: np.zeros(n_obs, dtype=np.int64) for cid in candidate_ids}
-        fold_small_kmax: list[int] = []
-
-        for b, split in enumerate(splits):
-            train_idx = split["train"]
-            valid_idx = split["validation"]
-            train_design, valid_design = method1_design_for_split(train_idx, valid_idx)
-            balanced_idx = balance_indices(y[train_idx])
-            train_design = train_design[balanced_idx]
-            train_y_fit = y_fit_all[train_idx][balanced_idx]
-
-            if train_design.shape[1] == 1:
-                # Univariate: uniform k-NN cumulative means on |x - test|.
-                train_x = train_design[:, 0]
-                test_x = valid_design[:, 0]
-                small_kmax = min(l_small, train_x.size)
-                d = np.abs(train_x[None, :] - test_x[:, None])
-                ord_idx = np.argsort(d, axis=1, kind="stable")
-                cums = np.cumsum(train_y_fit[ord_idx], axis=1)[:, :small_kmax]
-                pred_mat = cums / np.arange(1, small_kmax + 1)
-                small_raw = [pred_mat[:, k] - _RESPONSE_OFFSET for k in range(small_kmax)]
-            else:
-                rpm_x_f, rpm_yhat_f = _mreg_prepare(
-                    train_design, train_y_fit, order_value, "off", False
-                )
-                if rpm_x_f.shape[0] < 1:
-                    raise ValueError(
-                        "NNS.reg did not return a usable regression-point matrix."
-                    )
-                small_kmax = min(l_small, rpm_x_f.shape[0])
-                if small_kmax >= 1:
-                    small_path = _mreg_predict_path(
-                        valid_design,
-                        rpm_x_f,
-                        rpm_yhat_f,
-                        small_kmax,
-                        dist_value,
-                        train_design.min(axis=0),
-                        train_design.max(axis=0),
-                    ) - _RESPONSE_OFFSET
-                    small_raw = [
-                        sanitize_raw(small_path[:, k], y[train_idx])
-                        for k in range(small_kmax)
-                    ]
-                else:
-                    small_raw = []
-
-            fold_small_kmax.append(len(small_raw))
-
-            # Aggregate every available local candidate for this fold. No
-            # fold-specific early stopping is allowed because it would create
-            # incomparable OOF coverage across candidates (NNS#44).
-            for k in range(1, len(small_raw) + 1):
-                raw = small_raw[k - 1]
-                good = np.isfinite(raw)
-                if np.any(good):
-                    rows = valid_idx[good]
-                    sum_list[str(k)][rows] += raw[good]
-                    count_list[str(k)][rows] += 1
-
-            # Mandatory all-points candidate: constant mean response.
-            all_raw = np.full(valid_idx.size, float(np.mean(train_y_fit)) - _RESPONSE_OFFSET)
-            good = np.isfinite(all_raw)
-            rows = valid_idx[good]
-            sum_list["all"][rows] += all_raw[good]
-            count_list["all"][rows] += 1
-            if status:
-                print(f"Method 1 folds remaining = {len(splits) - b - 1}")
-
-        common_small_kmax = min(fold_small_kmax) if fold_small_kmax else 0
-        if common_small_kmax < 1:
-            raise ValueError("No Method 1 local candidate was available in every fold.")
-
-        candidate_scores = {cid: float("nan") for cid in candidate_ids}
-        candidate_thresholds = {cid: 0.5 for cid in candidate_ids}
-        candidate_raws: dict[str, NDArray[np.float64]] = {}
-
-        # Candidate k=1 defines the required complete OOF coverage pattern; a
-        # candidate competes only when it covers exactly the same observations.
-        reference_count = count_list["1"]
-
-        def score_method1_candidate(cid: str) -> bool:
-            count_vec = count_list[cid]
-            covered = count_vec > 0
-            raw = np.full(n_obs, np.nan)
-            raw[covered] = sum_list[cid][covered] / count_vec[covered]
-            candidate_raws[cid] = raw
-            complete_coverage = np.array_equal(count_vec, reference_count)
-            valid = covered & np.isfinite(raw)
-            if not complete_coverage or not np.any(valid):
-                candidate_scores[cid] = float("nan")
-                candidate_thresholds[cid] = 0.5
-                return False
-            s, t = evaluate_raw(raw[valid], y[valid])
-            candidate_scores[cid] = s
-            candidate_thresholds[cid] = t
-            return math.isfinite(s)
-
-        evaluated_small_ids: list[str] = []
-        for k in range(1, common_small_kmax + 1):
-            cid = str(k)
-            if not score_method1_candidate(cid):
-                break
-            evaluated_small_ids.append(cid)
-            if len(evaluated_small_ids) >= 4:
-                recent = [candidate_scores[i] for i in evaluated_small_ids[-3:]]
-                stop_local = (
-                    recent[2] >= recent[1] and recent[2] >= recent[0]
-                    if objective_value == "min"
-                    else recent[2] <= recent[1] and recent[2] <= recent[0]
-                )
-                if stop_local:
-                    break
-
-        # ALL is a separate limit condition, always scored after the local
-        # sequence and never subject to the diminishing-returns stop.
-        all_usable = score_method1_candidate("all")
-
-        eligible_ids = list(evaluated_small_ids)
-        if all_usable:
-            eligible_ids.append("all")
-        valid_ids = [cid for cid in eligible_ids if math.isfinite(candidate_scores[cid])]
-        if not valid_ids:
-            raise ValueError(
-                "No Method 1 candidate produced a finite complete-coverage OOF objective."
-            )
-        best_val = (
-            min(candidate_scores[cid] for cid in valid_ids)
-            if objective_value == "min"
-            else max(candidate_scores[cid] for cid in valid_ids)
-        )
-        best_id = next(cid for cid in valid_ids if candidate_scores[cid] == best_val)
-
-        if best_id == "all":
-            reg_best_is_all = True
-            reg_best_k = None
+        if fitted is not None:
+            reg_best_k = fitted["reg_best_k"]
+            reg_best_is_all = bool(fitted["reg_best_is_all"])
+            reg_component_threshold = float(fitted["reg_component_threshold"])
+            reg_best_score = float(fitted.get("reg_best_score", float("nan")))
         else:
-            reg_best_k = int(best_id)
-        reg_best_score = float(candidate_scores[best_id])
-        reg_component_threshold = float(candidate_thresholds[best_id])
-        reg_oof_raw = candidate_raws[best_id]
-        if status:
-            label = "all (k = all RPM rows)" if best_id == "all" else f"k = {best_id}"
-            print(f"Best Method 1 candidate: {label}, score = {reg_best_score:.6g}")
+            l_small = max(1, math.floor(math.sqrt(n_obs)))
+            candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
+            sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
+            count_list = {cid: np.zeros(n_obs, dtype=np.int64) for cid in candidate_ids}
+            fold_small_kmax: list[int] = []
+
+            for b, split in enumerate(splits):
+                train_idx = split["train"]
+                valid_idx = split["validation"]
+                train_design, valid_design = method1_design_for_split(train_idx, valid_idx)
+                balanced_idx = balance_indices(y[train_idx])
+                train_design = train_design[balanced_idx]
+                train_y_fit = y_fit_all[train_idx][balanced_idx]
+
+                if train_design.shape[1] == 1:
+                    # Univariate: uniform k-NN cumulative means on |x - test|.
+                    train_x = train_design[:, 0]
+                    test_x = valid_design[:, 0]
+                    small_kmax = min(l_small, train_x.size)
+                    d = np.abs(train_x[None, :] - test_x[:, None])
+                    ord_idx = np.argsort(d, axis=1, kind="stable")
+                    cums = np.cumsum(train_y_fit[ord_idx], axis=1)[:, :small_kmax]
+                    pred_mat = cums / np.arange(1, small_kmax + 1)
+                    small_raw = [pred_mat[:, k] - _RESPONSE_OFFSET for k in range(small_kmax)]
+                else:
+                    rpm_x_f, rpm_yhat_f = _mreg_prepare(
+                        train_design, train_y_fit, order_value, "off", False
+                    )
+                    if rpm_x_f.shape[0] < 1:
+                        raise ValueError(
+                            "NNS.reg did not return a usable regression-point matrix."
+                        )
+                    small_kmax = min(l_small, rpm_x_f.shape[0])
+                    if small_kmax >= 1:
+                        small_path = _mreg_predict_path(
+                            valid_design,
+                            rpm_x_f,
+                            rpm_yhat_f,
+                            small_kmax,
+                            dist_value,
+                            train_design.min(axis=0),
+                            train_design.max(axis=0),
+                        ) - _RESPONSE_OFFSET
+                        small_raw = [
+                            sanitize_raw(small_path[:, k], y[train_idx])
+                            for k in range(small_kmax)
+                        ]
+                    else:
+                        small_raw = []
+
+                fold_small_kmax.append(len(small_raw))
+
+                # Aggregate every available local candidate for this fold. No
+                # fold-specific early stopping is allowed because it would create
+                # incomparable OOF coverage across candidates (NNS#44).
+                for k in range(1, len(small_raw) + 1):
+                    raw = small_raw[k - 1]
+                    good = np.isfinite(raw)
+                    if np.any(good):
+                        rows = valid_idx[good]
+                        sum_list[str(k)][rows] += raw[good]
+                        count_list[str(k)][rows] += 1
+
+                # Mandatory all-points candidate: constant mean response.
+                all_raw = np.full(valid_idx.size, float(np.mean(train_y_fit)) - _RESPONSE_OFFSET)
+                good = np.isfinite(all_raw)
+                rows = valid_idx[good]
+                sum_list["all"][rows] += all_raw[good]
+                count_list["all"][rows] += 1
+                if status:
+                    print(f"Method 1 folds remaining = {len(splits) - b - 1}")
+
+            common_small_kmax = min(fold_small_kmax) if fold_small_kmax else 0
+            if common_small_kmax < 1:
+                raise ValueError("No Method 1 local candidate was available in every fold.")
+
+            candidate_scores = {cid: float("nan") for cid in candidate_ids}
+            candidate_thresholds = {cid: 0.5 for cid in candidate_ids}
+            candidate_raws: dict[str, NDArray[np.float64]] = {}
+
+            # Candidate k=1 defines the required complete OOF coverage pattern; a
+            # candidate competes only when it covers exactly the same observations.
+            reference_count = count_list["1"]
+
+            def score_method1_candidate(cid: str) -> bool:
+                count_vec = count_list[cid]
+                covered = count_vec > 0
+                raw = np.full(n_obs, np.nan)
+                raw[covered] = sum_list[cid][covered] / count_vec[covered]
+                candidate_raws[cid] = raw
+                complete_coverage = np.array_equal(count_vec, reference_count)
+                valid = covered & np.isfinite(raw)
+                if not complete_coverage or not np.any(valid):
+                    candidate_scores[cid] = float("nan")
+                    candidate_thresholds[cid] = 0.5
+                    return False
+                s, t = evaluate_raw(raw[valid], y[valid])
+                candidate_scores[cid] = s
+                candidate_thresholds[cid] = t
+                return math.isfinite(s)
+
+            evaluated_small_ids: list[str] = []
+            for k in range(1, common_small_kmax + 1):
+                cid = str(k)
+                if not score_method1_candidate(cid):
+                    break
+                evaluated_small_ids.append(cid)
+                if len(evaluated_small_ids) >= 4:
+                    recent = [candidate_scores[i] for i in evaluated_small_ids[-3:]]
+                    stop_local = (
+                        recent[2] >= recent[1] and recent[2] >= recent[0]
+                        if objective_value == "min"
+                        else recent[2] <= recent[1] and recent[2] <= recent[0]
+                    )
+                    if stop_local:
+                        break
+
+            # ALL is a separate limit condition, always scored after the local
+            # sequence and never subject to the diminishing-returns stop.
+            all_usable = score_method1_candidate("all")
+
+            eligible_ids = list(evaluated_small_ids)
+            if all_usable:
+                eligible_ids.append("all")
+            valid_ids = [cid for cid in eligible_ids if math.isfinite(candidate_scores[cid])]
+            if not valid_ids:
+                raise ValueError(
+                    "No Method 1 candidate produced a finite complete-coverage OOF objective."
+                )
+            best_val = (
+                min(candidate_scores[cid] for cid in valid_ids)
+                if objective_value == "min"
+                else max(candidate_scores[cid] for cid in valid_ids)
+            )
+            best_id = next(cid for cid in valid_ids if candidate_scores[cid] == best_val)
+
+            if best_id == "all":
+                reg_best_is_all = True
+                reg_best_k = None
+            else:
+                reg_best_k = int(best_id)
+            reg_best_score = float(candidate_scores[best_id])
+            reg_component_threshold = float(candidate_thresholds[best_id])
+            reg_oof_raw = candidate_raws[best_id]
+            if status:
+                label = "all (k = all RPM rows)" if best_id == "all" else f"k = {best_id}"
+                print(f"Best Method 1 candidate: {label}, score = {reg_best_score:.6g}")
 
     # ----------------------------------------------------------------------
     # OOF blend and final threshold
@@ -1009,7 +1022,10 @@ def nns_stack(
     component_weights = {"reg": 0.0, "dim.red": 0.0}
     probability_threshold = 0.5
 
-    if methods == [1]:
+    if fitted is not None:
+        component_weights = dict(fitted["component_weights"])
+        probability_threshold = float(fitted["probability_threshold"])
+    elif methods == [1]:
         component_weights["reg"] = 1.0
         probability_threshold = reg_component_threshold
     elif methods == [2]:
@@ -1205,7 +1221,19 @@ def nns_stack(
         else stacked_pred_int_raw
     )
 
-    return {
+    fit_state = {
+        "dim_best_count": dim_best_count,
+        "dim_best_score": dim_best_score,
+        "dim_component_threshold": dim_component_threshold,
+        "reg_best_k": reg_best_k,
+        "reg_best_is_all": reg_best_is_all,
+        "reg_component_threshold": reg_component_threshold,
+        "reg_best_score": reg_best_score,
+        "component_weights": dict(component_weights),
+        "probability_threshold": probability_threshold,
+    }
+
+    result: StackResult = {
         "OBJfn.reg": reg_best_score,
         "NNS.reg.n.best": float(reg_best_k) if reg_best_k is not None else float("nan"),
         "probability.threshold": probability_threshold,
@@ -1220,6 +1248,11 @@ def nns_stack(
         "weights": component_weights,
         "class.levels": class_values if is_class else None,
     }
+    # Opt-in fit state (used by nns_stack_fit); kept out of the default result so
+    # the public key set is unchanged.
+    if return_fit:
+        result["_fit"] = fit_state
+    return result
 
 
 def _numeric_column(z: NDArray[Any]) -> bool:
@@ -1228,3 +1261,41 @@ def _numeric_column(z: NDArray[Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def nns_stack_fit(
+    ivs_train: NDArray[Any],
+    dv_train: NDArray[Any],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Fit NNS.stack once (run the cross-validated model selection) without
+    committing to a test set.
+
+    Returns a lightweight fit object holding the training data, the call
+    arguments, and the selected hyperparameters (n.best, dimension count,
+    ensemble weights, thresholds). Pass it to :func:`nns_stack_predict` to score
+    new data reusing that fit - the expensive out-of-fold CV runs only here, not
+    on every prediction.
+    """
+    kwargs.pop("ivs_test", None)
+    kwargs.pop("fitted", None)
+    kwargs.pop("return_fit", None)
+    result = nns_stack(ivs_train, dv_train, ivs_test=None, return_fit=True, **kwargs)
+    return {
+        "ivs_train": np.asarray(ivs_train),
+        "dv_train": np.asarray(dv_train),
+        "kwargs": kwargs,
+        "fit": result["_fit"],
+    }
+
+
+def nns_stack_predict(fit: dict[str, Any], ivs_test: NDArray[Any]) -> StackResult:
+    """Predict with a fitted NNS.stack (from :func:`nns_stack_fit`) on new data,
+    reusing the cross-validated hyperparameters so no CV is re-run."""
+    return nns_stack(
+        fit["ivs_train"],
+        fit["dv_train"],
+        ivs_test=ivs_test,
+        fitted=fit["fit"],
+        **fit["kwargs"],
+    )

@@ -346,3 +346,48 @@ def test_nns_stack_invalid_ts_test_raises(ts_test: int) -> None:
 
     with pytest.raises(ValueError):
         nns_stack(variable, y, variable[:3], cv_size=0.25, folds=1, method=1, ts_test=ts_test)
+
+
+def test_nns_stack_fit_predict_exported() -> None:
+    import nns
+
+    assert "nns_stack_fit" in nns.__all__
+    assert "nns_stack_predict" in nns.__all__
+
+
+def test_nns_stack_predict_matches_full_stack() -> None:
+    # Fitting once then predicting must equal a full nns_stack call (the CV
+    # selection is test-independent), across methods and dim-reduction methods.
+    from nns import nns_stack, nns_stack_fit, nns_stack_predict
+
+    rng = np.random.RandomState(0)
+    x = rng.uniform(-2.0, 2.0, size=(300, 3))
+    y = x[:, 0] + x[:, 1] ** 2 - x[:, 2]
+    x_test = rng.uniform(-2.0, 2.0, size=(40, 3))
+
+    for method in [(1, 2), (1,), (2,)]:
+        for drm in ["cor", "equal", "NNS.dep"]:
+            full = nns_stack(
+                x, y, ivs_test=x_test, method=method, dim_red_method=drm,
+                order="max", folds=5,
+            )["stack"]
+            fit = nns_stack_fit(
+                x, y, method=method, dim_red_method=drm, order="max", folds=5,
+            )
+            pred = nns_stack_predict(fit, x_test)["stack"]
+            np.testing.assert_allclose(
+                np.asarray(pred, dtype=np.float64),
+                np.asarray(full, dtype=np.float64),
+                rtol=0.0, atol=1e-9,
+            )
+
+
+def test_nns_stack_default_result_has_no_fit_key() -> None:
+    # The opt-in fit state must not leak into the public result dict.
+    from nns import nns_stack
+
+    rng = np.random.RandomState(2)
+    x = rng.uniform(-2.0, 2.0, size=(60, 3))
+    y = x[:, 0] - x[:, 2]
+    result = nns_stack(x, y, ivs_test=x[:5], order="max", folds=2)
+    assert "_fit" not in result
