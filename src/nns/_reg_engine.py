@@ -926,6 +926,30 @@ def _mreg_distances(
     return np.sqrt(np.sum(z * z, axis=2))
 
 
+def _stable_topk(d: NDArray[np.float64], k: int) -> NDArray[np.intp]:
+    """Indices of the k nearest RPM rows per query, in stable (distance, index)
+    order - identical to ``np.argsort(d, axis=1, kind="stable")[:, :k]`` but via
+    partial selection: O(n + k log k) per row instead of a full O(n log n) sort.
+
+    Exactness (including heavy distance ties, e.g. the duplicated 1-D synthetic
+    coordinates fed by dy.d_) is preserved: candidates are every row within the
+    k-th smallest distance (``<=`` the threshold, so all boundary ties are
+    captured), then a stable sort keeps original-index order among equal
+    distances before truncating to k.
+    """
+    c, n = d.shape
+    if k >= n:
+        return np.argsort(d, axis=1, kind="stable")
+    kth = np.partition(d, k - 1, axis=1)[:, k - 1]
+    out = np.empty((c, k), dtype=np.intp)
+    for i in range(c):
+        row = d[i]
+        cand = np.flatnonzero(row <= kth[i])
+        order = np.argsort(row[cand], kind="stable")
+        out[i] = cand[order][:k]
+    return out
+
+
 def _mreg_predict(
     xtest: NDArray[np.float64] | None,
     rpm_x: NDArray[np.float64],
@@ -968,7 +992,7 @@ def _mreg_predict(
                     out[start + i] = float(nns_gravity(finite_tied))
             continue
 
-        idx = np.argsort(d, axis=1, kind="stable")[:, :k]
+        idx = _stable_topk(d, k)
         dk = np.take_along_axis(d, idx, axis=1)
         yk = rpm_yhat[idx]
         w = _mreg_ensemble_weights(dk)
@@ -1000,21 +1024,29 @@ def _mreg_predict_path(
     m = xtest.shape[0]
     out = np.empty((m, kmax), dtype=np.float64)
 
-    d = _mreg_distances(rpm_x, xtest, dist, mins, maxs)
-    idx = np.argsort(d, axis=1, kind="stable")
-    d_sorted = np.take_along_axis(d, idx, axis=1)
-    y_sorted = rpm_yhat[idx]
+    # Stream the queries in row-chunks so the query-by-RPM distance matrix is
+    # never materialised in full, and select only the kmax nearest neighbours
+    # (partial selection) rather than sorting every RPM row. Results are
+    # byte-for-byte identical to a full stable sort of all rows.
+    chunk = max(1, int(4_000_000 // max(n, 1)))
+    for start in range(0, m, chunk):
+        rows = slice(start, min(start + chunk, m))
+        d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
+        c = d.shape[0]
+        idx = _stable_topk(d, kmax)
+        d_sorted = np.take_along_axis(d, idx, axis=1)
+        y_sorted = rpm_yhat[idx]
 
-    # k = 1 aggregates all exact nearest-distance ties.
-    dmin = d.min(axis=1, keepdims=True)
-    for i in range(m):
-        tied = rpm_yhat[d[i] == dmin[i, 0]]
-        finite_tied = tied[np.isfinite(tied)]
-        out[i, 0] = float(nns_gravity(finite_tied))
+        # k = 1 aggregates all exact nearest-distance ties.
+        dmin = d.min(axis=1, keepdims=True)
+        for i in range(c):
+            tied = rpm_yhat[d[i] == dmin[i, 0]]
+            finite_tied = tied[np.isfinite(tied)]
+            out[start + i, 0] = float(nns_gravity(finite_tied))
 
-    for k in range(2, kmax + 1):
-        w = _mreg_ensemble_weights(d_sorted[:, :k])
-        out[:, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
+        for k in range(2, kmax + 1):
+            w = _mreg_ensemble_weights(d_sorted[:, :k])
+            out[rows, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
     return out
 
 

@@ -321,8 +321,14 @@ def dy_d_best(
         raise ValueError("You have some missing values, please address.")
 
     wrt_values = _dy_d_validate_wrt(wrt, x_values.shape[1])
-    outputs = [
-        _dy_d_best_scalar(
+
+    # Every regressor shares the same X* = rowMeans(x) training design, so the
+    # NNS.stack fit (CV n.best, dimension-reduction coefficients, blend weight)
+    # is identical for all of them and for every bandwidth. Gather the test
+    # blocks from all regressors and run a SINGLE NNS.stack fit + prediction,
+    # then hand each regressor's slice back to its reducer.
+    plans = [
+        _dy_d_best_plan(
             x_values,
             y_values,
             int(wrt_value) - 1,
@@ -333,6 +339,19 @@ def dy_d_best(
         )
         for wrt_value in wrt_values
     ]
+
+    all_chunks: list[NDArray[np.float64]] = []
+    spans: list[tuple[int, int, Any]] = []
+    for chunks, reduce in plans:
+        spans.append((len(all_chunks), len(chunks), reduce))
+        all_chunks.extend(chunks)
+
+    sizes = [chunk.shape[0] for chunk in all_chunks]
+    predictions = _dy_d_best_reg_estimates(x_values, y_values, np.vstack(all_chunks))
+    offsets = np.concatenate(([0], np.cumsum(sizes)))
+    parts = [predictions[offsets[i] : offsets[i + 1]] for i in range(len(sizes))]
+
+    outputs = [reduce(parts[start : start + count]) for start, count, reduce in spans]
     if len(outputs) == 1:
         return outputs[0]
     return _combine_dy_d_outputs(outputs)
@@ -398,7 +417,7 @@ def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> f
     return float(upper - lower)
 
 
-def _dy_d_best_scalar(
+def _dy_d_best_plan(
     x_values: NDArray[np.float64],
     y_values: NDArray[np.float64],
     wrt_index: int,
@@ -407,7 +426,16 @@ def _dy_d_best_scalar(
     mixed: bool,
     messages: bool,
     wrt_label: int,
-) -> dict[str, NDArray[np.float64]]:
+) -> tuple[
+    list[NDArray[np.float64]],
+    Callable[[list[NDArray[np.float64]]], dict[str, NDArray[np.float64]]],
+]:
+    """Build every test block this regressor needs, plus a reducer.
+
+    The reducer turns the predicted chunks back into the derivative dict. All
+    regressors share the same X* training design, so ``dy_d_best`` gathers the
+    chunks from every plan and runs a single NNS.stack fit for the whole call.
+    """
     from nns.dependence import nns_dep
     from nns.var import lpm_var
 
@@ -429,9 +457,26 @@ def _dy_d_best_scalar(
     dependence = float(nns_dep(column, y_values)["Dependence"])
     h_s = _v057_bandwidths(x_values.size, dependence)
 
-    firsts: list[NDArray[np.float64]] = []
-    seconds: list[NDArray[np.float64]] = []
-    mixeds: list[NDArray[np.float64]] = []
+    # The NNS.stack fit (CV n.best, dimension-reduction coefficients, blend
+    # weight) depends only on (x, y), never on the evaluation points, so every
+    # bandwidth - and the mixed-derivative corners - are predicted from a single
+    # fit. Gather every test block, run ONE NNS.stack, then slice it back.
+    chunks: list[NDArray[np.float64]] = []
+    sizes: list[int] = []
+
+    def _add(block: NDArray[np.float64]) -> int:
+        chunks.append(block)
+        sizes.append(block.shape[0])
+        return len(chunks) - 1
+
+    def _row_nanmean(bands: list[NDArray[np.float64]]) -> NDArray[np.float64]:
+        matrix = np.column_stack([np.asarray(b, dtype=np.float64).reshape(-1) for b in bands])
+        with np.errstate(invalid="ignore"):
+            return np.asarray(np.nanmean(matrix, axis=1), dtype=np.float64)
+
+    steps_per_band: list[NDArray[np.float64]] = []
+    main_chunk_idx: list[int] = []
+    mixed_eval: NDArray[np.float64] | None = None
 
     if vector_branch:
         eval_vec = np.asarray(eval_values, dtype=np.float64).reshape(-1)
@@ -446,11 +491,13 @@ def _dy_d_best_scalar(
         )
         sample_size = grid.shape[0]
         k = eval_vec.size
+        position = np.tile(
+            np.repeat(np.asarray(["l", "m", "u"], dtype=object), sample_size), k
+        )
+        ids = np.repeat(np.arange(k), 3 * sample_size)
         for band in h_s:
             steps = np.array([_dydx_step(column, ev, float(band)) for ev in eval_vec])
             blocks: list[NDArray[np.float64]] = []
-            position: list[str] = []
-            ids: list[int] = []
             for g in range(k):
                 lower = grid.copy()
                 middle = grid.copy()
@@ -459,27 +506,10 @@ def _dy_d_best_scalar(
                 middle[:, wrt_index] = eval_vec[g]
                 upper[:, wrt_index] = eval_vec[g] + steps[g]
                 blocks.extend((lower, middle, upper))
-                position.extend(["l"] * sample_size + ["m"] * sample_size + ["u"] * sample_size)
-                ids.extend([g] * (3 * sample_size))
-            estimates = _dy_d_best_reg_estimates(x_values, y_values, np.vstack(blocks))
-            pos = np.asarray(position, dtype=object)
-            idx = np.asarray(ids)
-            band_first = np.empty(k)
-            band_second = np.empty(k)
-            for g in range(k):
-                lo = np.mean(estimates[(pos == "l") & (idx == g)])
-                mid = np.mean(estimates[(pos == "m") & (idx == g)])
-                up = np.mean(estimates[(pos == "u") & (idx == g)])
-                h = steps[g]
-                if np.isfinite(h) and h != 0.0:
-                    band_first[g] = (up - lo) / (2.0 * h)
-                    band_second[g] = (up - 2.0 * mid + lo) / (h**2)
-                else:
-                    band_first[g] = np.nan
-                    band_second[g] = np.nan
-            firsts.append(band_first)
-            seconds.append(band_second)
-        mixed_eval: NDArray[np.float64] | None = None
+            steps_per_band.append(steps)
+            main_chunk_idx.append(_add(np.vstack(blocks)))
+        if k == 2:
+            mixed_eval = eval_vec.reshape(1, 2)
     else:
         eval_mat = _as_eval_matrix(eval_values, n_predictors)
         n_eval = eval_mat.shape[0]
@@ -487,72 +517,101 @@ def _dy_d_best_scalar(
             steps = np.array(
                 [_dydx_step(column, eval_mat[i, wrt_index], float(band)) for i in range(n_eval)]
             )
-            finite = np.isfinite(steps) & (steps != 0.0)
             lower = eval_mat.copy()
             upper = eval_mat.copy()
             lower[:, wrt_index] = eval_mat[:, wrt_index] - steps
             upper[:, wrt_index] = eval_mat[:, wrt_index] + steps
-            if messages:
-                print(
-                    "Currently generating NNS.reg finite difference estimates...bandwidth\r"
-                )
-            estimates = _dy_d_best_reg_estimates(
-                x_values, y_values, np.vstack((lower, eval_mat, upper))
-            )
-            lo = estimates[:n_eval]
-            mid = estimates[n_eval : 2 * n_eval]
-            up = estimates[2 * n_eval :]
-            with np.errstate(invalid="ignore", divide="ignore"):
-                first = (up - lo) / (2.0 * steps)
-                second = (up - 2.0 * mid + lo) / (steps**2)
-            first[~finite] = np.nan
-            second[~finite] = np.nan
-            firsts.append(first)
-            seconds.append(second)
+            steps_per_band.append(steps)
+            main_chunk_idx.append(_add(np.vstack((lower, eval_mat, upper))))
         mixed_eval = eval_mat
 
-    def _row_nanmean(bands: list[NDArray[np.float64]]) -> NDArray[np.float64]:
-        matrix = np.column_stack([np.asarray(b, dtype=np.float64).reshape(-1) for b in bands])
-        with np.errstate(invalid="ignore"):
-            return np.asarray(np.nanmean(matrix, axis=1), dtype=np.float64)
-
-    output = {"First": _row_nanmean(firsts), "Second": _row_nanmean(seconds)}
-
+    # Mixed-derivative corners (also predicted from the same single fit).
+    mixed_meta: list[tuple[int | None, NDArray[np.float64]]] = []
     if mixed:
-        if vector_branch:
-            tuple_eval = np.asarray(eval_values, dtype=np.float64).reshape(-1)
-            if tuple_eval.size != 2:
-                raise ValueError("Mixed Derivatives are only for 2 IV")
-            mixed_points = tuple_eval.reshape(1, 2)
-        else:
-            assert mixed_eval is not None
-            if mixed_eval.shape[1] != 2:
-                raise ValueError("Mixed Derivatives are only for 2 IV")
-            mixed_points = mixed_eval
+        if mixed_eval is None or mixed_eval.shape[1] != 2:
+            raise ValueError("Mixed Derivatives are only for 2 IV")
         for band in h_s:
-            band_vals: list[float] = []
-            for point in mixed_points:
+            corner_blocks: list[NDArray[np.float64]] = []
+            scales: list[float] = []
+            for point in mixed_eval:
                 s1 = _dydx_step(x_values[:, 0], point[0], float(band))
                 s2 = _dydx_step(x_values[:, 1], point[1], float(band))
-                if not (np.isfinite(s1) and np.isfinite(s2) and s1 != 0.0 and s2 != 0.0):
-                    band_vals.append(np.nan)
-                    continue
-                corners = np.array(
-                    [
-                        [point[0] + s1, point[1] + s2],
-                        [point[0] - s1, point[1] + s2],
-                        [point[0] + s1, point[1] - s2],
-                        [point[0] - s1, point[1] - s2],
-                    ]
-                )
-                z = _dy_d_best_reg_estimates(x_values, y_values, corners)
-                band_vals.append((z[0] + z[3] - z[1] - z[2]) / (4.0 * s1 * s2))
-            mixeds.append(np.asarray(band_vals, dtype=np.float64))
-        output["Mixed"] = _row_nanmean(mixeds)
+                if np.isfinite(s1) and np.isfinite(s2) and s1 != 0.0 and s2 != 0.0:
+                    corner_blocks.append(
+                        np.array(
+                            [
+                                [point[0] + s1, point[1] + s2],
+                                [point[0] - s1, point[1] + s2],
+                                [point[0] + s1, point[1] - s2],
+                                [point[0] - s1, point[1] - s2],
+                            ]
+                        )
+                    )
+                    scales.append(4.0 * s1 * s2)
+                else:
+                    scales.append(np.nan)
+            scale_arr = np.asarray(scales, dtype=np.float64)
+            if corner_blocks:
+                mixed_meta.append((_add(np.vstack(corner_blocks)), scale_arr))
+            else:
+                mixed_meta.append((None, scale_arr))
 
-    if messages:
-        print("\r")
-    return output
+    # ---- reduction: given this plan's predicted chunks, build the result -----
+    def reduce(parts: list[NDArray[np.float64]]) -> dict[str, NDArray[np.float64]]:
+        firsts: list[NDArray[np.float64]] = []
+        seconds: list[NDArray[np.float64]] = []
+        for bi, steps in enumerate(steps_per_band):
+            block = parts[main_chunk_idx[bi]]
+            if vector_branch:
+                k = steps.size
+                f = np.empty(k)
+                s = np.empty(k)
+                for g in range(k):
+                    lo = np.mean(block[(position == "l") & (ids == g)])
+                    mid = np.mean(block[(position == "m") & (ids == g)])
+                    up = np.mean(block[(position == "u") & (ids == g)])
+                    h = steps[g]
+                    if np.isfinite(h) and h != 0.0:
+                        f[g] = (up - lo) / (2.0 * h)
+                        s[g] = (up - 2.0 * mid + lo) / (h**2)
+                    else:
+                        f[g] = np.nan
+                        s[g] = np.nan
+            else:
+                n_eval = steps.size
+                lo = block[:n_eval]
+                mid = block[n_eval : 2 * n_eval]
+                up = block[2 * n_eval :]
+                finite = np.isfinite(steps) & (steps != 0.0)
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    f = (up - lo) / (2.0 * steps)
+                    s = (up - 2.0 * mid + lo) / (steps**2)
+                f = np.where(finite, f, np.nan)
+                s = np.where(finite, s, np.nan)
+            firsts.append(f)
+            seconds.append(s)
+
+        result = {"First": _row_nanmean(firsts), "Second": _row_nanmean(seconds)}
+
+        if mixed:
+            mixeds: list[NDArray[np.float64]] = []
+            for chunk_idx, scale_arr in mixed_meta:
+                vals = np.full(scale_arr.size, np.nan)
+                if chunk_idx is not None:
+                    z = parts[chunk_idx]
+                    pos = 0
+                    for m in range(scale_arr.size):
+                        if np.isfinite(scale_arr[m]):
+                            c = z[pos : pos + 4]
+                            vals[m] = (c[0] + c[3] - c[1] - c[2]) / scale_arr[m]
+                            pos += 4
+                mixeds.append(vals)
+            result["Mixed"] = _row_nanmean(mixeds)
+        return result
+
+    return chunks, reduce
+
+
 
 
 def _dy_d_scalar(
