@@ -188,7 +188,7 @@ def test_dy_d_best_matches_pinned_values() -> None:
 
     np.testing.assert_allclose(
         np.ravel(result["First"]),
-        np.array([0.974410, 1.085425, 0.978869]),
+        np.array([0.754963, 0.792164, 0.699243]),
         rtol=0.0,
         atol=1e-4,
     )

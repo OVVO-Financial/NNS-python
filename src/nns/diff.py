@@ -272,33 +272,36 @@ def dy_d_best(
     messages: bool = False,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Original v0.5.7 ``dy.d_`` finite-difference estimator (base-R faithful).
+    """Reconciled ``dy.d_`` partial-derivative estimator.
 
-    This restores the exact finite-difference design used to produce the results
-    in Viole (2020), "Comparing Old and New Partial Derivative Estimates from
-    Nonlinear Nonparametric Regressions" (SSRN 3681436). It is a straight port of
-    the original ``data.table`` implementation to NumPy, so it carries none of the
-    later modifications (no ``gravity`` aggregation, no smoothing spline, no
-    descending-band weighting). Specifically it uses:
+    This is the reconciliation of the original NNS 0.5.7 ``dy.d_`` (Vinod & Viole
+    2020, SSRN 3681436) with the current regression engine. It keeps the v0.5.7
+    finite-difference scaffolding but makes two changes that make the estimates
+    uniform across identically-distributed regressors and independent of the old
+    data.table machinery:
 
-    * bandwidths ``h_s = 1/log(size(x), [2, 10])`` extended by ``10 * h_s`` and
-      doubled when ``nns_dep(x[:, wrt], y) < 0.5``;
-    * a quantile-spacing step ``h_step = |mean(diff(VaR(seq(.01, 1, h), 0, x)))|``;
-    * a degree-0 quantile evaluation grid ``VaR(seq(0, 1, .05), 0, .)``;
-    * ``nns_reg(dim_red_method="equal", smooth=False, point_only=True)`` estimates;
-    * **plain mean** aggregation over the grid, ``distance = 2 * h_step`` so that
-      ``First = (upper - lower) / (2 h_step)`` and
-      ``Second = (upper - 2 f(x) + lower) / (2 h_step) ** 2``;
-    * a cumulative +/- evaluation window across bandwidths; and
-    * a plain ``rowMeans`` (``nanmean``) blend across bandwidths.
+    * **Step (``h_step``) shares the ``dy.dx`` logic** - a locally-adaptive step
+      centred on the evaluation point's percentile,
+      ``h_step = VaR(p + H, 1, x) - VaR(p - H, 1, x)`` with
+      ``p = LPM.ratio(1, eval, x)`` - instead of a global quantile spacing with a
+      cumulative window. This is what removes the cross-regressor scatter.
+    * **Estimates come from** ``nns_stack`` on the equal-weight synthetic regressor
+      ``X*`` via the increased-dimension trick ``cbind(X*, X*)``, with
+      ``method=(1, 2)``, ``dim_red_method="equal"``, ``order="max"`` and
+      ``folds=5``. The stack's cross-validated ``n.best`` regularises the (sharper)
+      current engine back toward the paper's regime.
 
-    Values from the very largest bandwidths (where ``seq(.01, 1, h)`` collapses to
-    a single probability) evaluate to NaN and are dropped by the ``nanmean`` blend,
-    matching the R ``rowMeans(..., na.rm = TRUE)`` behaviour.
+    Bandwidths follow v0.5.7: ``h_s = 1/log(size(x), [2, 10])`` extended by
+    ``10 * h_s`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First and second
+    derivatives use the central-difference forms
+    ``First = (upper - lower) / (2 h_step)`` and
+    ``Second = (upper - 2 f(x) + lower) / h_step ** 2`` (matching ``dy.dx``),
+    blended across bandwidths with a plain ``nanmean``.
 
     ``wrt`` uses R-style 1-based indexing into the factor-expanded predictor
-    matrix. A scalar/1-D ``eval_points`` evaluates only the selected regressor; a
-    2-D array evaluates complete predictor tuples.
+    matrix. A scalar/1-D ``eval_points`` evaluates only the selected regressor
+    (averaged over the distribution of the other regressors); a 2-D array
+    evaluates complete predictor tuples.
     """
     raw_x = np.asarray(x)
     if raw_x.ndim != 2:
@@ -340,24 +343,35 @@ def _dy_d_best_reg_estimates(
     y: NDArray[np.float64],
     test_points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """f(x +/- h) via NNS.reg(dim.red.method='equal', point.only=TRUE) (no smoothing)."""
-    from nns.regression import nns_reg
+    """f(x +/- h) via NNS.stack on the equal-weight synthetic regressor X*.
 
-    result = nns_reg(
-        x,
-        y,
-        point_est=np.asarray(test_points, dtype=np.float64),
+    Reduces both the training design and the test points to the equal-weight
+    synthetic regressor X* = rowMeans(.), then estimates with the NNS
+    increased-dimension trick cbind(X*, X*) under
+    ``method=(1, 2), dim_red_method="equal", order="max", folds=5``. The
+    cross-validated ``n.best`` is what regularises the current engine.
+    """
+    from nns.stack import nns_stack
+
+    x_star = np.asarray(x, dtype=np.float64).mean(axis=1)
+    test_star = np.asarray(test_points, dtype=np.float64).mean(axis=1)
+    result = nns_stack(
+        ivs_train=np.column_stack([x_star, x_star]),
+        dv_train=y,
+        ivs_test=np.column_stack([test_star, test_star]),
+        method=(1, 2),
         dim_red_method="equal",
-        threshold=0.0,
-        order=None,
-        point_only=True,
-        smooth=False,
+        status=False,
+        order="max",
+        folds=5,
+        ncores=1,
+        dist=None,
     )
-    return np.asarray(result["Point.est"], dtype=np.float64).reshape(-1)
+    return np.asarray(result["stack"], dtype=np.float64).reshape(-1)
 
 
 def _r_seq(start: float, stop: float, by: float) -> NDArray[np.float64]:
-    """Reproduce R's seq(start, stop, by) (empty diff when a single point results)."""
+    """Reproduce R's seq(start, stop, by)."""
     if not np.isfinite(by) or by == 0.0:
         return np.asarray([start], dtype=np.float64)
     count = int(np.floor((stop - start) / by + 1e-9))
@@ -371,6 +385,17 @@ def _v057_bandwidths(x_size: int, wrt_dependence: float) -> NDArray[np.float64]:
     if wrt_dependence < 0.5:
         h_s = 2.0 * h_s
     return h_s
+
+
+def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> float:
+    """Locally-adaptive dy.dx step: VaR(p + H, 1, x) - VaR(p - H, 1, x), p = CDF(eval)."""
+    from nns.core import lpm_ratio
+    from nns.var import lpm_var
+
+    p = float(lpm_ratio(1.0, float(eval_value), column))
+    upper = lpm_var(min(1.0, p + band), 1.0, column)
+    lower = lpm_var(max(0.0, p - band), 1.0, column)
+    return float(upper - lower)
 
 
 def _dy_d_best_scalar(
@@ -400,22 +425,16 @@ def _dy_d_best_scalar(
 
     eval_values, vector_branch = _dy_d_eval_points(x_values, wrt_index, eval_points)
 
-    dependence = float(nns_dep(x_values[:, wrt_index], y_values)["Dependence"])
+    column = x_values[:, wrt_index]
+    dependence = float(nns_dep(column, y_values)["Dependence"])
     h_s = _v057_bandwidths(x_values.size, dependence)
 
-    def _quantile_step(column: int, band: float) -> float:
-        probs = _r_seq(0.01, 1.0, band)
-        quantiles = np.asarray(
-            [lpm_var(float(p), 0.0, x_values[:, column]) for p in probs], dtype=np.float64
-        )
-        if quantiles.size < 2:
-            return float("nan")
-        return float(abs(np.mean(np.diff(quantiles))))
+    firsts: list[NDArray[np.float64]] = []
+    seconds: list[NDArray[np.float64]] = []
+    mixeds: list[NDArray[np.float64]] = []
 
     if vector_branch:
         eval_vec = np.asarray(eval_values, dtype=np.float64).reshape(-1)
-        window_min = eval_vec.copy()
-        window_max = eval_vec.copy()
         grid = np.column_stack(
             [
                 np.asarray(
@@ -426,104 +445,71 @@ def _dy_d_best_scalar(
             ]
         )
         sample_size = grid.shape[0]
+        k = eval_vec.size
+        for band in h_s:
+            steps = np.array([_dydx_step(column, ev, float(band)) for ev in eval_vec])
+            blocks: list[NDArray[np.float64]] = []
+            position: list[str] = []
+            ids: list[int] = []
+            for g in range(k):
+                lower = grid.copy()
+                middle = grid.copy()
+                upper = grid.copy()
+                lower[:, wrt_index] = eval_vec[g] - steps[g]
+                middle[:, wrt_index] = eval_vec[g]
+                upper[:, wrt_index] = eval_vec[g] + steps[g]
+                blocks.extend((lower, middle, upper))
+                position.extend(["l"] * sample_size + ["m"] * sample_size + ["u"] * sample_size)
+                ids.extend([g] * (3 * sample_size))
+            estimates = _dy_d_best_reg_estimates(x_values, y_values, np.vstack(blocks))
+            pos = np.asarray(position, dtype=object)
+            idx = np.asarray(ids)
+            band_first = np.empty(k)
+            band_second = np.empty(k)
+            for g in range(k):
+                lo = np.mean(estimates[(pos == "l") & (idx == g)])
+                mid = np.mean(estimates[(pos == "m") & (idx == g)])
+                up = np.mean(estimates[(pos == "u") & (idx == g)])
+                h = steps[g]
+                if np.isfinite(h) and h != 0.0:
+                    band_first[g] = (up - lo) / (2.0 * h)
+                    band_second[g] = (up - 2.0 * mid + lo) / (h**2)
+                else:
+                    band_first[g] = np.nan
+                    band_second[g] = np.nan
+            firsts.append(band_first)
+            seconds.append(band_second)
+        mixed_eval: NDArray[np.float64] | None = None
     else:
         eval_mat = _as_eval_matrix(eval_values, n_predictors)
-        window_min = eval_mat.copy()
-        window_max = eval_mat.copy()
-
-    firsts: list[NDArray[np.float64]] = []
-    seconds: list[NDArray[np.float64]] = []
-    mixeds: list[NDArray[np.float64]] = []
-
-    for index, band in enumerate(h_s, start=1):
-        h_step = _quantile_step(wrt_index, float(band))
-        finite = np.isfinite(h_step) and h_step != 0.0
-        distance = 2.0 * h_step
-
-        if vector_branch:
-            k = eval_vec.size
-            if finite:
-                window_min = window_min - h_step
-                window_max = window_max + h_step
-                deriv_points = np.vstack([grid] * (3 * k))
-                wrt_column = np.repeat(
-                    np.ravel(np.vstack((window_min, eval_vec, window_max)).T), sample_size
-                )[: deriv_points.shape[0]]
-                deriv_points[:, wrt_index] = wrt_column
-                position = np.tile(
-                    np.repeat(np.asarray(["l", "m", "u"], dtype=object), sample_size), k
-                )[: deriv_points.shape[0]]
-                ids = np.repeat(np.arange(k), 3 * sample_size)[: deriv_points.shape[0]]
-                if messages:
-                    print(f"Currently evaluating the {deriv_points.shape[0]} required points\r")
-                estimates = _dy_d_best_reg_estimates(x_values, y_values, deriv_points)
-                lower = np.asarray(
-                    [np.mean(estimates[(position == "l") & (ids == g)]) for g in range(k)]
+        n_eval = eval_mat.shape[0]
+        for band in h_s:
+            steps = np.array(
+                [_dydx_step(column, eval_mat[i, wrt_index], float(band)) for i in range(n_eval)]
+            )
+            finite = np.isfinite(steps) & (steps != 0.0)
+            lower = eval_mat.copy()
+            upper = eval_mat.copy()
+            lower[:, wrt_index] = eval_mat[:, wrt_index] - steps
+            upper[:, wrt_index] = eval_mat[:, wrt_index] + steps
+            if messages:
+                print(
+                    "Currently generating NNS.reg finite difference estimates...bandwidth\r"
                 )
-                two_fx = 2.0 * np.asarray(
-                    [np.mean(estimates[(position == "m") & (ids == g)]) for g in range(k)]
-                )
-                upper = np.asarray(
-                    [np.mean(estimates[(position == "u") & (ids == g)]) for g in range(k)]
-                )
-                firsts.append((upper - lower) / distance)
-                seconds.append((upper - two_fx + lower) / distance**2)
-            else:
-                firsts.append(np.full(k, np.nan))
-                seconds.append(np.full(k, np.nan))
-            mixed_eval_points: NDArray[np.float64] | None = None
-        else:
-            n_eval = eval_mat.shape[0]
-            if finite:
-                window_min[:, wrt_index] = window_min[:, wrt_index] - h_step
-                window_max[:, wrt_index] = window_max[:, wrt_index] + h_step
-                deriv_points = np.vstack((window_min, eval_mat, window_max))
-                if messages:
-                    print(
-                        "Currently generating NNS.reg finite difference estimates...bandwidth "
-                        f"{index} of {h_s.size}\r"
-                    )
-                estimates = _dy_d_best_reg_estimates(x_values, y_values, deriv_points)
-                lower = estimates[:n_eval]
-                two_fx = 2.0 * estimates[n_eval : 2 * n_eval]
-                upper = estimates[2 * n_eval :]
-                firsts.append((upper - lower) / distance)
-                seconds.append((upper - two_fx + lower) / distance**2)
-            else:
-                firsts.append(np.full(n_eval, np.nan))
-                seconds.append(np.full(n_eval, np.nan))
-            mixed_eval_points = eval_mat
-
-        if mixed:
-            if vector_branch:
-                tuple_eval = np.asarray(eval_values, dtype=np.float64).reshape(-1)
-                if tuple_eval.size != 2:
-                    raise ValueError("Mixed Derivatives are only for 2 IV")
-                mixed_eval_points = tuple_eval.reshape(1, 2)
-            assert mixed_eval_points is not None
-            if mixed_eval_points.shape[1] != 2:
-                raise ValueError("Mixed Derivatives are only for 2 IV")
-            step_1 = _quantile_step(0, float(band))
-            step_2 = _quantile_step(1, float(band))
-            if np.isfinite(step_1) and np.isfinite(step_2) and step_1 != 0.0 and step_2 != 0.0:
-                corners = np.vstack(
-                    [
-                        np.array(
-                            [
-                                [p[0] + step_1, p[1] + step_2],
-                                [p[0] - step_1, p[1] + step_2],
-                                [p[0] + step_1, p[1] - step_2],
-                                [p[0] - step_1, p[1] - step_2],
-                            ]
-                        )
-                        for p in mixed_eval_points
-                    ]
-                )
-                mixed_estimates = _dy_d_best_reg_estimates(x_values, y_values, corners)
-                z = mixed_estimates.reshape(-1, 4)
-                mixeds.append((z[:, 0] + z[:, 3] - z[:, 1] - z[:, 2]) / (4.0 * step_1 * step_2))
-            else:
-                mixeds.append(np.full(mixed_eval_points.shape[0], np.nan))
+            estimates = _dy_d_best_reg_estimates(
+                x_values, y_values, np.vstack((lower, eval_mat, upper))
+            )
+            lo = estimates[:n_eval]
+            mid = estimates[n_eval : 2 * n_eval]
+            up = estimates[2 * n_eval :]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                first = (up - lo) / (2.0 * steps)
+                second = (up - 2.0 * mid + lo) / (steps**2)
+            first[~finite] = np.nan
+            second[~finite] = np.nan
+            firsts.append(first)
+            seconds.append(second)
+        mixed_eval = eval_mat
 
     def _row_nanmean(bands: list[NDArray[np.float64]]) -> NDArray[np.float64]:
         matrix = np.column_stack([np.asarray(b, dtype=np.float64).reshape(-1) for b in bands])
@@ -531,8 +517,39 @@ def _dy_d_best_scalar(
             return np.asarray(np.nanmean(matrix, axis=1), dtype=np.float64)
 
     output = {"First": _row_nanmean(firsts), "Second": _row_nanmean(seconds)}
+
     if mixed:
+        if vector_branch:
+            tuple_eval = np.asarray(eval_values, dtype=np.float64).reshape(-1)
+            if tuple_eval.size != 2:
+                raise ValueError("Mixed Derivatives are only for 2 IV")
+            mixed_points = tuple_eval.reshape(1, 2)
+        else:
+            assert mixed_eval is not None
+            if mixed_eval.shape[1] != 2:
+                raise ValueError("Mixed Derivatives are only for 2 IV")
+            mixed_points = mixed_eval
+        for band in h_s:
+            band_vals: list[float] = []
+            for point in mixed_points:
+                s1 = _dydx_step(x_values[:, 0], point[0], float(band))
+                s2 = _dydx_step(x_values[:, 1], point[1], float(band))
+                if not (np.isfinite(s1) and np.isfinite(s2) and s1 != 0.0 and s2 != 0.0):
+                    band_vals.append(np.nan)
+                    continue
+                corners = np.array(
+                    [
+                        [point[0] + s1, point[1] + s2],
+                        [point[0] - s1, point[1] + s2],
+                        [point[0] + s1, point[1] - s2],
+                        [point[0] - s1, point[1] - s2],
+                    ]
+                )
+                z = _dy_d_best_reg_estimates(x_values, y_values, corners)
+                band_vals.append((z[0] + z[3] - z[1] - z[2]) / (4.0 * s1 * s2))
+            mixeds.append(np.asarray(band_vals, dtype=np.float64))
         output["Mixed"] = _row_nanmean(mixeds)
+
     if messages:
         print("\r")
     return output
