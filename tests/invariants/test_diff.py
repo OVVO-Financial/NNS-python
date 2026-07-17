@@ -192,3 +192,52 @@ def test_dy_d_best_matches_pinned_values() -> None:
         rtol=0.0,
         atol=1e-4,
     )
+
+
+def test_stable_topk_matches_full_stable_sort() -> None:
+    # Partial neighbor selection must be byte-identical to a full stable argsort,
+    # including heavy distance ties (e.g. duplicated 1-D synthetic coordinates).
+    from nns._reg_engine import _stable_topk
+
+    rng = np.random.RandomState(0)
+    for _ in range(300):
+        m = rng.randint(1, 6)
+        n = rng.randint(2, 40)
+        k = rng.randint(1, n + 1)
+        d = rng.randint(0, 4, size=(m, n)).astype(float)  # ties on purpose
+        expected = np.argsort(d, axis=1, kind="stable")[:, :k]
+        assert np.array_equal(_stable_topk(d, k), expected)
+
+
+def test_mreg_predict_path_chunking_is_exact() -> None:
+    # The chunked/partial-selection path must equal a full-sort reference.
+    from nns._reg_engine import _mreg_distances, _mreg_ensemble_weights, _mreg_predict_path
+    from nns.central_tendencies import nns_gravity
+
+    def reference(xtest, rpm_x, rpm_yhat, kmax, dist, mins, maxs):
+        n = rpm_x.shape[0]
+        kmax = min(int(kmax), n)
+        m = xtest.shape[0]
+        out = np.empty((m, kmax))
+        d = _mreg_distances(rpm_x, xtest, dist, mins, maxs)
+        idx = np.argsort(d, axis=1, kind="stable")
+        ds = np.take_along_axis(d, idx, axis=1)
+        ys = rpm_yhat[idx]
+        dmin = d.min(axis=1, keepdims=True)
+        for i in range(m):
+            t = rpm_yhat[d[i] == dmin[i, 0]]
+            out[i, 0] = float(nns_gravity(t[np.isfinite(t)]))
+        for k in range(2, kmax + 1):
+            w = _mreg_ensemble_weights(ds[:, :k])
+            out[:, k - 1] = np.sum(ys[:, :k] * w, axis=1)
+        return out
+
+    rng = np.random.RandomState(1)
+    rpm_x = rng.uniform(-2, 2, size=(300, 3))
+    rpm_y = rng.uniform(size=300)
+    xt = rng.uniform(-2, 2, size=(120, 3))
+    mins, maxs = rpm_x.min(0), rpm_x.max(0)
+    for kmax in (1, 5, 50, 300):
+        a = reference(xt, rpm_x, rpm_y, kmax, "NNS", mins, maxs)
+        b = _mreg_predict_path(xt, rpm_x, rpm_y, kmax, "NNS", mins, maxs)
+        np.testing.assert_allclose(a, b, rtol=0, atol=0)
