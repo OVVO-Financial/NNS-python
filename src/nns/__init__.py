@@ -26,6 +26,7 @@ _EXPORTS = {
     "d_lpm": ("nns.co_moments", "d_lpm"),
     "dpm_nd": ("nns.dependence", "dpm_nd"),
     "dy_d": ("nns.diff", "dy_d"),
+    "dy_d_best": ("nns.diff", "dy_d_best"),
     "dy_dx": ("nns.diff", "dy_dx"),
     "d_upm": ("nns.co_moments", "d_upm"),
     "ecdf_pm": ("nns.classical", "ecdf_pm"),

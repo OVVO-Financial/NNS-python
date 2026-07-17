@@ -115,3 +115,80 @@ def test_dy_d_point_modes_preserve_linear_slope_direction() -> None:
     for eval_points in ("mean", "median", "last"):
         assert dy_d(x, positive, wrt=1, eval_points=eval_points)["First"][0] > 0.0
         assert dy_d(x, negative, wrt=1, eval_points=eval_points)["First"][0] < 0.0
+
+
+def test_dy_d_best_is_exported() -> None:
+    import nns
+
+    assert "dy_d_best" in nns.__all__
+    assert callable(nns.dy_d_best)
+
+
+def test_dy_d_best_vectorized_wrt_tuple_returns_first_second() -> None:
+    from nns import dy_d_best
+
+    x = np.random.RandomState(0).randn(60, 3)
+    y = x[:, 0] + 2.0 * x[:, 1] - x[:, 2]
+
+    result = dy_d_best(x, y, wrt=np.array([1, 2, 3]), eval_points=np.zeros((1, 3)))
+
+    assert result.keys() == {"First", "Second"}
+    assert result["First"].shape == (1, 3)
+    assert result["Second"].shape == (1, 3)
+    assert np.all(np.isfinite(result["First"]))
+
+
+def test_dy_d_best_single_wrt_returns_one_dimensional_first() -> None:
+    from nns import dy_d_best
+
+    x = np.random.RandomState(0).randn(60, 3)
+    y = x[:, 0] + 2.0 * x[:, 1] - x[:, 2]
+
+    # A single `wrt` returns 1-D arrays (one value per evaluation point).
+    result = dy_d_best(x, y, wrt=1, eval_points=np.array([[0.0, 0.0, 0.0]]))
+
+    assert result["First"].shape == (1,)
+    assert np.all(np.isfinite(result["First"]))
+
+
+def test_dy_d_best_two_column_mixed_returns_mixed() -> None:
+    from nns import dy_d_best
+
+    x = np.random.RandomState(1).randn(60, 2)
+    y = x[:, 0] * x[:, 1]
+
+    result = dy_d_best(x, y, wrt=np.array([1, 2]), eval_points=np.array([[0.0, 0.0]]), mixed=True)
+
+    assert result.keys() == {"First", "Second", "Mixed"}
+    assert result["First"].shape == (1, 2)
+    assert result["Mixed"].shape == (1, 2)
+
+
+def test_dy_d_best_is_deterministic() -> None:
+    from nns import dy_d_best
+
+    x = np.random.RandomState(0).randn(60, 3)
+    y = x[:, 0] + 2.0 * x[:, 1] - x[:, 2]
+
+    a = dy_d_best(x, y, wrt=np.array([1, 2, 3]), eval_points=np.zeros((1, 3)))
+    b = dy_d_best(x, y, wrt=np.array([1, 2, 3]), eval_points=np.zeros((1, 3)))
+
+    assert np.allclose(a["First"], b["First"])
+    assert np.allclose(a["Second"], b["Second"])
+
+
+def test_dy_d_best_matches_pinned_values() -> None:
+    # Golden values guard the v0.5.7 finite-difference design against regressions.
+    from nns import dy_d_best
+
+    x = np.random.RandomState(0).randn(60, 3)
+    y = x[:, 0] + 2.0 * x[:, 1] - x[:, 2]
+
+    result = dy_d_best(x, y, wrt=np.array([1, 2, 3]), eval_points=np.zeros((1, 3)))
+
+    np.testing.assert_allclose(
+        np.ravel(result["First"]),
+        np.array([0.974410, 1.085425, 0.978869]),
+        rtol=0.0,
+        atol=1e-4,
+    )
