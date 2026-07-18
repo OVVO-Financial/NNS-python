@@ -1,7 +1,7 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "1d4d1e9ccc872ccc25eacfc7153a5ff8c4abd172",
-  "r_version": "13.1",
+  "r_commit": "ff7f4f402399ab40f75fdf5c4987693a37a718b1",
+  "r_version": "13.2",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
   "core_commit": "cfc25a3469df6460f9224fb976fcb58de9d58068",
@@ -11,5 +11,5 @@
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache.json",
-  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS."
+  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version advanced to the 13.2 dy.d_ reconciliation (R/** behavioral truth); the vendored native snapshot (tools/NNS, r_src_tree_hash, tarball) and NNS-core commit are unchanged because that reconciliation touched only R sources."
 }
