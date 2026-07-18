@@ -1,19 +1,11 @@
 name: Native backend CI
 
-# pull_request covers every branch with an open PR; push is limited to main so
-# a PR-branch push does not run the identical matrix twice (once per event).
 on:
   pull_request:
   push:
-    branches: [main]
 
 permissions:
   contents: read
-
-# A superseded push to the same ref cancels the in-flight run.
-concurrency:
-  group: native-backend-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   native-backend:
