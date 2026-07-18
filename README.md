@@ -29,7 +29,7 @@ native and does not call R at runtime.
 |---|---|
 | Distribution package | `ovvo-nns` |
 | Import package | `nns` |
-| Current version | `1.5.0` |
+| Current version | `1.6.0` |
 | Python | `>=3.11` |
 | Required runtime dependencies | NumPy, SciPy, Matplotlib |
 | R required at runtime | No |
