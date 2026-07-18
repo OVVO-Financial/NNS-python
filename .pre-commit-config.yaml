@@ -1,0 +1,21 @@
+# Local hooks run `python -m ...` with language: system so they use the
+# project environment's interpreter — the same one that has numpy and the
+# package installed. A mypy/ruff binary from a different environment produces
+# spurious import-not-found noise (numpy stubs missing) that masks real errors
+# CI would catch; running through the project env keeps local == CI.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check (project env)
+        entry: python -m ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: mypy
+        name: mypy (project env)
+        entry: python -m mypy
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true

@@ -1,0 +1,104 @@
+{
+  "entries": {
+    "027da550d8f036cf1025df664e878a5ac5103a5a12e0e42305f6c9c65386cc3d": [
+      "X_3",
+      "X_1",
+      "X_4"
+    ],
+    "067252b840f99a53373479675f69bd2df3c893c7abebf7f620d3b726530898f0": [
+      "X_3",
+      "X_4"
+    ],
+    "10d3817f7d1b9afc131adae066ccc7b8b30e182e2219ceebb24612382d27214a": [
+      "X_4",
+      "X_1",
+      "X_5",
+      "X_3"
+    ],
+    "12f61e859e21d314395090608a9603877b3af21a3566b2d1c63482f05c7cbe5d": [
+      "X_3",
+      "X_1",
+      "X_4"
+    ],
+    "177d42b49b323e08870a739b1fe6005a61fd19d6a0c6eca51235498b34ca688a": [
+      "X_5",
+      "X_1",
+      "X_6",
+      "X_4"
+    ],
+    "21eab77a67bd77d38895c05e6082dab09678037d63930ca616eacb7fe70b15bc": [
+      "X_3",
+      "X_4"
+    ],
+    "429c387f97eb829c3fc8bf86f0ec38537e579360e8826c0bc6bec8adf564d709": [
+      "X_5",
+      "X_4",
+      "X_1"
+    ],
+    "524164f06d0053d8858c7ccf0f4f64b740b4d5894059d4087e96d4467c016b4b": [
+      "X_4",
+      "X_5",
+      "X_1",
+      "X_3"
+    ],
+    "5aa917889af79d2209f70220c3f4ea920996683ae907ea64d0c9abf561eb78a9": [
+      "X_3",
+      "X_4"
+    ],
+    "5b3d15ea2ea2cf91e4eda0c4086a1adabaeba41cff751ea9a66cadbab56da1f6": [
+      "X_4",
+      "X_5",
+      "X_3"
+    ],
+    "5cd9238f3033b6e1e32e6be52df5cf9cce2b654e115fa5f3e6b06491c4efa8ee": [
+      "X_4",
+      "X_5",
+      "X_3"
+    ],
+    "6ef78bf257dcd6cacda20a2db2743e905e78afe6d11207827e73547c0553799d": [
+      "X_4",
+      "X_5",
+      "X_3",
+      "X_6",
+      "X_1",
+      "X_2"
+    ],
+    "b543bee5119e61328b2384f189e13543893ab0170263b9abc3d7f126da644ea5": [
+      "X_5",
+      "X_1",
+      "X_6",
+      "X_4",
+      "X_2",
+      "X_3"
+    ],
+    "cf90db1bd0464f113361cbbc7b46827e1afd900fe3039cadac65c9d33e84681d": [
+      "X_4",
+      "X_5",
+      "X_1",
+      "X_6",
+      "X_3",
+      "X_2"
+    ],
+    "dc30ed4fcf1270aa40c055833a5c8a089e55a0063dc69e15008a2c1cc373abd8": [
+      "X_3",
+      "X_4"
+    ],
+    "e890ab36d40361765f5bb15cd8bf2ee7e0b2e2fbdf8d73a0c4905545e3a3669c": [
+      "X_3",
+      "X_4"
+    ],
+    "f9d1baa8c18d98ec8156ebce7902b0b3d4ce1236b6b1622b96882c9ebc931156": "X_1",
+    "fbcad8d0f96f9b41c3f7374692876dec00a4d2aa47b4fcd30d7911b3a7085044": [
+      "X_3",
+      "X_4"
+    ],
+    "feeab61c48382de2512891e7ce24ab384ab07b698e45efd3d6847e81f06cdc0c": [
+      "X_3",
+      "X_1",
+      "X_4"
+    ]
+  },
+  "label": "NNS.SD.efficient.set",
+  "nns_version": "13.2",
+  "schema_version": 2
+}

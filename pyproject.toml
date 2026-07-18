@@ -42,6 +42,7 @@ dependencies = [
 dev = [
     "hypothesis",
     "mypy",
+    "pre-commit",
     "pytest",
     "pytest-benchmark",
     "pytest-cov",

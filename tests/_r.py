@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeAlias, cast
@@ -13,10 +13,15 @@ from warnings import warn
 import numpy as np
 from numpy.typing import NDArray
 
-_CACHE_PATH = Path(__file__).with_name("_r_cache.json")
-_LOCK_PATH = _CACHE_PATH.with_suffix(".lock")
-_SCHEMA_VERSION = 1
+# Schema v2: the cache is a directory of per-function shard files
+# (tests/_r_cache/<label>.json), each holding only that R function's entries.
+# In-memory keys are "<label>|<sha256>", so regeneration diffs name the
+# function they touch and a regen rewrites only the shards that changed.
+_CACHE_DIR = Path(__file__).with_name("_r_cache")
+_LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
+_SCHEMA_VERSION = 2
 _NNS_VERSION = '13.2'
+_KEY_SEPARATOR = "|"
 JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
 RValue: TypeAlias = (
     None | float | str | list[str | None] | NDArray[np.float64] | dict[str, "RValue"]
@@ -38,7 +43,7 @@ def nns(function: str, *args: Any) -> RValue:
         raise RuntimeError(
             f"R cache miss for NNS::{function} with key {key}. "
             "Run without CI/NNS_R_CACHE_ONLY/PYNNS_R_CACHE_ONLY/"
-            f"NNS_OFFLINE/PYNNS_OFFLINE to populate {_CACHE_PATH}."
+            f"NNS_OFFLINE/PYNNS_OFFLINE to populate {_CACHE_DIR}."
         )
 
     return _uncached_nns(function, args, key, refresh)
@@ -70,7 +75,7 @@ def nns_sd_cluster_dendrogram(
             return _decode(disk_cache[key])
         result = _call_r_sd_cluster_dendrogram(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -127,7 +132,7 @@ def nns_stack_numeric(
             return _decode(disk_cache[key])
         result = _call_r_stack_numeric(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -182,7 +187,7 @@ def nns_boost_numeric(
             return _decode(disk_cache[key])
         result = _call_r_boost_numeric(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -227,7 +232,7 @@ def nns_boost_factor_predictor(
             return _decode(disk_cache[key])
         result = _call_r_boost_factor_predictor(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -278,7 +283,7 @@ def nns_boost_multi_factor_predictor(
             return _decode(disk_cache[key])
         result = _call_r_boost_multi_factor_predictor(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -313,7 +318,7 @@ def nns_reg_factor_predictor(
             return _decode(disk_cache[key])
         result = _call_r_reg_factor_predictor(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -352,7 +357,7 @@ def nns_reg_factor_dimred(
             return _decode(disk_cache[key])
         result = _call_r_reg_factor_dimred(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -397,7 +402,7 @@ def nns_stack_factor_predictor(
             return _decode(disk_cache[key])
         result = _call_r_stack_factor_predictor(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -446,7 +451,7 @@ def nns_stack_mixed_factor_predictor(
             return _decode(disk_cache[key])
         result = _call_r_stack_mixed_factor_predictor(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -489,7 +494,7 @@ def nns_meboot_diagnostics(
             return _decode(disk_cache[key])
         result = _call_r_meboot_diagnostics(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -515,7 +520,7 @@ def nns_meboot_stat_summary(
             return _decode(disk_cache[key])
         result = _call_r_meboot_stat_summary(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -541,7 +546,7 @@ def nns_mc_grid(
             return _decode(disk_cache[key])
         result = _call_r_mc_grid(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -576,7 +581,7 @@ def nns_mc_stat_summary(
             return _decode(disk_cache[key])
         result = _call_r_mc_stat_summary(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -595,7 +600,7 @@ def nns_anova_custom(payload: dict[str, Any]) -> RValue:
             return _decode(disk_cache[key])
         result = _call_r_anova_custom(payload)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -620,7 +625,7 @@ def nns_distance_bulk_custom(
             return _decode(disk_cache[key])
         result = _call_r_distance_bulk_custom(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -640,7 +645,7 @@ def nns_diff_custom(name: str, point: float) -> RValue:
             return _decode(disk_cache[key])
         result = _call_r_diff_custom(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -660,7 +665,7 @@ def dy_dx_overall(x: Sequence[float], y: Sequence[float]) -> RValue:
             return _decode(disk_cache[key])
         result = _call_r_dy_dx_overall(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -685,7 +690,7 @@ def factor_dummy_custom(
             return _decode(disk_cache[key])
         result = _call_r_factor_dummy(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -705,7 +710,7 @@ def dy_dx_numeric(x: Sequence[float], y: Sequence[float], eval_point: Sequence[f
             return _decode(disk_cache[key])
         result = _call_r_dy_dx_numeric(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -730,7 +735,7 @@ def dy_d_scalar(
             return _decode(disk_cache[key])
         result = _call_r_dy_d_scalar(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -755,7 +760,7 @@ def dy_d_scalar_mixed(
             return _decode(disk_cache[key])
         result = _call_r_dy_d_scalar_mixed(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -790,7 +795,7 @@ def nns_arma_pred_int(
             return _decode(disk_cache[key])
         result = _call_r_arma_pred_int(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -825,7 +830,7 @@ def nns_arma_optim_custom(
             return _decode(disk_cache[key])
         result = _call_r_arma_optim_custom(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -852,7 +857,7 @@ def nns_cdf_custom(
             return _decode(disk_cache[key])
         result = _call_r_cdf_custom(args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         return result
 
 
@@ -874,7 +879,7 @@ def _uncached_nns(
 
         result = _call_r(function, args)
         disk_cache[key] = _encode(result)
-        _write_cache(disk_cache)
+        _write_cache(disk_cache, changed=key)
         _CACHE = disk_cache
         return result
 
@@ -885,7 +890,14 @@ def _cache_key(function: str, args: tuple[Any, ...]) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{function}{_KEY_SEPARATOR}{digest}"
+
+
+def _shard_path(label: str) -> Path:
+    # Labels are dotted R function names (e.g. "NNS.stack.numeric"); they are
+    # already filesystem-safe, but guard against separators just in case.
+    return _CACHE_DIR / (label.replace("/", "_").replace("\\", "_") + ".json")
 
 
 def _cache_state() -> tuple[Cache, bool]:
@@ -896,38 +908,70 @@ def _cache_state() -> tuple[Cache, bool]:
 
 
 def _read_cache_from_disk() -> tuple[Cache, bool]:
-    if not _CACHE_PATH.exists():
+    if not _CACHE_DIR.is_dir():
         return {}, False
 
-    cache = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
-    if not isinstance(cache, dict) or cache.get("schema_version") != _SCHEMA_VERSION:
-        raise RuntimeError(f"Unsupported R cache schema in {_CACHE_PATH}.")
+    entries: Cache = {}
+    refresh = False
+    for shard_path in sorted(_CACHE_DIR.glob("*.json")):
+        shard = json.loads(shard_path.read_text(encoding="utf-8"))
+        if not isinstance(shard, dict) or shard.get("schema_version") != _SCHEMA_VERSION:
+            raise RuntimeError(f"Unsupported R cache schema in {shard_path}.")
 
-    nns_version = cache.get("nns_version")
-    if nns_version != _NNS_VERSION:
-        warn(
-            f"R cache was built for NNS {nns_version}; "
-            f"expected {_NNS_VERSION}. Refreshing entries.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+        nns_version = shard.get("nns_version")
+        if nns_version != _NNS_VERSION:
+            warn(
+                f"R cache shard {shard_path.name} was built for NNS {nns_version}; "
+                f"expected {_NNS_VERSION}. Refreshing entries.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            refresh = True
+            continue
+
+        label = shard.get("label")
+        shard_entries = shard.get("entries")
+        if not isinstance(label, str) or not isinstance(shard_entries, dict):
+            raise RuntimeError(f"Invalid R cache entries in {shard_path}.")
+        for key, value in shard_entries.items():
+            entries[f"{label}{_KEY_SEPARATOR}{key}"] = cast(JsonValue, value)
+    if refresh:
         return {}, True
-
-    entries = cache.get("entries")
-    if not isinstance(entries, dict):
-        raise RuntimeError(f"Invalid R cache entries in {_CACHE_PATH}.")
-    return cast(Cache, entries), False
+    return entries, False
 
 
-def _write_cache(entries: Cache) -> None:
-    payload = {
-        "nns_version": _NNS_VERSION,
-        "schema_version": _SCHEMA_VERSION,
-        "entries": entries,
-    }
-    tmp_path = _CACHE_PATH.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    tmp_path.replace(_CACHE_PATH)
+def _write_cache(entries: Cache, changed: str | None = None) -> None:
+    """Write shard files for ``entries``, grouped by function label.
+
+    ``changed`` is the key that was just added/updated; when given, only that
+    key's shard is rewritten (the other shards on disk are already current).
+    """
+    by_label: dict[str, dict[str, JsonValue]] = {}
+    for key, value in entries.items():
+        label, _, digest = key.partition(_KEY_SEPARATOR)
+        if not digest:
+            raise RuntimeError(f"R cache key {key!r} is missing its function label.")
+        by_label.setdefault(label, {})[digest] = value
+
+    labels: Iterable[str] = by_label
+    if changed is not None:
+        changed_label = changed.partition(_KEY_SEPARATOR)[0]
+        labels = [changed_label] if changed_label in by_label else []
+
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for label in labels:
+        payload = {
+            "label": label,
+            "nns_version": _NNS_VERSION,
+            "schema_version": _SCHEMA_VERSION,
+            "entries": by_label[label],
+        }
+        shard_path = _shard_path(label)
+        tmp_path = shard_path.with_suffix(".json.tmp")
+        tmp_path.write_text(
+            json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        tmp_path.replace(shard_path)
 
 
 @contextmanager

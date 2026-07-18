@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 REPORT_DEFAULT = Path("sync/last_live_r_parity_report.md")
-R_CACHE_PATH = Path("tests/_r_cache.json")
-# Backup suffix is gitignored (see .gitignore) so it never lands in a PR.
-R_CACHE_BACKUP = R_CACHE_PATH.with_suffix(".json.bak")
+R_CACHE_PATH = Path("tests/_r_cache")
+# Backup directory is gitignored (see .gitignore) so it never lands in a PR.
+R_CACHE_BACKUP = Path("tests/_r_cache.bak")
 
 # Toggles that force tests/_r.py into offline/cache-only mode. Clearing them lets
 # a parity test actually shell out to live R on a cache miss.
@@ -98,7 +98,7 @@ def run_live_subset(out: Path, header: list[str], parity_tests: list[str]) -> No
         code = run(cmd, clear_offline=True)
     finally:
         if R_CACHE_PATH.exists():
-            R_CACHE_PATH.unlink()
+            shutil.rmtree(R_CACHE_PATH)
         if moved:
             shutil.move(str(R_CACHE_BACKUP), str(R_CACHE_PATH))
 

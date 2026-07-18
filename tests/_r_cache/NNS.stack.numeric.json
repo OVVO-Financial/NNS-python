@@ -1,0 +1,1334 @@
+{
+  "entries": {
+    "012c89c9b5789c8f3f78d89f2f6e73b27c6fc11e86a3274b895c6e3074468142": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.53,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "0658fa9f38741df7b82562f441cc5d5ba0c274ac5338439fd5540c6da92eb7a4": {
+      "NNS.dim.red.threshold": 0.973733583489681,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 0.00121189889877448,
+      "OBJfn.reg": 5.51942767245957,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -3.01333413596247,
+        -2.87510017951567,
+        -2.87510017951567,
+        -2.71523740711106,
+        -2.52855320243369
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "07cebc0004acfd8b34925fe1776e17f1c53b0b1fca5e6d45ca221967aee86655": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "0de68c6df7a3f15bdb7f7e42b0df61a1db9755099c85251b56753568ce32de82": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.332209339604371,
+      "class.levels": null,
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -3.01333413596247,
+        -2.92477734511342,
+        -2.82542301391791,
+        -2.71523740711106,
+        -2.59430062805066
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.92477734511342,
+        -2.82542301391791,
+        -2.71523740711106,
+        -2.59430062805066
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "2c64e6b31b3252a0c8eb803ce87bc99b522af7830eced01c870db43924413094": {
+      "NNS.dim.red.threshold": 0.973733583489681,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00238590188522174,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "2f2e49eae1dd9dbbea59311cd174ac62fe3921e893309924aa455da1688f0f9e": {
+      "NNS.dim.red.threshold": 0.969744160177976,
+      "NNS.reg.n.best": 4.0,
+      "OBJfn.dim.red": 0.00643967045804034,
+      "OBJfn.reg": 0.158284130941947,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.82871892415643,
+        -2.77630873024246,
+        -2.72943125668755,
+        -2.61832846968069,
+        -2.40945348734116
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "387dce714ce6b724e809b148b39f55c9ef4a04af60e250251b84880ee3ab0a6e": {
+      "NNS.dim.red.threshold": 0.969744160177976,
+      "NNS.reg.n.best": 2.0,
+      "OBJfn.dim.red": 0.00643967045804034,
+      "OBJfn.reg": 0.53740792307191,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.94458820551037,
+        -2.94074376753637,
+        -2.81933540019709,
+        -2.82293630405228,
+        -2.36288780099992
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "4bf5fceeea00a070eb550db5527f5037303821f958b21e4b016ca4e50b74caed": {
+      "NNS.dim.red.threshold": 0.973733583489681,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 0.00121189889877448,
+      "OBJfn.reg": 5.51942767245957,
+      "class.levels": null,
+      "dim.red": [
+        2.58973500409202,
+        2.66290021767721,
+        2.7192753782766,
+        2.77207018133043,
+        2.8052607176889
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        2.65463112374812,
+        2.65463112374812,
+        2.78480350732909,
+        2.78480350732909,
+        2.78480350732909
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        2.58973500409202,
+        2.66290021767721,
+        2.7192753782766,
+        2.77207018133043,
+        2.8052607176889
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "58c36a79997826db3729bc62831950d2e8f91dc450c702d6aaaca45562a26c48": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "probability.threshold": 0.53,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "63e9b91daa510b4ad31f7a5cbd53274761d90c394981c119f75a8bfb53c00410": {
+      "NNS.dim.red.threshold": 0.969744160177976,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00643967045804034,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "6654a97c8d038f0f0ebef3b0d286d49633df0f00d4236a46bdac1b0fcda25611": {
+      "NNS.dim.red.threshold": 0.942153356794789,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 0.714285714285714,
+      "class.levels": [
+        "A",
+        "B",
+        "C"
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.64,
+      "reg": [
+        1.0,
+        1.0,
+        3.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.25,
+        0.75
+      ]
+    },
+    "69cbff353398017180418b46e515e211b1a4d8e23760771dcccd69c693fb70d9": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 4.55659006004882,
+      "class.levels": null,
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -3.01333413596247,
+        -2.92477734511342,
+        -2.82542301391791,
+        -2.71523740711106,
+        -2.59430062805066
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.92477734511342,
+        -2.82542301391791,
+        -2.71523740711106,
+        -2.59430062805066
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "78f7cc988dc140830b92f3056339d14657963b22b41662d3345bc41f2150dab4": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.53,
+      "reg": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "8646bacb9e696d1892ae55a008fff5033e37885ad2c73996de8b01a760680d76": {
+      "NNS.dim.red.threshold": 0.969744160177976,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00643967045804034,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.89174102413143,
+        -2.78201552143543,
+        -2.62170869813962,
+        -2.41022607343558
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "86531bb9705b415c72c1a2bcbaf434b30af5020a853d4afc24e84c9a13e4a840": {
+      "NNS.dim.red.threshold": 0.973733583489681,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00121189889877448,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.93941810721888,
+        -2.84034813302688,
+        -2.72137400713191,
+        -2.59430062805066
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "922db019f66d706332ef895affb066a6acef0b45fc825fe9d3efc145d8140af7": {
+      "NNS.dim.red.threshold": 0.866359712001401,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": NaN,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "dim.red.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      "pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      "probability.threshold": 0.58,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "92a48c35b2320f65a3ef6297013e47bb7b2a52d234e4a737d8bd5b3136aab6ad": {
+      "NNS.dim.red.threshold": 0.750162813417743,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": NaN,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.66,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "9390b1a3ba2cfcb4b6cd9dc1eab6fb3729f0265a8602f898d0e0475fee9bc2f7": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 4.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.159120597912123,
+      "class.levels": null,
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": {
+        "pred.int.neg": [
+          -3.08947838382779,
+          -3.0522050145858,
+          -2.95015669313035,
+          -2.83731062178829,
+          -2.7140038418353
+        ],
+        "pred.int.pos": [
+          -2.71768898085761,
+          -2.68041561161561,
+          -2.57836729016017,
+          -2.4655212188181,
+          -2.34221443886512
+        ]
+      },
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.93492885527331,
+        -2.89765548603131,
+        -2.79560716457587,
+        -2.6827610932338,
+        -2.55945431328082
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          -3.08947838382779,
+          -3.0522050145858,
+          -2.95015669313035,
+          -2.83731062178829,
+          -2.7140038418353
+        ],
+        "pred.int.pos": [
+          -2.71768898085761,
+          -2.68041561161561,
+          -2.57836729016017,
+          -2.4655212188181,
+          -2.34221443886512
+        ]
+      },
+      "stack": [
+        -2.93492885527331,
+        -2.89765548603131,
+        -2.79560716457587,
+        -2.6827610932338,
+        -2.55945431328082
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "9d2c685829a325f5647a97b6f2146e4dbf1fdaf6e9a3a3e26634ea4b29c9b023": {
+      "NNS.dim.red.threshold": 0.940645196029504,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": NaN,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.73,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "b71a2ad7a272d0d4309d01ec0f15a1dd4dae36fb6be0f1a069c6f7641dfa4f9b": {
+      "NNS.dim.red.threshold": 1.0,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 1.44364287860959,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        1.74937374665101,
+        0.422032389168345,
+        0.540316211147211,
+        0.976059870393255
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        1.74937374665101,
+        0.422032389168345,
+        0.540316211147211,
+        0.976059870393255
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "bb76ee6dc6e63efada2a6c79d16fef326c7fd3295d953a05d3fffff74d527663": {
+      "NNS.dim.red.threshold": 0.0,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00479245455073251,
+      "OBJfn.reg": NaN,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.93809528142516,
+        -2.83898559377776,
+        -2.7209574050659,
+        -2.59430062805066
+      ],
+      "dim.red.pred.int": {
+        "pred.int.neg": [
+          -3.02250180706864,
+          -2.94726295253132,
+          -2.84815326488393,
+          -2.73012507617207,
+          -2.60346829915683
+        ],
+        "pred.int.pos": [
+          -2.99985514264823,
+          -2.92461628811092,
+          -2.82550660046352,
+          -2.70747841175166,
+          -2.58082163473642
+        ]
+      },
+      "pred.int": {
+        "pred.int.neg": [
+          -3.02250180706864,
+          -2.94726295253132,
+          -2.84815326488393,
+          -2.73012507617207,
+          -2.60346829915683
+        ],
+        "pred.int.pos": [
+          -2.99985514264823,
+          -2.92461628811092,
+          -2.82550660046352,
+          -2.70747841175166,
+          -2.58082163473642
+        ]
+      },
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        -3.01333413596247,
+        -2.93809528142516,
+        -2.83898559377776,
+        -2.7209574050659,
+        -2.59430062805066
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "bc2a6e3cca330f78bca7224e15339cda86aa1cd8e50434aea6eaec83b4bd174f": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 4.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.158284130941947,
+      "class.levels": null,
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.82871892415643,
+        -2.77630873024246,
+        -2.72943125668755,
+        -2.61832846968069,
+        -2.40945348734116
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -2.82871892415643,
+        -2.77630873024246,
+        -2.72943125668755,
+        -2.61832846968069,
+        -2.40945348734116
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "c30505b2fa90dfca96406fd5b7641aea44970400c1286b94ff3c600120d29a87": {
+      "NNS.dim.red.threshold": 0.750162813417743,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.6,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.5,
+        0.5
+      ]
+    },
+    "c321a769272266b7ce130f232f63dbd0366359c5588bb119d6bdf733953ed36f": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 4.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.158284130941947,
+      "class.levels": null,
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.82871892415643,
+        -2.77630873024246,
+        -2.72943125668755,
+        -2.61832846968069,
+        -2.40945348734116
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        -2.82871892415643,
+        -2.77630873024246,
+        -2.72943125668755,
+        -2.61832846968069,
+        -2.40945348734116
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "c64cc864abff127be9e0cde07c338a9e3d73476d808b3d6616c3345f080150d2": {
+      "NNS.dim.red.threshold": 0.0,
+      "NNS.reg.n.best": 2.0,
+      "OBJfn.dim.red": 0.00479245455073251,
+      "OBJfn.reg": 0.171376015855465,
+      "class.levels": null,
+      "dim.red": [
+        -3.01333413596247,
+        -2.93809528142516,
+        -2.83898559377776,
+        -2.7209574050659,
+        -2.59430062805066
+      ],
+      "dim.red.pred.int": {
+        "pred.int.neg": [
+          -3.02250180706864,
+          -2.94726295253132,
+          -2.84815326488393,
+          -2.73012507617207,
+          -2.60346829915683
+        ],
+        "pred.int.pos": [
+          -2.99985514264823,
+          -2.92461628811092,
+          -2.82550660046352,
+          -2.70747841175166,
+          -2.58082163473642
+        ]
+      },
+      "pred.int": {
+        "pred.int.neg": [
+          -3.02250180706864,
+          -2.94726295253132,
+          -2.84815326488393,
+          -2.73012507617207,
+          -2.60346829915683
+        ],
+        "pred.int.pos": [
+          -2.99985514264823,
+          -2.92461628811092,
+          -2.82550660046352,
+          -2.70747841175166,
+          -2.58082163473642
+        ]
+      },
+      "probability.threshold": 0.5,
+      "reg": [
+        -2.97716309595479,
+        -2.92294418266417,
+        -2.83122452726925,
+        -2.75706627530981,
+        -2.58032803324164
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          -3.10434197160298,
+          -3.05012305831236,
+          -2.95840340291744,
+          -2.884245150958,
+          -2.70750690888983
+        ],
+        "pred.int.pos": [
+          -2.84333403061479,
+          -2.78911511732417,
+          -2.69739546192925,
+          -2.62323720996981,
+          -2.44649896790164
+        ]
+      },
+      "stack": [
+        -3.01333413596247,
+        -2.93809528142516,
+        -2.83898559377776,
+        -2.7209574050659,
+        -2.59430062805066
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "d00363b3b950ddab17a435006391fe8f075575734f02987fb4fc7de35fa90b17": {
+      "NNS.dim.red.threshold": 0.942153356794789,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 0.714285714285714,
+      "class.levels": [
+        "A",
+        "B",
+        "C"
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0
+      ],
+      "dim.red.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          2.0,
+          3.0
+        ]
+      },
+      "pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          2.0,
+          3.0
+        ]
+      },
+      "probability.threshold": 0.64,
+      "reg": [
+        1.0,
+        1.0,
+        3.0
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          2.0,
+          2.0,
+          3.0
+        ]
+      },
+      "stack": [
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.25,
+        0.75
+      ]
+    },
+    "d177a855a4cf957efbb26b36d11d74af7e9773a657508a404e406be507a56699": {
+      "NNS.dim.red.threshold": 0.866359712001401,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.55,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.5,
+        0.5
+      ]
+    },
+    "d631df5ac70278348f6257417cbe03cbba926eae81e03300ea40a615a992758c": {
+      "NNS.dim.red.threshold": 0.940645196029504,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 0.7,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.53,
+      "reg": [
+        1.0,
+        1.0,
+        3.0,
+        3.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "weights": [
+        0.49,
+        0.51
+      ]
+    },
+    "eae09228ec360eef14d96c6b138799a8aaa87746df1400c3e5b1443b90f6bf9c": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ]
+      },
+      "probability.threshold": 0.5,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ]
+      },
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "ed399fe6fbb4c1370cb2b79403030c6f7b7ab5378ec359b2912e772d30fa51ec": {
+      "NNS.dim.red.threshold": 0.866359712001401,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": NaN,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.58,
+      "reg": NaN,
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "f1b99a917bf5a03ea6810d105243de527ba18d9f64977ecfffe7f92851e96025": {
+      "NNS.dim.red.threshold": 0.93162133593563,
+      "NNS.reg.n.best": 2.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 0.75,
+      "class.levels": [
+        "A",
+        "B",
+        "C"
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.58,
+      "reg": [
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "weights": [
+        0.33,
+        0.67
+      ]
+    },
+    "f430b5121c48fd5b5202044d2a2d285cf6d5fab3ad3da3de9ffcf26adfbab117": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "fde8d7266524c7c5a2259b0b57442d3be50cc6a67b9fe69d6d238da8d3bc61b9": {
+      "NNS.dim.red.threshold": 0.866359712001401,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 1.0,
+      "OBJfn.reg": 1.0,
+      "class.levels": [
+        1.0,
+        2.0
+      ],
+      "dim.red": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "dim.red.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      "pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      "probability.threshold": 0.55,
+      "reg": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "reg.pred.int": {
+        "pred.int.neg": [
+          1.0,
+          1.0,
+          1.0,
+          2.0
+        ],
+        "pred.int.pos": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      "stack": [
+        1.0,
+        1.0,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        0.5,
+        0.5
+      ]
+    }
+  },
+  "label": "NNS.stack.numeric",
+  "nns_version": "13.2",
+  "schema_version": 2
+}
