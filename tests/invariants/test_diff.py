@@ -90,7 +90,7 @@ def test_dy_d_vectorized_wrt_apd_mixed_remains_invalid() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Mixed derivatives require a complete two-predictor evaluation tuple",
+        match="Mixed Derivatives are only for 2 IV",
     ):
         dy_d(x, y, wrt=np.array([1, 2]), eval_points="apd", mixed=True)
 
