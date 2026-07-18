@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 DiffResult = dict[str, float]
 DyDxResult = float | dict[str, NDArray[np.float64]]
+_DyDReducer = Callable[[list[NDArray[np.float64]]], dict[str, NDArray[np.float64]]]
 
 _RESULT_KEYS = [
     "Value of f(x) at point",
@@ -349,7 +350,7 @@ def _dy_d_reconciled(
     ]
 
     all_chunks: list[NDArray[np.float64]] = []
-    spans: list[tuple[int, int, Any]] = []
+    spans: list[tuple[int, int, _DyDReducer]] = []
     for chunks, reduce in plans:
         spans.append((len(all_chunks), len(chunks), reduce))
         all_chunks.extend(chunks)
