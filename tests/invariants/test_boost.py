@@ -86,7 +86,13 @@ def test_nns_boost_multiple_factor_predictors_are_positional(features_only: bool
     assert set(result) == (
         {"feature.weights", "feature.frequency"}
         if features_only
-        else {"results", "pred.int", "feature.weights", "feature.frequency"}
+        else {
+            "results",
+            "pred.int",
+            "feature.weights",
+            "feature.frequency",
+            "class.levels",
+        }
     )
     assert sum(result["feature.weights"].values()) == pytest.approx(1.0)
     if not features_only:
@@ -206,21 +212,27 @@ def test_nns_boost_stochastic_epoch_path_pred_int_shape() -> None:
 
 
 def test_nns_boost_threshold_on_stochastic_epoch_path_matches_r() -> None:
-    # The stochastic epoch path now honors [threshold] as R does: an
-    # unreachable threshold raises the "no subset met threshold" error.
+    # [threshold] is a probability supplied to LPM.VaR over the learner-trial
+    # objective distribution, as in R. threshold=1.0 selects the extreme
+    # objective cutoff; the best trial always survives, so the run completes
+    # instead of raising the old literal-cutoff error.
     x = np.linspace(-2.0, 2.0, 20)
     variable = np.column_stack([np.sin((idx + 1) * x) for idx in range(11)])
     y = x + np.sin(x)
 
-    with pytest.raises(ValueError, match="threshold"):
-        nns_boost(
-            variable,
-            y,
-            variable[:3],
-            cv_size=0.25,
-            threshold=1.0,
-            feature_importance=False,
-        )
+    result = nns_boost(
+        variable,
+        y,
+        variable[:3],
+        cv_size=0.25,
+        threshold=1.0,
+        epochs=5,
+        learner_trials=5,
+        feature_importance=False,
+    )
+
+    assert result["results"].shape == (3,)
+    assert np.all(np.isfinite(result["results"]))
 
 
 @pytest.mark.stochastic

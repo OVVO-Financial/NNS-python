@@ -209,24 +209,13 @@ def test_iris_stack_classification_vignette_predicts_holdout_class() -> None:
 
 @pytest.mark.parity
 @pytest.mark.practical
-@pytest.mark.xfail(
-    reason=(
-        "Verified R sampling edge in the balanced NNS.boost path. Reference: "
-        "R 4.3.3, NNS 13.1, RNGkind() = c('Mersenne-Twister','Inversion',"
-        "'Rejection') (sample.kind = 'Rejection'), set.seed(123) with NNS.boost's "
-        "own internal seed = 123L, iris factor levels ordered "
-        "setosa < versicolor < virginica. NNS Python reproduces R's Mersenne-"
-        "Twister stream and Rejection sample.int bit-for-bit on every "
-        "deterministic and single-draw boost path (see the strict parity tests "
-        "in test_boost.py), but balance = TRUE issues many interleaved per-class "
-        "sample() draws (down-sample without replacement + up-sample with "
-        "replacement, for every learner trial and epoch), and that exact draw "
-        "ordering is not reproduced step-for-step. R predicts the all-class-3 "
-        "holdout as 3s; the port's split lands one holdout on class 2."
-    ),
-    strict=True,
-)
 def test_iris_boost_classification_vignette_matches_installed_r_diagnostics() -> None:
+    # Historically a strict xfail: the pre-13.2 balanced NNS.boost path issued
+    # interleaved per-class sample() draws the port did not reproduce
+    # step-for-step. The reconciled 13.2 flow (fresh holdout per learner trial,
+    # survivor-scheduled epochs, replicated multivariate final stack) is
+    # replicated draw-for-draw via RRNG, so the balanced vignette now matches
+    # installed R bit-for-bit.
     expected = _r_iris_classification_vignette()
     actual = _iris_boost_diagnostics(expected)
 
@@ -235,18 +224,16 @@ def test_iris_boost_classification_vignette_matches_installed_r_diagnostics() ->
 
 @pytest.mark.parity
 @pytest.mark.practical
-def test_iris_boost_classification_vignette_gap_is_explicit() -> None:
+def test_iris_boost_classification_vignette_gap_is_closed() -> None:
     expected = _r_iris_classification_vignette()
     actual = _iris_boost_diagnostics(expected)
     expected_boost = cast(dict[str, object], expected["boost"])
     y_test = _array(expected["y_test"])
 
-    # The port's balanced-boost split diverges from R's (see the xfail above):
-    # R nails the all-class-3 holdout exactly, while the port lands one holdout
-    # observation on class 2. This test pins that explicit, characterized gap.
-    assert not np.array_equal(_array(actual["results"]), _array(expected_boost["results"]))
-    assert not np.array_equal(_array(actual["results"]), y_test)
-    # R reproduces the vignette's holdout perfectly under seed 123.
+    # The formerly characterized balanced-boost sampling gap is closed: the
+    # port reproduces R's holdout predictions exactly, and R reproduces the
+    # vignette's holdout perfectly under seed 123.
+    assert np.array_equal(_array(actual["results"]), _array(expected_boost["results"]))
     assert np.array_equal(_array(expected_boost["results"]), y_test)
     assert set(actual) == {"results", "feature_weights", "feature_frequency"}
 

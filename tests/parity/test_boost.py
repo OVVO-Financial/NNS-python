@@ -965,6 +965,16 @@ def _assert_nested_numeric_close(actual: Any, expected: Any) -> None:
         for key in actual:
             _assert_nested_numeric_close(actual[key], expected[key])
         return
+    # Character components (e.g. class.levels for factor responses) compare as
+    # exact string sequences.
+    actual_list = actual.tolist() if isinstance(actual, np.ndarray) else actual
+    if isinstance(actual_list, list) and any(isinstance(v, str) for v in actual_list):
+        expected_list = expected.tolist() if isinstance(expected, np.ndarray) else expected
+        assert [str(v) for v in actual_list] == [str(v) for v in expected_list]
+        return
+    if isinstance(actual, str) or isinstance(expected, str):
+        assert str(actual) == str(expected)
+        return
     np.testing.assert_allclose(
         np.asarray(actual, dtype=np.float64),
         np.asarray(expected, dtype=np.float64),
