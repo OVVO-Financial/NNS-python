@@ -185,24 +185,120 @@ jobs:
           import os
           from pathlib import Path
 
-          path = Path('tests/_r_cache.json')
-          if not path.exists():
-              raise SystemExit('tests/_r_cache.json was not generated')
-          payload = json.loads(path.read_text(encoding='utf-8'))
-          actual = payload.get('nns_version')
+          cache_dir = Path('tests/_r_cache')
+          shards = sorted(cache_dir.glob('*.json')) if cache_dir.is_dir() else []
+          if not shards:
+              raise SystemExit('tests/_r_cache/ contains no shard files')
           expected = os.environ['EXPECTED_VERSION']
-          if actual != expected:
-              raise SystemExit(f'cache version {actual!r} != dispatched version {expected!r}')
-          entries = payload.get('entries')
-          if not isinstance(entries, dict) or not entries:
-              raise SystemExit('regenerated cache contains no entries')
-          print(f'Validated {len(entries)} cache entries for NNS {actual}.')
+          total = 0
+          for shard_path in shards:
+              shard = json.loads(shard_path.read_text(encoding='utf-8'))
+              actual = shard.get('nns_version')
+              if actual != expected:
+                  raise SystemExit(
+                      f'{shard_path.name}: cache version {actual!r} '
+                      f'!= dispatched version {expected!r}'
+                  )
+              entries = shard.get('entries')
+              if not isinstance(entries, dict) or not entries:
+                  raise SystemExit(f'{shard_path.name} contains no entries')
+              total += len(entries)
+          print(
+              f'Validated {total} cache entries across {len(shards)} '
+              f'shards for NNS {expected}.'
+          )
           PY
 
       - name: Remove transient cache files
         if: always()
         shell: bash
-        run: rm -f tests/_r_cache.json.bak tests/_r_cache.lock
+        run: rm -rf tests/_r_cache.bak && rm -f tests/_r_cache.lock
+
+      - name: Record cache provenance in sync manifest
+        if: always()
+        shell: bash
+        env:
+          R_COMMIT: ${{ steps.package.outputs.r_commit }}
+          R_VERSION: ${{ steps.package.outputs.r_version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('sync/nns_source.json')
+          manifest = json.loads(path.read_text(encoding='utf-8'))
+          manifest['r_commit'] = os.environ['R_COMMIT']
+          manifest['r_version'] = os.environ['R_VERSION']
+          path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          print(f"Manifest now records {manifest['r_repo']}@{manifest['r_commit']} "
+                f"(NNS {manifest['r_version']}).")
+          PY
+
+      - name: Summarize cache changes by function
+        id: cachediff
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          def committed(name: str) -> dict:
+              proc = subprocess.run(
+                  ['git', 'show', f'HEAD:tests/_r_cache/{name}'],
+                  capture_output=True, text=True,
+              )
+              if proc.returncode != 0:
+                  return {}
+              return json.loads(proc.stdout).get('entries', {})
+
+          cache_dir = Path('tests/_r_cache')
+          lines = ['### Cache changes by function', '']
+          if not cache_dir.is_dir():
+              lines.append('_No cache directory was generated; see the regeneration log._')
+          else:
+              proc = subprocess.run(
+                  ['git', 'ls-tree', '--name-only', 'HEAD', 'tests/_r_cache/'],
+                  capture_output=True, text=True,
+              )
+              old_names = {Path(p).name for p in proc.stdout.split() if p.endswith('.json')}
+              new_names = {p.name for p in cache_dir.glob('*.json')}
+              rows = []
+              for name in sorted(old_names | new_names):
+                  before = committed(name) if name in old_names else {}
+                  after = (
+                      json.loads((cache_dir / name).read_text()).get('entries', {})
+                      if name in new_names else {}
+                  )
+                  added = len(set(after) - set(before))
+                  removed = len(set(before) - set(after))
+                  changed = sum(
+                      1 for k in set(before) & set(after) if before[k] != after[k]
+                  )
+                  if added or removed or changed:
+                      label = name[: -len('.json')]
+                      rows.append(
+                          f'| `{label}` | {len(before)} | {len(after)} '
+                          f'| {added} | {removed} | {changed} |'
+                      )
+              if rows:
+                  lines += [
+                      '| function | before | after | added | removed | changed |',
+                      '| --- | --- | --- | --- | --- | --- |',
+                      *rows,
+                  ]
+              else:
+                  lines.append('_No cache entries changed._')
+          Path('cache-diff.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          PY
+          {
+            echo 'summary<<CACHE_DIFF_EOF'
+            cat cache-diff.md
+            echo 'CACHE_DIFF_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify committed-cache mode
         id: verify
@@ -246,10 +342,13 @@ jobs:
             - Live regeneration result: `${{ steps.regenerate.outcome }}`
             - Cache-only verification result: `${{ steps.verify.outcome }}`
 
-            The exact R source package was installed and the committed parity cache was regenerated. Any remaining Python/R parity mismatches are retained in the workflow diagnostics and should be repaired against this R-authored baseline.
+            The exact R source package was installed and the committed parity cache was regenerated. `sync/nns_source.json` records this R commit as the behavioral-truth provenance. Any remaining Python/R parity mismatches are retained in the workflow diagnostics and should be repaired against this R-authored baseline.
+
+            ${{ steps.cachediff.outputs.summary }}
           add-paths: |
             tests/_r.py
-            tests/_r_cache.json
+            tests/_r_cache/**
+            sync/nns_source.json
 
       - name: Report parity status
         if: always()

@@ -1,16 +1,17 @@
-"""Repaired NNS.boost port.
+"""NNS.boost port (reconciled R/Boost.R, NNS 13.2).
 
-Python port of the audited R/Boost.R (NNS 13.1 Beta tip): learner trials on
-feature subsets scored against a holdout, survivor-weighted epoch sampling,
-a frequency-weighted synthetic X* final design, local out-of-fold n.best
-selection, and strict argument validation. ``depth`` is passed to the
-regression engine as ``order``.
+Python port of the reconciled R/Boost.R: learner trials fit genuine
+multivariate NNS.reg feature subsets against fresh holdouts, the public
+``threshold`` is a probability supplied to LPM.VaR over the learner-trial
+objective distribution (never a literal score cutoff), epochs re-test only
+the surviving combinations (also under exhaustive enumeration), and the
+final estimate replicates the original keeper predictors by their relative
+epoch frequencies into one multivariate ``nns_stack(method=1, stack=False)``
+call. ``depth`` is passed to the regression engine as ``order``.
 
-Deviation from R, by design: random subset generation, holdout draws, and
-balancing use a local ``numpy.random.Generator`` (``seed``), so randomized
-runs match R distributionally rather than bit-for-bit. With ``ts_test`` set
-and exhaustive learner trials (2^p - 1 <= learner_trials), the entire run
-is deterministic and matches R exactly.
+All random draws (holdouts, balancing, subset sampling, epoch scheduling)
+replicate R's Mersenne-Twister stream via ``RRNG``, so a seeded run matches
+R bit-for-bit.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.stack import nns_stack
+from nns.var import lpm_var
 
 Objective = Literal["min", "max"]
 
@@ -89,6 +91,7 @@ def nns_boost(
     seed: int | None = 123,
     random_seed: int | None = None,
     class_levels: list[Any] | None = None,
+    folds: int = 5,
     # Passed to the delegated NNS.stack final stage.
     ncores: int | None = None,
 ) -> BoostResult:
@@ -135,6 +138,7 @@ def nns_boost(
 
     learner_trials_value = cast(int, _scalar_integer(learner_trials, "learner.trials", minimum=1))
     epochs_value = _scalar_integer(epochs, "epochs", minimum=0, allow_null=True)
+    folds_value = cast(int, _scalar_integer(folds, "folds", minimum=1))
 
     if cv_size is not None:
         cv_size = float(cv_size)
@@ -349,11 +353,14 @@ def nns_boost(
         train_y = y[train_index]
         test_x = x[np.ix_(test_index, cols)]
         bx, by = balance_training(train_x, train_y)
+        # Every learner trial fits a genuine multivariate NNS.reg on the
+        # sampled feature subset (R: dim.red.method = NULL); subsets are never
+        # collapsed to an equal-weight synthetic X* before scoring.
         fit = nns_reg_engine(
             bx,
             by,
             point_est=test_x,
-            dim_red_method="equal" if bx.shape[1] > 1 else None,
+            dim_red_method=None,
             order=depth_value,
             type="CLASS" if is_class else None,
             point_only=True,
@@ -400,99 +407,141 @@ def nns_boost(
             )
 
     all_index = np.arange(n_obs, dtype=np.int64)
-    train_index = np.setdiff1d(all_index, validation_index)
-    actual = y[validation_index]
 
-    results = np.full(len(test_features), np.nan)
+    learner_results = np.full(len(test_features), np.nan)
     for i, subset in enumerate(test_features):
         if status:
             print(
                 f"Current Threshold Iterations Remaining = {len(test_features) - i - 1}",
                 end="\r",
             )
-        predicted = fit_subset(subset, train_index, validation_index)
-        results[i] = score(predicted, actual)
+        # Cross-sectional learner trials draw a fresh validation holdout per
+        # trial (matching the epoch-stage resampling and R's RNG stream);
+        # time-series trials keep the chronological terminal block.
+        if ts_test_value is None:
+            trial_validation_index = random_validation_index()
+        else:
+            trial_validation_index = validation_index
+        trial_train_index = np.setdiff1d(all_index, trial_validation_index)
+        predicted = fit_subset(subset, trial_train_index, trial_validation_index)
+        learner_results[i] = score(predicted, y[trial_validation_index])
 
-    finite_results = np.flatnonzero(np.isfinite(results))
+    finite_results = np.flatnonzero(np.isfinite(learner_results))
     if finite_results.size == 0:
         raise ValueError("No learner trial produced a finite objective value.")
 
-    supplied_threshold = threshold is not None
-    if not supplied_threshold:
-        if extreme:
-            threshold = (
-                float(results[finite_results].max())
-                if objective_value == "max"
-                else float(results[finite_results].min())
-            )
-        else:
-            threshold = float(
-                np.quantile(
-                    results[finite_results],
-                    0.75 if objective_value == "max" else 0.25,
-                    method="averaged_inverted_cdf",
-                )
-            )
-    if status:
-        print(f"\nLearner Accuracy Threshold = {threshold:.4g}")
+    # The public [threshold] argument is a probability supplied to LPM.VaR over
+    # the learner-trial objective distribution; the objective-score cutoff is
+    # the distinct value LPM.VaR returns. Neither variable overwrites the other.
+    threshold_probability = threshold
+    if threshold_probability is None:
+        threshold_probability = 0.80 if objective_value == "max" else 0.20
+    if extreme:
+        threshold_probability = 1.0 if objective_value == "max" else 0.0
+    learner_threshold = float(
+        lpm_var(threshold_probability, 1.0, learner_results[finite_results])
+    )
 
-    threshold_f = cast(float, threshold)
-    passes = np.isfinite(results) & (
-        results >= threshold_f if objective_value == "max" else results <= threshold_f
+    if status:
+        print(
+            f"\nLearner threshold probability = {threshold_probability:.2f}; "
+            f"objective cutoff = {learner_threshold:.6f}"
+        )
+
+    passes = np.isfinite(learner_results) & (
+        learner_results >= learner_threshold
+        if objective_value == "max"
+        else learner_results <= learner_threshold
     )
     reduced_test_features = [test_features[i] for i in np.flatnonzero(passes)]
 
     def best_trial_subset() -> list[tuple[int, ...]]:
         if objective_value == "min":
-            idx = finite_results[int(np.argmin(results[finite_results]))]
+            idx = finite_results[int(np.argmin(learner_results[finite_results]))]
         else:
-            idx = finite_results[int(np.argmax(results[finite_results]))]
+            idx = finite_results[int(np.argmax(learner_results[finite_results]))]
         return [test_features[int(idx)]]
 
     if not reduced_test_features:
-        if supplied_threshold:
-            direction = "increase" if objective_value == "min" else "reduce"
-            raise ValueError(f"No learner subset met [threshold]; {direction} the threshold.")
+        # Defensive: LPM.VaR returns a value inside the observed range, so the
+        # best trial always passes; guard anyway for degenerate distributions.
         reduced_test_features = best_trial_subset()
 
-    feature_count = np.zeros(n_features, dtype=np.float64)
-    for subset in reduced_test_features:
-        for j in subset:
-            feature_count[j] += 1
-    feature_prob = feature_count + max(1.0, feature_count.sum()) * 1e-12
-    feature_prob = feature_prob / feature_prob.sum()
-
     # ----------------------------------------------------------------------
-    # Weighted epoch stage
+    # Epoch stability stage: re-test only the surviving combinations, on a
+    # fresh holdout per cross-sectional epoch (chronological expanding-window
+    # blocks for time series). Exhaustive learner trials do not disable this
+    # stage. RNG draw order mirrors R: survivor permutation first, then the
+    # time-series split permutation, then one holdout draw per epoch.
     # ----------------------------------------------------------------------
     keeper_features: list[tuple[int, ...]]
-    if not exhaustive and epochs_value > 0:
+    if epochs_value > 0:
+        survivor_count = len(reduced_test_features)
+        epoch_survivor_id = np.resize(
+            np.arange(survivor_count, dtype=np.int64), epochs_value
+        )
+        if epoch_survivor_id.size > 1:
+            epoch_survivor_id = rng.sample(
+                epoch_survivor_id, epoch_survivor_id.size, replace=False
+            )
+
+        chronological_splits: list[tuple[NDArray[np.int64], NDArray[np.int64]]] = []
+        epoch_split_id: NDArray[np.int64] | None = None
+        if ts_test_value is not None:
+            possible_blocks = (n_obs - 1) // ts_test_value
+            for b in range(1, possible_blocks + 1):
+                start = n_obs - b * ts_test_value
+                validation = np.arange(start, start + ts_test_value, dtype=np.int64)
+                training = np.arange(0, start, dtype=np.int64)
+                if training.size >= 3 and has_all_classes(y[training]):
+                    chronological_splits.append((training, validation))
+            if not chronological_splits:
+                raise ValueError(
+                    "No chronological epoch split retained enough training "
+                    "observations and every response class."
+                )
+            epoch_split_id = np.resize(
+                np.arange(len(chronological_splits), dtype=np.int64), epochs_value
+            )
+            if epoch_split_id.size > 1:
+                epoch_split_id = rng.sample(
+                    epoch_split_id, epoch_split_id.size, replace=False
+                )
+
         keeper_features = []
         for j in range(epochs_value):
             if status:
                 print(f"% of epochs = {(j + 1) / epochs_value:.3f}", end="\r")
-            k = int(rng.sample_int(n_features, 1)[0])
-            subset = tuple(
-                sorted(
-                    (rng.sample_int_prob_noreplace(n_features, k, feature_prob) - 1).tolist()
-                )
-            )
-            predicted = fit_subset(subset, train_index, validation_index)
-            new_result = score(predicted, actual)
+            features_j = reduced_test_features[int(epoch_survivor_id[j])]
+
+            if ts_test_value is None:
+                epoch_validation_index = random_validation_index()
+                epoch_train_index = np.setdiff1d(all_index, epoch_validation_index)
+            else:
+                assert epoch_split_id is not None
+                epoch_train_index, epoch_validation_index = chronological_splits[
+                    int(epoch_split_id[j])
+                ]
+
+            predicted = fit_subset(features_j, epoch_train_index, epoch_validation_index)
+            new_result = score(predicted, y[epoch_validation_index])
             ok = math.isfinite(new_result) and (
-                new_result >= threshold_f
+                new_result >= learner_threshold
                 if objective_value == "max"
-                else new_result <= threshold_f
+                else new_result <= learner_threshold
             )
             if ok:
-                keeper_features.append(subset)
+                keeper_features.append(features_j)
     else:
         keeper_features = reduced_test_features
 
     if not keeper_features:
-        if supplied_threshold:
-            direction = "increase" if objective_value == "min" else "reduce"
-            raise ValueError(f"No epoch subset met [threshold]; {direction} the threshold.")
+        warnings.warn(
+            "No feature combination re-passed the objective cutoff during epochs; "
+            "using the best learner-trial combination. Consider a lower "
+            "[threshold] probability.",
+            stacklevel=2,
+        )
         keeper_features = best_trial_subset()
 
     counts = np.zeros(n_features, dtype=np.int64)
@@ -516,106 +565,58 @@ def nns_boost(
         print("\nGenerating Final Estimate")
 
     # ----------------------------------------------------------------------
-    # Frequency-weighted synthetic X*. Categorical features are one-hot encoded
-    # with training levels only; each active dummy inherits its source feature's
-    # weight so a categorical feature's total row contribution equals its weight.
-    # ----------------------------------------------------------------------
-    def numeric_design(
-        train_cols: NDArray[Any], test_cols: NDArray[Any]
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64], list[str]]:
-        train_blocks: list[NDArray[np.float64]] = []
-        test_blocks: list[NDArray[np.float64]] = []
-        source: list[str] = []
-        for j in range(n_features):
-            tr = train_cols[:, j]
-            te = test_cols[:, j]
-            categorical = tr.dtype.kind in {"U", "S", "O", "b"} and not _column_is_numeric(tr)
-            if categorical:
-                tr_str = np.asarray([str(v) for v in tr.tolist()])
-                te_str = np.asarray([str(v) for v in te.tolist()])
-                levels = sorted(set(tr_str.tolist()))
-                train_blocks.append(
-                    np.column_stack([(tr_str == lv).astype(np.float64) for lv in levels])
-                )
-                test_blocks.append(
-                    np.column_stack([(te_str == lv).astype(np.float64) for lv in levels])
-                )
-                source.extend([feature_names[j]] * len(levels))
-            else:
-                train_blocks.append(np.asarray(tr, dtype=np.float64).reshape(-1, 1))
-                test_blocks.append(np.asarray(te, dtype=np.float64).reshape(-1, 1))
-                source.append(feature_names[j])
-        return np.hstack(train_blocks), np.hstack(test_blocks), source
-
-    design_train, design_test, source_feature = numeric_design(x, z)
-    if np.any(~np.isfinite(design_train)):
-        raise ValueError("[IVs.train] contains missing or non-finite values.")
-    if np.any(~np.isfinite(design_test)):
-        raise ValueError("[IVs.test] contains missing or non-finite values.")
-
-    tmin = design_train.min(axis=0)
-    tmax = design_train.max(axis=0)
-    trange = tmax - tmin
-    trange = np.where(~np.isfinite(trange) | (trange == 0), 1.0, trange)
-    train_norm = (design_train - tmin) / trange
-    test_norm = (design_test - tmin) / trange
-
-    coef_design = np.asarray(
-        [feature_weights_named.get(src, 0.0) for src in source_feature], dtype=np.float64
-    )
-    if not np.any(coef_design > 0):
-        raise ValueError("No positive feature weights were available for the final estimate.")
-
-    xstar_train = train_norm @ coef_design
-    xstar_test = test_norm @ coef_design
-    if np.any(~np.isfinite(xstar_train)) or np.any(~np.isfinite(xstar_test)):
-        raise ValueError("The final synthetic predictor contains non-finite values.")
-
-    def xstar_frame(v: NDArray[np.float64]) -> NDArray[np.float64]:
-        return np.column_stack((v, v))
-
-    # ----------------------------------------------------------------------
-    # Final estimate via NNS.stack Method 1 on duplicated synthetic X*.
+    # Final estimate: replicate the original keeper predictors by their
+    # relative epoch frequencies and fit one multivariate Method 1 NNS.stack.
     #
-    # X* is univariate. Duplicating it invokes the multivariate NNS.reg path
-    # used by NNS.stack so n.best is selected on the regression-point matrix.
-    # NNS.boost has already performed feature screening and constructed X*, so
-    # method=(1,) uses only the NNS.reg component and stack=False prevents a
-    # second dimension-reduction stage.
-    #
-    # optimize_threshold=False preserves NNS.boost's existing 0.5 class
-    # rounding convention. The realized cv_fraction is reused for five
-    # repeated holdouts; for ts_test, one terminal chronological fold is used.
+    # The historical scaling rule converts positive keeper-feature counts into
+    # integer replication factors, so a more stable feature contributes
+    # proportionally more columns. No synthetic scalar X* is constructed and
+    # the frequencies never pass through dim_red_method: method=(1,) with
+    # stack=False keeps the final estimator a multivariate NNS.reg whose
+    # n.best is selected by NNS.stack's cross-validation.
     # ----------------------------------------------------------------------
-    if status:
-        print("\nGenerating Final Estimate with NNS.stack Method 1")
+    frequency_values = np.asarray([plot_table[k] for k in plot_table], dtype=np.float64)
+    relative_frequency = frequency_values / frequency_values.min()
+    replication_count = np.maximum(1, np.round(relative_frequency).astype(np.int64))
+
+    name_to_index = {name: j for j, name in enumerate(feature_names)}
+    replicated_cols = [
+        name_to_index[name]
+        for name, count in zip(plot_table, replication_count.tolist(), strict=True)
+        for _ in range(count)
+    ]
+    replicated_train = x[:, replicated_cols]
+    replicated_test = z[:, replicated_cols]
 
     final_stack = nns_stack(
-        xstar_frame(xstar_train),
+        replicated_train,
         y,
-        xstar_frame(xstar_test),
+        replicated_test,
         type="CLASS" if is_class else None,
         obj_fn=obj_fn,
         objective=objective_value,
         optimize_threshold=False,
         dist=dist_value,
-        cv_size=cv_fraction,
-        balance=balance,
+        cv_size=cv_size,
+        balance=False,
         ts_test=ts_test_value,
-        folds=1 if ts_test_value is not None else 5,
+        folds=folds_value,
         order=depth_value,
         method=(1,),
         stack=False,
         pred_int=pred_int,
         status=status,
-        ncores=ncores,
+        ncores=1,
         seed=seed_value,
     )
 
+    results_raw = final_stack["reg"]
+    pred_int_output = final_stack["reg.pred.int"]
+
     estimates_code = sanitize_predictions(
-        np.asarray(final_stack["reg"], dtype=np.float64), y
+        np.asarray(results_raw, dtype=np.float64), y
     )
-    pred_int_out = final_stack["reg.pred.int"]
+    pred_int_out = pred_int_output
 
     if is_class:
         n_classes = len(cast(list[Any], class_values))
@@ -647,4 +648,5 @@ def nns_boost(
         "pred.int": pred_int_out,
         "feature.weights": feature_weights_named,
         "feature.frequency": plot_table,
+        "class.levels": class_values if is_class else None,
     }
