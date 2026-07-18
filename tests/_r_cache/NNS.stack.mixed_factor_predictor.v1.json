@@ -1,0 +1,63 @@
+{
+  "entries": {
+    "59168a954aecc910b0493a25cc94caee7c289c0584306e5af56032fad3781d5f": {
+      "NNS.dim.red.threshold": 0.755928946018455,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.00206611570247933,
+      "OBJfn.reg": NaN,
+      "class.levels": {},
+      "dim.red": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": NaN,
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "weights": [
+        0.0,
+        1.0
+      ]
+    },
+    "62b2a044862b9fad7235405aa665f2bc331ce1076f28469aac2089aa140bbfaf": {
+      "NNS.dim.red.threshold": 0.755928946018455,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": 0.00206611570247933,
+      "OBJfn.reg": 0.8515625,
+      "class.levels": {},
+      "dim.red": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.25,
+        3.75,
+        2.5
+      ],
+      "weights": [
+        0.04,
+        0.96
+      ]
+    }
+  },
+  "label": "NNS.stack.mixed_factor_predictor.v1",
+  "nns_version": "13.2",
+  "schema_version": 2
+}

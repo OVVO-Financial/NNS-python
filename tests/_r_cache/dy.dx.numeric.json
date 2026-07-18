@@ -1,0 +1,29 @@
+{
+  "entries": {
+    "5980d68b620a1112853a121e9fb9e24af792ea4428ae5f9891671a452d11133c": {
+      "eval.point": [
+        -1.0,
+        0.0,
+        1.0
+      ],
+      "first.derivative": [
+        1.54673290262598,
+        1.58817145541624,
+        1.57667800037164
+      ],
+      "second.derivative": [
+        0.0587852248500906,
+        0.015433045475724,
+        -0.0321099514024272
+      ]
+    },
+    "9c1d0005f2772c1189bb1a90329125eb04eea449906d880447d4d41bbaa6128a": {
+      "eval.point": 0.0,
+      "first.derivative": 1.58817145541624,
+      "second.derivative": 0.015433045475724
+    }
+  },
+  "label": "dy.dx.numeric",
+  "nns_version": "13.2",
+  "schema_version": 2
+}

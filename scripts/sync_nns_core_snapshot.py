@@ -60,7 +60,7 @@ def main() -> None:
         "vendored_core_path": "extern/NNS-core",
         "vendored_r_path": "tools/NNS",
         "vendored_r_tarball": f"tools/NNS_{args.r_version}.tar.gz",
-        "r_cache_path": "tests/_r_cache.json",
+        "r_cache_path": "tests/_r_cache",
         "notes": (
             "NNS-python consumes accepted NNS-core snapshots for native code and "
             "verifies public Python behavior against live or cached R NNS."

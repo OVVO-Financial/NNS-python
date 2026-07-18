@@ -93,7 +93,7 @@ def main() -> None:
             "python_commit": None,
             "vendored_r_path": "tools/NNS",
             "vendored_r_tarball": str(tarball),
-            "r_cache_path": "tests/_r_cache.json",
+            "r_cache_path": "tests/_r_cache",
         }
     )
     manifest.setdefault("core_repo", "OVVO-Financial/NNS-core")

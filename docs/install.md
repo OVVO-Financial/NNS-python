@@ -50,6 +50,15 @@ uv run ruff check .
 uv run mypy
 ```
 
+Optionally install the pre-commit hooks, which run `ruff` and `mypy` through
+the project environment's interpreter so local results match CI (a `mypy`
+binary from another environment lacks the project's dependencies and reports
+spurious import errors):
+
+```bash
+uv run pre-commit install
+```
+
 The default parity suite is cache-backed and does not require `Rscript`.
 `Rscript` and the R `NNS` package are needed only when regenerating parity caches
 or running live R comparison scripts.

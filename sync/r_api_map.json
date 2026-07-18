@@ -57,7 +57,7 @@
     "python_modules": [
       "pyproject.toml",
       "tools/NNS",
-      "tests/_r_cache.json"
+      "tests/_r_cache"
     ],
     "parity_tests": ["tests/parity"],
     "requires_fresh_cache": true

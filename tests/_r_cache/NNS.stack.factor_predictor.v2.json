@@ -1,0 +1,85 @@
+{
+  "entries": {
+    "38fa8fbd91b272a9945d4a584f11a2be9e53cd0028b5f666400c911d2aaf8125": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.96875,
+      "class.levels": {},
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "596aa1e88f15fa2547f40567c018a6cd81b65c679f18999f41818a8b9e561f1d": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.96875,
+      "class.levels": {},
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
+    "b6b1ca096d8a010cdbbaf63af7e2db39f5ebf391039c3b961db7f59d65ee37db": {
+      "NNS.dim.red.threshold": NaN,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.96875,
+      "class.levels": {},
+      "dim.red": NaN,
+      "dim.red.pred.int": {},
+      "pred.int": {},
+      "probability.threshold": 0.5,
+      "reg": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "reg.pred.int": {},
+      "stack": [
+        1.90585740209614,
+        1.90585740209614,
+        1.90585740209614
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    }
+  },
+  "label": "NNS.stack.factor_predictor.v2",
+  "nns_version": "13.2",
+  "schema_version": 2
+}

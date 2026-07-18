@@ -1,0 +1,135 @@
+{
+  "entries": {
+    "03953abeb7681f1f696bdd950850e4088e67963e7293016222bb389a4c11d25e": {
+      "Correlation": 0.107079093388245,
+      "Dependence": 0.319268453497208
+    },
+    "0f252ba5d9dcceab1b83027b0c044071c0e17bc0aed93409dbeb77a15bf2bac8": {
+      "Correlation": -0.00816672894081678,
+      "Dependence": 0.379910358072309
+    },
+    "0f48d3e4610eeeaa8e118b7eaf8324269f9dc5a664dd3eca53caeb1b02bf2b55": {
+      "Correlation": 0.291014690913722,
+      "Dependence": 0.464351810851221
+    },
+    "1c5f991f63262abd7386ee8bd934c36e642763a5499e66abc555efbb144599ee": {
+      "Correlation": 0.648770769534819,
+      "Dependence": 0.866471940441088
+    },
+    "3ad744d8ae07d7cd93ce4c93b4360657aae295f9d1a0bb8221d2f11a68828922": {
+      "Correlation": 0.0187526344148372,
+      "Dependence": 0.759083016045322
+    },
+    "3d12a64775ead63efdb50cb92de1959953cf6ff03b5ff53d46305596acbd7ac3": {
+      "Correlation": -0.119539415606005,
+      "Dependence": 0.489388830409705
+    },
+    "464a9973b44ac4a5b325f45428a1b443aba355dc06625df1ce38c8611e200667": {
+      "Correlation": 1.0,
+      "Dependence": 1.0
+    },
+    "4ce133b26753f2fb88086f370f246a9a6197d6e27b2d50ba89ed5040d4ab6915": {
+      "Correlation": 1.0,
+      "Dependence": 1.0
+    },
+    "5b0e61c67fc1b4a1ed17daa9aa25f54ff3a04733af69302ec634948cca361926": {
+      "Correlation": 0.316399535402824,
+      "Dependence": 0.339523946870805
+    },
+    "7a4ef6ef1118a258b1953895bbab6ac71120f3e94492adaf34bad98d21865d1a": {
+      "Correlation": 0.316399535402824,
+      "Dependence": 0.365110485681913
+    },
+    "81738fbfad2a73a3b58a2bebe0bfe4debcca247bce666a7d87d3951825effe77": {
+      "Correlation": 0.0233041722581579,
+      "Dependence": 0.532683889967968
+    },
+    "83ac7990db40fce0f2d17fda71864d7cf2f8c0bab94555e5d3b4a5d6d9c16139": {
+      "Correlation": 0.942262294193321,
+      "Dependence": 0.942262294193321
+    },
+    "83fc3578e423e10a69c18f6ee3bf60eeed58bb72de087b339e6a0ac48af8a4ee": {
+      "Correlation": 0.633414142992088,
+      "Dependence": 0.771331627931416
+    },
+    "8e1b5384bb943863a57f13aa3dba7094b82ebf4427d3ee171b67182a5e2d64fd": {
+      "Correlation": 0.394149567629753,
+      "Dependence": 0.757875550354019
+    },
+    "90935ed7b26578067dd41346473a121e63d7b80b3a4fe187acf1161129b4e0d5": {
+      "Correlation": -0.026679176780182,
+      "Dependence": 0.591996055167169
+    },
+    "949622ffcd28c0671ff73167fba7bbd37fefdcf08f6504e8bba752d490a86067": {
+      "Correlation": 0.424702103711269,
+      "Dependence": 0.653061936830541
+    },
+    "baf1b185964239b242d8b530f8ce01832e2465d2a2f841bec477823012e63baf": {
+      "Correlation": 0.1414218377427,
+      "Dependence": 0.759143462417859
+    },
+    "bc7d93bb53d2e3b711b928cccccc4b0fe32546e762441efa967ceab860ffb42a": {
+      "Correlation": 0.616091161472233,
+      "Dependence": 0.866471940441088
+    },
+    "bd3d9a5da3192f87819bf15d56c20b8eee8e4b7a01eea86c8487e8637a0cdb75": {
+      "Correlation": 0.297005294812743,
+      "Dependence": 0.527765937365201
+    },
+    "bee5589ac47b8138524288b0eabc6833bde2179dba3c09cacf7a7b82b08ecbc9": {
+      "Correlation": 0.134249668799043,
+      "Dependence": 0.4044335882594
+    },
+    "c013338a916605a4bcb8e997dd8bb8b04790b2e9ea20e19099d655080a0b0a24": {
+      "Correlation": 0.0126073379882077,
+      "Dependence": 0.759083016045322
+    },
+    "cc69460b64cc0184e9620118366a8ad8e85ea4d692d1eb1c05a1fffd2cac7606": {
+      "Correlation": 0.942262294193321,
+      "Dependence": 0.942262294193321
+    },
+    "d3a28b88e88385345533cd8f33363c653fe845213a7a7d96cee7edbf4d10f39d": {
+      "Correlation": -0.0812271004480446,
+      "Dependence": 0.267473992635121
+    },
+    "d3bcccff0fe3726bd8708f7dc40332d6f212d2a710e766711d86fa4f6ed60488": {
+      "Correlation": 0.1414218377427,
+      "Dependence": 0.759143462417859
+    },
+    "d3d3953b9a1d7e93e517f04f5705684e5b44deb0b937cd7b097ded186fb599bd": {
+      "Correlation": 0.107079093388245,
+      "Dependence": 0.357154419259892
+    },
+    "db9085ea34cb45c44db7350af58bf76bff0c4306307e282eda66abb81350f097": {
+      "Correlation": 0.24106311446094,
+      "Dependence": 0.591996055167169
+    },
+    "e36a9f4f81486f3761d995252237aae899326d31b342c8dfdec065b3b5379c7e": {
+      "Correlation": 0.633414142992088,
+      "Dependence": 0.771331627931416
+    },
+    "e4cbac1556e264b6aa576727b88bb0b7ebcf3212dcbe02ee69df0a43ebbd6bcf": {
+      "Correlation": 0.297005294812743,
+      "Dependence": 0.530897656471444
+    },
+    "e5af1297db548311146e8660513335587ef7192f902ec8e1db5525b1f9fa2656": {
+      "Correlation": 0.243914086631356,
+      "Dependence": 0.489388830409705
+    },
+    "eff39d7d3d567fe67622910dfd5dbdc747765442393a3ce544e4ed62fc8d2f14": {
+      "Correlation": 0.394149567629753,
+      "Dependence": 0.757875550354019
+    },
+    "f5c58db90c3e64e6e462c069b1f93c5eb2e3ca95a824845ef6ce59174ce2568c": {
+      "Correlation": -0.0812271004480446,
+      "Dependence": 0.25366978250695
+    },
+    "fbe5d60ed5d50aabf8a2db438c95151b24ec3da340d7ce6de3de1b3d364a952b": {
+      "Correlation": 0.424702103711269,
+      "Dependence": 0.653061936830541
+    }
+  },
+  "label": "NNS.dep",
+  "nns_version": "13.2",
+  "schema_version": 2
+}
