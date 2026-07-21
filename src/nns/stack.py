@@ -25,6 +25,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._indices import ordered_complement
 from nns._reg_engine import (
     _mreg_predict_path,
     _mreg_prepare,
@@ -540,7 +541,7 @@ def nns_stack(
                     validation = np.sort(
                         rng.sample_int(n_obs, size, replace=False) - 1
                     ).astype(np.int64)
-                training = np.setdiff1d(all_index, validation)
+                training = ordered_complement(all_index, validation)
                 if training.size < 3 or not has_all_classes(y[training]):
                     raise ValueError(
                         "Unable to create a repeated holdout retaining enough "
@@ -578,7 +579,7 @@ def nns_stack(
         out = []
         for b in range(1, use_folds + 1):
             validation = np.flatnonzero(fold_id == b).astype(np.int64)
-            training = np.setdiff1d(all_index, validation)
+            training = ordered_complement(all_index, validation)
             if validation.size > 0 and training.size >= 3 and has_all_classes(y[training]):
                 out.append({"train": training, "validation": validation})
         if len(out) < 2:

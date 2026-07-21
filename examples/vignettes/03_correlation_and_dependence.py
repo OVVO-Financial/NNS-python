@@ -1,8 +1,8 @@
 # %% [markdown]
 # # 03. Getting Started with NNS: Correlation and Dependence
 #
-# Section-for-section port of the R vignette.  Figures are saved beside the
-# script under `output/03_correlation_and_dependence/`.
+# Section-for-section port of `NNSvignette_03_Correlation_and_Dependence.Rmd`.
+# Figures are saved beside the script under `output/03_correlation_and_dependence/`.
 
 from __future__ import annotations
 

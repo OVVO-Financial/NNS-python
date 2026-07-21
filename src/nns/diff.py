@@ -500,10 +500,6 @@ def _dy_d_best_plan(
         )
         sample_size = grid.shape[0]
         k = eval_vec.size
-        position = np.tile(
-            np.repeat(np.asarray(["l", "m", "u"], dtype=object), sample_size), k
-        )
-        ids = np.repeat(np.arange(k), 3 * sample_size)
         for band in h_s:
             steps = np.array([_dydx_step(column, ev, float(band)) for ev in eval_vec])
             blocks: list[NDArray[np.float64]] = []
@@ -573,19 +569,16 @@ def _dy_d_best_plan(
             block = parts[main_chunk_idx[bi]]
             if vector_branch:
                 k = steps.size
-                f = np.empty(k)
-                s = np.empty(k)
-                for g in range(k):
-                    lo = np.mean(block[(position == "l") & (ids == g)])
-                    mid = np.mean(block[(position == "m") & (ids == g)])
-                    up = np.mean(block[(position == "u") & (ids == g)])
-                    h = steps[g]
-                    if np.isfinite(h) and h != 0.0:
-                        f[g] = (up - lo) / (2.0 * h)
-                        s[g] = (up - 2.0 * mid + lo) / (h**2)
-                    else:
-                        f[g] = np.nan
-                        s[g] = np.nan
+                means = np.mean(block.reshape(k, 3, sample_size), axis=2)
+                lo = means[:, 0]
+                mid = means[:, 1]
+                up = means[:, 2]
+                finite = np.isfinite(steps) & (steps != 0.0)
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    f = (up - lo) / (2.0 * steps)
+                    s = (up - 2.0 * mid + lo) / (steps**2)
+                f = np.where(finite, f, np.nan)
+                s = np.where(finite, s, np.nan)
             else:
                 n_eval = steps.size
                 lo = block[:n_eval]

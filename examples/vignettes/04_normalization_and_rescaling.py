@@ -1,4 +1,5 @@
-"""04. Getting Started with NNS: Normalization and Rescaling.
+"""# %% [markdown]
+04. Getting Started with NNS: Normalization and Rescaling.
 
 This is an instructional, section-for-section Python port of
 ``NNSvignette_04_Normalization_and_Rescaling.Rmd``.  It preserves the R
