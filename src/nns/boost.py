@@ -25,6 +25,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._indices import ordered_complement
 from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
@@ -422,7 +423,7 @@ def nns_boost(
             trial_validation_index = random_validation_index()
         else:
             trial_validation_index = validation_index
-        trial_train_index = np.setdiff1d(all_index, trial_validation_index)
+        trial_train_index = ordered_complement(all_index, trial_validation_index)
         predicted = fit_subset(subset, trial_train_index, trial_validation_index)
         learner_results[i] = score(predicted, y[trial_validation_index])
 
@@ -516,7 +517,7 @@ def nns_boost(
 
             if ts_test_value is None:
                 epoch_validation_index = random_validation_index()
-                epoch_train_index = np.setdiff1d(all_index, epoch_validation_index)
+                epoch_train_index = ordered_complement(all_index, epoch_validation_index)
             else:
                 assert epoch_split_id is not None
                 epoch_train_index, epoch_validation_index = chronological_splits[
