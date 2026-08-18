@@ -2,6 +2,10 @@
 
 This repository contains a rigorous comparative benchmark evaluating **NNS** (`nns_reg` and `nns_stack`) against traditional tree-based algorithms (**Random Forest** and **XGBoost**) across multiple mathematical functions and varying levels of Gaussian noise ($\sigma \in \{0.05, 0.10, 0.50\}$).
 
+
+See the book for the theoretical support to this method: https://ovvo-financial.github.io/NNS/book/
+
+
 ## Objective
 
 The core focus of this benchmark is to test two critical capabilities that standard tree architectures structurally fail to handle:
