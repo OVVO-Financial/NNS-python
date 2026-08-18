@@ -22,9 +22,9 @@ _LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
 _SCHEMA_VERSION = 2
 _NNS_VERSION = '13.2'
 _KEY_SEPARATOR = "|"
-JsonValue: TypeAlias = None | str | float | list["JsonValue"] | dict[str, "JsonValue"]
+JsonValue: TypeAlias = str | float | list["JsonValue"] | dict[str, "JsonValue"] | None
 RValue: TypeAlias = (
-    None | float | str | list[str | None] | NDArray[np.float64] | dict[str, "RValue"]
+    float | str | list[str | None] | NDArray[np.float64] | dict[str, "RValue"] | None
 )
 Cache: TypeAlias = dict[str, JsonValue]
 

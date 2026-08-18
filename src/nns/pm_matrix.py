@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from nns._native import native_fn
 from nns.core import _as_degree
 
-Target: TypeAlias = float | None | Literal["mean"] | NDArray[np.float64]
+Target: TypeAlias = float | Literal["mean"] | NDArray[np.float64] | None
 PMMatrixResult: TypeAlias = dict[str, Any]
 
 
