@@ -4,6 +4,10 @@ Numerical demonstration of both **degree-0 (event-level)** and **degree-1 (conti
 
 See the theoretical development in [Chapter 13 of the NNS book](https://ovvo-financial.github.io/NNS/book/conditional-probability-and-bayes-theorem.html).
 
+
+![bayes_from_pm](bayes_from_pm.PNG)
+
+
 ```python
 import numpy as np
 from nns.core import lpm, upm, lpm_ratio, upm_ratio
