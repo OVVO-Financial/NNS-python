@@ -162,7 +162,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -U pip
-          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
+          # Keep ruff/mypy pinned in lockstep with native-backend-ci.yml so a
+          # cache regenerated here lints identically to the PR that lands it.
+          python -m pip install build scikit-build-core nanobind pytest \
+            "ruff==0.16.3" "mypy==2.3.1" "numpy<2.5" scipy
           python -m pip install hypothesis pytest-benchmark pytest-xdist
           python -m pip install -e . --force-reinstall --no-deps
 
