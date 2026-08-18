@@ -41,13 +41,15 @@ dependencies = [
 [dependency-groups]
 dev = [
     "hypothesis",
-    "mypy",
+    # Pinned to the exact versions CI gates on, so a local `ruff check .` or
+    # `mypy` cannot disagree with the run that blocks the merge.
+    "mypy==2.3.1",
     "pre-commit",
     "pytest",
     "pytest-benchmark",
     "pytest-cov",
     "pytest-xdist>=3.8.0",
-    "ruff",
+    "ruff==0.16.3",
 ]
 docs = [
     "mkdocs-material>=9.5",
