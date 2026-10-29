@@ -397,22 +397,25 @@ variable checks as R. The optimizer's prediction intervals are deterministic
 VaR bands around the in-sample optimizer errors; they are separate from
 `nns_arma(pred_int=...)`, which uses the Monte Carlo path. Custom Python
 `obj_fn` callables may be supplied, but R expression objects are not part of the
-Python API. `nns_var` is implemented for numeric matrix-like inputs with
-`dim_red_method="cor"`, `dim_red_method="NNS.dep"`,
-`dim_red_method="NNS.caus"`, and `dim_red_method="all"` and returns
-R-compatible public output keys. VAR's internal multivariate stack stage uses
-`ceil(0.2 * n)` for the time-series validation window when that term exceeds
-`2 * h`, matching installed R's effective trailing holdout size and preserving
-the documented `ts.test` idea as a count of held-out observations. The `h == 0`
-path is normalized to a Python dictionary containing `interpolated_and_extrapolated`
-and `names` rather than R's bare data-frame return. The first-stage interpolation/extrapolation helper
-`_var_interpolate_and_extrapolate` is implemented to match R's
-missing-value handling and per-variable `NNS.ARMA.optim` forecasts. The private
-multivariate stage `_var_multivariate_stack_stage` is implemented with
-`lag.mtx` reconstruction, `NNS.stack(method=(1,2), ts.test, dim.red.method)`
-logic, and R-style relevance extraction. The function returns `multivariate`
-and `relevant_variables` in the same shape/naming pattern expected by
-`NNS.VAR`.
+Python API. `nns_var` is implemented for numeric matrix-like inputs (a pandas
+DataFrame keeps its column names) with `dim_red_method="cor"`,
+`dim_red_method="NNS.dep"`, `dim_red_method="NNS.caus"`, and
+`dim_red_method="all"` and returns R-compatible public output keys. As in R,
+leading and interior missing values are filled from an index regression and
+trailing ones are `nns_arma_optim` extrapolations; each variable's univariate
+forecast then feeds the lagged regressors of the `h` forecast rows, and one
+`nns_stack(method=(1,2), ts_test=max(2h, ceil(0.2 n)))` fit per variable is
+evaluated on those rows. `relevant_variables` is that stack's
+`NNS.dim.red.variables` selection, so it lists exactly the regressors each
+multivariate estimate is built from. `obj_fn` (a `(predicted, actual) -> float`
+callable) and `objective` apply to both stages; without `obj_fn` the default
+MSE / co-movement objective falls back to MSE when it is undefined for every
+candidate. Seasonal periods fall back from the `tau` modulo to the unrestricted
+`nns_seas` periods to lag 1 when `nns_arma_optim` rejects them. Variables never
+observed below zero keep non-negative outputs. The `h == 0` path is normalized to
+a Python dictionary containing `interpolated_and_extrapolated` and `names`
+rather than R's bare data-frame return. `ncores` and `nowcast` (row labelling
+only in R) are accepted for API compatibility.
 
 ## Meboot
 

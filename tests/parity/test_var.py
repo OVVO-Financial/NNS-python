@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from _r import nns
+from _r import nns, nns_var_custom
 
 from nns.var import (
     _lag_mtx,
@@ -198,6 +198,25 @@ def _expected_var_multivariate_reference(
     }
 
 
+# The perfectly linear 20-row fixture is degenerate for NNS.caus: every lagged
+# regressor ties, and R and the port normalize the series ~1e-15 apart, which
+# flips partition ties inside NNS.dep. On that fixture only, the causation-based
+# selections are compared for validity and the forecasts to 1%; the driven-series
+# tests below hold NNS.caus / "all" to exact parity.
+_DEGENERATE_CAUSATION = {"NNS.caus", "all"}
+
+
+def _assert_valid_relevant_variables(relevant: np.ndarray, names: list[str], tau: Any) -> None:
+    from nns.var import _var_lag_names, _var_lags
+
+    lagged, _ = _var_lag_names(names, _var_lags(tau, len(names))["lags"])
+    for column, name in enumerate(names):
+        selected = [value for value in relevant[:, column].tolist() if value is not None]
+        assert selected
+        assert set(selected) <= set(lagged)
+        assert f"{name}_tau_0" not in selected
+
+
 @pytest.mark.parametrize(
     ("name", "h"),
     [
@@ -308,12 +327,13 @@ def test_var_multivariate_stack_stage_matches_r(
     expected_multivariate = cast(np.ndarray, expected_result["multivariate"])
     expected_relevant = cast(np.ndarray, expected_result["relevant_variables"])
 
-    if dim_red_method in {"NNS.caus", "all"}:
-        _assert_public_numeric_close(actual_multivariate, expected_multivariate, rel_pct=1.0)
-    else:
-        np.testing.assert_allclose(actual_multivariate, expected_multivariate, equal_nan=True)
-    assert actual_relevant.shape == expected_relevant.shape
     assert actual_result["names"] == names
+    if dim_red_method in _DEGENERATE_CAUSATION:
+        _assert_public_numeric_close(actual_multivariate, expected_multivariate, rel_pct=1.0)
+        _assert_valid_relevant_variables(actual_relevant, names, tau)
+        return
+    np.testing.assert_allclose(actual_multivariate, expected_multivariate, equal_nan=True)
+    assert actual_relevant.shape == expected_relevant.shape
     assert np.array_equal(actual_relevant, expected_relevant)
 
 
@@ -444,9 +464,8 @@ def test_public_nns_var_nns_caus_matches_r() -> None:
         assert actual_values.shape == expected_values.shape
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
-    assert np.array_equal(
-        actual_result["relevant_variables"],
-        cast(np.ndarray, expected_result["relevant_variables"]),
+    _assert_valid_relevant_variables(
+        cast(np.ndarray, actual_result["relevant_variables"]), actual_result["names"], 2
     )
 
 
@@ -476,9 +495,8 @@ def test_public_nns_var_all_matches_r() -> None:
         assert actual_values.shape == expected_values.shape
         assert np.all(np.isfinite(actual_values))
         _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
-    assert np.array_equal(
-        actual_result["relevant_variables"],
-        cast(np.ndarray, expected_result["relevant_variables"]),
+    _assert_valid_relevant_variables(
+        cast(np.ndarray, actual_result["relevant_variables"]), actual_result["names"], 2
     )
 
 
@@ -499,3 +517,86 @@ def test_public_nns_var_h0_returns_normalized_interpolation_dict() -> None:
         cast(np.ndarray, expected_result["interpolated_and_extrapolated"]),
     )
     assert actual_result["names"] == expected_result["names"]
+
+
+_VAR_KEYS = ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble")
+
+
+def _driven_variables(n: int = 60, seed: int = 21) -> np.ndarray:
+    """x is a random walk, y is driven by lagged x, z is noisy seasonal."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n, dtype=np.float64)
+    x = np.cumsum(rng.standard_normal(n))
+    y = np.concatenate(([0.0], 0.8 * x[:-1])) + 0.3 * rng.standard_normal(n)
+    z = np.sin(2.0 * np.pi * t / 12.0) + 0.2 * rng.standard_normal(n)
+    return np.column_stack((x, y, z))
+
+
+def _custom_var_reference(variables: np.ndarray, **kwargs: Any) -> dict[str, Any]:
+    result = cast(dict[str, Any], nns_var_custom(_json_safe_data(variables), **kwargs))
+    names = list(result["interpolated_and_extrapolated"].keys())
+    expected: dict[str, Any] = {key: _to_matrix(result, names, key) for key in _VAR_KEYS}
+    expected["relevant_variables"] = _to_relevant_matrix(result, "relevant_variables")
+    expected["names"] = names
+    return expected
+
+
+def _assert_var_matches(actual: dict[str, Any], expected: dict[str, Any]) -> None:
+    assert actual["names"] == expected["names"]
+    for key in _VAR_KEYS:
+        actual_values = cast(np.ndarray, actual[key])
+        expected_values = cast(np.ndarray, expected[key])
+        assert actual_values.shape == expected_values.shape
+        _assert_public_numeric_close(actual_values, expected_values)
+    assert np.array_equal(
+        cast(np.ndarray, actual["relevant_variables"]),
+        cast(np.ndarray, expected["relevant_variables"]),
+    )
+
+
+@pytest.mark.parametrize("dim_red_method", ["cor", "NNS.dep", "NNS.caus", "all"])
+def test_public_nns_var_driven_series_matches_r(dim_red_method: str) -> None:
+    variables = _driven_variables()
+    expected = _custom_var_reference(variables, h=4, tau=2, dim_red_method=dim_red_method)
+    actual = nns_var(variables, 4, tau=2, dim_red_method=dim_red_method)
+
+    _assert_var_matches(cast(dict[str, Any], actual), expected)
+    # y is driven by lagged x: the multivariate estimate must be built on it.
+    relevant_y = [value for value in actual["relevant_variables"][:, 1] if value is not None]
+    assert "x1_tau_1" in relevant_y
+    assert "x2_tau_0" not in relevant_y
+
+
+@pytest.mark.parametrize(
+    ("name", "tau"),
+    [("vector", [1, 2, 2]), ("lists", [[1, 2], [1], [1, 3]]), ("shared_list", [[1, 2]])],
+)
+def test_public_nns_var_tau_forms_match_r(name: str, tau: Any) -> None:
+    del name
+    variables = _driven_variables()
+    expected = _custom_var_reference(variables, h=3, tau=tau)
+    actual = nns_var(variables, 3, tau=tau)
+    _assert_var_matches(cast(dict[str, Any], actual), expected)
+
+
+def test_public_nns_var_own_lag_weights_match_r() -> None:
+    variables = _driven_variables()
+    expected = _custom_var_reference(variables, h=3, tau=2, naive_weights=False)
+    actual = nns_var(variables, 3, tau=2, naive_weights=False)
+    _assert_var_matches(cast(dict[str, Any], actual), expected)
+
+
+def test_public_nns_var_objective_max_matches_r() -> None:
+    variables = _driven_variables()
+    expected = _custom_var_reference(variables, h=3, tau=1, objective="max")
+    actual = nns_var(variables, 3, tau=1, objective="max")
+    _assert_var_matches(cast(dict[str, Any], actual), expected)
+
+
+def test_public_nns_var_interior_and_trailing_missing_values_match_r() -> None:
+    variables = _driven_variables()
+    variables[[10, 11, 30], 0] = np.nan
+    variables[-2:, 2] = np.nan
+    expected = _custom_var_reference(variables, h=3, tau=2)
+    actual = nns_var(variables, 3, tau=2)
+    _assert_var_matches(cast(dict[str, Any], actual), expected)
