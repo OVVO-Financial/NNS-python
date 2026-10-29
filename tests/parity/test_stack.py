@@ -343,6 +343,48 @@ def test_nns_stack_var_like_ts_test_matches_r() -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("dim_red_method", ["cor", "nns.dep", "nns.caus", "all"])
+def test_nns_stack_dim_red_selection_matches_r(dim_red_method: str) -> None:
+    # y is driven by the first two predictors; the third is noise. The test
+    # rows sit beyond the training range, as NNS.VAR forecast rows do.
+    rng = np.random.default_rng(11)
+    n, h = 60, 4
+    t = np.arange(n + h, dtype=np.float64)
+    drift = np.cumsum(rng.standard_normal(n + h))
+    variable = np.column_stack((drift, np.sin(t / 3.0), rng.standard_normal(n + h)))
+    y = 0.8 * drift + 0.5 * np.sin(t / 3.0) + 0.1 * rng.standard_normal(n + h)
+    ts_test = max(2 * h, int(np.ceil(0.2 * n)))
+
+    expected = nns_stack_numeric(
+        variable[:n].tolist(),
+        y[:n].tolist(),
+        variable[n:].tolist(),
+        cv_size=0.25,
+        folds=1,
+        method=[1, 2],
+        order=None,
+        stack=True,
+        dim_red_method=dim_red_method,
+        ts_test=ts_test,
+    )
+    actual = nns_stack(
+        variable[:n],
+        y[:n],
+        variable[n:],
+        folds=1,
+        method=(1, 2),
+        stack=True,
+        dim_red_method=dim_red_method,
+        ts_test=ts_test,
+        dist=None,
+    )
+
+    assert isinstance(expected, dict)
+    assert _SELECTION_KEYS <= set(expected)
+    _assert_stack_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("method", [[1], [2], [1, 2]])
 def test_nns_stack_pred_int_matches_r(method: list[int]) -> None:
     x = np.linspace(-2.0, 2.0, 40)
@@ -795,6 +837,25 @@ def test_nns_stack_balance_raw_character_class_encodes_like_r() -> None:
 # and predictions match R exactly. See the RNG note in nns/stack.py.
 _RNG_DEPENDENT_KEYS = {"OBJfn.reg", "OBJfn.dim.red", "probability.threshold"}
 
+# Dimension-reduction selection keys added in NNS 13.2 (NNS.VAR relevant
+# variables). Cache entries recorded before they existed lack them; when present
+# they are compared, and dedicated tests below always cover them.
+_SELECTION_KEYS = {"NNS.dim.red.variables", "NNS.dim.red.coefficients"}
+
+
+def _assert_selection_matches(key: str, actual: Any, expected: Any) -> None:
+    if actual is None:
+        assert expected is None or expected == {} or np.asarray(expected).size == 0
+        return
+    if key == "NNS.dim.red.coefficients":
+        np.testing.assert_allclose(
+            np.asarray(actual, dtype=np.float64), _numeric(expected), atol=COMPOUND
+        )
+        return
+    # R names unnamed predictor columns V1..Vp; the port reports 0-based indices.
+    expected_names = [str(v) for v in np.atleast_1d(np.asarray(expected, dtype=object))]
+    assert [f"V{int(i) + 1}" for i in np.asarray(actual).tolist()] == expected_names
+
 
 def _assert_stack_matches(
     actual: dict[str, Any],
@@ -804,8 +865,12 @@ def _assert_stack_matches(
     exact_objective: bool = True,
 ) -> None:
     assert isinstance(expected, dict)
-    assert set(actual) == set(expected)
+    assert set(actual) - _SELECTION_KEYS == set(expected) - _SELECTION_KEYS
     for key in actual:
+        if key in _SELECTION_KEYS:
+            if key in expected:
+                _assert_selection_matches(key, actual[key], expected[key])
+            continue
         if key in _RNG_DEPENDENT_KEYS and not exact_objective:
             # Random-split OOF scalar: assert finiteness agrees with R, not value.
             actual_finite = actual[key] is not None and np.isfinite(float(actual[key]))
@@ -871,7 +936,7 @@ def _assert_stack_class_structure(
     expect_pred_int: bool = False,
 ) -> None:
     assert isinstance(expected, dict)
-    assert set(actual) == set(expected)
+    assert set(actual) - _SELECTION_KEYS == set(expected) - _SELECTION_KEYS
     for key in ("reg", "dim.red", "stack"):
         if actual[key] is None:
             # Absent method: R returns a scalar NA_real_, the port returns None.

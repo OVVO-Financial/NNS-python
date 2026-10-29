@@ -367,6 +367,9 @@ def _interpolate_position(values: NDArray[np.float64], position: float) -> float
     return float(values[floor_pos - 1] + weight * (values[ceil_pos - 1] - values[floor_pos - 1]))
 
 
+_MAX_DENSE_BINS = 1_000_000
+
+
 def _simple_bin_counts(
     values: NDArray[np.float64],
     width: float,
@@ -381,7 +384,9 @@ def _simple_bin_counts(
             bin_count = 1
         else:
             bin_count = math.floor(bin_ratio) + 1
-    bin_count = min(max(1, bin_count), 4 * values.size)
+    # R (NNS 13.x) does not cap the bin count; the guard only bounds memory
+    # for pathologically narrow widths and never binds on realistic data.
+    bin_count = min(max(1, bin_count), _MAX_DENSE_BINS)
     bin_names = origin + np.arange(bin_count, dtype=np.float64) * width
     if bin_count == 1:
         return bin_names, np.array([values.size], dtype=np.int64)

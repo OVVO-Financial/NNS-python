@@ -834,6 +834,42 @@ def nns_arma_optim_custom(
         return result
 
 
+def nns_var_custom(
+    variables: list[list[float | None]],
+    *,
+    h: int,
+    tau: int | list[int] | list[list[int]],
+    dim_red_method: str = "cor",
+    naive_weights: bool = True,
+    objective: str = "min",
+) -> RValue:
+    """R ``NNS.VAR`` with named arguments (``ncores = 1``, no console status)."""
+    args = {
+        "variables": variables,
+        "h": h,
+        "tau": tau,
+        "dim_red_method": dim_red_method,
+        "naive_weights": naive_weights,
+        "objective": objective,
+    }
+    key = _cache_key("NNS.VAR.custom", (args,))
+    cache, refresh = _cache_state()
+    if key in cache:
+        return _decode(cache[key])
+    if _offline():
+        raise RuntimeError(f"R cache miss for NNS.VAR.custom with key {key}.")
+    with _cache_lock():
+        disk_cache, disk_refresh = _read_cache_from_disk()
+        if refresh or disk_refresh:
+            disk_cache = {}
+        if key in disk_cache:
+            return _decode(disk_cache[key])
+        result = _call_r_var_custom(args)
+        disk_cache[key] = _encode(result)
+        _write_cache(disk_cache, changed=key)
+        return result
+
+
 def nns_cdf_custom(
     variable: list[float] | list[list[float]],
     *,
@@ -1904,6 +1940,46 @@ def _call_r_cdf_custom(args: dict[str, Any]) -> RValue:
         "  as.numeric(x)\n"
         "}\n"
         "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, null = 'null'))\n"
+    )
+    completed = subprocess.run(
+        ["Rscript", "-e", script],
+        check=True,
+        capture_output=True,
+        env=_r_env(),
+        input=json.dumps(args),
+        text=True,
+    )
+    return _decode(json.loads(completed.stdout))
+
+
+def _call_r_var_custom(args: dict[str, Any]) -> RValue:
+    script = (
+        "library(NNS)\n"
+        "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
+        "simplifyVector = FALSE)\n"
+        "variables <- do.call(rbind, lapply(args$variables, function(row) "
+        "as.numeric(vapply(row, function(v) if (is.null(v)) NA_real_ else as.numeric(v), "
+        "numeric(1)))))\n"
+        "tau <- args$tau\n"
+        "tau <- if (is.list(tau) && any(vapply(tau, is.list, logical(1)))) {\n"
+        "  lapply(tau, function(v) as.integer(unlist(v)))\n"
+        "} else as.integer(unlist(tau))\n"
+        "result <- NNS::NNS.VAR(variables, h = as.integer(args$h), tau = tau, "
+        "dim.red.method = args$dim_red_method, naive.weights = isTRUE(args$naive_weights), "
+        "objective = args$objective, status = FALSE, ncores = 1)\n"
+        "encode <- function(x) {\n"
+        "  if (is.data.frame(x)) {\n"
+        "    out <- lapply(seq_along(x), function(i) {\n"
+        "      v <- x[[i]]\n"
+        "      if (is.character(v)) as.list(v) else as.numeric(v)\n"
+        "    })\n"
+        "    names(out) <- names(x)\n"
+        "    return(out)\n"
+        "  }\n"
+        "  if (is.list(x)) return(lapply(x, encode))\n"
+        "  as.numeric(x)\n"
+        "}\n"
+        "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, na = 'null'))\n"
     )
     completed = subprocess.run(
         ["Rscript", "-e", script],

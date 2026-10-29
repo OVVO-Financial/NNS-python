@@ -20,6 +20,8 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
         "probability.threshold",
         "OBJfn.dim.red",
         "NNS.dim.red.threshold",
+        "NNS.dim.red.variables",
+        "NNS.dim.red.coefficients",
         "reg",
         "reg.pred.int",
         "dim.red",
@@ -34,6 +36,45 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert result["stack"].shape == (7,)
     assert result["probability.threshold"] == pytest.approx(0.5)
     assert np.all(np.isfinite(result["stack"]))
+    assert result["NNS.dim.red.coefficients"].shape == (3,)
+
+
+def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
+    rng = np.random.default_rng(7)
+    n = 80
+    driver = np.cumsum(rng.standard_normal(n))
+    variable = np.column_stack((driver, rng.standard_normal(n), rng.standard_normal(n)))
+    y = 0.9 * driver + 0.1 * rng.standard_normal(n)
+    train, test = variable[:70], variable[70:74]
+
+    def fit(test_rows: np.ndarray) -> dict[str, object]:
+        return nns_stack(train, y[:70], test_rows, ts_test=14, folds=1, method=(1, 2))
+
+    base = fit(test)
+    selected = np.asarray(base["NNS.dim.red.variables"])
+    coefficients = np.asarray(base["NNS.dim.red.coefficients"])
+    assert selected.size >= 1
+    assert sorted(selected.tolist()) == np.flatnonzero(coefficients != 0).tolist()
+    assert 0 in selected.tolist()
+
+    # Predictors outside the selection cannot move the estimate...
+    unused = sorted(set(range(3)) - set(selected.tolist()))
+    if unused:
+        shifted = test.copy()
+        shifted[:, unused] += 100.0
+        np.testing.assert_array_equal(fit(shifted)["stack"], base["stack"])
+    # ...while a selected one does.
+    shifted = test.copy()
+    shifted[:, int(selected[0])] += 5.0
+    assert not np.allclose(fit(shifted)["stack"], base["stack"])
+
+
+def test_nns_stack_dim_red_variables_absent_without_method_2() -> None:
+    x = np.linspace(-2.0, 2.0, 40)
+    variable = np.column_stack((x, np.sin(x)))
+    result = nns_stack(variable, x + np.sin(x), variable[:3], cv_size=0.25, folds=2, method=(1,))
+    assert result["NNS.dim.red.variables"] is None
+    assert result["NNS.dim.red.coefficients"] is None
 
 
 def test_nns_stack_accepts_duplicate_predictor_columns() -> None:

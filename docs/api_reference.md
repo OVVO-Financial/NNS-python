@@ -241,7 +241,7 @@ Multivariate regression and classification surface. Numeric and class paths are 
 
 Closest R API: `NNS.stack`.
 
-Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias.
+Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. `NNS.dim.red.variables` (0-based predictor indices, ranked by absolute coefficient) and `NNS.dim.red.coefficients` report the dimension-reduction selection; with `stack=True` those predictors are the only ones behind `stack`.
 
 #### `nns_boost`
 
@@ -295,7 +295,7 @@ Optimization surface for NNS ARMA-style forecasting.
 
 Closest R API: `NNS.VAR`.
 
-Multivariate VAR-style forecast surface with supported dimension-reduction paths.
+Nonparametric vector autoregression: univariate `nns_arma_optim` forecasts feed the lagged regressors of the forecast horizon, and an `nns_stack` fit per variable gives the multivariate estimate. `relevant_variables` lists exactly the lagged regressors each multivariate estimate is built from. `tau` accepts a positive integer, one lag per variable, or lag sequences; `obj_fn` (a `(predicted, actual) -> float` callable) and `objective` apply to both stages. DataFrame column names are kept.
 
 ### Distribution, ANOVA, normalization, and distance
 

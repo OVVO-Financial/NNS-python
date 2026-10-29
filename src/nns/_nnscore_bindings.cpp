@@ -318,7 +318,9 @@ double gravity_exact_impl(const double* data, std::size_t raw_n) {
       bin_count = static_cast<long>(std::floor(bin_ratio)) + 1;
     }
   }
-  bin_count = std::min<long>(std::max<long>(1L, bin_count), static_cast<long>(4U * n));
+  // R (NNS 13.x) does not cap the bin count; the guard only bounds memory for
+  // pathologically narrow widths (mirrors _MAX_DENSE_BINS in nns.dependence).
+  bin_count = std::min<long>(std::max<long>(1L, bin_count), 1000000L);
   const std::size_t nb = static_cast<std::size_t>(bin_count);
 
   std::vector<int64_t> counts(nb, 0);

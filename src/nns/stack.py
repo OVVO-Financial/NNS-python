@@ -43,9 +43,15 @@ _RESPONSE_OFFSET = 0.123456789
 
 StackResult = dict[str, Any]
 """R-style NNS.stack result dict (OBJfn.reg, NNS.reg.n.best,
-probability.threshold, OBJfn.dim.red, NNS.dim.red.threshold, reg,
-reg.pred.int, dim.red, dim.red.pred.int, stack, pred.int, weights,
-class.levels)."""
+probability.threshold, OBJfn.dim.red, NNS.dim.red.threshold,
+NNS.dim.red.variables, NNS.dim.red.coefficients, reg, reg.pred.int, dim.red,
+dim.red.pred.int, stack, pred.int, weights, class.levels).
+
+``NNS.dim.red.variables`` holds the 0-based indices of the predictors carried
+by the final dimension reduction, ranked by absolute coefficient (with
+``stack=True`` these are the only predictors behind ``stack``);
+``NNS.dim.red.coefficients`` holds the final encoded coefficients. Both are
+``None`` when ``method`` excludes 2."""
 
 
 # --------------------------------------------------------------------------
@@ -438,6 +444,9 @@ def nns_stack(
     ) -> dict[str, NDArray[np.float64]]:
         train_blocks: list[NDArray[np.float64]] = []
         test_blocks: list[NDArray[np.float64]] = []
+        # Original predictor behind each encoded column (factors expand to one
+        # column per level), so encoded selections map back to predictors.
+        source_blocks: list[NDArray[np.int64]] = []
         for j in range(train.shape[1]):
             tr = train[:, j]
             te = test[:, j]
@@ -477,6 +486,7 @@ def nns_stack(
                     )
                 train_blocks.append(trn.reshape(-1, 1))
                 test_blocks.append(ten.reshape(-1, 1))
+            source_blocks.append(np.full(train_blocks[-1].shape[1], j, dtype=np.int64))
         train_matrix = np.hstack(train_blocks)
         test_matrix = np.hstack(test_blocks)
         tmin = train_matrix.min(axis=0)
@@ -488,6 +498,7 @@ def nns_stack(
             "test": (test_matrix - tmin) / trange,
             "minimum": tmin,
             "range": trange,
+            "source": np.concatenate(source_blocks),
         }
 
     def make_splits() -> list[dict[str, NDArray[np.int64]]]:
@@ -615,16 +626,16 @@ def nns_stack(
             return out
 
         def caus_coef() -> NDArray[np.float64]:
-            from nns.causation import _tau_value, _ts_tau_values, _uni_caus
+            from nns.causation import _tau_value, _uni_caus
 
+            # R calls Uni.caus(response, X[, j], tau = "ts" | "cs") directly, and
+            # Uni.caus maps "ts" to a fixed lag of 3 (the seasonal-period lag
+            # search belongs to the outer NNS.caus, not to Uni.caus).
+            tau_value = 3 if ts_test_value is not None else _tau_value("cs")
             out = np.zeros(p, dtype=np.float64)
             for j in range(p):
                 try:
-                    if ts_test_value is not None:
-                        _, y_tau = _ts_tau_values(response, design[:, j])
-                        v = float(_uni_caus(response, design[:, j], y_tau))
-                    else:
-                        v = float(_uni_caus(response, design[:, j], _tau_value("cs")))
+                    v = float(_uni_caus(response, design[:, j], tau_value))
                 except Exception:
                     v = 0.0
                 out[j] = v if math.isfinite(v) else 0.0
@@ -639,8 +650,10 @@ def nns_stack(
         elif dim_red_value == "equal":
             coef = np.ones(p, dtype=np.float64)
         elif dim_red_value == "all":
+            # R: rowMeans(cbind(caus, dep, cor, rep(1, p))) - the equal-weight
+            # term is part of the average.
             coef = np.mean(
-                np.column_stack((caus_coef(), dep_coef(), cor_coef())), axis=1
+                np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1
             )
         else:
             raise ValueError("Unsupported [dim.red.method].")
@@ -762,6 +775,8 @@ def nns_stack(
     dim_component_threshold = 0.5
     dim_oof_raw = np.full(n_obs, np.nan)
     dim_threshold_report = float("nan")
+    dim_active_variables: NDArray[np.int64] | None = None
+    dim_coefficients_report: NDArray[np.float64] | None = None
     dim_full_xstar_train: NDArray[np.float64] | None = None
     dim_full_xstar_test: NDArray[np.float64] | None = None
 
@@ -836,6 +851,16 @@ def nns_stack(
             dim_threshold_report = 0.0
         if not math.isfinite(dim_threshold_report):
             dim_threshold_report = 0.0
+
+        # The exact predictors carried by the final X* projection (and by
+        # Method 1 too when stack=True), ranked by |coefficient|. A threshold
+        # comparison cannot reproduce this: boundary ties break by column order.
+        dim_coefficients_report = dim_full_coef.copy()
+        active_order = np.argsort(-np.abs(dim_full_coef), kind="stable")
+        active_order = active_order[np.abs(dim_full_coef[active_order]) > 0]
+        dim_active_variables = np.asarray(
+            list(dict.fromkeys(full_design["source"][active_order].tolist())), dtype=np.int64
+        )
 
     # ----------------------------------------------------------------------
     # Method 1: production RPM + production distance path for every k
@@ -1240,6 +1265,8 @@ def nns_stack(
         "probability.threshold": probability_threshold,
         "OBJfn.dim.red": dim_best_score,
         "NNS.dim.red.threshold": dim_threshold_report,
+        "NNS.dim.red.variables": dim_active_variables,
+        "NNS.dim.red.coefficients": dim_coefficients_report,
         "reg": reg_output,
         "reg.pred.int": reg_pred_int,
         "dim.red": dim_output,
