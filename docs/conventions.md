@@ -404,17 +404,18 @@ DataFrame keeps its column names) with `dim_red_method="cor"`,
 leading and interior missing values are filled from an index regression; when a series has
 trailing missing values, every missing value comes from an `nns_stack` Method 1
 fit on the index. Each variable's univariate `nns_arma_optim` forecast is
-appended before the lagged design is built. For each variable the multivariate
-estimate follows NNS 11.6's `NNS.stack(..., stack = TRUE)`: the dimension
-reduction threshold is cross-validated on the last `max(2h, ceil(0.2 n))` lagged
-training rows, the regressors whose coefficient meets it are the relevant
-variables, `nns_reg` on exactly those regressors (each its own dimension, with a
-cross-validated `n_best`) is stacked with the dimension reduction `nns_reg`
-estimate using weights `1 / objective^2` of each fit, and the estimate is
-evaluated on the last `h` lagged training rows (R's `tail(IV, h)`).
-`relevant_variables` is that selection, so it lists exactly the regressors each
-multivariate estimate is built from. `obj_fn` (a `(predicted, actual) -> float`
-callable) and `objective` apply to both stages. Series whose observed minimum is
+appended before the lagged design is built. For each variable the relevant
+variables are found as in NNS 11.6: the dimension reduction threshold is
+cross-validated on the last `max(2h, ceil(0.2 n))` lagged training rows, and
+the regressors whose coefficient meets it are kept. The multivariate estimate is
+`nns_stack(method=1, stack=False)` on exactly those regressors (`nns_reg` with
+each its own dimension and a cross-validated `n_best`), evaluated on the last
+`h` lagged training rows (R's `tail(IV, h)`). `relevant_variables` is that
+selection, so it lists exactly the regressors each multivariate estimate is
+built from. `obj_fn` (a `(predicted, actual) -> float` callable) and
+`objective` apply to both stages; without `obj_fn` the default MSE /
+co-movement objective falls back to MSE when it is undefined for every Method 1
+candidate, as in R. Series whose observed minimum is
 positive have their interpolated values floored at zero. The `h == 0` path is normalized to
 a Python dictionary containing `interpolated_and_extrapolated` and `names`
 rather than R's bare data-frame return. `ncores` and `nowcast` (row labelling

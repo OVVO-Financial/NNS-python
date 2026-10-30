@@ -22,6 +22,10 @@ _R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
 
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
 
+_METHOD1_GUARD_MESSAGE = (
+    "No Method 1 candidate produced a finite complete-coverage OOF objective."
+)
+
 
 class VarResult(TypedDict):
     """``nns_var`` result. ``h=0`` returns only the interpolated matrix and names."""
@@ -38,14 +42,6 @@ class _LagSpec(TypedDict):
     lags: list[list[int]]
     modulo: list[int]
     max: int
-
-
-class _StackResult(TypedDict):
-    stack: NDArray[np.float64]
-    relevant: list[int]
-    weights: NDArray[np.float64]
-    threshold: float
-    n_best: int
 
 
 def nns_var(
@@ -74,9 +70,9 @@ def nns_var(
 
     ``relevant_variables`` lists, per variable, the lagged regressors whose
     dimension reduction coefficient meets the cross-validated threshold. They
-    are the only regressors in the ``multivariate`` estimate: ``nns_reg`` on
-    them, each as its own dimension, stacked with the dimension reduction
-    ``nns_reg`` estimate.
+    are the only regressors in the ``multivariate`` estimate:
+    ``nns_stack(method=1, stack=False)`` (``nns_reg``) on them, each as its own
+    dimension.
 
     For ``h == 0`` the result is a dictionary with ``interpolated_and_extrapolated``
     and ``names`` instead of R's bare data frame. ``ncores`` and ``nowcast``
@@ -479,12 +475,12 @@ def _var_multivariate_stack_stage(
     obj_fn: ObjectiveFn | None = None,
     objective: str = "min",
 ) -> dict[str, object]:
-    """Multivariate stacked forecasts over the lagged VAR design.
+    """Multivariate ``nns_stack`` forecasts over the lagged VAR design.
 
-    The model is trained on the observed lagged rows and evaluated on the last
-    ``h`` of them (R's ``tail(IV, h)``). ``relevant_variables`` are the
-    regressors the dimension reduction threshold keeps, i.e. exactly those the
-    estimate uses.
+    Per variable, the relevant variables are the regressors the cross-validated
+    dimension reduction threshold keeps, and the estimate is ``nns_stack`` on
+    exactly those regressors, trained on the observed lagged rows and evaluated
+    on the last ``h`` of them (R's ``tail(IV, h)``).
     """
     interpolated_matrix = np.asarray(interpolated, dtype=np.float64)
     univariate_matrix = np.asarray(univariate, dtype=np.float64)
@@ -514,6 +510,10 @@ def _var_multivariate_stack_stage(
     lagged, lagged_names, _ = _var_lag_matrix(new_values, lag_spec["lags"], names_list)
     lagged_train = lagged[:-h, :]
     stack_obj_fn = _var_default_objective if obj_fn is None else obj_fn
+    # Mirror R NNS.VAR: only the built-in co-movement ratio objective (no user
+    # obj_fn, objective == "min") may fall back to plain MSE when every Method 1
+    # candidate is non-finite. A user objective is never overridden.
+    use_default_objective = obj_fn is None and objective_value == "min"
 
     multivariate_outputs: list[NDArray[np.float64]] = []
     relevant_variables: list[list[str]] = []
@@ -524,18 +524,32 @@ def _var_multivariate_stack_stage(
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
         ts_test = max(2 * h, math.ceil(0.2 * lagged_dv.size))
 
-        result = _var_stack(
+        # Relevant variables (NNS 11.6): the regressors whose dimension
+        # reduction coefficient meets the cross-validated threshold
+        relevant = _var_relevant(
             lagged_iv,
             lagged_dv,
-            lagged_iv[-h:, :],
             ts_test=ts_test,
             obj_fn=stack_obj_fn,
             objective=objective_value,
             dim_red_method=dim_red_value,
         )
-        relevant_variables.append([iv_names[k] for k in result["relevant"]])
+        relevant_variables.append([iv_names[k] for k in relevant])
 
-        nns_dv = result["stack"][:h].copy()
+        # Multivariate estimate: nns_stack (Method 1, nns_reg) on exactly the
+        # relevant variables, each its own dimension.
+        result = _var_fit_stack(
+            lagged_iv[:, relevant],
+            lagged_dv,
+            lagged_iv[-h:, relevant],
+            ts_test=ts_test,
+            obj_fn=stack_obj_fn,
+            objective=objective_value,
+            use_default_objective=use_default_objective,
+            dim_red_method=dim_red_value,
+        )
+
+        nns_dv = np.asarray(result["stack"], dtype=np.float64).reshape(-1)[:h].copy()
         missing = np.isnan(nns_dv)
         nns_dv[missing] = univariate_matrix[missing, i]
         multivariate_outputs.append(nns_dv)
@@ -552,7 +566,7 @@ def _var_multivariate_stack_stage(
     }
 
 
-def _var_stack(
+def _var_fit_stack(
     ivs_train: NDArray[np.float64],
     dv_train: NDArray[np.float64],
     ivs_test: NDArray[np.float64],
@@ -560,17 +574,56 @@ def _var_stack(
     ts_test: int,
     obj_fn: ObjectiveFn,
     objective: str,
+    use_default_objective: bool,
     dim_red_method: str,
-) -> _StackResult:
-    """R ``.nns_var_stack``: ``nns_stack(..., method=(1, 2), stack=True)`` as NNS
-    11.6 ran it for NNS.VAR (``folds=1``, ``ts_test``, ``order=None``).
+) -> dict[str, Any]:
+    """NNS.VAR's ``nns_stack`` call (``method=1``, ``stack=False``). The built-in
+    co-movement ratio objective falls back to plain MSE when it is undefined for
+    every Method 1 candidate; a user objective is never overridden."""
+    from nns.stack import Objective, nns_stack
 
-    Method 2 cross-validates the dimension reduction threshold; the regressors
-    whose coefficient survives it are the relevant variables. Method 1
-    cross-validates ``n_best`` for ``nns_reg`` on the relevant variables, each
-    kept as its own dimension, then fits it. Both point estimates are blended
-    with weights ``1 / objective**2`` of each final fit. The validation set is
-    the last ``ts_test`` rows.
+    stack_args: dict[str, Any] = {
+        "ivs_test": ivs_test,
+        "ts_test": ts_test,
+        "folds": 1,
+        "method": 1,
+        "dim_red_method": dim_red_method,
+        "order": None,
+        "stack": False,
+        "dist": None,
+    }
+    try:
+        return nns_stack(
+            ivs_train, dv_train, obj_fn=obj_fn, objective=cast(Objective, objective), **stack_args
+        )
+    except ValueError as error:
+        if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
+            raise
+        return nns_stack(
+            ivs_train, dv_train, obj_fn=_var_mse_objective, objective="min", **stack_args
+        )
+
+
+def _var_mse_objective(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
+    predicted_values = np.asarray(predicted, dtype=np.float64)
+    actual_values = np.asarray(actual, dtype=np.float64)
+    return float(np.mean((predicted_values - actual_values) ** 2))
+
+
+def _var_relevant(
+    ivs_train: NDArray[np.float64],
+    dv_train: NDArray[np.float64],
+    *,
+    ts_test: int,
+    obj_fn: ObjectiveFn,
+    objective: str,
+    dim_red_method: str,
+) -> list[int]:
+    """R ``.nns_var_relevant``: relevant variables as NNS 11.6's NNS.VAR found them.
+
+    Cross-validates the dimension reduction threshold over NNS 11.6's
+    ``NNS.stack`` cutoff grid (validated on the last ``ts_test`` rows) and
+    returns the column indices of every regressor whose coefficient meets it.
     """
     from nns.central_tendencies import nns_gravity
     from nns.regression import nns_reg
@@ -578,132 +631,59 @@ def _var_stack(
 
     x = np.asarray(ivs_train, dtype=np.float64)
     y = np.asarray(dv_train, dtype=np.float64)
-    x_test = np.asarray(ivs_test, dtype=np.float64)
     n_rows, n = x.shape
-    minimize = objective == "min"
+    if n == 1:
+        return [0]
     reg_args: dict[str, Any] = {"plot": False, "residual_plot": False, "order": None, "ncores": 1}
 
-    def best(values: Sequence[float] | NDArray[np.float64]) -> int:
-        """R ``which.min`` / ``which.max``: first optimum, NaN ignored."""
-        arr = np.asarray(values, dtype=np.float64)
-        candidates = np.flatnonzero(~np.isnan(arr))
-        if candidates.size == 0:
-            return 0
-        pick = np.argmin(arr[candidates]) if minimize else np.argmax(arr[candidates])
-        return int(candidates[pick])
+    def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
+        if dim_red_method == "cor":
+            return _spearman_signed(xs, ys)
+        fit = nns_reg(xs, ys, dim_red_method=dim_red_method, point_only=True, **reg_args)
+        return np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
 
-    def score(fit_predicted: Any, fit_actual: Any) -> float:
-        return float(obj_fn(np.asarray(fit_predicted, dtype=np.float64).reshape(-1),
-                            np.asarray(fit_actual, dtype=np.float64).reshape(-1)))
-
-    def point_est(fit: Any) -> NDArray[np.float64]:
-        return np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1).copy()
+    def rounded(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        # R abs(round(x, 2)): Python's round() also rounds the exact binary value.
+        return np.array([np.nan if np.isnan(v) else abs(round(float(v), 2)) for v in values])
 
     split = n_rows - ts_test
     cv_x, cv_x_test = x[:split], x[split:]
     cv_y, actual = y[:split], y[split:]
 
-    # Method 2: dimension reduction regression
-    threshold = float("nan")
-    estimate_2 = np.full(x_test.shape[0], np.nan)
-    objective_2 = float("nan")
-    if n > 1:
-        def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
-            if dim_red_method == "cor":
-                return _spearman_signed(xs, ys)
-            fit = nns_reg(xs, ys, dim_red_method=dim_red_method, point_only=True, **reg_args)
-            return np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
+    cutoffs_1 = rounded(coefficients(x, y))
+    cutoffs_2 = rounded(coefficients(cv_x, cv_y))
+    var_cutoffs = np.minimum(cutoffs_1, (cutoffs_1 + cutoffs_2) / 2.0)
+    in_range = (var_cutoffs < 1.0) & (var_cutoffs >= 0.0)
+    var_cutoffs = var_cutoffs[np.isnan(var_cutoffs) | in_range]
+    var_cutoffs[np.isnan(var_cutoffs)] = 0.0
+    cutoffs = sorted(set(var_cutoffs.tolist()), reverse=True)[1:] or [0.0]
+    if n == 2 and 0.0 not in cutoffs:
+        cutoffs.append(0.0)
 
-        def rounded(values: NDArray[np.float64]) -> NDArray[np.float64]:
-            # R abs(round(x, 2)): Python's round() also rounds the exact binary value.
-            return np.array([np.nan if np.isnan(v) else abs(round(float(v), 2)) for v in values])
+    scores: list[float] = []
+    for cutoff in cutoffs:
+        fit = nns_reg(cv_x, cv_y, point_est=cv_x_test, dim_red_method=dim_red_method,
+                      threshold=cutoff, point_only=True, **reg_args)
+        predicted = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1).copy()
+        missing = np.isnan(predicted)
+        if missing.any() and not missing.all():
+            predicted[missing] = nns_gravity(predicted[~missing])
+        scores.append(float(obj_fn(predicted, actual)))
 
-        cutoffs_1 = rounded(coefficients(x, y))
-        cutoffs_2 = rounded(coefficients(cv_x, cv_y))
-        var_cutoffs = np.minimum(cutoffs_1, (cutoffs_1 + cutoffs_2) / 2.0)
-        in_range = (var_cutoffs < 1.0) & (var_cutoffs >= 0.0)
-        var_cutoffs = var_cutoffs[np.isnan(var_cutoffs) | in_range]
-        var_cutoffs[np.isnan(var_cutoffs)] = 0.0
-        cutoffs = sorted(set(var_cutoffs.tolist()), reverse=True)[1:] or [0.0]
-        if n == 2 and 0.0 not in cutoffs:
-            cutoffs.append(0.0)
+    # R which.min / which.max: first optimum, NaN ignored
+    values = np.asarray(scores, dtype=np.float64)
+    candidates = np.flatnonzero(~np.isnan(values))
+    best = 0
+    if candidates.size:
+        subset = values[candidates]
+        best = int(candidates[np.argmin(subset) if objective == "min" else np.argmax(subset)])
+    threshold = cutoffs[best]
 
-        scores: list[float] = []
-        for cutoff in cutoffs:
-            predicted = point_est(nns_reg(cv_x, cv_y, point_est=cv_x_test,
-                                          dim_red_method=dim_red_method, threshold=cutoff,
-                                          point_only=True, **reg_args))
-            missing = np.isnan(predicted)
-            if missing.any() and not missing.all():
-                predicted[missing] = nns_gravity(predicted[~missing])
-            scores.append(score(predicted, actual))
-        threshold = cutoffs[best(scores)]
-
-        dim_red = nns_reg(x, y, point_est=x_test, dim_red_method=dim_red_method,
-                          threshold=threshold, **reg_args)
-        objective_2 = score(dim_red["Fitted.xy"]["y.hat"], dim_red["Fitted.xy"]["y"])
-        # Every regressor the threshold keeps (positive or negative coefficient)
-        coefficient = np.asarray(dim_red["equation"]["Coefficient"], dtype=np.float64)[:n]
-        relevant = np.flatnonzero(coefficient != 0.0).tolist() or list(range(n))
-        estimate_2 = point_est(dim_red)
-    else:
-        relevant = [0]
-
-    # Method 1: nns_reg on the relevant variables
-    best_k = 1
-    if len(relevant) > 1:
-        k_candidates = [*range(1, math.isqrt(n_rows) + 1), n_rows]
-        cv_scores = np.full(len(k_candidates), np.nan)
-        for index, k in enumerate(k_candidates):
-            predicted = point_est(nns_reg(cv_x[:, relevant], cv_y, point_est=cv_x_test[:, relevant],
-                                          n_best=k, point_only=True, **reg_args))
-            missing = np.isnan(predicted)
-            if missing.any() and not missing.all():
-                predicted[missing] = float(np.mean(predicted[~missing]))
-            cv_scores[index] = score(predicted, actual)
-
-            # Stop once the objective has failed to improve for two candidates
-            if np.count_nonzero(~np.isnan(cv_scores)) > 3:
-                cv_scores[np.isnan(cv_scores)] = (
-                    np.nanmax(cv_scores) if minimize else np.nanmin(cv_scores)
-                )
-                current, previous, before = cv_scores[[index, index - 1, index - 2]]
-                if minimize and current >= previous and current >= before:
-                    break
-                if not minimize and current <= previous and current <= before:
-                    break
-        best_k = k_candidates[best(cv_scores)]
-
-    reg = nns_reg(x[:, relevant], y, point_est=x_test[:, relevant], n_best=best_k, **reg_args)
-    objective_1 = score(reg["Fitted.xy"]["y.hat"], reg["Fitted.xy"]["y"])
-    estimate_1 = point_est(reg)
-
-    if n == 1:
-        return {"stack": estimate_1, "relevant": relevant, "weights": np.array([1.0, 0.0]),
-                "threshold": threshold, "n_best": best_k}
-
-    # Weights for combining NNS techniques
-    objectives = np.array([objective_1, objective_2], dtype=np.float64)
-    objectives[objectives == 0.0] = 1e-10
-    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-        weights = 1.0 / objectives**2 if minimize else objectives**2
-    weights = np.maximum(1e-10, weights)
-    weights[~np.isfinite(weights)] = 0.0
-    total = float(np.sum(weights))
-    weights = weights / total if total > 0.0 else np.array([0.5, 0.5])
-
-    missing_1 = np.isnan(estimate_1)
-    estimate_1[missing_1] = estimate_2[missing_1]
-    missing_2 = np.isnan(estimate_2)
-    estimate_2[missing_2] = estimate_1[missing_2]
-
-    return {
-        "stack": weights[0] * estimate_1 + weights[1] * estimate_2,
-        "relevant": relevant,
-        "weights": weights,
-        "threshold": threshold,
-        "n_best": best_k,
-    }
+    # Every regressor the threshold keeps (positive or negative coefficient)
+    fit = nns_reg(x, y, dim_red_method=dim_red_method, threshold=threshold, point_only=True,
+                  **reg_args)
+    coefficient = np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
+    return np.flatnonzero(coefficient != 0.0).tolist() or list(range(n))
 
 
 def _var_ensemble_weights(

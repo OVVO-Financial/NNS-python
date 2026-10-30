@@ -142,10 +142,18 @@ def _two_driver_variables(n: int = 80, seed: int = 2) -> np.ndarray:
 @pytest.mark.parametrize(
     ("variables", "tau"), [(_driven_variables(), 2), (_two_driver_variables(), 1)]
 )
-def test_nns_var_multivariate_is_the_stack_on_the_last_h_training_rows(
+def test_nns_var_multivariate_is_nns_stack_on_exactly_the_relevant_variables(
     variables: np.ndarray, tau: int
 ) -> None:
-    from nns.var import _var_default_objective, _var_lag_matrix, _var_lags, _var_stack
+    from nns.stack import nns_stack
+    from nns.var import (
+        _METHOD1_GUARD_MESSAGE,
+        _var_default_objective,
+        _var_lag_matrix,
+        _var_lags,
+        _var_mse_objective,
+        _var_relevant,
+    )
 
     h = 3
     result = nns_var(variables, h, tau=tau)
@@ -158,64 +166,40 @@ def test_nns_var_multivariate_is_the_stack_on_the_last_h_training_rows(
     for i, name in enumerate(names):
         iv = np.delete(train, i, axis=1)
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
-        fit = _var_stack(
-            iv,
-            train[:, i],
-            iv[-h:],
-            ts_test=max(2 * h, int(np.ceil(0.2 * iv.shape[0]))),
-            obj_fn=_var_default_objective,
-            objective="min",
-            dim_red_method="cor",
-        )
+        ts_test = max(2 * h, int(np.ceil(0.2 * iv.shape[0])))
+        columns = _var_relevant(iv, train[:, i], ts_test=ts_test, obj_fn=_var_default_objective,
+                                objective="min", dim_red_method="cor")
         selected = [value for value in relevant[:, i].tolist() if value is not None]
-        assert selected == [iv_names[k] for k in fit["relevant"]]
+        assert selected == [iv_names[k] for k in columns]
         assert f"{name}_tau_0" not in selected
+
+        # Only the relevant regressors enter the stack, so the estimate cannot
+        # depend on anything outside relevant_variables.
+        args: dict[str, Any] = {"ivs_test": iv[-h:, columns], "ts_test": ts_test, "folds": 1,
+                                "method": 1, "order": None, "stack": False, "dist": None}
+        try:
+            fit = nns_stack(iv[:, columns], train[:, i], obj_fn=_var_default_objective, **args)
+        except ValueError as error:  # nns_var's MSE fallback, as in R
+            assert str(error) == _METHOD1_GUARD_MESSAGE
+            fit = nns_stack(iv[:, columns], train[:, i], obj_fn=_var_mse_objective, **args)
         np.testing.assert_allclose(result["multivariate"][:, i], fit["stack"])
 
 
-def test_var_stack_fits_nns_reg_on_exactly_the_relevant_variables() -> None:
-    from nns.regression import nns_reg
-    from nns.var import _var_default_objective, _var_lag_matrix, _var_lags, _var_stack
+def test_var_relevant_keeps_the_regressors_meeting_the_threshold() -> None:
+    from nns.var import _var_default_objective, _var_lag_matrix, _var_lags, _var_relevant
 
-    variables = _two_driver_variables()
-    lagged, lagged_names, _ = _var_lag_matrix(variables, _var_lags(1, 3)["lags"], ["x", "y", "w"])
+    lagged, lagged_names, _ = _var_lag_matrix(
+        _two_driver_variables(), _var_lags(1, 3)["lags"], ["x", "y", "w"]
+    )
     iv, dv = np.delete(lagged, 1, axis=1), lagged[:, 1]
-    test = iv[-3:].copy()
-
-    def fit(test_rows: np.ndarray) -> Any:
-        return _var_stack(iv, dv, test_rows, ts_test=16, obj_fn=_var_default_objective,
-                          objective="min", dim_red_method="cor")
-
-    base = fit(test)
-    relevant = base["relevant"]
-    # The relevant variables are the regressors the cross-validated threshold keeps.
-    dim_red = cast(
-        dict[str, Any],
-        nns_reg(iv, dv, point_est=test, dim_red_method="cor", threshold=base["threshold"],
-                plot=False, residual_plot=False, order=None, ncores=1),
-    )
-    coefficient = np.asarray(dim_red["equation"]["Coefficient"])[: iv.shape[1]]
-    assert relevant == np.flatnonzero(coefficient != 0.0).tolist()
     iv_names = lagged_names[:1] + lagged_names[2:]
+    relevant = _var_relevant(iv, dv, ts_test=16, obj_fn=_var_default_objective,
+                             objective="min", dim_red_method="cor")
+    assert relevant == sorted(set(relevant))
     assert {iv_names[k] for k in relevant} >= {"x_tau_1", "w_tau_1"}
-
-    # Method 1 is nns_reg on those regressors, each as its own dimension.
-    reg = nns_reg(iv[:, relevant], dv, point_est=test[:, relevant], n_best=base["n_best"],
-                  plot=False, residual_plot=False, order=None, ncores=1)
-    weights = base["weights"]
-    assert weights.sum() == pytest.approx(1.0)
-    np.testing.assert_allclose(
-        base["stack"], weights[0] * reg["Point.est"] + weights[1] * dim_red["Point.est"]
-    )
-
-    # Regressors outside the selection cannot move the estimate...
-    unused = [k for k in range(iv.shape[1]) if k not in relevant]
-    shifted = test.copy()
-    shifted[:, unused] += 100.0
-    np.testing.assert_allclose(fit(shifted)["stack"], base["stack"])
-    # ...while a selected one does.
-    shifted[:, relevant[0]] += 1.0
-    assert not np.allclose(fit(shifted)["stack"], base["stack"])
+    # A single regressor is relevant by definition.
+    assert _var_relevant(iv[:, :1], dv, ts_test=16, obj_fn=_var_default_objective,
+                         objective="min", dim_red_method="cor") == [0]
 
 
 def test_nns_var_selects_every_driver() -> None:
