@@ -171,10 +171,10 @@
       },
       "Point.est": [
         2.35876858969354,
-        2.87974538349059
+        2.8797453834906
       ],
       "Prediction.Accuracy": [],
-      "R2": 0.228855792528303,
+      "R2": 0.228855792528304,
       "SE": 1.15820717336244,
       "class.levels": [],
       "derivative": {
@@ -356,6 +356,6 @@
     }
   },
   "label": "NNS.reg.factor_dimred",
-  "nns_version": "13.2",
+  "nns_version": "13.3",
   "schema_version": 2
 }
