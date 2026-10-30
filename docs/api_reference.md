@@ -295,7 +295,7 @@ Optimization surface for NNS ARMA-style forecasting.
 
 Closest R API: `NNS.VAR`.
 
-Nonparametric vector autoregression: univariate `nns_arma_optim` forecasts feed the lagged regressors of the forecast horizon, and an `nns_stack` fit per variable gives the multivariate estimate. `relevant_variables` lists exactly the lagged regressors each multivariate estimate is built from. `tau` accepts a positive integer, one lag per variable, or lag sequences; `obj_fn` (a `(predicted, actual) -> float` callable) and `objective` apply to both stages. DataFrame column names are kept.
+Nonparametric vector autoregression: univariate `nns_arma_optim` forecasts feed the lagged regressors of the forecast horizon; per variable, the `nns_stack` dimension reduction selects the relevant regressors and a multivariate `nns_stack(stack=False)` fit on exactly those regressors gives the multivariate estimate. `relevant_variables` lists exactly the lagged regressors each multivariate estimate is built from. `tau` accepts a positive integer, one lag per variable, or lag sequences; `obj_fn` (a `(predicted, actual) -> float` callable) and `objective` apply to both stages. DataFrame column names are kept.
 
 ### Distribution, ANOVA, normalization, and distance
 

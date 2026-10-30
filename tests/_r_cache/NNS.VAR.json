@@ -49,14 +49,14 @@
     "17c46fcc5682d4b241f0133ff0ec7ca10862ad67c7784593002b99bbb7b12e91": {
       "ensemble": {
         "x1": [
-          18.0121951219512,
-          19.0243902439024,
-          20.0365853658537
+          18.0,
+          19.0,
+          20.0
         ],
         "x2": [
-          40.9333333333333,
-          42.8666666666667,
-          44.8
+          40.8235294117647,
+          42.6470588235294,
+          44.4705882352941
         ]
       },
       "interpolated_and_extrapolated": {
@@ -107,26 +107,24 @@
       },
       "multivariate": {
         "x1": [
-          18.0243902439024,
-          19.0487804878049,
-          20.0731707317073
+          18.0,
+          19.0,
+          20.0
         ],
         "x2": [
-          40.8666666666667,
-          42.7333333333333,
-          44.6
+          40.6470588235294,
+          42.2941176470588,
+          43.9411764705882
         ]
       },
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -216,13 +214,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -312,13 +308,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -408,13 +402,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -504,13 +496,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -598,14 +588,8 @@
         ]
       },
       "relevant_variables": {
-        "x1": [
-          "x2_tau_0",
-          "x1_tau_1"
-        ],
-        "x2": [
-          "x1_tau_0",
-          "x1_tau_1"
-        ]
+        "x1": "x2_tau_0",
+        "x2": "x1_tau_0"
       },
       "univariate": {
         "x1": [
@@ -699,7 +683,7 @@
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
+          null,
           null
         ]
       },
@@ -790,13 +774,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -886,7 +868,7 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1"
+          null
         ],
         "x2": [
           "x1_tau_0",
@@ -980,13 +962,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {
@@ -1076,13 +1056,11 @@
       "relevant_variables": {
         "x1": [
           "x2_tau_0",
-          "x1_tau_1",
           null
         ],
         "x2": [
           "x1_tau_0",
-          "x1_tau_1",
-          "x1_tau_2"
+          "x1_tau_1"
         ]
       },
       "univariate": {

@@ -403,10 +403,13 @@ DataFrame keeps its column names) with `dim_red_method="cor"`,
 `dim_red_method="all"` and returns R-compatible public output keys. As in R,
 leading and interior missing values are filled from an index regression and
 trailing ones are `nns_arma_optim` extrapolations; each variable's univariate
-forecast then feeds the lagged regressors of the `h` forecast rows, and one
-`nns_stack(method=(1,2), ts_test=max(2h, ceil(0.2 n)))` fit per variable is
-evaluated on those rows. `relevant_variables` is that stack's
-`NNS.dim.red.variables` selection, so it lists exactly the regressors each
+forecast then feeds the lagged regressors of the `h` forecast rows. For each
+variable the `nns_stack` dimension reduction (`ts_test=max(2h, ceil(0.2 n))`)
+first selects the relevant regressors, and a true multivariate
+`nns_stack(stack=False)` fit on exactly those regressors, evaluated on the
+forecast rows, gives the multivariate estimate (`nns_reg` uses each selected
+regressor as its own dimension rather than one synthetic X*).
+`relevant_variables` is that selection, so it lists exactly the regressors each
 multivariate estimate is built from. `obj_fn` (a `(predicted, actual) -> float`
 callable) and `objective` apply to both stages; without `obj_fn` the default
 MSE / co-movement objective falls back to MSE when it is undefined for every

@@ -25,6 +25,7 @@ ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
 _METHOD1_GUARD_MESSAGE = (
     "No Method 1 candidate produced a finite complete-coverage OOF objective."
 )
+_NO_FINITE_CANDIDATE_MESSAGE = "No candidate produced a finite out-of-fold objective."
 
 
 class VarResult(TypedDict):
@@ -556,8 +557,6 @@ def _var_multivariate_stack_stage(
     objective_value = _var_validate_objective(objective)
     dim_red_value = _var_validate_dim_red_method(dim_red_method)
 
-    from nns.stack import Objective, nns_stack
-
     if names is None:
         names = [f"x{i + 1}" for i in range(n_vars)]
     if len(names) != n_vars:
@@ -587,38 +586,47 @@ def _var_multivariate_stack_stage(
         ivs_test = np.delete(lagged_test, i, axis=1)
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
         ts_test = max(2 * h, math.ceil(0.2 * lagged_dv.size))
-        stack_args: dict[str, Any] = {
-            "ivs_test": ivs_test,
-            "folds": 1,
-            "method": (1, 2),
-            "order": None,
-            "stack": True,
+
+        fit_args: dict[str, Any] = {
+            "obj_fn": stack_obj_fn,
+            "objective": objective_value,
+            "use_default_objective": use_default_objective,
             "dim_red_method": dim_red_value,
             "ts_test": ts_test,
-            "dist": None,
         }
 
-        try:
-            result = nns_stack(
-                lagged_iv,
-                lagged_dv,
-                obj_fn=stack_obj_fn,
-                objective=cast(Objective, objective_value),
-                **stack_args,
+        # Step 1: the nns_stack dimension reduction selects the relevant
+        # regressors (Method 2 alone makes exactly the selection it makes inside
+        # a full stack). A single regressor needs no selection.
+        columns = list(range(lagged_iv.shape[1]))
+        if len(columns) > 1:
+            selection = _var_fit_stack(
+                lagged_iv, lagged_dv, ivs_test, method=(2,), stack=True, **fit_args
             )
-        except ValueError as error:
-            if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
-                raise
-            result = nns_stack(
-                lagged_iv, lagged_dv, obj_fn=_var_mse_objective, objective="min", **stack_args
-            )
+            selected = selection.get("NNS.dim.red.variables")
+            if selected is not None and np.asarray(selected).size:
+                columns = [int(k) for k in np.asarray(selected).tolist()]
 
-        selected = result.get("NNS.dim.red.variables")
-        if selected is None or np.asarray(selected).size == 0:
-            rel_vars = list(iv_names)
-        else:
-            rel_vars = [iv_names[int(k)] for k in np.asarray(selected).tolist()]
-        relevant_variables.append(rel_vars)
+        # Step 2: a true multivariate nns_stack fit (stack=False) on exactly the
+        # relevant regressors, so nns_reg uses every one of them instead of a
+        # single synthetic X* regressor. One regressor has no dimension
+        # reduction step (R drops Method 2 the same way).
+        result = _var_fit_stack(
+            lagged_iv[:, columns],
+            lagged_dv,
+            ivs_test[:, columns],
+            method=(1, 2) if len(columns) > 1 else (1,),
+            stack=False,
+            **fit_args,
+        )
+        used = columns
+        weights = cast(dict[str, float], result["weights"])
+        reduced = result.get("NNS.dim.red.variables")
+        if weights.get("reg") == 0.0 and reduced is not None and np.asarray(reduced).size:
+            # Without NNS.reg weight only the dimension reduction component
+            # remains; report the regressors that component carries.
+            used = [columns[int(k)] for k in np.asarray(reduced).tolist()]
+        relevant_variables.append([iv_names[k] for k in used])
 
         nns_dv = np.asarray(result["stack"], dtype=np.float64).reshape(-1)[:h].copy()
         missing = ~np.isfinite(nns_dv)
@@ -637,6 +645,51 @@ def _var_multivariate_stack_stage(
         "relevant_variables": rv_matrix,
         "names": names_list,
     }
+
+
+def _var_fit_stack(
+    ivs_train: NDArray[np.float64],
+    dv_train: NDArray[np.float64],
+    ivs_test: NDArray[np.float64],
+    *,
+    obj_fn: ObjectiveFn,
+    objective: str,
+    use_default_objective: bool,
+    method: tuple[int, ...],
+    stack: bool,
+    dim_red_method: str,
+    ts_test: int,
+) -> dict[str, Any]:
+    """One NNS.VAR ``nns_stack`` call. The built-in co-movement ratio objective
+    falls back to plain MSE when it is undefined for every candidate; a user
+    objective is never overridden."""
+    from nns.stack import Objective, nns_stack
+
+    stack_args: dict[str, Any] = {
+        "ivs_test": ivs_test,
+        "folds": 1,
+        "method": method,
+        "order": None,
+        "stack": stack,
+        "dim_red_method": dim_red_method,
+        "ts_test": ts_test,
+        "dist": None,
+    }
+    try:
+        return nns_stack(
+            ivs_train,
+            dv_train,
+            obj_fn=obj_fn,
+            objective=cast(Objective, objective),
+            **stack_args,
+        )
+    except ValueError as error:
+        degenerate = str(error) in {_METHOD1_GUARD_MESSAGE, _NO_FINITE_CANDIDATE_MESSAGE}
+        if not (use_default_objective and degenerate):
+            raise
+        return nns_stack(
+            ivs_train, dv_train, obj_fn=_var_mse_objective, objective="min", **stack_args
+        )
 
 
 def _var_ensemble_weights(

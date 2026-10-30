@@ -200,10 +200,36 @@ def _expected_var_multivariate_reference(
 
 # The perfectly linear 20-row fixture is degenerate for NNS.caus: every lagged
 # regressor ties, and R and the port normalize the series ~1e-15 apart, which
-# flips partition ties inside NNS.dep. On that fixture only, the causation-based
-# selections are compared for validity and the forecasts to 1%; the driven-series
-# tests below hold NNS.caus / "all" to exact parity.
+# flips partition ties inside NNS.dep and can change how many regressors the
+# dimension reduction keeps. On that fixture only, causation-based selections are
+# checked for validity and a variable's forecasts are compared exactly when R and
+# the port selected the same regressors; the driven-series tests below hold
+# NNS.caus / "all" to exact parity everywhere.
 _DEGENERATE_CAUSATION = {"NNS.caus", "all"}
+
+
+def _selection(relevant: np.ndarray, column: int) -> set[str]:
+    return {value for value in relevant[:, column].tolist() if value is not None}
+
+
+def _assert_degenerate_causation_matches(
+    actual: dict[str, Any], expected: dict[str, Any], names: list[str], tau: Any
+) -> None:
+    actual_relevant = cast(np.ndarray, actual["relevant_variables"])
+    expected_relevant = cast(np.ndarray, expected["relevant_variables"])
+    _assert_valid_relevant_variables(actual_relevant, names, tau)
+    compared = 0
+    for column in range(len(names)):
+        if _selection(actual_relevant, column) != _selection(expected_relevant, column):
+            continue
+        compared += 1
+        for key in ("multivariate", "ensemble"):
+            if key in actual:
+                _assert_public_numeric_close(
+                    cast(np.ndarray, actual[key])[:, column],
+                    cast(np.ndarray, expected[key])[:, column],
+                )
+    assert compared > 0
 
 
 def _assert_valid_relevant_variables(relevant: np.ndarray, names: list[str], tau: Any) -> None:
@@ -329,8 +355,7 @@ def test_var_multivariate_stack_stage_matches_r(
 
     assert actual_result["names"] == names
     if dim_red_method in _DEGENERATE_CAUSATION:
-        _assert_public_numeric_close(actual_multivariate, expected_multivariate, rel_pct=1.0)
-        _assert_valid_relevant_variables(actual_relevant, names, tau)
+        _assert_degenerate_causation_matches(actual_result, expected_result, names, tau)
         return
     np.testing.assert_allclose(actual_multivariate, expected_multivariate, equal_nan=True)
     assert actual_relevant.shape == expected_relevant.shape
@@ -463,9 +488,10 @@ def test_public_nns_var_nns_caus_matches_r() -> None:
         expected_values = cast(np.ndarray, expected_result[key])
         assert actual_values.shape == expected_values.shape
         assert np.all(np.isfinite(actual_values))
-        _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
-    _assert_valid_relevant_variables(
-        cast(np.ndarray, actual_result["relevant_variables"]), actual_result["names"], 2
+        if key in {"interpolated_and_extrapolated", "univariate"}:
+            _assert_public_numeric_close(actual_values, expected_values)
+    _assert_degenerate_causation_matches(
+        cast(dict[str, Any], actual_result), expected_result, actual_result["names"], 2
     )
 
 
@@ -494,9 +520,10 @@ def test_public_nns_var_all_matches_r() -> None:
         expected_values = cast(np.ndarray, expected_result[key])
         assert actual_values.shape == expected_values.shape
         assert np.all(np.isfinite(actual_values))
-        _assert_public_numeric_close(actual_values, expected_values, rel_pct=1.0)
-    _assert_valid_relevant_variables(
-        cast(np.ndarray, actual_result["relevant_variables"]), actual_result["names"], 2
+        if key in {"interpolated_and_extrapolated", "univariate"}:
+            _assert_public_numeric_close(actual_values, expected_values)
+    _assert_degenerate_causation_matches(
+        cast(dict[str, Any], actual_result), expected_result, actual_result["names"], 2
     )
 
 
