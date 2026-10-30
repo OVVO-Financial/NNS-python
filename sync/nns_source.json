@@ -1,6 +1,6 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "f4605d09a643138f17ad07726a300f22f10fbde5",
+  "r_commit": "d14beb6bc0a05b837d41f71dc5acee491c7c8488",
   "r_version": "13.3",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
@@ -11,5 +11,5 @@
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache",
-  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the 13.2 Beta commit carrying the reconciled NNS.boost (LPM.VaR probability threshold, replicated multivariate final stack) that generated the committed parity cache. The vendored native snapshot (tools/NNS, r_src_tree_hash, tarball) and NNS-core commit are left at their prior values; re-syncing the native snapshot is a separate NNS-core snapshot update."
+  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the 13.3 Beta commit that generated the committed parity cache; its NNS.VAR fits the multivariate estimate with NNS.stack(stack = FALSE) on the relevant variables. The 13.3 Beta commit f4605d0 differs from it only in R/NNS_VAR.R, so the non-VAR shards it produced are unchanged. The vendored native snapshot (tools/NNS, r_src_tree_hash, tarball) and NNS-core commit are left at their prior values; re-syncing the native snapshot is a separate NNS-core snapshot update."
 }
