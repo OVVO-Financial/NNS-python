@@ -13,14 +13,14 @@
       "Confidence_Level": 0.95,
       "Control": 0.0191268165633628,
       "Control_CDF": 0.559051831188266,
-      "Effect_Size_LB.2.5%": -0.596872653374548,
-      "Effect_Size_UB.97.5%": 1.13744713859144,
+      "Effect_Size_LB.2.5%": -0.582780571373545,
+      "Effect_Size_UB.97.5%": 1.09407110103691,
       "Grand_Statistic": 0.142983064395218,
-      "Lower 95% CI": 0.136423529063646,
-      "Robust Certainty Estimate": 0.616237221489764,
+      "Lower 95% CI": 0.134129885947543,
+      "Robust Certainty Estimate": 0.580150268520339,
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534,
-      "Upper 95% CI": 0.879299549713426
+      "Upper 95% CI": 0.886414320951287
     },
     "50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
     "771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
