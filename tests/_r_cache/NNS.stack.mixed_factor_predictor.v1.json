@@ -1,7 +1,14 @@
 {
   "entries": {
     "59168a954aecc910b0493a25cc94caee7c289c0584306e5af56032fad3781d5f": {
+      "NNS.dim.red.coefficients": [
+        -0.845154254728517,
+        0.0,
+        0.755928946018455,
+        0.0
+      ],
       "NNS.dim.red.threshold": 0.755928946018455,
+      "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": NaN,
       "OBJfn.dim.red": 0.00206611570247933,
       "OBJfn.reg": NaN,
@@ -27,7 +34,14 @@
       ]
     },
     "62b2a044862b9fad7235405aa665f2bc331ce1076f28469aac2089aa140bbfaf": {
+      "NNS.dim.red.coefficients": [
+        -0.845154254728517,
+        0.0,
+        0.755928946018455,
+        0.0
+      ],
       "NNS.dim.red.threshold": 0.755928946018455,
+      "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": 1.0,
       "OBJfn.dim.red": 0.00206611570247933,
       "OBJfn.reg": 0.8515625,
@@ -58,6 +72,6 @@
     }
   },
   "label": "NNS.stack.mixed_factor_predictor.v1",
-  "nns_version": "13.2",
+  "nns_version": "13.3",
   "schema_version": 2
 }

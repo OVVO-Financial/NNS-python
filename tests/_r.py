@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 _CACHE_DIR = Path(__file__).with_name("_r_cache")
 _LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
 _SCHEMA_VERSION = 2
-_NNS_VERSION = '13.2'
+_NNS_VERSION = '13.3'
 _KEY_SEPARATOR = "|"
 JsonValue: TypeAlias = str | float | list["JsonValue"] | dict[str, "JsonValue"] | None
 RValue: TypeAlias = (

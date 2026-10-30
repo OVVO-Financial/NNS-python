@@ -46,7 +46,7 @@ class _LagSpec(TypedDict):
 
 def nns_var(
     variables: Any,
-    h: int = 1,
+    h: int,
     tau: int | Sequence[int] | Sequence[int | Sequence[int]] = 1,
     *,
     dim_red_method: str = "cor",
@@ -63,14 +63,16 @@ def nns_var(
     DataFrame's column names are kept) and may contain NaN for missing or
     mixed-frequency observations. ``tau`` is a positive integer (lags
     ``1..tau`` for every variable), a sequence with one lag per variable, or a
-    sequence of lag sequences (one per variable, or one shared by all).
-    ``obj_fn`` is an optional ``obj_fn(predicted, actual) -> float`` used for
-    both the univariate ``nns_arma_optim`` and the multivariate ``nns_stack``
-    stages; ``None`` uses R's MSE / co-movement default.
+    sequence of lag sequences (one per variable). ``obj_fn`` is an optional
+    ``obj_fn(predicted, actual) -> float`` used for both the univariate
+    ``nns_arma_optim`` and the multivariate stages; ``None`` uses R's MSE /
+    co-movement default.
 
-    ``relevant_variables`` lists, per variable, the lagged regressors chosen by
-    the ``nns_stack`` dimension reduction (ranked by absolute coefficient):
-    exactly the regressors the ``multivariate`` estimate is built from.
+    ``relevant_variables`` lists, per variable, the lagged regressors whose
+    dimension reduction coefficient meets the cross-validated threshold. They
+    are the only regressors in the ``multivariate`` estimate:
+    ``nns_stack(method=1, stack=False)`` (``nns_reg``) on them, each as its own
+    dimension.
 
     For ``h == 0`` the result is a dictionary with ``interpolated_and_extrapolated``
     and ``names`` instead of R's bare data frame. ``ncores`` and ``nowcast``
@@ -259,8 +261,9 @@ def _var_lags(
 ) -> _LagSpec:
     """Expand ``tau`` to one lag list per variable, mirroring R ``NNS.VAR``.
 
-    ``modulo`` is each variable's ``nns_seas`` modulo: its smallest lag (a scalar
-    ``tau`` keeps ``tau``).
+    ``modulo`` is each variable's ``nns_seas`` modulo, R's ``min(tau_i)``: the
+    smallest lag of the variable's own lag vector for a list ``tau``, and the
+    smallest lag of ``tau`` itself otherwise.
     """
     if _is_lag_scalar(tau):
         lag = _var_lag_values(tau)[0]
@@ -279,7 +282,8 @@ def _var_lags(
             return _var_lags(values[0], n_vars)
         if len(values) != n_vars:
             _invalid_tau()
-        return {"lags": [[value] for value in values], "modulo": values, "max": max(values)}
+        return {"lags": [[value] for value in values], "modulo": [min(values)] * n_vars,
+                "max": max(values)}
 
     # A list of lag vectors (R list(...)): one per variable, or one shared.
     if len(entries) == 1:
@@ -295,8 +299,8 @@ def _var_lags(
 
 
 def _var_check_sample_size(n_rows: int, h: int, max_tau: int) -> None:
-    # nns_stack holds out max(2h, 20%) of the lagged training rows and needs at
-    # least three fitting rows ahead of that window.
+    # The multivariate stage holds out max(2h, 20%) of the lagged training rows
+    # for validation and needs at least three fitting rows ahead of that window.
     n_lagged = n_rows - max_tau
     needed = max(2 * h + 3, 4)
     if n_lagged < needed:
@@ -320,10 +324,14 @@ def _var_interpolate_and_extrapolate(
 ) -> VarResult:
     """Fill missing values and generate univariate ARMA forecasts per column.
 
-    Leading and interior NaNs are filled from an ``nns_reg`` fit on the index
-    (observed values are never smoothed); trailing NaNs are ``nns_arma_optim``
-    extrapolations of the gap-filled history.
+    With trailing NaNs every missing value comes from an ``nns_stack`` Method 1
+    fit on the index; otherwise interior NaNs come from an ``nns_reg`` fit on
+    the index. Observed values are never smoothed.
     """
+    from nns.arma import nns_arma_optim
+    from nns.seasonality import nns_seas
+    from nns.stack import nns_stack
+
     vars_matrix = np.asarray(variables, dtype=np.float64)
     if vars_matrix.ndim != 2:
         raise ValueError("variables must be a 2-D matrix.")
@@ -339,44 +347,55 @@ def _var_interpolate_and_extrapolate(
 
     interpolated = np.empty_like(vars_matrix)
     univariate_columns: list[NDArray[np.float64]] = []
-    rows = np.arange(n_rows)
 
     for j in range(n_vars):
         x = vars_matrix[:, j]
         observed = np.flatnonzero(~np.isnan(x))
         if observed.size == 0:
             raise ValueError("Variable contains only missing values.")
-        last_observed = int(observed[-1])
-        nonneg = bool(np.nanmin(x) >= 0.0)
+        missing = np.flatnonzero(np.isnan(x))
+        index = observed.astype(np.float64) + 1.0
         filled = x.copy()
 
-        inner_missing = np.flatnonzero(np.isnan(x) & (rows < last_observed))
-        if inner_missing.size:
-            filled[inner_missing] = _var_index_fit(
-                observed.astype(np.float64) + 1.0,
+        if missing.size and observed[-1] < n_rows - 1:
+            # Trailing NaN(s): nns_stack on the index, duplicated into two
+            # identical predictors so the multivariate machinery has two columns.
+            at = missing.astype(np.float64) + 1.0
+            fill = nns_stack(
+                np.column_stack((index, index)),
                 x[observed],
-                inner_missing.astype(np.float64) + 1.0,
-            )
-
-        if last_observed < n_rows - 1:
-            trailing = np.arange(last_observed + 1, n_rows)
-            filled[trailing] = _var_extrapolate(
-                filled[: last_observed + 1],
-                trailing.size,
-                lag_spec["modulo"][j],
-                nonneg,
-                obj_fn,
-                objective,
-            )
-
-        if nonneg:
-            filled = np.maximum(0.0, filled)
+                ivs_test=np.column_stack((at, at)),
+                order=None,
+                folds=5,
+                method=1,
+                status=False,
+                dist=None,
+            )["stack"]
+            filled[missing] = np.asarray(fill, dtype=np.float64).reshape(-1)
+        elif missing.size:
+            filled[missing] = _var_index_fit(index, x[observed], missing.astype(np.float64) + 1.0)
         interpolated[:, j] = filled
 
         if h > 0:
-            univariate_columns.append(
-                _var_arma(filled, h, lag_spec["modulo"][j], nonneg, obj_fn, objective)
+            periods: NDArray[np.int64] | None
+            try:
+                periods = nns_seas(filled, modulo=lag_spec["modulo"][j], mod_only=False)["periods"]
+                if not isinstance(periods, np.ndarray) or periods.size == 0:
+                    periods = None
+            except Exception:
+                periods = None
+            result = nns_arma_optim(
+                filled,
+                h=h,
+                seasonal_factor=periods,
+                negative_values=float(np.min(filled)) < 0.0,
+                obj_fn=obj_fn,
+                objective=objective,
             )
+            univariate_columns.append(np.asarray(result["results"], dtype=np.float64).reshape(-1))
+
+    positive = np.nanmin(vars_matrix, axis=0) > 0.0
+    interpolated[:, positive] = np.maximum(0.0, interpolated[:, positive])
 
     if h == 0:
         return {
@@ -396,8 +415,7 @@ def _var_index_fit(
     values: NDArray[np.float64],
     at: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Fit a series on its index and evaluate it at ``at`` (interpolation inside
-    the observed range, linear extrapolation outside it)."""
+    """Fit a series on its index (``order="max"``) and evaluate it at ``at``."""
     if index.size < 2:
         return np.full(at.size, float(values[0]))
     from nns.regression import nns_reg
@@ -414,78 +432,8 @@ def _var_index_fit(
     return np.asarray(fitted, dtype=np.float64).reshape(-1)
 
 
-def _var_arma(
-    series: NDArray[np.float64],
-    horizon: int,
-    modulo: int,
-    nonneg: bool,
-    obj_fn: ObjectiveFn | None,
-    objective: str,
-) -> NDArray[np.float64]:
-    """``nns_arma_optim`` forecast with R's seasonal-period fallback chain: the
-    modulo ``nns_seas`` periods, then the unrestricted periods, then lag 1."""
-    from nns.arma import nns_arma_optim
-    from nns.seasonality import nns_seas
-
-    def seas_periods(modulo_value: int | None) -> NDArray[np.int64]:
-        try:
-            periods = nns_seas(series, modulo=modulo_value, mod_only=False)["periods"]
-        except Exception:
-            return np.empty(0, dtype=np.int64)
-        values = np.asarray(periods, dtype=np.float64).reshape(-1)
-        whole = values[np.isfinite(values)].astype(np.int64)
-        return whole[whole >= 1]
-
-    candidates: list[Callable[[], NDArray[np.int64]]] = [
-        lambda: seas_periods(modulo),
-        lambda: seas_periods(None),
-        lambda: np.array([1], dtype=np.int64),
-    ]
-    failure: Exception | None = None
-    for candidate in candidates:
-        periods = candidate()
-        if periods.size == 0:
-            continue
-        try:
-            result = nns_arma_optim(
-                series,
-                h=horizon,
-                seasonal_factor=periods,
-                negative_values=not nonneg,
-                obj_fn=obj_fn,
-                objective=objective,
-            )
-        except Exception as error:  # mirror R's tryCatch over NNS.ARMA.optim
-            failure = error
-            continue
-        forecast = np.asarray(result["results"], dtype=np.float64).reshape(-1)
-        return np.maximum(0.0, forecast) if nonneg else forecast
-    raise ValueError(
-        "nns_arma_optim failed for every seasonal-period candidate: "
-        + ("no candidate periods" if failure is None else str(failure))
-    ) from failure
-
-
-def _var_extrapolate(
-    history: NDArray[np.float64],
-    horizon: int,
-    modulo: int,
-    nonneg: bool,
-    obj_fn: ObjectiveFn | None,
-    objective: str,
-) -> NDArray[np.float64]:
-    """Trailing NaNs: ARMA extrapolation, or a linear index fit when the history
-    is too short for ``nns_arma_optim``."""
-    try:
-        return _var_arma(history, horizon, modulo, nonneg, obj_fn, objective)
-    except Exception:
-        index = np.arange(1.0, history.size + 1.0)
-        out = _var_index_fit(index, history, history.size + np.arange(1.0, horizon + 1.0))
-        return np.maximum(0.0, out) if nonneg else out
-
-
 # --------------------------------------------------------------------------
-# Stage 2: multivariate nns_stack estimates
+# Stage 2: multivariate estimates
 # --------------------------------------------------------------------------
 
 def _r_mean(values: NDArray[np.float64]) -> float:
@@ -517,12 +465,6 @@ def _var_default_objective(predicted: NDArray[np.float64], actual: NDArray[np.fl
     return float(np.mean((predicted_values - actual_values) ** 2) / divisor)
 
 
-def _var_mse_objective(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
-    predicted_values = np.asarray(predicted, dtype=np.float64)
-    actual_values = np.asarray(actual, dtype=np.float64)
-    return float(np.mean((predicted_values - actual_values) ** 2))
-
-
 def _var_multivariate_stack_stage(
     interpolated: NDArray[np.float64],
     univariate: NDArray[np.float64],
@@ -535,10 +477,10 @@ def _var_multivariate_stack_stage(
 ) -> dict[str, object]:
     """Multivariate ``nns_stack`` forecasts over the lagged VAR design.
 
-    The model is trained on the observed lagged rows and evaluated on the last
-    ``h`` lagged rows - the forecast horizon, whose regressors carry the
-    univariate forecasts. ``relevant_variables`` are the regressors selected by
-    the stack's dimension reduction, i.e. exactly those the estimate uses.
+    Per variable, the relevant variables are the regressors the cross-validated
+    dimension reduction threshold keeps, and the estimate is ``nns_stack`` on
+    exactly those regressors, trained on the observed lagged rows and evaluated
+    on the last ``h`` of them (R's ``tail(IV, h)``).
     """
     interpolated_matrix = np.asarray(interpolated, dtype=np.float64)
     univariate_matrix = np.asarray(univariate, dtype=np.float64)
@@ -556,8 +498,6 @@ def _var_multivariate_stack_stage(
     objective_value = _var_validate_objective(objective)
     dim_red_value = _var_validate_dim_red_method(dim_red_method)
 
-    from nns.stack import Objective, nns_stack
-
     if names is None:
         names = [f"x{i + 1}" for i in range(n_vars)]
     if len(names) != n_vars:
@@ -569,14 +509,11 @@ def _var_multivariate_stack_stage(
     new_values = np.vstack((interpolated_matrix, univariate_matrix))
     lagged, lagged_names, _ = _var_lag_matrix(new_values, lag_spec["lags"], names_list)
     lagged_train = lagged[:-h, :]
-    lagged_test = lagged[-h:, :]
-
+    stack_obj_fn = _var_default_objective if obj_fn is None else obj_fn
     # Mirror R NNS.VAR: only the built-in co-movement ratio objective (no user
     # obj_fn, objective == "min") may fall back to plain MSE when every Method 1
     # candidate is non-finite. A user objective is never overridden.
     use_default_objective = obj_fn is None and objective_value == "min"
-    stack_obj_fn = _var_default_objective if obj_fn is None else obj_fn
-    nonneg = np.nanmin(interpolated_matrix, axis=0) >= 0.0
 
     multivariate_outputs: list[NDArray[np.float64]] = []
     relevant_variables: list[list[str]] = []
@@ -584,47 +521,37 @@ def _var_multivariate_stack_stage(
         # Column i is variable i's contemporaneous (tau_0) column.
         lagged_iv = np.delete(lagged_train, i, axis=1)
         lagged_dv = lagged_train[:, i]
-        ivs_test = np.delete(lagged_test, i, axis=1)
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
         ts_test = max(2 * h, math.ceil(0.2 * lagged_dv.size))
-        stack_args: dict[str, Any] = {
-            "ivs_test": ivs_test,
-            "folds": 1,
-            "method": (1, 2),
-            "order": None,
-            "stack": True,
-            "dim_red_method": dim_red_value,
-            "ts_test": ts_test,
-            "dist": None,
-        }
 
-        try:
-            result = nns_stack(
-                lagged_iv,
-                lagged_dv,
-                obj_fn=stack_obj_fn,
-                objective=cast(Objective, objective_value),
-                **stack_args,
-            )
-        except ValueError as error:
-            if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
-                raise
-            result = nns_stack(
-                lagged_iv, lagged_dv, obj_fn=_var_mse_objective, objective="min", **stack_args
-            )
+        # Relevant variables (NNS 11.6): the regressors whose dimension
+        # reduction coefficient meets the cross-validated threshold
+        relevant = _var_relevant(
+            lagged_iv,
+            lagged_dv,
+            ts_test=ts_test,
+            obj_fn=stack_obj_fn,
+            objective=objective_value,
+            dim_red_method=dim_red_value,
+        )
+        relevant_variables.append([iv_names[k] for k in relevant])
 
-        selected = result.get("NNS.dim.red.variables")
-        if selected is None or np.asarray(selected).size == 0:
-            rel_vars = list(iv_names)
-        else:
-            rel_vars = [iv_names[int(k)] for k in np.asarray(selected).tolist()]
-        relevant_variables.append(rel_vars)
+        # Multivariate estimate: nns_stack (Method 1, nns_reg) on exactly the
+        # relevant variables, each its own dimension.
+        result = _var_fit_stack(
+            lagged_iv[:, relevant],
+            lagged_dv,
+            lagged_iv[-h:, relevant],
+            ts_test=ts_test,
+            obj_fn=stack_obj_fn,
+            objective=objective_value,
+            use_default_objective=use_default_objective,
+            dim_red_method=dim_red_value,
+        )
 
         nns_dv = np.asarray(result["stack"], dtype=np.float64).reshape(-1)[:h].copy()
-        missing = ~np.isfinite(nns_dv)
+        missing = np.isnan(nns_dv)
         nns_dv[missing] = univariate_matrix[missing, i]
-        if nonneg[i]:
-            nns_dv = np.maximum(0.0, nns_dv)
         multivariate_outputs.append(nns_dv)
 
     max_relevant = max((len(col) for col in relevant_variables), default=0)
@@ -637,6 +564,126 @@ def _var_multivariate_stack_stage(
         "relevant_variables": rv_matrix,
         "names": names_list,
     }
+
+
+def _var_fit_stack(
+    ivs_train: NDArray[np.float64],
+    dv_train: NDArray[np.float64],
+    ivs_test: NDArray[np.float64],
+    *,
+    ts_test: int,
+    obj_fn: ObjectiveFn,
+    objective: str,
+    use_default_objective: bool,
+    dim_red_method: str,
+) -> dict[str, Any]:
+    """NNS.VAR's ``nns_stack`` call (``method=1``, ``stack=False``). The built-in
+    co-movement ratio objective falls back to plain MSE when it is undefined for
+    every Method 1 candidate; a user objective is never overridden."""
+    from nns.stack import Objective, nns_stack
+
+    stack_args: dict[str, Any] = {
+        "ivs_test": ivs_test,
+        "ts_test": ts_test,
+        "folds": 1,
+        "method": 1,
+        "dim_red_method": dim_red_method,
+        "order": None,
+        "stack": False,
+        "dist": None,
+    }
+    try:
+        return nns_stack(
+            ivs_train, dv_train, obj_fn=obj_fn, objective=cast(Objective, objective), **stack_args
+        )
+    except ValueError as error:
+        if not (use_default_objective and str(error) == _METHOD1_GUARD_MESSAGE):
+            raise
+        return nns_stack(
+            ivs_train, dv_train, obj_fn=_var_mse_objective, objective="min", **stack_args
+        )
+
+
+def _var_mse_objective(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
+    predicted_values = np.asarray(predicted, dtype=np.float64)
+    actual_values = np.asarray(actual, dtype=np.float64)
+    return float(np.mean((predicted_values - actual_values) ** 2))
+
+
+def _var_relevant(
+    ivs_train: NDArray[np.float64],
+    dv_train: NDArray[np.float64],
+    *,
+    ts_test: int,
+    obj_fn: ObjectiveFn,
+    objective: str,
+    dim_red_method: str,
+) -> list[int]:
+    """R ``.nns_var_relevant``: relevant variables as NNS 11.6's NNS.VAR found them.
+
+    Cross-validates the dimension reduction threshold over NNS 11.6's
+    ``NNS.stack`` cutoff grid (validated on the last ``ts_test`` rows) and
+    returns the column indices of every regressor whose coefficient meets it.
+    """
+    from nns.central_tendencies import nns_gravity
+    from nns.regression import nns_reg
+    from nns.stack import _spearman_signed
+
+    x = np.asarray(ivs_train, dtype=np.float64)
+    y = np.asarray(dv_train, dtype=np.float64)
+    n_rows, n = x.shape
+    if n == 1:
+        return [0]
+    reg_args: dict[str, Any] = {"plot": False, "residual_plot": False, "order": None, "ncores": 1}
+
+    def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
+        if dim_red_method == "cor":
+            return _spearman_signed(xs, ys)
+        fit = nns_reg(xs, ys, dim_red_method=dim_red_method, point_only=True, **reg_args)
+        return np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
+
+    def rounded(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        # R abs(round(x, 2)): Python's round() also rounds the exact binary value.
+        return np.array([np.nan if np.isnan(v) else abs(round(float(v), 2)) for v in values])
+
+    split = n_rows - ts_test
+    cv_x, cv_x_test = x[:split], x[split:]
+    cv_y, actual = y[:split], y[split:]
+
+    cutoffs_1 = rounded(coefficients(x, y))
+    cutoffs_2 = rounded(coefficients(cv_x, cv_y))
+    var_cutoffs = np.minimum(cutoffs_1, (cutoffs_1 + cutoffs_2) / 2.0)
+    in_range = (var_cutoffs < 1.0) & (var_cutoffs >= 0.0)
+    var_cutoffs = var_cutoffs[np.isnan(var_cutoffs) | in_range]
+    var_cutoffs[np.isnan(var_cutoffs)] = 0.0
+    cutoffs = sorted(set(var_cutoffs.tolist()), reverse=True)[1:] or [0.0]
+    if n == 2 and 0.0 not in cutoffs:
+        cutoffs.append(0.0)
+
+    scores: list[float] = []
+    for cutoff in cutoffs:
+        fit = nns_reg(cv_x, cv_y, point_est=cv_x_test, dim_red_method=dim_red_method,
+                      threshold=cutoff, point_only=True, **reg_args)
+        predicted = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1).copy()
+        missing = np.isnan(predicted)
+        if missing.any() and not missing.all():
+            predicted[missing] = nns_gravity(predicted[~missing])
+        scores.append(float(obj_fn(predicted, actual)))
+
+    # R which.min / which.max: first optimum, NaN ignored
+    values = np.asarray(scores, dtype=np.float64)
+    candidates = np.flatnonzero(~np.isnan(values))
+    best = 0
+    if candidates.size:
+        subset = values[candidates]
+        best = int(candidates[np.argmin(subset) if objective == "min" else np.argmax(subset)])
+    threshold = cutoffs[best]
+
+    # Every regressor the threshold keeps (positive or negative coefficient)
+    fit = nns_reg(x, y, dim_red_method=dim_red_method, threshold=threshold, point_only=True,
+                  **reg_args)
+    coefficient = np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
+    return np.flatnonzero(coefficient != 0.0).tolist() or list(range(n))
 
 
 def _var_ensemble_weights(

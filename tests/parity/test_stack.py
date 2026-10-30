@@ -222,7 +222,9 @@ def test_nns_stack_mixed_factor_predictor_method2_matches_r() -> None:
         dist=None,
     )
 
-    _assert_stack_matches(actual, expected, exact_probability_threshold=False)
+    _assert_stack_matches(
+        actual, expected, exact_probability_threshold=False, predictor_names=["x", "z"]
+    )
 
 
 @pytest.mark.parity
@@ -263,7 +265,9 @@ def test_nns_stack_mixed_factor_predictor_method12_matches_r() -> None:
         dist=None,
     )
 
-    _assert_stack_matches(actual, expected, exact_probability_threshold=False)
+    _assert_stack_matches(
+        actual, expected, exact_probability_threshold=False, predictor_names=["x", "z"]
+    )
 
 
 @pytest.mark.parity
@@ -843,18 +847,29 @@ _RNG_DEPENDENT_KEYS = {"OBJfn.reg", "OBJfn.dim.red", "probability.threshold"}
 _SELECTION_KEYS = {"NNS.dim.red.variables", "NNS.dim.red.coefficients"}
 
 
-def _assert_selection_matches(key: str, actual: Any, expected: Any) -> None:
+def _assert_selection_matches(
+    key: str, actual: Any, expected: Any, predictor_names: list[str] | None = None
+) -> None:
     if actual is None:
         assert expected is None or expected == {} or np.asarray(expected).size == 0
         return
     if key == "NNS.dim.red.coefficients":
-        np.testing.assert_allclose(
-            np.asarray(actual, dtype=np.float64), _numeric(expected), atol=COMPOUND
-        )
+        actual_coef = np.asarray(actual, dtype=np.float64)
+        expected_coef = _numeric(expected)
+        if predictor_names is not None:
+            # Factor designs: the port orders a factor's level columns by first
+            # appearance, R by its declared levels, so compare the values only.
+            actual_coef, expected_coef = np.sort(actual_coef), np.sort(expected_coef)
+        np.testing.assert_allclose(actual_coef, expected_coef, atol=COMPOUND)
         return
-    # R names unnamed predictor columns V1..Vp; the port reports 0-based indices.
+    # The port reports 0-based predictor indices; R reports predictor names
+    # (V1..Vp for an unnamed matrix, otherwise the data.frame column names).
     expected_names = [str(v) for v in np.atleast_1d(np.asarray(expected, dtype=object))]
-    assert [f"V{int(i) + 1}" for i in np.asarray(actual).tolist()] == expected_names
+    indices = [int(i) for i in np.asarray(actual).tolist()]
+    if predictor_names is None:
+        assert [f"V{i + 1}" for i in indices] == expected_names
+    else:
+        assert [predictor_names[i] for i in indices] == expected_names
 
 
 def _assert_stack_matches(
@@ -863,13 +878,14 @@ def _assert_stack_matches(
     *,
     exact_probability_threshold: bool = True,
     exact_objective: bool = True,
+    predictor_names: list[str] | None = None,
 ) -> None:
     assert isinstance(expected, dict)
     assert set(actual) - _SELECTION_KEYS == set(expected) - _SELECTION_KEYS
     for key in actual:
         if key in _SELECTION_KEYS:
             if key in expected:
-                _assert_selection_matches(key, actual[key], expected[key])
+                _assert_selection_matches(key, actual[key], expected[key], predictor_names)
             continue
         if key in _RNG_DEPENDENT_KEYS and not exact_objective:
             # Random-split OOF scalar: assert finiteness agrees with R, not value.
