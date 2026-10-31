@@ -110,3 +110,29 @@ def test_unequal_length_matches_r_decision_rule(degree: int, seed: int) -> None:
 
     function = {1: fsd, 2: ssd, 3: tsd}[degree]
     assert function(x, y) == _r_sd_reference(x, y, degree)
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_fsd_uni_continuous_matches_dense_ratio_definition(seed: int) -> None:
+    # Reference: LPM1/(LPM1 + UPM1) evaluated densely on the merged grid.
+    rng = np.random.default_rng(seed)
+    sizes = rng.integers(2, 40, size=2)
+    x = np.round(rng.normal(0.3, 1.0, int(sizes[0])), 1)
+    y = np.round(rng.normal(0.0, 1.0, int(sizes[1])), 1)
+
+    def dominates(a: NDArray[np.float64], b: NDArray[np.float64]) -> int:
+        if np.array_equal(np.sort(a), np.sort(b)) or a.min() < b.min():
+            return 0
+        grid = np.sort(np.concatenate((a, b)))
+        curves = []
+        for sample in (a, b):
+            lower = np.mean(np.maximum(grid[:, None] - sample, 0.0), axis=1)
+            upper = np.mean(np.maximum(sample - grid[:, None], 0.0), axis=1)
+            total = lower + upper
+            curves.append(np.divide(lower, total, out=np.zeros_like(lower), where=total != 0))
+        if np.allclose(curves[0], curves[1], rtol=0.0, atol=1e-12):
+            return 0
+        return int(not np.any(curves[0] > curves[1] + 1e-12))
+
+    assert fsd_uni(x, y, "continuous") == dominates(x, y)
+    assert fsd_uni(y, x, "continuous") == dominates(y, x)
