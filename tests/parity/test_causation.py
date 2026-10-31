@@ -125,3 +125,19 @@ def _ts_relationship(case: str) -> tuple[np.ndarray, np.ndarray]:
     x = np.sin(2.0 * np.pi * t / 7.0)
     y = np.roll(x, 1) + 0.05 * np.cos(t / 3.0)
     return x, y
+
+
+def test_causal_matrix_keeps_dataframe_labels() -> None:
+    pd = pytest.importorskip("pandas")
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=100)
+    frame = pd.DataFrame(
+        {"x": x, "x2": x**2 + 0.1 * rng.normal(size=100), "z": rng.normal(size=100)}
+    )
+
+    labelled = causal_matrix(frame)
+
+    assert list(labelled.index) == ["x", "x2", "z"]
+    assert list(labelled.columns) == ["x", "x2", "z"]
+    np.testing.assert_array_equal(labelled.to_numpy(), causal_matrix(frame.to_numpy()))
+    assert isinstance(causal_matrix(frame.to_numpy()), np.ndarray)
