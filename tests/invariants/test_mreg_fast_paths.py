@@ -10,10 +10,13 @@ from nns import nns_reg
 from nns._reg_engine import (
     _mreg_build_rpm,
     _mreg_distances,
+    _mreg_ensemble_weights,
     _mreg_predict,
+    _mreg_predict_path,
     _mreg_weighted_mode,
     _mreg_weighted_mode_rows,
     _nearest_tie_values,
+    _normalize_weights_rows,
     _reduce_value,
     _stable_topk,
 )
@@ -206,3 +209,57 @@ def test_multivariate_point_only_matches_full_fit(kwargs: dict[str, object]) -> 
     if full["pred.int"] is not None:
         for key in full["pred.int"]:
             assert _same(np.asarray(only["pred.int"][key]), np.asarray(full["pred.int"][key]))
+
+
+def _reference_ensemble_weights(dk: np.ndarray) -> np.ndarray:
+    """The former implementation (rank-only components rebuilt per call)."""
+    from scipy import stats
+
+    m, k = dk.shape
+    if k == 1:
+        return np.ones((m, 1))
+    ranks = np.arange(1, k + 1, dtype=np.float64)
+    total = np.full((m, k), 1.0 / k)
+    total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
+    total += _normalize_weights_rows(1.0 / np.maximum(dk, 1e-12))
+    total += _normalize_weights_rows(
+        np.broadcast_to(stats.expon.pdf(ranks, scale=k), (m, k)).copy()
+    )
+    rank_sd = float(np.std(ranks, ddof=1))
+    lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
+    total += _normalize_weights_rows(np.broadcast_to(lognormal_row, (m, k)).copy())[:, ::-1]
+    total += _normalize_weights_rows(np.broadcast_to(ranks**-2.0, (m, k)).copy())
+    dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
+    valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
+    with np.errstate(all="ignore"):
+        normal = stats.norm.pdf(dk, loc=0.0, scale=np.where(valid_sd, dist_sd, 1.0))
+    total += np.where(valid_sd, _normalize_weights_rows(np.where(valid_sd, normal, 0.0)), 0.0)
+    dist_var = dist_sd**2
+    valid_var = np.isfinite(dist_var) & (dist_var > 0)
+    with np.errstate(all="ignore"):
+        rbf = np.exp(-dk / (2.0 * np.where(valid_var, dist_var, 1.0)))
+    total += np.where(valid_var, _normalize_weights_rows(np.where(valid_var, rbf, 0.0)), 0.0)
+    return _normalize_weights_rows(total)
+
+
+@pytest.mark.parametrize("k", [2, 3, 7, 40, 129])
+def test_cached_rank_weights_match_reference(k: int) -> None:
+    rng = np.random.default_rng(k)
+    dk = np.sort(rng.exponential(size=(50, k)), axis=1)
+    dk[0] = 0.0  # zero spread row
+    for _ in range(2):  # second call is served from the cache
+        assert _same(_mreg_ensemble_weights(dk), _reference_ensemble_weights(dk))
+
+
+def test_predict_path_matches_single_k_predictions() -> None:
+    rng = np.random.default_rng(17)
+    rpm = rng.normal(size=(80, 3))
+    yhat = rng.normal(size=80)
+    xt = rng.normal(size=(15, 3))
+    mins, maxs = rpm.min(axis=0), rpm.max(axis=0)
+    path = _mreg_predict_path(xt, rpm, yhat, 12, "NNS", mins, maxs)
+    for k in range(1, 13):
+        single = _mreg_predict(xt, rpm, yhat, k, "NNS", mins, maxs, False)
+        assert single is not None
+        assert _same(path[:, k - 1], single)
+

@@ -20,6 +20,7 @@ R's native kernel (``NNS_mreg_predict_cpp``) to floating-point tolerance.
 
 from __future__ import annotations
 
+import functools
 import math
 import re
 from typing import Any, Literal, cast
@@ -899,26 +900,12 @@ def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
     m, k = dk.shape
     if k == 1:
         return np.ones((m, 1), dtype=np.float64)
-    ranks = np.arange(1, k + 1, dtype=np.float64)
 
     total = np.full((m, k), 1.0 / k, dtype=np.float64)  # uniform
     total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
     total += _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
-
-    exponential = _normalize_weights_rows(
-        np.broadcast_to(stats.expon.pdf(ranks, scale=k), (m, k)).copy()
-    )
-    total += exponential
-
-    rank_sd = float(np.std(ranks, ddof=1))
-    if math.isfinite(rank_sd) and rank_sd > 0:
-        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
-        lognormal = _normalize_weights_rows(
-            np.broadcast_to(lognormal_row, (m, k)).copy()
-        )[:, ::-1]
-        total += lognormal
-
-    total += _normalize_weights_rows(np.broadcast_to(ranks ** -2.0, (m, k)).copy())
+    for row in _rank_weight_rows(k):
+        total += row
 
     dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
     valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
@@ -937,6 +924,28 @@ def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
         total += np.where(valid_var, _normalize_weights_rows(rbf), 0.0)
 
     return _normalize_weights_rows(total)
+
+
+@functools.lru_cache(maxsize=512)
+def _rank_weight_rows(k: int) -> tuple[NDArray[np.float64], ...]:
+    """Normalised rank-only ensemble components for k neighbours, in the order
+    they are added: exponential, reversed lognormal (when the rank sd is
+    positive) and inverse-square rank. They do not depend on the distances, so
+    they are computed once per k rather than per query chunk and per k of a
+    path; each row is normalised exactly as a row of the broadcast matrix was.
+    """
+    from scipy import stats
+
+    ranks = np.arange(1, k + 1, dtype=np.float64)
+    rows = [_normalize_weights_rows(stats.expon.pdf(ranks, scale=k)[None, :])[0]]
+    rank_sd = float(np.std(ranks, ddof=1))
+    if math.isfinite(rank_sd) and rank_sd > 0:
+        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
+        rows.append(_normalize_weights_rows(lognormal_row[None, :])[0, ::-1].copy())
+    rows.append(_normalize_weights_rows((ranks ** -2.0)[None, :])[0])
+    for row in rows:
+        row.flags.writeable = False
+    return tuple(rows)
 
 
 def _mreg_distances(
