@@ -59,16 +59,20 @@ by the final dimension reduction, ranked by absolute coefficient (with
 # --------------------------------------------------------------------------
 
 def _rank_average(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Average ranks of tied values (R's rank(ties.method = "average")).
+
+    Runs of equal sorted values [start, end) get (start + 1 + end) / 2, which is
+    exact in float64; NaNs compare unequal, so each forms its own run.
+    """
     order = np.argsort(values, kind="mergesort")
     sorted_values = values[order]
     ranks = np.empty(values.size, dtype=np.float64)
-    start = 0
-    while start < values.size:
-        end = start + 1
-        while end < values.size and sorted_values[end] == sorted_values[start]:
-            end += 1
-        ranks[order[start:end]] = (start + 1 + end) / 2.0
-        start = end
+    if values.size == 0:
+        return ranks
+    breaks = np.flatnonzero(sorted_values[1:] != sorted_values[:-1]) + 1
+    starts = np.concatenate(([0], breaks))
+    ends = np.concatenate((breaks, [values.size]))
+    ranks[order] = np.repeat((starts + 1 + ends) / 2.0, ends - starts)
     return ranks
 
 

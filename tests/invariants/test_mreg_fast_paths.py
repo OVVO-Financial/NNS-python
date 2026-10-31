@@ -263,3 +263,16 @@ def test_predict_path_matches_single_k_predictions() -> None:
         assert single is not None
         assert _same(path[:, k - 1], single)
 
+
+def test_stack_rank_average_matches_average_ranks() -> None:
+    from scipy.stats import rankdata
+
+    from nns.stack import _rank_average
+
+    rng = np.random.default_rng(19)
+    for n in (0, 1, 2, 5, 50, 500):
+        v = np.round(rng.normal(size=n), 1)
+        if n > 2:
+            v[0] = -0.0
+            v[1] = 0.0
+        assert _same(_rank_average(v), rankdata(v, method="average").astype(np.float64))
