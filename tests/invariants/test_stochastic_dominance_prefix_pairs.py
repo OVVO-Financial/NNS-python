@@ -507,3 +507,21 @@ def _large_fixture() -> np.ndarray:
     returns[:, 4] = returns[:, 3][::-1]
     returns[:, 5:10] = np.round(returns[:, 5:10], 1)
     return returns
+
+
+def test_identical_sorted_columns_matches_dense_comparison() -> None:
+    rng = np.random.default_rng(42)
+    returns = np.round(rng.normal(size=(9, 12)), 1)
+    returns[:, 1] = returns[::-1, 0]
+    returns[:, 2] = returns[:, 0]
+    returns[:, 3] = 0.0
+    returns[:, 4] = -0.0
+    returns[:, 5] = returns[:, 6]
+    returns[0, 7] = returns[0, 7] + 1e-15
+    sorted_values = np.sort(returns, axis=0)
+
+    expected = np.all(sorted_values.T[:, None, :] == sorted_values.T[None, :, :], axis=2)
+    actual = sd._identical_sorted_columns(sorted_values)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert actual[0, 1] and actual[0, 2] and actual[3, 4] and actual[5, 6]
