@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import NotRequired, TypedDict
 
 import numpy as np
@@ -36,8 +37,8 @@ def nns_meboot(
     rho: float | list[float] | np.ndarray | None = None,
     type: str = "spearman",
     drift: bool = True,
-    target_drift: float | None = None,
-    target_drift_scale: float | None = None,
+    target_drift: float | list[float] | np.ndarray | None = None,
+    target_drift_scale: float | list[float] | np.ndarray | None = None,
     trim: float = 0.10,
     xmin: float | None = None,
     xmax: float | None = None,
@@ -54,6 +55,11 @@ def nns_meboot(
 
     Stochastic draws use NumPy's RNG, so exact replicate parity with R is not
     expected. Deterministic diagnostics follow the installed R algorithm.
+
+    ``rho``, ``target_drift`` and ``target_drift_scale`` are vectorised like R's
+    ``Vectorize``/``mapply``: given arguments are recycled elementwise to the longest
+    length (not crossed) and a list with one result per position is returned. If all
+    of them are scalars (or length 1) a single result is returned.
     """
     del elaps  # R elapsed-time printout flag; NNS Python emits no console output.
     values = np.asarray(x, dtype=np.float64)
@@ -74,36 +80,24 @@ def nns_meboot(
 
     rng = np.random.default_rng(random_seed)
     rho_values = np.asarray(rho, dtype=np.float64).reshape(-1)
-    if rho_values.size == 1:
-        return _nns_meboot_one(
-            values,
-            reps,
-            float(rho_values[0]),
-            type,
-            drift,
-            target_drift,
-            target_drift_scale,
-            trim,
-            xmin,
-            xmax,
-            reachbnd,
-            expand_sd,
-            force_clt,
-            scl_adjustment,
-            sym,
-            digits,
-            rng,
+    drift_values = _optional_vector(target_drift)
+    scale_values = _optional_vector(target_drift_scale)
+    vectorised = [v for v in (rho_values, drift_values, scale_values) if v is not None]
+    count = 0 if any(v.size == 0 for v in vectorised) else max(v.size for v in vectorised)
+    if any(count % v.size for v in vectorised if v.size):
+        warnings.warn(
+            "longer argument not a multiple of length of shorter", RuntimeWarning, stacklevel=2
         )
 
-    return [
+    results = [
         _nns_meboot_one(
             values,
             reps,
-            float(rho_item),
+            float(rho_values[i % rho_values.size]),
             type,
             drift,
-            target_drift,
-            target_drift_scale,
+            None if drift_values is None else float(drift_values[i % drift_values.size]),
+            None if scale_values is None else float(scale_values[i % scale_values.size]),
             trim,
             xmin,
             xmax,
@@ -115,8 +109,17 @@ def nns_meboot(
             digits,
             rng,
         )
-        for rho_item in rho_values
+        for i in range(count)
     ]
+    if count == 1:
+        return results[0]
+    return results
+
+
+def _optional_vector(value: float | list[float] | np.ndarray | None) -> NDArray[np.float64] | None:
+    if value is None:
+        return None
+    return np.asarray(value, dtype=np.float64).reshape(-1)
 
 
 def _nns_meboot_one(

@@ -18,15 +18,25 @@ def nns_mc(
     exp: float = 1.0,
     type: str = "spearman",
     drift: bool = True,
-    target_drift: float | None = None,
-    target_drift_scale: float | None = None,
+    target_drift: float | list[float] | np.ndarray | None = None,
+    target_drift_scale: float | list[float] | np.ndarray | None = None,
     xmin: float | None = None,
     xmax: float | None = None,
     random_seed: int | None = None,
     **kwargs: Any,
 ) -> dict[str, object]:
-    """Monte Carlo sampling over NNS.meboot's rho space."""
+    """Monte Carlo sampling over NNS.meboot's rho space.
+
+    A vector ``target_drift`` / ``target_drift_scale`` is recycled along the rho grid
+    as in R (``mapply``); it cannot be longer than the grid. As in R, a given
+    ``target_drift`` takes precedence and ``target_drift_scale`` is then ignored.
+    """
     exp_rhos = _generate_mc_rhos(lower_rho, upper_rho, by, exp)
+    if target_drift is not None:
+        target_drift_scale = None
+    for name, value in (("target_drift", target_drift), ("target_drift_scale", target_drift_scale)):
+        if value is not None and np.asarray(value).size > exp_rhos.size:
+            raise ValueError(f"{name} must not have more elements than the rho grid.")
     meboot_result = nns_meboot(
         x=np.asarray(x, dtype=np.float64),
         reps=reps,
