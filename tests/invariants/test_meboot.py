@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from unittest import mock
+
 import numpy as np
 import pytest
 
+import nns.meboot as meboot_module
 from nns import nns_meboot
 
 pytestmark = pytest.mark.stochastic
@@ -44,6 +47,28 @@ def test_nns_meboot_xmin_xmax_clipping_is_respected() -> None:
 
     assert np.min(result["replicates"]) >= -1.0
     assert np.max(result["replicates"]) <= 2.0
+
+
+@pytest.mark.parametrize(
+    ("force_clt", "expected_calls"),
+    [(True, 1), (False, 2)],
+)
+def test_nns_meboot_bounds_disable_expand_sd_only_with_force_clt(
+    force_clt: bool, expected_calls: int
+) -> None:
+    # R (NNS_meboot.R:158-159) turns expand.sd off for xmin/xmax only inside
+    # if (isTRUE(force.clt)); otherwise the level-scale expansion still runs. The
+    # residual-scale expansion always runs, so the level step is the second call.
+    x = np.linspace(1.0, 4.0, 30) + 0.2 * np.sin(np.arange(30, dtype=np.float64))
+
+    with mock.patch.object(
+        meboot_module, "_meboot_expand_sd", wraps=meboot_module._meboot_expand_sd
+    ) as spy:
+        nns_meboot(
+            x, reps=6, rho=0.0, xmin=0.0, force_clt=force_clt, expand_sd=True, random_seed=5
+        )
+
+    assert spy.call_count == expected_calls
 
 
 def test_nns_meboot_vector_rho_returns_one_result_per_rho() -> None:
