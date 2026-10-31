@@ -16,6 +16,7 @@ from nns.dependence import (
     _is_constant,
     _is_discrete_case,
     _xonly_partition,
+    nns_dep,
 )
 from nns.norm import nns_norm
 from nns.seasonality import nns_seas
@@ -129,6 +130,15 @@ def _tau_normalized(
 
 
 def _asym_dep(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
+    """Asymmetric NNS.dep dependence of y on x (R ``NNS.dep(x, y, asym = TRUE)``)."""
+    if np.all(np.isfinite(x)) and np.all(np.isfinite(y)):
+        # nns_dep runs the native kernel, which computes the same value as the
+        # pure-Python partition below about 30x faster.
+        return nns_dep(x, y, asym=True)["Dependence"]
+    return _asym_dep_python(x, y)
+
+
+def _asym_dep_python(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     if _is_constant(x) or _is_constant(y):
         return 0.0
 
