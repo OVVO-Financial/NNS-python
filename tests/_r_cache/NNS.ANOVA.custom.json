@@ -11,6 +11,34 @@
       "Treatment": 0.495159650226013,
       "Treatment_CDF": 0.260869565217391
     },
+    "0b9a79ce2cef9fc6504fcfcdf87655b175053f62a8da7aece1b5f20f42329c13": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.5%": -0.632308147332624,
+      "Effect_Size_UB.95%": 0.573445043660204,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 90% CI": 0.157657590338973,
+      "Robust Certainty Estimate": 0.452793322442474,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 90% CI": 0.694002342706963
+    },
+    "13bbf30c97bef372dbd8f0a28daa9436aa5e876fc56d4a6c5404dcd264935a78": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Effect_Size_LB.5%": -1.23259722984895,
+      "Effect_Size_UB.95%": 0.972929397885438,
+      "Grand_Statistic": -0.147172138246718,
+      "Lower 90% CI": 0.21748235342508,
+      "Robust Certainty Estimate": 0.458191965820077,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 90% CI": 0.661093410202038
+    },
     "170acc88547eb09440c1deabd2593ed582d2e6a4d169f4c7b99f143cf906278d": {
       "Certainty": 0.722892277608824,
       "Control": 0.0191268165633628,
@@ -36,8 +64,36 @@
     "1b977f6ccc561a923428f62665be9c43298c604d3f18e13fe792b818b779f8a7": {
       "error": "object 'control_upper' not found"
     },
+    "3392263a9df071638ec41115a9ee2b623ef70de08a676d0775065b7f0586d826": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Effect_Size_LB.2.5%": -1.4648322814436,
+      "Effect_Size_UB.97.5%": 1.31582829656245,
+      "Grand_Statistic": -0.147172138246718,
+      "Lower 95% CI": 0.181701070492294,
+      "Robust Certainty Estimate": 0.458191965820077,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 95% CI": 0.699703816863898
+    },
     "44948d5b8dc3880a7fe9222e31bcc0f573827c4127178a0af043c55be1e13614": {
       "error": "object 'control_lower' not found"
+    },
+    "4de4b84626028a4e4bb06e1bead01fa37cda372af67af58f721ee28a05f376bb": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Effect_Size_LB.2.5%": -1.33509038797787,
+      "Effect_Size_UB.97.5%": 1.31582829656245,
+      "Grand_Statistic": -0.147172138246718,
+      "Lower 95% CI": 0.179926117627651,
+      "Robust Certainty Estimate": 0.467023459503581,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 95% CI": 0.720261199476461
     },
     "50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
     "5445f1cf349065ffbccfcdbaddf5d3eac1c00a72b1ae66b6a76ca705a0bd3f6f": {
@@ -73,6 +129,15 @@
       "Treatment": 0.495159650226013,
       "Treatment_CDF": 0.260869565217391
     },
+    "69096c9a771874399239c8099e03ed238625663433926e32f539b446b76c752c": {
+      "Certainty": 0.593734812147184,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Grand_Statistic": 0.00234967743372432,
+      "Robust Certainty Estimate": 0.4468902047541,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363
+    },
     "6b6b74ec51f07d66018942eab9be19b3c0fd3baea32ea85e3b294c0c74fbe53a": {
       "Certainty": 0.614235794289578,
       "Control": 0.0191268165633628,
@@ -81,6 +146,20 @@
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534
     },
+    "754184c57acd3890ecdc1514b47873f91663b79c4caf9ae1181b595cbe40fb95": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Effect_Size_LB.5%": -1.2023355034671,
+      "Effect_Size_UB.95%": 1.02510218596811,
+      "Grand_Statistic": -0.147172138246718,
+      "Lower 90% CI": 0.186104280230779,
+      "Robust Certainty Estimate": 0.467023459503581,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 90% CI": 0.694572126127585
+    },
     "771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
       "Certainty": 0.652075214441377,
       "Control": 0.00119721507214105,
@@ -88,6 +167,20 @@
       "Grand_Statistic": 0.126074487943006,
       "Treatment": 0.250951760813872,
       "Treatment_CDF": 0.437988436552643
+    },
+    "78e5c083ff88ad6be3b8c2ad4ae0bdfa980bfb61ee8f6b3b8084f9c8a6d554c9": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.5%": -0.604489578295115,
+      "Effect_Size_UB.95%": 0.542206835467011,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 90% CI": 0.125675223119795,
+      "Robust Certainty Estimate": 0.4468902047541,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 90% CI": 0.698265964779535
     },
     "869e561b5396396d491cae5660ac70152520d16e79d9ce87de1d8dc32242b603": {
       "Certainty": 0.630393828439154,
@@ -162,6 +255,15 @@
       "Treatment_CDF": 0.476110909755618
     },
     "aa80ea315c2bc295798a7f5daab339df310cc632a45a3835ce041c9343518ca0": 0.479160301265411,
+    "b0e1f1a32d510c0868ca4b6d16a01f75eaaa8afe5f89c1f48c9818fff64a9f77": {
+      "Certainty": 0.593734812147184,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Grand_Statistic": 0.00234967743372432,
+      "Robust Certainty Estimate": 0.452793322442474,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363
+    },
     "b2c5a8971c7cca149de6076c4dbad3547e31643d0a4d522e6f7c86a720415465": {
       "Certainty": 0.749954566494758,
       "Control": 0.00351158733384534,
@@ -206,6 +308,38 @@
         1.0
       ]
     ],
+    "d0b3d73df2545912608e4d633e8809bd597a256ba172ca0d2a29c80f027c3fbc": {
+      "Certainty": 0.559869943266573,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Grand_Statistic": -0.147172138246718,
+      "Robust Certainty Estimate": 0.458191965820077,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538
+    },
+    "e6072467aed71515ac6affca8a36c592ded1469670b095fbae39128585ccb774": {
+      "Certainty": 0.559869943266573,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.5,
+      "Grand_Statistic": -0.147172138246718,
+      "Robust Certainty Estimate": 0.467023459503581,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538
+    },
+    "e6c0adbe3212225ca0cc0c9cb455064aa1e985181b9cfa9ce7e0c625cc350fd9": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.2.5%": -0.71947493773302,
+      "Effect_Size_UB.97.5%": 0.649257494448435,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 95% CI": 0.100697372163185,
+      "Robust Certainty Estimate": 0.4468902047541,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 95% CI": 0.736205823781523
+    },
     "eef2a64e9150b43020d73428148f333041b4f1a141c94ebc4dd85a4a4d5ceac2": {
       "error": "object 'control_upper' not found"
     },
@@ -234,6 +368,20 @@
         1.0
       ]
     ],
+    "fa7174a124977d2d8e5a55562c0f3079e04a9f6dfc7f3531811ebf4b63faef6c": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.2.5%": -0.743637259571238,
+      "Effect_Size_UB.97.5%": 0.693766331551078,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 95% CI": 0.104073919520052,
+      "Robust Certainty Estimate": 0.452793322442474,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 95% CI": 0.707658097151292
+    },
     "fae2e566924bc047e62669c53c845d9f1de5b7b18bd1d7f7ca5cf398c1baef0c": {
       "Certainty": 0.0524519470202307,
       "Confidence_Level": 0.9,

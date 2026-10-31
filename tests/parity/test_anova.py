@@ -97,34 +97,51 @@ def test_nns_anova_quantile_targets_match_r_exactly() -> None:
 
 
 @pytest.mark.parity
-@pytest.mark.stochastic
-def test_nns_anova_robust_structure_matches_r_shape() -> None:
+@pytest.mark.parametrize("seed", [3, 77])
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9, None])
+@pytest.mark.parametrize("medians", [False, True])
+def test_nns_anova_robust_matches_seeded_r(
+    seed: int,
+    confidence_interval: float | None,
+    medians: bool,
+) -> None:
+    # Same resample indices and the same control/treatment pairing as R, so the
+    # robust estimate and its bounds match set.seed(seed) in R exactly.
     control, treatment = _groups(30)
+    treatment = np.sin(3.0 * treatment[:26]) + 0.1
 
-    expected = _r_anova_binary(control, treatment, robust=True)
-    actual = nns_anova(control, treatment, robust=True, random_seed=123)
+    expected = _r_anova_seeded(
+        control,
+        treatment,
+        seed=seed,
+        ci=confidence_interval,
+        robust=True,
+        medians=medians,
+    )
+    actual = nns_anova(
+        control,
+        treatment,
+        robust=True,
+        medians=medians,
+        confidence_interval=confidence_interval,
+        random_seed=seed,
+    )
 
     assert isinstance(actual, dict)
-    assert set(expected).issuperset(
-        {"Control", "Treatment", "Grand_Statistic", "Control_CDF", "Treatment_CDF", "Certainty"}
-    )
-    assert set(actual) == {
-        "Control",
-        "Treatment",
-        "Grand_Statistic",
-        "Control_CDF",
-        "Treatment_CDF",
-        "Certainty",
-        "Effect_Size_LB",
-        "Effect_Size_UB",
-        "Confidence_Level",
-        "Robust Certainty Estimate",
-        "Lower Bound Robust Certainty",
-        "Upper Bound Robust Certainty",
+    # R's unlist() turns the effect-size keys into "Effect_Size_LB.2.5%" etc.;
+    # NNS Python keeps the plain names used by the non-robust path.
+    renamed = {
+        key.split(".")[0] if key.startswith("Effect_Size") else key: value
+        for key, value in expected.items()
     }
-    assert 0.0 <= actual["Robust Certainty Estimate"] <= 1.0
-    assert 0.0 <= actual["Lower Bound Robust Certainty"] <= 1.0
-    assert 0.0 <= actual["Upper Bound Robust Certainty"] <= 1.0
+    assert set(actual) == set(renamed)
+    if confidence_interval is None:
+        assert "Robust Certainty Estimate" in actual and len(actual) == 7
+    else:
+        level = round(100 * confidence_interval)
+        assert {f"Lower {level}% CI", f"Upper {level}% CI"} <= set(actual)
+    for key, value in renamed.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
 
 
 @pytest.mark.parity

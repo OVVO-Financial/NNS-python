@@ -235,6 +235,30 @@ def _anova_robust(
     n_boot: int,
     rng: RRNG,
 ) -> AnovaResult:
+    # R draws the resample indices first: replicate(100, sample.int(l, replace =
+    # TRUE)) with l = min(length(treatment), length(control)). (Resampling only
+    # the first l observations of the longer group is shared with R; SDA-02.)
+    sample_size = min(control.size, treatment.size)
+    draws = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1)
+    # R's treatment_matrix is cbind(resample 1, resamples 100, 99, ..., 1), so
+    # control resample g is paired with treatment resample 1 for g = 1 and with
+    # 102 - g otherwise: the two groups are resampled (almost) independently.
+    treatment_draws = draws[np.r_[0, np.arange(99, 0, -1)]]
+    certainties = np.array(
+        [
+            _anova_bin(
+                control[draws[replicate]],
+                treatment[treatment_draws[replicate]],
+                means_only=means_only,
+                medians=medians,
+                confidence_interval=None,
+                tails=tails,
+            )["Certainty"]
+            for replicate in range(draws.shape[0])
+        ],
+        dtype=np.float64,
+    )
+
     base = _anova_bin(
         control,
         treatment,
@@ -245,27 +269,19 @@ def _anova_robust(
         n_boot=n_boot,
         rng=rng,
     )
-    sample_size = min(control.size, treatment.size)
-    indices = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1).T
-    certainties = np.array(
-        [
-            _anova_bin(
-                control[indices[:, col]],
-                treatment[indices[:, col]],
-                means_only=means_only,
-                medians=medians,
-                confidence_interval=None,
-                tails=tails,
-            )["Certainty"]
-            for col in range(indices.shape[1])
-        ],
-        dtype=np.float64,
-    )
-
-    alpha = _ci_alpha(confidence_interval, tails)
     base["Robust Certainty Estimate"] = _gravity(certainties)
-    base["Lower Bound Robust Certainty"] = _quantile_var(alpha, upper=False, values=certainties)
-    base["Upper Bound Robust Certainty"] = _quantile_var(alpha, upper=True, values=certainties)
+    if confidence_interval is None:
+        return base
+
+    # R labels the bounds by the CI level: "Lower 95% CI" / "Upper 95% CI" for two
+    # tails, "Lower 95% bound" or "Upper 95% bound" for one.
+    alpha = _ci_alpha(confidence_interval, tails)
+    level = round(100.0 * confidence_interval)
+    kind = "CI" if tails == "both" else "bound"
+    if tails in {"both", "left"}:
+        base[f"Lower {level}% {kind}"] = _quantile_var(alpha, upper=False, values=certainties)
+    if tails in {"both", "right"}:
+        base[f"Upper {level}% {kind}"] = _quantile_var(alpha, upper=True, values=certainties)
     return base
 
 
