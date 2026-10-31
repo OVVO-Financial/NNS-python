@@ -6,15 +6,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.core import _as_degree, _as_targets
+from nns.core import _as_degree, _as_targets, _is_scalar
 
 
 def co_lpm(
     degree_lpm: float,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    target_x: float | NDArray[np.float64],
-    target_y: float | NDArray[np.float64],
+    target_x: float | NDArray[np.float64] | None,
+    target_y: float | NDArray[np.float64] | None,
     degree_y: float | None = None,
 ) -> float | NDArray[np.float64]:
     degree_y = degree_lpm if degree_y is None else degree_y
@@ -25,8 +25,8 @@ def co_upm(
     degree_upm: float,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    target_x: float | NDArray[np.float64],
-    target_y: float | NDArray[np.float64],
+    target_x: float | NDArray[np.float64] | None,
+    target_y: float | NDArray[np.float64] | None,
     degree_y: float | None = None,
 ) -> float | NDArray[np.float64]:
     degree_y = degree_upm if degree_y is None else degree_y
@@ -38,8 +38,8 @@ def d_lpm(
     degree_upm: float,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    target_x: float | NDArray[np.float64],
-    target_y: float | NDArray[np.float64],
+    target_x: float | NDArray[np.float64] | None,
+    target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
     return _co_moment(_upper, _lower, degree_upm, degree_lpm, x, y, target_x, target_y)
 
@@ -49,8 +49,8 @@ def d_upm(
     degree_upm: float,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    target_x: float | NDArray[np.float64],
-    target_y: float | NDArray[np.float64],
+    target_x: float | NDArray[np.float64] | None,
+    target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
     return _co_moment(_lower, _upper, degree_lpm, degree_upm, x, y, target_x, target_y)
 
@@ -62,12 +62,13 @@ def _co_moment(
     degree_y: float,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    target_x: float | NDArray[np.float64],
-    target_y: float | NDArray[np.float64],
+    target_x: float | NDArray[np.float64] | None,
+    target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
     x_values, y_values = _as_pair(x, y)
-    x_targets = _as_targets(target_x)
-    y_targets = _as_targets(target_y)
+    # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
+    x_targets = _as_targets(target_x, x_values)
+    y_targets = _as_targets(target_y, y_values)
     degree_x = _as_degree(degree_x)
     degree_y = _as_degree(degree_y)
 
@@ -85,7 +86,7 @@ def _co_moment(
             np.ascontiguousarray(y_targets),
         )
         moments = np.asarray(native_result, dtype=np.float64).reshape(-1)
-        if np.asarray(target_x).ndim == 0 and np.asarray(target_y).ndim == 0:
+        if _is_scalar(target_x) and _is_scalar(target_y):
             return float(moments[0])
         return moments
 
@@ -98,7 +99,7 @@ def _co_moment(
         y_deviation = _deviation(y_side, degree_y, y_target, y_values)
         moments[index] = np.mean(x_deviation * y_deviation)
 
-    if np.asarray(target_x).ndim == 0 and np.asarray(target_y).ndim == 0:
+    if _is_scalar(target_x) and _is_scalar(target_y):
         return float(moments[0])
     return moments
 
