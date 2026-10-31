@@ -6,7 +6,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nns._reg_engine import _mreg_build_rpm, _mreg_distances, _reduce_value
+from nns import nns_reg
+from nns._reg_engine import _mreg_build_rpm, _mreg_distances, _mreg_predict, _reduce_value
 
 
 def _reference_distances(
@@ -98,3 +99,27 @@ def test_rpm_cell_reduction_matches_per_cell_reducer(
         for a, b in zip(got, ref, strict=True):
             assert _same(a, b)
             assert np.array_equal(np.signbit(a), np.signbit(b))
+
+
+@pytest.mark.parametrize("noise_reduction", ["off", "mean", "median"])
+@pytest.mark.parametrize("type_", [None, "CLASS"])
+def test_order_max_identity_shortcut_matches_k1_distance_rule(
+    noise_reduction: str, type_: str | None
+) -> None:
+    rng = np.random.default_rng(11)
+    x = rng.integers(0, 4, size=(300, 3)).astype(float)  # many duplicate rows
+    x[:100] = rng.normal(size=(100, 3))
+    y = x.sum(axis=1) + rng.normal(size=300)
+    if type_ is not None:
+        y = (y > np.median(y)).astype(float)
+    fit = nns_reg(x, y, order="max", noise_reduction=noise_reduction, type=type_)
+    rpm = fit["RPM"]
+    rpm_x = np.column_stack([rpm[k] for k in rpm if k != "y.hat"])
+    expected = _mreg_predict(
+        x, rpm_x, rpm["y.hat"], 1, "NNS", x.min(axis=0), x.max(axis=0), type_ is not None
+    )
+    assert expected is not None
+    if type_ is not None:
+        expected = np.unique(y)[np.argmin(np.abs(expected[:, None] - np.unique(y)), axis=1)]
+    assert fit["n.best"] == 1
+    assert _same(np.asarray(fit["Fitted.xy"]["y.hat"]), expected)
