@@ -72,6 +72,26 @@ def test_nns_seas_modulo_matches_r(mod_only: bool) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("mod_only", [True, False])
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.tile(np.array([-1.0, 1.0]), 5),
+        np.tile(np.array([1.0, 2.0, 3.0]), 6),
+    ],
+)
+def test_nns_seas_tied_periods_keep_r_order(values: np.ndarray, mod_only: bool) -> None:
+    # Periods tied on CV (e.g. modulo-added rows at VarCV) keep R's insertion order
+    # instead of being re-sorted by period, so best.period agrees with R.
+    modulo = [7, 12]
+
+    expected = nns("NNS.seas", values.tolist(), modulo, mod_only, False)
+    actual = nns_seas(values, modulo=modulo, mod_only=mod_only)
+
+    _assert_seas_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("values", [np.array([1.0, np.nan, 3.0]), np.array([1.0, np.inf, 3.0])])
 def test_nns_seas_non_finite_errors(values: np.ndarray) -> None:
     with pytest.raises(ValueError):
