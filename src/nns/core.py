@@ -8,50 +8,67 @@ from nns._native import native_fn
 
 def lpm(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
+    """Lower partial moment ``mean(max(target - x, 0) ** degree)`` (R ``LPM``).
+
+    ``degree=0`` gives the share of observations ``<= target`` (ties count as lower).
+    ``target`` may be a scalar (returns a float) or a 1D array (returns an array);
+    ``None`` uses ``mean(x)``.  ``x`` must be finite.
+    """
     return _moment(degree, target, x, lower=True)
 
 
 def upm(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
+    """Upper partial moment ``mean(max(x - target, 0) ** degree)`` (R ``UPM``).
+
+    ``degree=0`` gives the share of observations ``> target``.  ``target`` may be a
+    scalar or a 1D array; ``None`` uses ``mean(x)``.  ``x`` must be finite.
+    """
     return _moment(degree, target, x, lower=False)
 
 
 def lpm_ratio(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
+    """``LPM / (LPM + UPM)`` at ``target`` (R ``LPM.ratio``).
+
+    ``degree=0`` is the empirical CDF; ``degree>0`` gives a continuous CDF.  ``None``
+    uses ``mean(x)``.  ``x`` must be finite.
+    """
     return _ratio(degree, target, x, lower=True)
 
 
 def upm_ratio(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
 ) -> float | NDArray[np.float64]:
+    """``UPM / (LPM + UPM)`` at ``target`` (R ``UPM.ratio``); ``1 - lpm_ratio``."""
     return _ratio(degree, target, x, lower=False)
 
 
 def _moment(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
     values = _as_1d_values(x)
-    targets = _as_targets(target)
+    targets = _as_targets(target, values)
     degree = _as_degree(degree)
 
     native = native_fn("lpm" if lower else "upm")
     if native is not None and targets.size > 0 and _native_safe(values, targets):
-        native_target = float(targets[0]) if np.asarray(target).ndim == 0 else targets
+        native_target = float(targets[0]) if _is_scalar(target) else targets
         native_result = native(degree, native_target, np.ascontiguousarray(values))
         return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
 
@@ -68,13 +85,13 @@ def _moment(
 
 def _ratio(
     degree: float,
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
     values = _as_1d_values(x)
-    targets = _as_targets(target)
+    targets = _as_targets(target, values)
     degree = _as_degree(degree)
 
     native = native_fn("lpm_ratio_v" if lower else "upm_ratio_v")
@@ -110,15 +127,30 @@ def _as_1d_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
         raise ValueError("x must be 1D.")
     if values.size == 0:
         raise ValueError("x must be non-empty.")
+    if not np.all(np.isfinite(values)):
+        # Matches R's LPM/UPM ("`variable` must be finite"); NaN would otherwise be
+        # counted in n but in neither tail, so degree-0 moments stop summing to 1.
+        raise ValueError("x must contain only finite values.")
     return values
 
 
-def _as_targets(target: float | NDArray[np.float64]) -> NDArray[np.float64]:
+def _is_scalar(target: object) -> bool:
+    return target is None or np.asarray(target).ndim == 0
+
+
+def _as_targets(
+    target: float | NDArray[np.float64] | None,
+    values: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    if target is None:
+        return np.array([float(np.mean(values))], dtype=np.float64)
     targets = np.asarray(target, dtype=np.float64)
     if targets.ndim == 0:
-        return targets.reshape(1)
+        targets = targets.reshape(1)
     if targets.ndim != 1:
         raise ValueError("target must be scalar or 1D.")
+    if np.isnan(targets).any():
+        raise ValueError("target must not contain NaN.")
     return targets
 
 
@@ -131,8 +163,8 @@ def _as_degree(degree: float) -> float:
 
 def _result_for_target(
     moments: NDArray[np.float64],
-    target: float | NDArray[np.float64],
+    target: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
-    if np.asarray(target).ndim == 0:
+    if _is_scalar(target):
         return float(moments[0])
     return moments

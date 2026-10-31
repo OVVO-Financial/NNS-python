@@ -150,15 +150,18 @@ class _FinitePartialMomentNative:
         return 0.0
 
 
-def test_public_lpm_upm_non_finite_values_use_fallback(
+def test_public_lpm_upm_non_finite_values_raise_before_native(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _FinitePartialMomentNative()
     monkeypatch.setattr(core_module, "native_fn", lambda name: getattr(fake, name, None))
     x = np.array([1.0, np.nan, 3.0], dtype=np.float64)
 
-    assert np.isnan(lpm(1.0, 0.0, x))
-    assert np.isnan(upm(1.0, 0.0, x))
+    # R's LPM/UPM reject non-finite variables; NaN must never reach a kernel.
+    with pytest.raises(ValueError, match="finite"):
+        lpm(1.0, 0.0, x)
+    with pytest.raises(ValueError, match="finite"):
+        upm(1.0, 0.0, x)
 
 
 @pytest.mark.parametrize(
