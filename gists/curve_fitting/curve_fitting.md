@@ -39,25 +39,12 @@ fig, axs = plt.subplots(3, N, figsize=(15, 10))
 for i in range(1, N + 1):
     ax = axs[0, i - 1]
     
-    # Set the current axis in case nns.reg natively plots to the active plt.gca()
-    plt.sca(ax)
-    
-    # Run the NNS Regression 
-    res = nns.reg(x, y, order=i) 
-    
+    # NNS regression of the requested partition order (plot=False: we draw it ourselves)
+    res = nns.nns_reg(x, y, order=i, plot=False)
+    y_hat = res["Fitted.xy"]["y.hat"]
+
     ax.plot(x, y, color='steelblue')
-    
-    # Extract predictions (Mimicking the parity port's return structure)
-    try:
-        # Note: If the Python API plots automatically, you may need to pass plot=False above.
-        if isinstance(res, dict) and 'Fitted.xy' in res:
-            y_hat = res['Fitted.xy']['y.hat'] if isinstance(res['Fitted.xy'], dict) else res['Fitted.xy']
-            ax.plot(x, y_hat, color='red', linewidth=3)
-        elif hasattr(res, 'fitted'):
-            ax.plot(x, res.fitted, color='red', linewidth=3)
-    except Exception:
-        pass
-        
+    ax.plot(x, y_hat, color='red', linewidth=3)
     ax.set_title(f'NNS Order {i}')
     ax.set_ylim(-1.5, 1.5)
 
