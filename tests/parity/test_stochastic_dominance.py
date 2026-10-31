@@ -209,3 +209,23 @@ def _strings(value: RValue) -> list[str]:
     if isinstance(value, np.ndarray):
         return [str(item) for item in value.tolist()]
     raise TypeError("Expected an R character vector.")
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(("degree", "r_degree"), [(1.5, 1.5), (2.9, 2.9), ("2", 2)])
+def test_sd_efficient_set_truncates_degree_like_r(degree: object, r_degree: float) -> None:
+    # R passes as.integer(degree) to its C++ routine, so 1.5 is FSD (not TSD).
+    rng = np.random.default_rng(15)
+    returns = rng.normal(size=(40, 8)) + np.linspace(-0.3, 0.3, 8)
+
+    expected = nns("NNS.SD.efficient.set", returns.tolist(), r_degree, "discrete", False)
+
+    actual = sd_efficient_set(returns, degree)  # type: ignore[arg-type]
+    assert _strings(expected) == [f"X_{index + 1}" for index in actual]
+    assert actual == sd_efficient_set(returns, int(float(degree)))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("degree", [0.5, 4, "abc", None, float("nan")])
+def test_sd_efficient_set_rejects_degrees_outside_one_to_three(degree: object) -> None:
+    with pytest.raises(ValueError, match="degree must be 1, 2, or 3"):
+        sd_efficient_set(np.zeros((3, 2)), degree)  # type: ignore[arg-type]
