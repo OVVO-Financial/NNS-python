@@ -96,9 +96,8 @@ def test_nns_anova_pairwise_bounds(x: np.ndarray) -> None:
 def test_nns_anova_robust_bounds(x: np.ndarray, y: np.ndarray) -> None:
     assume(np.ptp(x) > MIN_MEANINGFUL_RANGE)
     assume(np.ptp(y) > MIN_MEANINGFUL_RANGE)
-    result = nns_anova(x, y, robust=True, confidence_interval=None, random_seed=123)
+    result = nns_anova(x, y, robust=True, confidence_interval=0.95, random_seed=123)
 
     assert isinstance(result, dict)
-    assert 0.0 <= result["Robust Certainty Estimate"] <= 1.0
-    assert 0.0 <= result["Lower Bound Robust Certainty"] <= 1.0
-    assert 0.0 <= result["Upper Bound Robust Certainty"] <= 1.0
+    assert 0.0 <= result["Lower 95% CI"] <= result["Robust Certainty Estimate"] <= 1.0
+    assert result["Robust Certainty Estimate"] <= result["Upper 95% CI"] <= 1.0

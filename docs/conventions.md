@@ -577,5 +577,15 @@ symmetric certainty matrix. Confidence-interval bootstrapping draws from a
 reproduction of R's Mersenne-Twister `sample()` stream, so
 `random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
 the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
-entropy. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
-convention.
+entropy. `robust=True` follows R's resampling exactly: 100 resamples of the
+first `min(n_control, n_treatment)` positions, with control resample `g` paired
+with treatment resample 1 (`g = 1`) or `102 - g`, so the two groups are resampled
+independently apart from two replicates. It returns `Robust Certainty Estimate`
+plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
+`confidence_interval=None`. R names the effect-size keys of the robust output
+`Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
+`Effect_Size_LB`/`Effect_Size_UB`. One-sided (`tails="left"`/`"right"`)
+effect-size intervals raise a `ValueError` because R's `NNS.ANOVA` fails on
+them. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+convention; where every robust certainty is `NaN`, R's VaR stops while NNS Python
+returns `NaN` bounds.
