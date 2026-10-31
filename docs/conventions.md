@@ -177,8 +177,10 @@ Classification is supported for numeric/logical/factor-like class-code targets.
 inputs with fewer than four observations and for univariate `order="max"`; R
 does not call `smooth.spline` there. Spline-eligible inputs use a private
 fixed-`spar` cubic smoothing-spline adapter matching the `stats::smooth.spline`
-subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R-style knots, and
-R's interior-band trace ratio for lambda.
+subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R's
+`1e-6 * IQR(x)` tie grouping, `.nknots.smspl` knot thinning above 49 unique x,
+the Fortran `sgram` penalty (with its `.3330` constant), R's interior-band
+trace ratio for lambda, and a banded Cholesky solve.
 Factor predictor expansion is supported through the public `nns_reg` path.
 When combined with dimension reduction, factor predictors are expanded with
 R's full-rank dummy convention before synthetic `x.star` coefficients are
@@ -522,9 +524,17 @@ rounds results to `digits`, matching R's default output convention.
 `dy_dx(..., eval_point="overall")` maps to R's `dy.dx(..., eval.point =
 "overall")` path and returns the mean fitted gradient from unsmoothed
 `nns_reg`. Numeric `dy_dx` evaluation points use R's finite-difference grid
-around smooth `nns_reg` point estimates and return a table-like dictionary with
-`eval.point`, `first.derivative`, and `second.derivative`. Boundary-point
-quirks follow installed R where covered by parity tests.
+around smooth `nns_reg` point estimates, stepping by
+`gravity(|diff(x)|) * h` for each bandwidth `h` in R's `h_s`, and return a
+table-like dictionary with `eval.point`, `first.derivative`, and
+`second.derivative`. At `min(x)` or `max(x)` the first derivative is R's
+one-sided slope and the second derivative is NaN. As in R, bandwidths that
+repeat in `h_s` (n < 49) are skipped; below n = 16, where every bandwidth
+repeats and R's `dy.dx` fails, the port uses the distinct bandwidths.
+`eval_point` must be given (a number, a vector, or `"overall"`).
+`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")`
+(tolerance `.Machine$double.eps^0.25`), so iterations and convergence flags
+match R.
 
 NNS Python derivative parity is defined at the public input/output level, while
 preserving R's cumulative finite-difference perturbation pattern for `dy_d`.
