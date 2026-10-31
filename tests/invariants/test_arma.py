@@ -5,9 +5,15 @@ import warnings
 import numpy as np
 import pytest
 
-from nns import nns_arma, nns_arma_optim, nns_var
-from nns.arma import _default_arma_optim_objective, _numeric_seasonal_weights
+from nns import nns_arma, nns_arma_optim, nns_mc, nns_var
+from nns.arma import (
+    _default_arma_optim_objective,
+    _generate_vectors,
+    _linear_forecast_for_lag,
+    _numeric_seasonal_weights,
+)
 from nns.meboot import _target_rho
+from nns.var import lpm_var, upm_var
 
 
 def test_nns_arma_output_length_matches_h() -> None:
@@ -80,6 +86,45 @@ def test_nns_arma_pred_int_returns_interval_dict() -> None:
     assert isinstance(result, dict)
     assert list(result) == ["Estimates", "Lower 95% pred.int", "Upper 95% pred.int"]
     assert all(value.shape == (3,) for value in result.values())
+
+
+def test_nns_arma_nonlin_pred_int_widens_by_linear_residual_like_r() -> None:
+    # R fits the per-lag linear models for method="nonlin" whenever pred.int is set
+    # and widens the band by lin.resid = mean(abs(e - mean(e))) of the last step's
+    # linear forecasts e (one per lag).
+    t = np.arange(1, 81, dtype=np.float64)
+    variable = 50.0 + 0.5 * t + 5.0 * np.sin(2.0 * np.pi * t / 4.0) + 2.0 * np.cos(t / 2.0)
+    lags = np.array([4, 8], dtype=np.int64)
+    h = 6
+
+    point = nns_arma(variable, h=h, seasonal_factor=lags, method="nonlin")
+    result = nns_arma(
+        variable, h=h, seasonal_factor=lags, method="nonlin", pred_int=0.9, random_seed=3
+    )
+
+    generated = _generate_vectors(np.concatenate((variable, point[:-1])), lags)
+    lin = np.array(
+        [
+            _linear_forecast_for_lag(index, series)
+            for index, series in zip(
+                generated["Component.index"], generated["Component.series"], strict=True
+            )
+        ]
+    )
+    lin_resid = float(np.mean(np.abs(lin - np.mean(lin))))
+    assert lin_resid > 0.0
+
+    mc = nns_mc(point, lower_rho=-1.0, upper_rho=1.0, by=0.2, random_seed=3)
+    replicates = mc["replicates"]
+    assert isinstance(replicates, dict)
+    rows = np.column_stack(list(replicates.values()))
+    upper = np.array([upm_var(0.05, 0.0, row) for row in rows]) + lin_resid
+    lower = np.array([abs(lpm_var(0.05, 0.0, row)) for row in rows]) - lin_resid
+
+    assert isinstance(result, dict)
+    np.testing.assert_array_equal(result["Estimates"], point)
+    np.testing.assert_allclose(result["Upper 90% pred.int"], np.maximum(point, upper), rtol=1e-12)
+    np.testing.assert_allclose(result["Lower 90% pred.int"], np.minimum(point, lower), rtol=1e-12)
 
 
 @pytest.mark.stochastic
