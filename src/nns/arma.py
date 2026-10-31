@@ -476,7 +476,9 @@ def nns_arma(
             nonlin_estimate = float(np.sum(regression_estimates * lag_weights))
 
         lin_estimate = math.nan
-        if method_l in {"lin", "both", "means"}:
+        # R also runs the linear fits for method="nonlin" when pred.int is set: the
+        # interval residual lin.resid comes from them.
+        if method_l in {"lin", "both", "means"} or pred_int is not None:
             linear_estimates = np.asarray(
                 [
                     _linear_forecast_for_lag(component_index[i], component_series[i])
