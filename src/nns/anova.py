@@ -6,6 +6,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rrng import RRNG
 from nns.core import lpm_ratio, upm_ratio
 from nns.dependence import _gravity
 from nns.var import lpm_var, upm_var
@@ -27,12 +28,18 @@ def nns_anova(
     n_boot: int = 1000,
     random_seed: int | None = None,
 ) -> AnovaResult | NDArray[np.float64]:
-    """Partial-moment ANOVA, matching R's non-plotting NNS.ANOVA paths."""
+    """Partial-moment ANOVA, matching R's non-plotting NNS.ANOVA paths.
+
+    The bootstrap draws (effect-size interval and ``robust`` resamples) come from
+    R's Mersenne-Twister stream: ``random_seed=s`` reproduces R's
+    ``set.seed(s); NNS.ANOVA(...)`` draw for draw. Without a seed the stream is
+    seeded from fresh entropy.
+    """
     tail = _tail(tails)
     if treatment is not None:
         control_values = _as_group(control, "control")
         treatment_values = _as_group(treatment, "treatment")
-        rng = np.random.default_rng(random_seed)
+        rng = _r_rng(random_seed)
         if robust:
             return _anova_robust(
                 control_values,
@@ -121,7 +128,7 @@ def _anova_bin(
     confidence_interval: float | None = None,
     tails: Tail = "both",
     n_boot: int = 1000,
-    rng: np.random.Generator | None = None,
+    rng: RRNG | None = None,
 ) -> AnovaResult:
     if mean_of_means is None:
         control_stat = float(np.median(control) if medians else np.mean(control))
@@ -210,7 +217,7 @@ def _anova_bin(
                 confidence_interval=confidence_interval,
                 tails=tails,
                 n_boot=n_boot,
-                rng=np.random.default_rng() if rng is None else rng,
+                rng=_r_rng(None) if rng is None else rng,
             )
         )
     return result
@@ -225,7 +232,7 @@ def _anova_robust(
     confidence_interval: float | None,
     tails: Tail,
     n_boot: int,
-    rng: np.random.Generator,
+    rng: RRNG,
 ) -> AnovaResult:
     base = _anova_bin(
         control,
@@ -238,7 +245,7 @@ def _anova_robust(
         rng=rng,
     )
     sample_size = min(control.size, treatment.size)
-    indices = rng.integers(0, sample_size, size=(sample_size, 100))
+    indices = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1).T
     certainties = np.array(
         [
             _anova_bin(
@@ -269,18 +276,20 @@ def _effect_size_bounds(
     confidence_interval: float,
     tails: Tail,
     n_boot: int,
-    rng: np.random.Generator,
+    rng: RRNG,
 ) -> AnovaResult:
     if not 0.0 <= confidence_interval <= 1.0:
         raise ValueError("confidence_interval must be in [0, 1].")
     if n_boot < 1:
         raise ValueError("n_boot must be >= 1.")
 
-    control_boot = rng.choice(control, size=(control.size, n_boot), replace=True)
-    treatment_boot = rng.choice(treatment, size=(treatment.size, n_boot), replace=True)
-    control_stats = np.median(control_boot, axis=0) if medians else np.mean(control_boot, axis=0)
+    # R: matrix(sample(x, n_boot * length(x), replace = TRUE), nrow = length(x)),
+    # i.e. column j holds draws j * n .. (j + 1) * n - 1; row j here.
+    control_boot = control[_r_boot_indices(rng, control.size, n_boot)]
+    treatment_boot = treatment[_r_boot_indices(rng, treatment.size, n_boot)]
+    control_stats = np.median(control_boot, axis=1) if medians else np.mean(control_boot, axis=1)
     treatment_stats = (
-        np.median(treatment_boot, axis=0) if medians else np.mean(treatment_boot, axis=0)
+        np.median(treatment_boot, axis=1) if medians else np.mean(treatment_boot, axis=1)
     )
     alpha = _ci_alpha(confidence_interval, tails)
 
@@ -307,6 +316,16 @@ def _effect_size_bounds(
         "Effect_Size_UB": float(max_effect),
         "Confidence_Level": float(confidence_interval),
     }
+
+
+def _r_rng(seed: int | None) -> RRNG:
+    if seed is None:
+        return RRNG(int(np.random.SeedSequence().generate_state(1)[0]))
+    return RRNG(int(seed))
+
+
+def _r_boot_indices(rng: RRNG, size: int, n_boot: int) -> NDArray[np.int64]:
+    return (rng.sample_int_replace(size, size * n_boot) - 1).reshape(n_boot, size)
 
 
 def _ci_alpha(confidence_interval: float | None, tails: Tail) -> float:

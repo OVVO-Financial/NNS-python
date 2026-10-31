@@ -127,6 +127,76 @@ def test_nns_anova_robust_structure_matches_r_shape() -> None:
     assert 0.0 <= actual["Upper Bound Robust Certainty"] <= 1.0
 
 
+@pytest.mark.parity
+@pytest.mark.parametrize("seed", [5, 2024])
+@pytest.mark.parametrize("medians", [False, True])
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9])
+def test_nns_anova_effect_size_bootstrap_matches_seeded_r(
+    seed: int,
+    medians: bool,
+    confidence_interval: float,
+) -> None:
+    # random_seed=s replays R's set.seed(s) stream, so the bootstrap CI is exact.
+    control, treatment = _groups(30)
+    treatment = treatment[:23] ** 2
+
+    expected = _r_anova_seeded(
+        control, treatment, seed=seed, ci=confidence_interval, medians=medians
+    )
+    actual = nns_anova(
+        control,
+        treatment,
+        medians=medians,
+        confidence_interval=confidence_interval,
+        random_seed=seed,
+    )
+
+    assert isinstance(actual, dict)
+    assert list(actual) == [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB",
+        "Effect_Size_UB",
+        "Confidence_Level",
+    ]
+    assert set(actual) == set(expected)
+    for key, value in expected.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+def _r_anova_seeded(
+    control: np.ndarray,
+    treatment: np.ndarray,
+    *,
+    seed: int,
+    ci: float | None,
+    tails: str = "both",
+    robust: bool = False,
+    medians: bool = False,
+    catch: bool = False,
+) -> dict[str, RValue]:
+    payload: dict[str, object] = {
+        "mode": "binary",
+        "control": control.tolist(),
+        "treatment": treatment.tolist(),
+        "means_only": False,
+        "medians": medians,
+        "robust": robust,
+        "seed": seed,
+        "ci": "none" if ci is None else ci,
+        "tails": tails,
+    }
+    if catch:
+        payload["catch"] = True
+    result = _r_anova(payload)
+    assert isinstance(result, dict)
+    return result
+
+
 def _groups(size: int) -> tuple[np.ndarray, np.ndarray]:
     idx = np.arange(size, dtype=np.float64)
     x = np.linspace(-2.0, 2.0, size) + 0.1 * np.sin(idx / 3.0)
