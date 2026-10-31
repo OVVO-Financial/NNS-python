@@ -1001,16 +1001,98 @@ def _stable_topk(d: NDArray[np.float64], k: int) -> NDArray[np.intp]:
     captured), then a stable sort keeps original-index order among equal
     distances before truncating to k.
     """
-    c, n = d.shape
+    n = d.shape[1]
     if k >= n:
         return np.argsort(d, axis=1, kind="stable")
-    kth = np.partition(d, k - 1, axis=1)[:, k - 1]
-    out = np.empty((c, k), dtype=np.intp)
-    for i in range(c):
-        row = d[i]
-        cand = np.flatnonzero(row <= kth[i])
-        order = np.argsort(row[cand], kind="stable")
-        out[i] = cand[order][:k]
+    part = np.argpartition(d, k - 1, axis=1)
+    kth = np.take_along_axis(d, part[:, k - 1 : k], axis=1)
+    counts = np.count_nonzero(d <= kth, axis=1)
+    # Rows with exactly k candidates have no tie at the k-th distance, so the
+    # first k partitioned indices are exactly the candidates: sort them by
+    # index, then stable-sort by distance.
+    sel = np.sort(part[:, :k], axis=1)
+    order = np.argsort(np.take_along_axis(d, sel, axis=1), axis=1, kind="stable")
+    out = np.take_along_axis(sel, order, axis=1)
+    tied = np.flatnonzero(counts != k)
+    if tied.size:
+        out[tied] = _stable_topk_ties(d[tied], kth[tied, 0], counts[tied], k)
+    return out
+
+
+def _stable_topk_ties(
+    d: NDArray[np.float64], kth: NDArray[np.float64], counts: NDArray[np.intp], k: int
+) -> NDArray[np.intp]:
+    """``_stable_topk`` for rows with ties at (or NaN before) the k-th distance."""
+    c = d.shape[0]
+    if np.any(counts < k):  # NaN distances: keep the original per-row behaviour
+        out = np.empty((c, k), dtype=np.intp)
+        for i in range(c):
+            row = d[i]
+            cand = np.flatnonzero(row <= kth[i])
+            order = np.argsort(row[cand], kind="stable")
+            out[i] = cand[order][:k]
+        return out
+    # Candidates come out of nonzero() row-major with ascending column index,
+    # and lexsort is stable, so sorting by (row, distance) leaves equal
+    # distances in original-index order.
+    rows, cols = np.nonzero(d <= kth[:, None])
+    cols = cols[np.lexsort((d[rows, cols], rows))]
+    starts = np.cumsum(counts) - counts
+    return cast(NDArray[np.intp], cols[starts[:, None] + np.arange(k)])
+
+
+def _nearest_tie_values(
+    d: NDArray[np.float64], rpm_yhat: NDArray[np.float64], is_class: bool
+) -> NDArray[np.float64]:
+    """k = 1 rule per query row: aggregate the y.hat of every RPM row at the
+    exact minimum distance (gravity, or the unit-weight mode in class mode).
+
+    A unique nearest row (the usual case) is resolved without a reducer call:
+    the gravity or mode of one finite value is that value (gravity's np.median
+    maps -0.0 to +0.0, mirrored by ``+ 0.0``) and NaN when it is non-finite.
+    """
+    hit = d == d.min(axis=1, keepdims=True)
+    nhit = hit.sum(axis=1)
+    out = np.empty(d.shape[0], dtype=np.float64)
+    one = nhit == 1
+    v = rpm_yhat[np.argmax(hit[one], axis=1)]
+    out[one] = np.where(np.isfinite(v), v if is_class else v + 0.0, np.nan)
+    for i in np.flatnonzero(~one):
+        tied = rpm_yhat[hit[i]]
+        if is_class:
+            out[i] = _mreg_weighted_mode(tied, np.ones(tied.size))
+        else:
+            out[i] = float(nns_gravity(tied[np.isfinite(tied)]))
+    return out
+
+
+def _mreg_weighted_mode_rows(
+    values: NDArray[np.float64], weights: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """``_mreg_weighted_mode`` applied to every row of (c, k) arrays.
+
+    Per-row class totals are accumulated with one ``np.add.at`` over the
+    row-major entries, i.e. in the same order (and from the same 0.0) as the
+    per-row version, so ties between classes resolve identically.
+    """
+    c = values.shape[0]
+    out = np.full(c, np.nan, dtype=np.float64)
+    keep = np.isfinite(values) & np.isfinite(weights) & (weights >= 0)
+    rows, cols = np.nonzero(keep)
+    if rows.size == 0:
+        return out
+    kept = values[rows, cols]
+    classes = np.unique(kept)
+    code = np.searchsorted(classes, kept)
+    totals = np.zeros((c, classes.size), dtype=np.float64)
+    np.add.at(totals, (rows, code), weights[rows, cols])
+    present = np.zeros((c, classes.size), dtype=bool)
+    present[rows, code] = True
+    totals = np.where(present, totals, -np.inf)
+    best = totals.max(axis=1, keepdims=True)
+    winner = np.argmax(totals == best, axis=1)  # smallest tied class value
+    has = present.any(axis=1)
+    out[has] = classes[winner[has]]
     return out
 
 
@@ -1046,14 +1128,7 @@ def _mreg_predict(
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
 
         if k == 1:
-            dmin = d.min(axis=1, keepdims=True)
-            for i in range(d.shape[0]):
-                tied = rpm_yhat[d[i] == dmin[i, 0]]
-                if is_class:
-                    out[start + i] = _mreg_weighted_mode(tied, np.ones(tied.size))
-                else:
-                    finite_tied = tied[np.isfinite(tied)]
-                    out[start + i] = float(nns_gravity(finite_tied))
+            out[rows] = _nearest_tie_values(d, rpm_yhat, is_class)
             continue
 
         idx = _stable_topk(d, k)
@@ -1061,8 +1136,7 @@ def _mreg_predict(
         yk = rpm_yhat[idx]
         w = _mreg_ensemble_weights(dk)
         if is_class:
-            for i in range(dk.shape[0]):
-                out[start + i] = _mreg_weighted_mode(yk[i], w[i])
+            out[rows] = _mreg_weighted_mode_rows(yk, w)
         else:
             out[rows] = np.sum(yk * w, axis=1)
 
@@ -1096,17 +1170,12 @@ def _mreg_predict_path(
     for start in range(0, m, chunk):
         rows = slice(start, min(start + chunk, m))
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
-        c = d.shape[0]
         idx = _stable_topk(d, kmax)
         d_sorted = np.take_along_axis(d, idx, axis=1)
         y_sorted = rpm_yhat[idx]
 
         # k = 1 aggregates all exact nearest-distance ties.
-        dmin = d.min(axis=1, keepdims=True)
-        for i in range(c):
-            tied = rpm_yhat[d[i] == dmin[i, 0]]
-            finite_tied = tied[np.isfinite(tied)]
-            out[start + i, 0] = float(nns_gravity(finite_tied))
+        out[rows, 0] = _nearest_tie_values(d, rpm_yhat, False)
 
         for k in range(2, kmax + 1):
             w = _mreg_ensemble_weights(d_sorted[:, :k])

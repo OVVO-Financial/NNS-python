@@ -7,7 +7,17 @@ import numpy as np
 import pytest
 
 from nns import nns_reg
-from nns._reg_engine import _mreg_build_rpm, _mreg_distances, _mreg_predict, _reduce_value
+from nns._reg_engine import (
+    _mreg_build_rpm,
+    _mreg_distances,
+    _mreg_predict,
+    _mreg_weighted_mode,
+    _mreg_weighted_mode_rows,
+    _nearest_tie_values,
+    _reduce_value,
+    _stable_topk,
+)
+from nns.central_tendencies import nns_gravity
 
 
 def _reference_distances(
@@ -123,3 +133,52 @@ def test_order_max_identity_shortcut_matches_k1_distance_rule(
         expected = np.unique(y)[np.argmin(np.abs(expected[:, None] - np.unique(y)), axis=1)]
     assert fit["n.best"] == 1
     assert _same(np.asarray(fit["Fitted.xy"]["y.hat"]), expected)
+
+
+def _tied_distances(rng: np.random.Generator, c: int, n: int) -> np.ndarray:
+    d = np.round(rng.random((c, n)) * 6) / 6  # heavy exact ties
+    d[: c // 2] = rng.random((c // 2, n))
+    d[0, :] = 0.5  # one row entirely tied
+    return d
+
+
+@pytest.mark.parametrize("k", [1, 2, 5, 17, 39, 40, 41])
+def test_stable_topk_matches_full_stable_argsort(k: int) -> None:
+    rng = np.random.default_rng(k)
+    d = _tied_distances(rng, 25, 40)
+    expected = np.argsort(d, axis=1, kind="stable")[:, :k]
+    assert np.array_equal(_stable_topk(d, k), expected)
+
+
+@pytest.mark.parametrize("is_class", [False, True])
+def test_nearest_tie_values_match_per_row_reducer(is_class: bool) -> None:
+    rng = np.random.default_rng(3)
+    d = _tied_distances(rng, 60, 30)
+    d[5, 3] = np.nan
+    yhat = rng.integers(0, 3, size=30).astype(float) if is_class else rng.normal(size=30)
+    yhat[4] = -0.0
+    d[7] = 1.0
+    d[7, 4] = 0.0  # unique nearest row holding -0.0
+    expected = np.empty(d.shape[0])
+    for i in range(d.shape[0]):
+        tied = yhat[d[i] == d[i].min()]
+        expected[i] = (
+            _mreg_weighted_mode(tied, np.ones(tied.size))
+            if is_class
+            else nns_gravity(tied[np.isfinite(tied)])
+        )
+    got = _nearest_tie_values(d, yhat, is_class)
+    assert _same(got, expected)
+    assert np.array_equal(np.signbit(got), np.signbit(expected))
+
+
+def test_weighted_mode_rows_match_per_row_mode() -> None:
+    rng = np.random.default_rng(5)
+    values = rng.integers(0, 4, size=(200, 7)).astype(float)
+    weights = rng.integers(0, 3, size=(200, 7)) / 3.0  # exact ties between classes
+    weights[3] = 0.0
+    weights[4, 2] = np.nan
+    values[5, 1] = np.nan
+    weights[6] = -1.0  # nothing kept
+    expected = np.array([_mreg_weighted_mode(v, w) for v, w in zip(values, weights, strict=True)])
+    assert _same(_mreg_weighted_mode_rows(values, weights), expected)
