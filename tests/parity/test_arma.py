@@ -308,6 +308,31 @@ def test_nns_arma_optim_matches_r(
         )
 
 
+@pytest.mark.parity
+def test_nns_arma_optim_without_pred_int_matches_r() -> None:
+    # R 13.3 returns numeric(0) bounds for pred.int = NULL; Python used to raise TypeError.
+    variable = np.sin(np.arange(1, 41, dtype=np.float64) / 3.0) + 2.0
+    variable = variable + 0.02 * np.arange(1, 41, dtype=np.float64)
+    seasonal_factor = [3, 4, 5, 6, 7, 8]
+
+    expected = _dict_any(
+        nns_arma_optim_custom(
+            variable.tolist(), h=3, seasonal_factor=seasonal_factor, pred_int=None
+        )
+    )
+    actual = nns_arma_optim(
+        variable, h=3, seasonal_factor=seasonal_factor, pred_int=None, print_trace=False
+    )
+
+    for key in ("periods", "obj.fn", "bias.shift", "results"):
+        np.testing.assert_allclose(
+            _array_any(actual[key]), _array_any(expected[key]), atol=COMPOUND
+        )
+    for key in ("lower.pred.int", "upper.pred.int"):
+        assert _array_any(actual[key]).size == 0
+        assert _array_any(expected[key]).size == 0
+
+
 def test_nns_arma_known_linear_check() -> None:
     result = nns_arma(np.arange(1, 21, dtype=np.float64), h=5, seasonal_factor=4, method="lin")
 
