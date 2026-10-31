@@ -331,10 +331,7 @@ def _precompute_sd_table(
         curve_sums=np.sum(curves, axis=0),
         minimums=sorted_values[0, :],
         means=np.mean(values, axis=0),
-        identical=np.all(
-            sorted_values.T[:, np.newaxis, :] == sorted_values.T[np.newaxis, :, :],
-            axis=2,
-        ),
+        identical=_identical_sorted_columns(sorted_values),
     )
 
 
@@ -361,10 +358,7 @@ def _prefix_sd_precompute(
         ),
         minimums=sorted_values[0, :],
         means=np.mean(values, axis=0),
-        identical=np.all(
-            sorted_values.T[:, np.newaxis, :] == sorted_values.T[np.newaxis, :, :],
-            axis=2,
-        ),
+        identical=_identical_sorted_columns(sorted_values),
     )
 
 
@@ -373,11 +367,23 @@ def _order_stat_sd_precompute(values: NDArray[np.float64]) -> _SDOrderStatPrecom
     return _SDOrderStatPrecomputed(
         values=values,
         sorted_values=sorted_values,
-        identical=np.all(
-            sorted_values.T[:, np.newaxis, :] == sorted_values.T[np.newaxis, :, :],
-            axis=2,
-        ),
+        identical=_identical_sorted_columns(sorted_values),
     )
+
+
+def _identical_sorted_columns(sorted_values: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """k x k mask of columns whose sorted samples are equal (R's identical_samples).
+
+    Columns are bucketed by the bytes of their sorted values, so memory is O(k n)
+    for the keys plus the k x k result, instead of a k x k x n comparison tensor.
+    Adding 0.0 maps -0.0 to 0.0 so the byte keys agree with ``==``.
+    """
+    labels: dict[bytes, int] = {}
+    column_labels = np.empty(sorted_values.shape[1], dtype=np.intp)
+    for index in range(sorted_values.shape[1]):
+        key = np.ascontiguousarray(sorted_values[:, index] + 0.0).tobytes()
+        column_labels[index] = labels.setdefault(key, len(labels))
+    return np.asarray(column_labels[:, np.newaxis] == column_labels[np.newaxis, :])
 
 
 def _own_threshold_curves(
