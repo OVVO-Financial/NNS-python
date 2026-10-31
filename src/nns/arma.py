@@ -421,9 +421,7 @@ def nns_arma(
     )
 
     if method_l == "lin" and _is_numeric_seasonal(seasonal_factor) and lags.size == 1:
-        if pred_int is not None:
-            raise TypeError("non-numeric argument to binary operator")
-        estimates = _linear_static_numeric_forecast(
+        estimates, component_estimates = _linear_static_numeric_forecast(
             values,
             int(lags[0]),
             horizon,
@@ -432,7 +430,12 @@ def nns_arma(
             method=method_l,
             shrink=shrink,
         )
-        return _finish(estimates)
+        return _finish(_with_prediction_intervals(
+            estimates,
+            lin_residual=_lin_residual(component_estimates) if pred_int is not None else 0.0,
+            pred_int=pred_int,
+            random_seed=random_seed,
+        ))
 
     # Pre-allocate the full history-plus-horizon buffer once and fill it by
     # index. Appending the recursive estimate via np.concatenate at every step
@@ -511,10 +514,7 @@ def nns_arma(
 
     lin_resid = 0.0
     if pred_int is not None and method_l != "means" and lin_regression_estimates.size:
-        lin_mean = float(np.mean(lin_regression_estimates))
-        lin_resid = float(np.mean(np.abs(lin_regression_estimates - lin_mean)))
-        if not np.isfinite(lin_resid):
-            lin_resid = 0.0
+        lin_resid = _lin_residual(lin_regression_estimates)
 
     return _finish(_with_prediction_intervals(
         estimates,
@@ -669,6 +669,13 @@ def _as_variable(variable: NDArray[np.float64]) -> NDArray[np.float64]:
     if np.any(np.isinf(values)):
         raise ValueError("Infinite values not allowed")
     return values
+
+
+def _lin_residual(lin_regression_estimates: NDArray[np.float64]) -> float:
+    # R: lin.resid <- mean(abs(Lin.Regression.Estimates - mean(Lin.Regression.Estimates)))
+    lin_mean = float(np.mean(lin_regression_estimates))
+    lin_resid = float(np.mean(np.abs(lin_regression_estimates - lin_mean)))
+    return lin_resid if np.isfinite(lin_resid) else 0.0
 
 
 def _with_prediction_intervals(
@@ -895,7 +902,13 @@ def _linear_static_numeric_forecast(
     negative_values: bool,
     method: str,
     shrink: bool,
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Vectorised single-lag linear forecast.
+
+    Returns the forecast and the unweighted per-component regression forecasts in
+    R's component order (``unlist(Lin.Regression.Estimates)``), which R uses for the
+    prediction-interval residual.
+    """
     generated = _generate_lin_vectors(variable, lag, h)
     estimates: list[NDArray[np.float64]] = []
     means: list[NDArray[np.float64]] = []
@@ -913,7 +926,8 @@ def _linear_static_numeric_forecast(
                 dtype=np.float64,
             )
         )
-    ordered = np.concatenate(estimates)[np.argsort(np.concatenate(generated["forecast.index"]))]
+    component_estimates = np.concatenate(estimates)
+    ordered = component_estimates[np.argsort(np.concatenate(generated["forecast.index"]))]
     output = ordered * weight
     if method == "means" or shrink:
         means_ordered = np.concatenate(means)[
@@ -923,7 +937,7 @@ def _linear_static_numeric_forecast(
         output = (output + means_weighted) / 2.0 if shrink else means_weighted
     if not negative_values:
         output = np.maximum(0.0, output)
-    return output
+    return output, component_estimates
 
 
 def _linear_forecast_for_lag(
