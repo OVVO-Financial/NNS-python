@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._native import native_fn
+from nns.core import lpm_ratio
 from nns.dependence import co_lpm_nd
 from nns.regression import RegResult, nns_reg
 
@@ -27,6 +29,10 @@ def nns_cdf(
     if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
         raise ValueError("invalid type")
 
+    if names is None:
+        columns = getattr(variable, "columns", None)
+        if columns is not None:
+            names = [str(column) for column in columns]
     values = np.asarray(variable, dtype=np.float64)
     if values.ndim == 0:
         values = values.reshape(1)
@@ -63,11 +69,7 @@ def _univariate_cdf(
         raise ValueError("variable must be non-empty.")
     target_value = _univariate_target(target, values)
     x = np.sort(values[~np.isnan(values)])
-    pval = (
-        _finite_sorted_grid_lpm_ratio(degree, x)
-        if np.all(np.isfinite(values))
-        else _r_lpm_ratio(degree, x, values)
-    )
+    pval = _r_lpm_ratio(degree, x, values)
     column_name = {
         "cdf": "CDF",
         "survival": "S(x)",
@@ -239,117 +241,89 @@ def _r_lpm_ratio(
     targets: NDArray[np.float64],
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
+    """R's ``LPM.ratio(degree, targets, values)``, including its NA handling.
+
+    R's ratio kernels skip NA observations in the partial-moment sums but keep them in
+    the denominator ``n``.  For ``degree > 0`` the ``n`` cancels in ``LPM / (LPM + UPM)``,
+    so the ratio equals the ratio over the non-missing values; for ``degree == 0`` the
+    ratio is the non-missing count scaled by ``n_finite / n``.
+    """
     target_values = np.asarray(targets, dtype=np.float64).reshape(-1)
     variable_values = np.asarray(values, dtype=np.float64).reshape(-1)
     if variable_values.size == 0:
         raise ValueError("variable must be non-empty.")
-    lower = _r_partial_moments(degree, target_values, variable_values, lower=True)
-    if degree <= 0.0:
-        return lower
-    upper = _r_partial_moments(degree, target_values, variable_values, lower=False)
+    if np.isinf(variable_values).any() or not np.all(np.isfinite(target_values)):
+        # R's comparisons give Inf - Inf = NaN, which drops out of both partial sums;
+        # reproduce that rare quirk with the direct (target x observation) evaluation.
+        return _dense_lpm_ratio(degree, target_values, variable_values)
+    finite = variable_values[~np.isnan(variable_values)]
+    if target_values.size == 0:
+        return np.array([], dtype=np.float64)
+    if finite.size == 0:
+        fill = 0.0 if degree == 0.0 else np.nan
+        return np.full(target_values.size, fill, dtype=np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = lower / (lower + upper)
-    return np.asarray(ratio, dtype=np.float64)
+        ratio = np.asarray(lpm_ratio(degree, target_values, finite), dtype=np.float64)
+    if degree == 0.0 and finite.size != variable_values.size:
+        ratio = ratio * (finite.size / variable_values.size)
+    return ratio
 
 
-def _finite_sorted_grid_lpm_ratio(
-    degree: float,
-    sorted_values: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    if degree == 0.0:
-        counts = np.searchsorted(sorted_values, sorted_values, side="right")
-        return np.asarray(counts / float(sorted_values.size), dtype=np.float64)
-
-    if degree != int(degree) or int(degree) not in {1, 2, 3}:
-        return _r_lpm_ratio(degree, sorted_values, sorted_values)
-
-    d = int(degree)
-    n = sorted_values.size
-    right_counts = np.searchsorted(sorted_values, sorted_values, side="right")
-    powers = [np.ones(n, dtype=np.float64)]
-    for power in range(1, d + 1):
-        powers.append(sorted_values**power)
-    prefix = [np.concatenate(([0.0], np.cumsum(power_values))) for power_values in powers]
-    totals = [float(power_prefix[-1]) for power_prefix in prefix]
-
-    lower = np.zeros(n, dtype=np.float64)
-    upper = np.zeros(n, dtype=np.float64)
-    for power in range(d + 1):
-        coefficient = float(math.comb(d, power))
-        lower += (
-            coefficient
-            * (sorted_values ** (d - power))
-            * ((-1.0) ** power)
-            * prefix[power][right_counts]
-        )
-        suffix_sum = totals[power] - prefix[power][right_counts]
-        upper += coefficient * ((-sorted_values) ** (d - power)) * suffix_sum
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.asarray(lower / (lower + upper), dtype=np.float64)
-
-
-def _r_partial_moments(
+def _dense_lpm_ratio(
     degree: float,
     targets: NDArray[np.float64],
     values: NDArray[np.float64],
-    *,
-    lower: bool,
 ) -> NDArray[np.float64]:
-    target_matrix = targets[:, np.newaxis]
-    value_matrix = values[np.newaxis, :]
-    with np.errstate(invalid="ignore"):
-        diff = target_matrix - value_matrix if lower else value_matrix - target_matrix
-        mask = diff >= 0.0 if lower else diff > 0.0
-
-    integer_degree = degree == int(degree)
-    if integer_degree and degree == 0.0:
-        moment_terms = mask.astype(np.float64)
-    else:
-        safe_diff = np.where(mask, diff, 0.0)
-        if integer_degree and degree == 1.0:
-            moment_terms = safe_diff
-        elif integer_degree:
-            moment_terms = safe_diff ** int(degree)
-        else:
-            with np.errstate(invalid="ignore"):
-                moment_terms = safe_diff**degree
-    return np.asarray(np.mean(moment_terms, axis=1), dtype=np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        diff = targets[:, np.newaxis] - values[np.newaxis, :]
+        lower = np.where(diff >= 0.0, np.abs(diff), 0.0)
+        upper = np.where(-diff > 0.0, np.abs(diff), 0.0)
+        if degree == 0.0:
+            return np.asarray(np.mean(diff >= 0.0, axis=1), dtype=np.float64)
+        lpm_values = np.mean(np.where(diff >= 0.0, lower**degree, 0.0), axis=1)
+        upm_values = np.mean(np.where(-diff > 0.0, upper**degree, 0.0), axis=1)
+        return np.asarray(lpm_values / (lpm_values + upm_values), dtype=np.float64)
 
 
 def _co_lpm_nd_rows(values: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
-    diff = values[np.newaxis, :, :] - values[:, np.newaxis, :]
-    if degree == 0.0:
-        return np.asarray(np.mean(np.all(diff <= 0.0, axis=2), axis=1), dtype=np.float64)
-
-    lower_mask = np.all(diff <= 0.0, axis=2)
-    lower_values = np.prod(np.where(lower_mask[:, :, np.newaxis], (-diff) ** degree, 0.0), axis=2)
-    clpm = np.mean(np.where(lower_mask, lower_values, 0.0), axis=1)
-
-    upper_mask = np.all(diff >= 0.0, axis=2)
-    upper_values = np.prod(np.where(upper_mask[:, :, np.newaxis], diff**degree, 0.0), axis=2)
-    cupm = np.mean(np.where(upper_mask, upper_values, 0.0), axis=1)
-
-    discordant = ~(lower_mask | upper_mask)
-    dpm_values = np.prod(np.abs(diff) ** degree, axis=2)
-    dpm = np.mean(np.where(discordant, dpm_values, 0.0), axis=1)
-    total = clpm + cupm + dpm
-    ratios = np.divide(clpm, total, out=np.zeros_like(clpm), where=total > 0.0)
-    return np.asarray(ratios, dtype=np.float64)
+    """R's ``Co.LPM_nD(values, values, degree, norm = TRUE)`` evaluated at every row."""
+    n, d = values.shape
+    native = native_fn("clpm_nd_batch")
+    if native is not None:
+        flat = np.ascontiguousarray(values.ravel(order="F"))
+        return np.asarray(native(flat, n, d, flat, n, float(degree), True), dtype=np.float64)
+    out = np.empty(n, dtype=np.float64)
+    # Pure-NumPy fallback, chunked so memory stays O(chunk * n * d).
+    chunk = max(1, 2_000_000 // max(1, n * d))
+    for start in range(0, n, chunk):
+        rows = values[start : start + chunk]
+        diff = values[np.newaxis, :, :] - rows[:, np.newaxis, :]
+        lower_mask = np.all(diff <= 0.0, axis=2)
+        if degree == 0.0:
+            out[start : start + chunk] = np.mean(lower_mask, axis=1)
+            continue
+        upper_mask = np.all(diff >= 0.0, axis=2)
+        abs_pow = np.prod(np.abs(diff) ** degree, axis=2)
+        clpm = np.mean(np.where(lower_mask, abs_pow, 0.0), axis=1)
+        cupm = np.mean(np.where(upper_mask, abs_pow, 0.0), axis=1)
+        dpm = np.mean(np.where(~(lower_mask | upper_mask), abs_pow, 0.0), axis=1)
+        total = clpm + cupm + dpm
+        out[start : start + chunk] = np.divide(
+            clpm, total, out=np.zeros_like(clpm), where=total > 0.0
+        )
+    return out
 
 
 def _hazard_proxy(x: NDArray[np.float64], pval: NDArray[np.float64]) -> NDArray[np.float64]:
     n = x.size
     if n == 0:
         return np.array([], dtype=np.float64)
-    window = min(10, n - 1)
-    half_window = window // 2
-    proxy = np.empty(n, dtype=np.float64)
-    for index in range(n):
-        lo = max(0, index - half_window)
-        hi = min(n - 1, index + half_window)
-        proxy[index] = (pval[hi] - pval[lo]) / (x[hi] - x[lo])
-    return proxy
+    half_window = min(10, n - 1) // 2
+    index = np.arange(n)
+    lo = np.maximum(0, index - half_window)
+    hi = np.minimum(n - 1, index + half_window)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.asarray((pval[hi] - pval[lo]) / (x[hi] - x[lo]), dtype=np.float64)
 
 
 def _marginal_lpm_ratios(values: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
