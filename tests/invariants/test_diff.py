@@ -25,6 +25,16 @@ def test_nns_diff_smooth_function_derivative_has_bounded_error() -> None:
     assert result["DERIVATIVE"] == pytest.approx(np.cos(point), abs=1e-6)
 
 
+def test_dy_dx_without_eval_point_raises_clear_error() -> None:
+    x = np.linspace(0.0, 1.0, 30)
+
+    with pytest.raises(ValueError, match="eval_point must be provided"):
+        dy_dx(x, x**2)
+    # Raised before any input checks or fitting work.
+    with pytest.raises(ValueError, match="eval_point must be provided"):
+        dy_dx(x, x[:-1])
+
+
 def test_dy_dx_numeric_small_sample_uses_distinct_bandwidths() -> None:
     # Below n = 16 every R bandwidth repeats and R's dy.dx fails; the port
     # falls back to the distinct bandwidths.

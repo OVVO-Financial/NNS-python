@@ -172,6 +172,10 @@ def dy_dx(
     eval_point: str | float | NDArray[np.float64] | None = None,
 ) -> DyDxResult:
     """Partial derivative wrapper for R's dy.dx paths."""
+    if eval_point is None:
+        # R's dy.dx(x, y) with the default eval.point = NULL also fails, but
+        # deep inside with "undefined columns selected".
+        raise ValueError("eval_point must be provided: a numeric point/vector or 'overall'")
     x_values = np.asarray(x, dtype=np.float64).reshape(-1)
     y_values = np.asarray(y, dtype=np.float64).reshape(-1)
     if x_values.size != y_values.size:
@@ -193,8 +197,6 @@ def dy_dx(
         if not isinstance(fitted, dict):
             raise TypeError("nns_reg returned an unexpected fitted table.")
         return float(np.mean(np.asarray(fitted["gradient"], dtype=np.float64)))
-    if eval_point is None:
-        raise ValueError("some columns are not in the data.table: [eval.point]")
     return _dy_dx_numeric(x_values, y_values, np.asarray(eval_point, dtype=np.float64).reshape(-1))
 
 
