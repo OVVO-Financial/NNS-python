@@ -1177,22 +1177,66 @@ def _mreg_build_rpm(
         return x[order].astype(np.float64), y[order].astype(np.float64)
 
     ids_sorted = ids[order]
-    x_sorted = x[order]
-    y_sorted = y[order]
+    x_sorted = np.asarray(x[order], dtype=np.float64)
+    y_sorted = np.asarray(y[order], dtype=np.float64)
     _, starts = np.unique(ids_sorted, return_index=True)
     starts = np.sort(starts)
-    ends = np.append(starts[1:], ids_sorted.size)
-    rows = []
-    yhat = []
-    for s, e in zip(starts, ends, strict=True):
-        rows.append(
-            [
-                _reduce_value(x_sorted[s:e, j], noise_reduction, False)
-                for j in range(x.shape[1])
-            ]
-        )
-        yhat.append(_reduce_value(y_sorted[s:e], noise_reduction, is_class))
-    return np.asarray(rows, dtype=np.float64), np.asarray(yhat, dtype=np.float64)
+    counts = np.diff(np.append(starts, ids_sorted.size))
+    rpm_x = np.column_stack(
+        [
+            _reduce_cells(x_sorted[:, j], starts, counts, noise_reduction, False)
+            for j in range(x.shape[1])
+        ]
+    )
+    rpm_yhat = _reduce_cells(y_sorted, starts, counts, noise_reduction, is_class)
+    return rpm_x, rpm_yhat
+
+
+def _reduce_cells(
+    values: NDArray[np.float64],
+    starts: NDArray[np.intp],
+    counts: NDArray[np.intp],
+    noise_reduction: str,
+    is_class: bool,
+) -> NDArray[np.float64]:
+    """``_reduce_value`` over each cell ``values[s:s+c]``, vectorised where exact.
+
+    One- to three-member cells (most cells of a fine partition) have closed
+    forms that reproduce ``_reduce_value`` bit for bit: a lone finite value is
+    returned as is, and the median/gravity of two or three finite values is
+    ``(lo + hi) / 2`` or the middle value. NumPy's mean/median accumulate from
+    +0.0, so ``+ 0.0`` reproduces their -0.0 -> +0.0 normalisation. Larger
+    cells, non-finite members and the mode/class reducers use the reducer.
+    """
+    first = values[starts]
+    out = np.empty(starts.size, dtype=np.float64)
+    pending = np.ones(starts.size, dtype=bool)
+
+    single = counts == 1
+    if is_class or noise_reduction == "mode":
+        out[single] = np.where(np.isfinite(first[single]), first[single], np.nan)
+    else:
+        out[single] = np.where(np.isfinite(first[single]), first[single] + 0.0, np.nan)
+    pending[single] = False
+
+    if not is_class and noise_reduction in ("off", "median"):
+        for size in (2, 3):
+            cells = np.flatnonzero(counts == size)
+            if cells.size == 0:
+                continue
+            block = values[starts[cells, None] + np.arange(size)]
+            exact = np.all(np.isfinite(block), axis=1)
+            cells, block = cells[exact], np.sort(block[exact], axis=1)
+            if size == 2:
+                out[cells] = (block[:, 0] + block[:, 1]) / 2.0 + 0.0
+            else:
+                out[cells] = block[:, 1] + 0.0
+            pending[cells] = False
+
+    for g in np.flatnonzero(pending):
+        s = starts[g]
+        out[g] = _reduce_value(values[s : s + counts[g]], noise_reduction, is_class)
+    return out
 
 
 def _mreg_prepare(

@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nns._reg_engine import _mreg_distances
+from nns._reg_engine import _mreg_build_rpm, _mreg_distances, _reduce_value
 
 
 def _reference_distances(
@@ -54,3 +54,47 @@ def test_column_wise_distances_all_constant_columns() -> None:
     xtest = np.zeros((2, 3))
     out = _mreg_distances(rpm, xtest, "NNS", rpm.min(axis=0), rpm.max(axis=0))
     assert _same(out, np.zeros((2, 4)))
+
+
+def _reference_build_rpm(
+    x: np.ndarray, y: np.ndarray, ids: np.ndarray, noise_reduction: str, is_class: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    """The former one-reducer-call-per-cell-per-column implementation."""
+    order = np.argsort(ids, kind="stable")
+    ids_sorted, xs, ys = ids[order], x[order], y[order]
+    _, starts = np.unique(ids_sorted, return_index=True)
+    starts = np.sort(starts)
+    ends = np.append(starts[1:], ids_sorted.size)
+    rows = [
+        [_reduce_value(xs[s:e, j], noise_reduction, False) for j in range(x.shape[1])]
+        for s, e in zip(starts, ends, strict=True)
+    ]
+    yhat = [
+        _reduce_value(ys[s:e], noise_reduction, is_class)
+        for s, e in zip(starts, ends, strict=True)
+    ]
+    return np.asarray(rows, dtype=np.float64), np.asarray(yhat, dtype=np.float64)
+
+
+@pytest.mark.parametrize("noise_reduction", ["off", "mean", "median", "mode"])
+@pytest.mark.parametrize("is_class", [False, True])
+def test_rpm_cell_reduction_matches_per_cell_reducer(
+    noise_reduction: str, is_class: bool
+) -> None:
+    rng = np.random.default_rng(7)
+    for trial in range(40):
+        n = int(rng.integers(2, 200))
+        x = rng.normal(size=(n, 3)) * 10.0 ** int(rng.integers(-2, 3))
+        if trial % 2:
+            x = np.round(x)
+        x[rng.random(size=x.shape) < 0.05] = 0.0
+        x[rng.random(size=x.shape) < 0.05] = -0.0
+        if trial % 5 == 0:
+            x[rng.random(size=x.shape) < 0.03] = np.nan
+        y = rng.integers(0, 3, size=n).astype(float) if is_class else rng.normal(size=n)
+        ids = np.asarray([str(v) for v in rng.integers(0, max(2, n // 2), size=n)])
+        got = _mreg_build_rpm(x, y, ids, noise_reduction, is_class)
+        ref = _reference_build_rpm(x, y, ids, noise_reduction, is_class)
+        for a, b in zip(got, ref, strict=True):
+            assert _same(a, b)
+            assert np.array_equal(np.signbit(a), np.signbit(b))
