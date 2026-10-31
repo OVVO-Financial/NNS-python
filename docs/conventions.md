@@ -378,17 +378,18 @@ raises with R's static-seasonality error. Constant-series behavior follows
 installed R, including zero forecasts for automatic seasonality paths and `NaN`
 forecasts for some explicit numeric-lag paths. Character `weights` with numeric
 multi-lag seasonal factors is rejected because installed R errors during numeric
-multiplication on that path.
+multiplication on that path. Explicit numeric multi-lag seasonal factors weight
+each lag by the coefficient of variation of that lag's own reverse component
+series, as installed R does (`seasonal.factor[i]`).
 
-For explicit numeric multi-lag seasonal factors such as
-`seasonal_factor=[132, 276]`, NNS Python intentionally weights each candidate lag by
-the coefficient of variation of that actual lag's reverse component series.
-Installed R NNS instead computes the coefficient-of-variation term with reverse
-steps `1:length(seasonal.factor)` while still applying the observation penalty
-to the actual lag values. NNS Python keeps the actual-lag weighting because it better
-matches the documented idea that each supplied seasonal factor is weighted by
-its own seasonality strength and observation count. The R-compatible difference
-is covered by a strict xfail practical test rather than hidden.
+Arguments are validated up front where R either errors or returns garbage:
+`training_set` must lie in `1..n`, numeric lags in `1..n`, numeric `weights`
+need one entry per lag (R recycles silently), and automatic seasonality needs at
+least 5 observations. `seasonal_factor=None` behaves like R's `NULL`, i.e. like
+`False`. With `h=1` and `pred_int`, where R fails, the band is the forecast
+widened by the linear residual term because there is no forecast path for
+`nns_mc` to bootstrap. `nns_arma_optim(pred_int=None)` returns empty bounds like
+R.
 
 `nns_arma_optim` is supported for the installed-R optimizer path. It greedily
 selects seasonal factors, evaluates the default co-moment-normalized objective,
@@ -425,8 +426,10 @@ only in R) are accepted for API compatibility.
 
 `nns_meboot` maps to R's `NNS.meboot` maximum-entropy bootstrap algorithm and
 returns plain Python dictionaries instead of R's vectorized list-matrix wrapper.
-Scalar `rho` returns one result dictionary; vector `rho` returns a list of result
-dictionaries in R's vectorized order. `rho=None` follows installed R's empty
+`rho`, `target_drift` and `target_drift_scale` are vectorized like R's
+`Vectorize`/`mapply`: the given arguments are recycled elementwise (not crossed)
+and a list of result dictionaries is returned in that order; when all of them are
+scalars a single result dictionary is returned. `rho=None` follows installed R's empty
 output behavior, and length-one input returns only `{"x": x}`.
 
 Exact replicate parity with R is not expected because NNS Python uses NumPy's random
