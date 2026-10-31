@@ -8,6 +8,7 @@ import pytest
 
 from nns import nns_reg
 from nns._reg_engine import (
+    _group_reduce_sorted,
     _mreg_build_rpm,
     _mreg_distances,
     _mreg_ensemble_weights,
@@ -276,3 +277,40 @@ def test_stack_rank_average_matches_average_ranks() -> None:
             v[0] = -0.0
             v[1] = 0.0
         assert _same(_rank_average(v), rankdata(v, method="average").astype(np.float64))
+
+
+def _reference_group_reduce(
+    keys: np.ndarray, values: np.ndarray, noise_reduction: str, is_class: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    """The former loop: split on 15-significant-digit key strings."""
+    order = np.argsort(keys, kind="stable")
+    ks, vs = keys[order], values[order]
+    labels = [f"{v:.15g}" for v in ks]
+    out_keys, reduced, start = [], [], 0
+    for i in range(1, len(labels) + 1):
+        if i == len(labels) or labels[i] != labels[start]:
+            out_keys.append(float(labels[start]))
+            reduced.append(_reduce_value(vs[start:i], noise_reduction, is_class))
+            start = i
+    return np.asarray(out_keys, dtype=np.float64), np.asarray(reduced, dtype=np.float64)
+
+
+@pytest.mark.parametrize("noise_reduction", ["off", "mean", "median", "mode"])
+@pytest.mark.parametrize("is_class", [False, True])
+def test_univariate_group_reduce_matches_reference(noise_reduction: str, is_class: bool) -> None:
+    rng = np.random.default_rng(23)
+    for _ in range(30):
+        n = int(rng.integers(1, 150))
+        keys = np.round(rng.normal(size=n), int(rng.integers(0, 3)))
+        idx = rng.integers(0, n, size=max(1, n // 4))
+        keys[idx] = keys[idx] * (1 + 2e-16)  # equal to 15 significant digits
+        keys = np.append(keys, [0.1 + 0.2, 0.3])
+        values = rng.integers(0, 3, size=keys.size).astype(float)
+        if not is_class:
+            values += rng.normal(size=keys.size)
+        values[rng.random(keys.size) < 0.1] = -0.0
+        got = _group_reduce_sorted(keys, values, noise_reduction, is_class)
+        ref = _reference_group_reduce(keys, values, noise_reduction, is_class)
+        for a, b in zip(got, ref, strict=True):
+            assert _same(a, b)
+            assert np.array_equal(np.signbit(a), np.signbit(b))
