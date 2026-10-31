@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
+from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
 from nns.dependence import _gravity, _gravity_subsets_are_safe, _native_partition_is_exact
 
@@ -92,7 +93,7 @@ def _part_max(
 
     def reducer(z: NDArray[np.float64]) -> float:
         if noise == "mean":
-            return float(np.mean(z))
+            return r_mean(z)
         if noise == "median":
             return float(np.median(z))
         if noise in ("mode", "mode_class"):
@@ -372,10 +373,9 @@ def _centers_for_groups(
     center_y = np.full(n_groups, np.nan, dtype=np.float64)
 
     if noise == "mean":
-        float_counts = counts.astype(np.float64)
-        with np.errstate(invalid="ignore"):
-            center_x[:] = np.bincount(group, weights=x, minlength=n_groups) / float_counts
-            center_y[:] = np.bincount(group, weights=y, minlength=n_groups) / float_counts
+        # NNS_part_cpp's mean_no_na: long-double sums in row order.
+        center_x[:] = r_group_means_no_na(x, group, n_groups)
+        center_y[:] = r_group_means_no_na(y, group, n_groups)
         return center_x, center_y
 
     if noise == "median":
@@ -424,7 +424,7 @@ def _aggregate_x(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     # R mean()/median() propagate infinities; gravity/mode filter to finite
     # values internally, matching NNS.gravity / NNS.mode.
     if noise == "mean":
-        return float(np.mean(values))
+        return r_mean_no_na(values)
     if noise == "median":
         return float(np.median(values))
     finite = values[np.isfinite(values)]
@@ -437,7 +437,7 @@ def _aggregate_x(values: NDArray[np.float64], noise: NoiseReduction) -> float:
 
 def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     if noise == "mean":
-        return float(np.mean(values))
+        return r_mean_no_na(values)
     if noise == "median":
         return float(np.median(values))
     finite = values[np.isfinite(values)]
