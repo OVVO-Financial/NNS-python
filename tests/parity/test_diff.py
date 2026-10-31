@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 from _r import dy_d_scalar, dy_dx_numeric, dy_dx_overall, nns_diff_custom
-from _tolerances import EXACT
+from _tolerances import COMPOUND, EXACT
 
 from nns import dy_d, dy_dx, nns_diff
 
@@ -56,7 +56,39 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
     assert isinstance(actual, dict)
     assert list(actual) == list(expected)
     for key in actual:
-        np.testing.assert_allclose(actual[key], expected[key], atol=5e-3, equal_nan=True)
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("size", [30, 60, 250])
+def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
+    # R steps by gravity(|diff(x)|) * h_s (the bandwidth value, not its index);
+    # for n < 49 R keeps only the bandwidths that occur once in h_s.
+    rng = np.random.default_rng(size)
+    x = rng.uniform(-2.0, 2.0, size)
+    y = x**3 - x
+    eval_point = [-1.5, 0.0, 0.5, 1.5]
+    expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
+    actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
+    assert isinstance(actual, dict)
+    for key in actual:
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+def test_dy_dx_numeric_boundary_eval_points_match_r() -> None:
+    # At min(x) and max(x) one run is 0: R uses the one-sided slope and the
+    # second derivative is NaN.
+    rng = np.random.default_rng(7)
+    x = np.sort(rng.uniform(0.0, 2.0 * np.pi, 120))
+    y = np.cos(x)
+    eval_point = [float(x[0]), 3.0, float(x[-1])]
+    expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
+    actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
+    assert isinstance(actual, dict)
+    assert np.isnan(actual["second.derivative"][[0, 2]]).all()
+    for key in actual:
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
 
 
 @pytest.mark.parity
