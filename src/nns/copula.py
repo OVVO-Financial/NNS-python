@@ -7,8 +7,8 @@ from typing import cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_pair
 from nns._native import native_fn
-from nns.co_moments import _as_pair
 from nns.dependence import _dpm_nd
 from nns.pm_matrix import pm_matrix
 
@@ -38,6 +38,9 @@ def nns_copula(
     (degree-1) partial-moment dependence measures, exactly as R's
     ``NNS.copula(..., continuous=TRUE)``. ``continuous=False`` reuses the
     discrete partial moments for both terms, matching ``continuous=FALSE``.
+
+    Inputs and targets must be non-empty and finite (R stops on missing or
+    non-finite data); a ``ValueError`` is raised otherwise.
     """
     values, targets = _prepare(x, y, target_x, target_y, target)
     return _copula(values, targets, continuous)
@@ -48,6 +51,9 @@ def _copula(
     target: NDArray[np.float64],
     continuous: bool,
 ) -> float:
+    if values.ndim != 2 or values.shape[0] == 0:
+        # The native kernel assumes at least one observation.
+        raise ValueError("copula input must be non-empty.")
     native_copula = native_fn("copula_nd")
     if native_copula is not None:
         return float(
@@ -123,6 +129,8 @@ def _prepare(
         targets[0] = float(target_x)
     if target_y is not None:
         targets[1] = float(target_y)
+    if not np.all(np.isfinite(targets)):
+        raise ValueError("target must contain only finite values.")
     return values, targets
 
 
