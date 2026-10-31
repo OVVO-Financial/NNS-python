@@ -72,3 +72,18 @@ def test_causal_matrix_ts_tau_no_longer_raises() -> None:
 
     assert result.shape == (3, 3)
     np.testing.assert_allclose(np.diag(result), 0.0)
+
+
+@pytest.mark.parametrize("n", [5, 40, 600])
+def test_causation_native_asym_dep_matches_python_partition(n: int) -> None:
+    # _asym_dep now uses the native nns_dep(asym=True) kernel; it must equal the
+    # pure-Python X-only partition it replaced, bit for bit.
+    from nns.causation import _asym_dep, _asym_dep_python
+
+    rng = np.random.default_rng(n)
+    x = rng.normal(size=n)
+    for y in (x**2 + rng.normal(size=n), rng.normal(size=n), np.round(x), -x):
+        assert _asym_dep(x, y) == _asym_dep_python(x, y)
+        assert _asym_dep(y, x) == _asym_dep_python(y, x)
+    ints = rng.integers(0, 4, size=n).astype(float)
+    assert _asym_dep(ints, x) == _asym_dep_python(ints, x)
