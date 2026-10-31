@@ -50,3 +50,20 @@ def _wide_matrix(size: int) -> np.ndarray:
     row = np.arange(1, size + 1, dtype=np.float64)[:, np.newaxis]
     col = np.arange(1, 11, dtype=np.float64)[np.newaxis, :]
     return np.sin(row * col / 13.0) + np.cos((row + 3.0) / (col + 5.0)) + 3.0
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("linear", [False, True])
+def test_nns_norm_accepts_dataframe_like_r(linear: bool) -> None:
+    pd = pytest.importorskip("pandas")
+    x = _small_matrix(60)
+    frame = pd.DataFrame(x, columns=["a", "b", "c"], index=pd.RangeIndex(10, 70))
+
+    expected = nns("NNS.norm", {name: frame[name].tolist() for name in frame}, linear, None)
+    actual = nns_norm(frame, linear=linear)
+
+    assert isinstance(actual, pd.DataFrame)
+    assert list(actual.columns) == ["a Normalized", "b Normalized", "c Normalized"]
+    assert actual.index.equals(frame.index)
+    np.testing.assert_allclose(actual.to_numpy(), _matrix(expected), atol=EXACT)
+    np.testing.assert_array_equal(actual.to_numpy(), nns_norm(x, linear=linear))
