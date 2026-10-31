@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import cmath
+import math
 from typing import Any
 
 import numpy as np
@@ -9,7 +11,6 @@ from _tolerances import COMPOUND, EXACT
 
 from nns import dy_d, dy_dx, nns_diff
 
-DIFF_PARITY = 1e-5
 # dy.d_ is evaluated through independent fitted NNS models in R and Python.
 # Small fit differences are magnified by finite-difference denominators.
 DY_D_PARITY = 5e-2
@@ -24,17 +25,27 @@ DY_D_PARITY = 5e-2
         ("exp", np.exp, 0.5),
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
+        ("square", lambda x: x * x, 3.0),
+        ("cube", lambda x: x**3, 2.0),
+        ("log", np.log, 5.0),
+        # math.tanh is the C library tanh R uses; np.tanh can differ by an ulp,
+        # which changes the bisection path.
+        ("tanh", lambda x: cmath.tanh(x) if isinstance(x, complex) else math.tanh(x), 0.5),
+        ("abs", abs, -1.0),
+        ("quartic", lambda x: x**4 - 3 * x, -2.0),
     ],
 )
-def test_nns_diff_derivative_matches_r(name: str, func: Any, point: float) -> None:
+def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
+    # The root finder mirrors R's uniroot (tol = eps^0.25, extendInt = "yes"),
+    # so every reported field, including iterations and the convergence flags,
+    # matches R's 12-digit output.
     expected = _r_nns_diff(name, point)
     actual = nns_diff(func, point)
-    np.testing.assert_allclose(actual["DERIVATIVE"], expected["DERIVATIVE"], atol=DIFF_PARITY)
-    np.testing.assert_allclose(
-        actual["Value of f(x) at point"],
-        expected["Value of f(x) at point"],
-        atol=EXACT,
-    )
+    for key, value in actual.items():
+        if key not in expected:  # R NA
+            assert np.isnan(value), key
+            continue
+        np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
 
 
 @pytest.mark.parity
