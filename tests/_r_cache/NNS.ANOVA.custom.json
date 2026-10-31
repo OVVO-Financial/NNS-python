@@ -33,7 +33,21 @@
       "Treatment_CDF": 0.439774510459534,
       "Upper 95% CI": 0.886414320951287
     },
+    "1b977f6ccc561a923428f62665be9c43298c604d3f18e13fe792b818b779f8a7": {
+      "error": "object 'control_upper' not found"
+    },
+    "44948d5b8dc3880a7fe9222e31bcc0f573827c4127178a0af043c55be1e13614": {
+      "error": "object 'control_lower' not found"
+    },
     "50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
+    "5445f1cf349065ffbccfcdbaddf5d3eac1c00a72b1ae66b6a76ca705a0bd3f6f": {
+      "Certainty": 0.614235794289578,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
     "58539d1fd2413525683dd9ef265ebd09917c123bf9a3b8611b71db8b6602f1ca": {
       "Certainty": 0.0524519470202307,
       "Confidence_Level": 0.95,
@@ -45,6 +59,9 @@
       "Treatment": 0.802319295960401,
       "Treatment_CDF": 0.154571915684601
     },
+    "63404101082920ecc565a43b4712955171c42f820becf87e7bfae40e5c1226b7": {
+      "error": "object 'control_lower' not found"
+    },
     "66185be7dcec1e619e0245b9ac01e7a5b2737f8d68bba4d592d12abbd8339795": {
       "Certainty": 0.117876703498708,
       "Confidence_Level": 0.9,
@@ -55,6 +72,14 @@
       "Grand_Statistic": 0.159468927689749,
       "Treatment": 0.495159650226013,
       "Treatment_CDF": 0.260869565217391
+    },
+    "6b6b74ec51f07d66018942eab9be19b3c0fd3baea32ea85e3b294c0c74fbe53a": {
+      "Certainty": 0.614235794289578,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
     },
     "771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
       "Certainty": 0.652075214441377,
@@ -181,6 +206,9 @@
         1.0
       ]
     ],
+    "eef2a64e9150b43020d73428148f333041b4f1a141c94ebc4dd85a4a4d5ceac2": {
+      "error": "object 'control_upper' not found"
+    },
     "f129e7aa1783f152f8b2657be872b2b6e85c4ac404e699e8e749847c1d0f4c64": {
       "Certainty": 0.614235794289578,
       "Control": 0.0191268165633628,

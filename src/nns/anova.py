@@ -39,6 +39,7 @@ def nns_anova(
     if treatment is not None:
         control_values = _as_group(control, "control")
         treatment_values = _as_group(treatment, "treatment")
+        _check_one_sided_ci(confidence_interval, tail)
         rng = _r_rng(random_seed)
         if robust:
             return _anova_robust(
@@ -291,26 +292,15 @@ def _effect_size_bounds(
     treatment_stats = (
         np.median(treatment_boot, axis=1) if medians else np.mean(treatment_boot, axis=1)
     )
+    _check_one_sided_ci(confidence_interval, tails)
     alpha = _ci_alpha(confidence_interval, tails)
 
-    control_upper = treatment_upper = np.inf
-    control_lower = treatment_lower = -np.inf
-    if tails in {"both", "right"}:
-        control_upper = _quantile_var(alpha, upper=True, values=control_stats)
-        treatment_upper = _quantile_var(alpha, upper=True, values=treatment_stats)
-    if tails in {"both", "left"}:
-        control_lower = _quantile_var(alpha, upper=False, values=control_stats)
-        treatment_lower = _quantile_var(alpha, upper=False, values=treatment_stats)
-
-    if tails == "both":
-        min_effect = treatment_lower - control_upper
-        max_effect = treatment_upper - control_lower
-    elif tails == "left":
-        min_effect = treatment_lower - control_upper
-        max_effect = np.inf
-    else:
-        min_effect = -np.inf
-        max_effect = treatment_upper - control_lower
+    control_upper = _quantile_var(alpha, upper=True, values=control_stats)
+    treatment_upper = _quantile_var(alpha, upper=True, values=treatment_stats)
+    control_lower = _quantile_var(alpha, upper=False, values=control_stats)
+    treatment_lower = _quantile_var(alpha, upper=False, values=treatment_stats)
+    min_effect = treatment_lower - control_upper
+    max_effect = treatment_upper - control_lower
     return {
         "Effect_Size_LB": float(min_effect),
         "Effect_Size_UB": float(max_effect),
@@ -326,6 +316,19 @@ def _r_rng(seed: int | None) -> RRNG:
 
 def _r_boot_indices(rng: RRNG, size: int, n_boot: int) -> NDArray[np.int64]:
     return (rng.sample_int_replace(size, size * n_boot) - 1).reshape(n_boot, size)
+
+
+def _check_one_sided_ci(confidence_interval: float | None, tails: Tail) -> None:
+    # R's NNS.ANOVA.bin computes control_upper only for "both"/"right" and
+    # control_lower only for "both"/"left", then uses the missing one, so every
+    # one-sided effect-size interval stops with "object ... not found". Python
+    # used to return (-inf, inf) instead; fail clearly until R is fixed.
+    if confidence_interval is not None and tails != "both":
+        raise ValueError(
+            f"tails={tails!r} with a confidence_interval is not supported: the one-sided "
+            "effect-size bound fails in R's NNS.ANOVA (object 'control_upper'/'control_lower' "
+            "not found). Use tails='both', or confidence_interval=None."
+        )
 
 
 def _ci_alpha(confidence_interval: float | None, tails: Tail) -> float:
