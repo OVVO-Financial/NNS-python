@@ -425,28 +425,28 @@ def _default_order(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
 def _group_reduce_sorted(
     keys: NDArray[np.float64],
     values: NDArray[np.float64],
-    reducer: Any,
+    noise_reduction: str,
+    is_class: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Group values by key exactly as R's ``split(values, keys)`` does.
 
     R splits on ``as.character(keys)`` (15 significant digits), so keys that
     agree to 15 digits share a group and the returned key is the string
-    round-trip of the original value. Replicated here for parity.
+    round-trip of the original value. Replicated here for parity. Each group
+    is reduced with ``_reduce_value`` (via the exact vectorised ``_reduce_cells``).
     """
     order = np.argsort(keys, kind="stable")
     keys_sorted = keys[order]
-    values_sorted = values[order]
+    values_sorted = np.asarray(values[order], dtype=np.float64)
     key_strings = [f"{v:.15g}" for v in keys_sorted]
-
-    out_keys: list[float] = []
-    reduced: list[float] = []
-    start = 0
-    for i in range(1, len(key_strings) + 1):
-        if i == len(key_strings) or key_strings[i] != key_strings[start]:
-            out_keys.append(float(key_strings[start]))
-            reduced.append(reducer(values_sorted[start:i]))
-            start = i
-    return np.asarray(out_keys, dtype=np.float64), np.asarray(reduced, dtype=np.float64)
+    if not key_strings:
+        return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
+    labels = np.asarray(key_strings)
+    starts = np.flatnonzero(np.concatenate(([True], labels[1:] != labels[:-1])))
+    counts = np.diff(np.append(starts, labels.size))
+    out_keys = np.asarray([float(key_strings[i]) for i in starts], dtype=np.float64)
+    reduced = _reduce_cells(values_sorted, starts, counts, noise_reduction, is_class)
+    return out_keys, reduced
 
 
 def _build_points(
@@ -462,7 +462,7 @@ def _build_points(
         return _reduce_value(z, noise_reduction, is_class)
 
     if order == "max":
-        xs, ys = _group_reduce_sorted(x, y, reducer)
+        xs, ys = _group_reduce_sorted(x, y, noise_reduction, is_class)
         rp_x, rp_y = xs, ys
     else:
         ord_value = _default_order(x, y) if order is None else int(order)
@@ -487,7 +487,7 @@ def _build_points(
     rp_x, rp_y = rp_x[order_idx], rp_y[order_idx]
 
     if np.unique(rp_x).size != rp_x.size:
-        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, reducer)
+        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, noise_reduction, is_class)
 
     xmin = float(np.min(x))
     xmax = float(np.max(x))
@@ -498,7 +498,7 @@ def _build_points(
     order_idx = np.argsort(rp_x, kind="stable")
     rp_x, rp_y = rp_x[order_idx], rp_y[order_idx]
     if np.unique(rp_x).size != rp_x.size:
-        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, reducer)
+        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, noise_reduction, is_class)
 
     return {"x": rp_x, "y": rp_y}
 
