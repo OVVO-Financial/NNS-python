@@ -44,3 +44,29 @@ def test_nns_moments_public_wrapper_matches_r(population: bool) -> None:
     assert actual["variance"] == pytest.approx(float(expected["variance"]), abs=EXACT)
     assert actual["skewness"] == pytest.approx(float(expected["skewness"]), abs=EXACT)
     assert actual["kurtosis"] == pytest.approx(float(expected["kurtosis"]), abs=EXACT)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("population", [True, False])
+@pytest.mark.parametrize(
+    "x",
+    [[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 2.0, 4.0], [1.0, 2.0], [5.0], [3.0, 3.0, 3.0]],
+)
+def test_nns_moments_degenerate_input_returns_nan_like_r(
+    x: list[float], population: bool
+) -> None:
+    # Constant input and n <= 3 used to raise ZeroDivisionError; R returns NaN.
+    expected = cast(dict[str, np.ndarray], nns("NNS.moments", x, population))
+    actual = nns_moments(np.asarray(x), population=population)
+
+    for key in ("mean", "variance", "skewness", "kurtosis"):
+        np.testing.assert_allclose(
+            actual[key], float(np.asarray(expected[key])), atol=EXACT, equal_nan=True
+        )
+
+
+def test_skew_and_kurt_pm_of_constant_input_are_nan() -> None:
+    x = np.full(6, 2.5)
+    assert np.isnan(skew_pm(x))
+    assert np.isnan(kurt_pm(x))
+    assert np.isnan(kurt_pm(x, excess=False))
