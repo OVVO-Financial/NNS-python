@@ -573,7 +573,10 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 `nns_anova` maps to R's non-plotting `NNS.ANOVA` paths. Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
-symmetric certainty matrix. Confidence-interval bootstrapping draws from a
+symmetric certainty matrix. `NaN` values are dropped from every group (R drops
+them with `na.omit` in the multi-group path but propagates `NaN` in the binary
+path); `±Inf` raises a `ValueError` (R's binary path fails on it in
+`LPM.VaR`). Confidence-interval bootstrapping draws from a
 reproduction of R's Mersenne-Twister `sample()` stream, so
 `random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
 the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
