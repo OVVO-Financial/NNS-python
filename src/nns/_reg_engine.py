@@ -946,22 +946,48 @@ def _mreg_distances(
     mins: NDArray[np.float64],
     maxs: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """(m, n) distance matrix under the repaired metric."""
+    """(m, n) distance matrix under the repaired metric.
+
+    Accumulated one predictor column at a time in (m, n) buffers instead of
+    materialising (m, n, p) temporaries. The per-element arithmetic is
+    unchanged and the columns are summed sequentially in column order, which
+    is the order R's kernel uses and the order NumPy used on the former
+    broadcast tensor (its predictor axis had the largest stride, so the
+    reduction ran column by column), so results are bit-for-bit the same.
+    """
+    m, n = xtest.shape[0], rpm_x.shape[0]
     if dist == "FACTOR":
-        return cast(
-            NDArray[np.float64],
-            np.mean(rpm_x[None, :, :] != xtest[:, None, :], axis=2, dtype=np.float64),
-        )
+        # Mismatch counts are small integers, so their sum is exact in any order.
+        out = np.zeros((m, n), dtype=np.float64)
+        for j in range(rpm_x.shape[1]):
+            out += xtest[:, j, None] != rpm_x[None, :, j]
+        out /= rpm_x.shape[1]
+        return out
     ranges = maxs - mins
-    active = np.isfinite(ranges) & (ranges > 0)
-    if not np.any(active):
-        return np.zeros((xtest.shape[0], rpm_x.shape[0]), dtype=np.float64)
-    z = (xtest[:, None, active] - rpm_x[None, :, active]) / ranges[active]
-    if dist == "NNS":
-        return np.sum(np.abs(z) + z * z, axis=2)
-    if dist == "L1":
-        return np.sum(np.abs(z), axis=2)
-    return np.sqrt(np.sum(z * z, axis=2))
+    active = np.flatnonzero(np.isfinite(ranges) & (ranges > 0))
+    if active.size == 0:
+        return np.zeros((m, n), dtype=np.float64)
+
+    out = np.empty((m, n), dtype=np.float64)
+    buf = np.empty_like(out) if active.size > 1 else out
+    sq = np.empty_like(out) if dist == "NNS" else out
+    for a, j in enumerate(active):
+        z = out if a == 0 else buf
+        np.subtract(xtest[:, j, None], rpm_x[None, :, j], out=z)
+        z /= ranges[j]
+        if dist == "NNS":
+            np.multiply(z, z, out=sq)
+            np.abs(z, out=z)
+            z += sq
+        elif dist == "L1":
+            np.abs(z, out=z)
+        else:
+            np.multiply(z, z, out=z)
+        if a:
+            out += z
+    if dist == "L2":
+        np.sqrt(out, out=out)
+    return out
 
 
 def _stable_topk(d: NDArray[np.float64], k: int) -> NDArray[np.intp]:
@@ -1014,7 +1040,7 @@ def _mreg_predict(
     k = min(int(k), n)
     out = np.empty(xtest.shape[0], dtype=np.float64)
 
-    chunk = max(1, int(4_000_000 // max(n, 1)))
+    chunk = max(1, int(1_000_000 // max(n, 1)))
     for start in range(0, xtest.shape[0], chunk):
         rows = slice(start, min(start + chunk, xtest.shape[0]))
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
@@ -1066,7 +1092,7 @@ def _mreg_predict_path(
     # never materialised in full, and select only the kmax nearest neighbours
     # (partial selection) rather than sorting every RPM row. Results are
     # byte-for-byte identical to a full stable sort of all rows.
-    chunk = max(1, int(4_000_000 // max(n, 1)))
+    chunk = max(1, int(1_000_000 // max(n, 1)))
     for start in range(0, m, chunk):
         rows = slice(start, min(start + chunk, m))
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
