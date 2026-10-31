@@ -64,3 +64,22 @@ def _relationship(
     if relationship == "monotonic_nonlinear":
         return x, x**3
     return x, -x
+
+
+
+@pytest.mark.parity
+def test_nns_copula_default_target_uses_r_col_means() -> None:
+    # REG-10: np.mean(x) is 0.4999999999999999 here, R colMeans(x) is 0.5, and four
+    # observations sit exactly on 0.5. The last ulp decides whether they count as
+    # lower (all points concordant, R's shortcut returns 1) or upper (0.882).
+    x = np.array(
+        [0.1, 0.2, 0.9, 0.6, 0.3, 0.5, 0.9, 0.5, 0.1, 0.6, 0.8, 0.8, 0.7, 0.2, 0.5, 0.5, 0.7, 0.1]
+    )
+    y = np.where(x <= 0.5, x, x + 10.0)
+    m = np.column_stack((x, y))
+    assert float(np.mean(x)) != 0.5
+
+    expected = _scalar(nns("NNS.copula", m.tolist(), None, True, False, False))
+
+    np.testing.assert_allclose(nns_copula(m), expected, atol=EXACT)
+    np.testing.assert_allclose(nns_copula(x, y), expected, atol=EXACT)

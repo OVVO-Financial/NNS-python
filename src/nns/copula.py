@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -124,7 +123,7 @@ def _prepare(
         raise ValueError("Use target_x/target_y (not target) with the bivariate (x, y) form.")
     x_values, y_values = _as_pair(x, y)
     values = np.column_stack((x_values, y_values))
-    targets = cast(NDArray[np.float64], np.mean(values, axis=0))
+    targets = _r_col_means(values)
     if target_x is not None:
         targets[0] = float(target_x)
     if target_y is not None:
@@ -152,10 +151,28 @@ def _matrix_target(
     target: NDArray[np.float64] | Sequence[float] | None,
 ) -> NDArray[np.float64]:
     if target is None:
-        return cast(NDArray[np.float64], np.mean(values, axis=0))
+        return _r_col_means(values)
     targets = np.asarray(target, dtype=np.float64).reshape(-1)
     if targets.size != values.shape[1]:
         raise ValueError("target length must match the number of variables (columns).")
     if not np.all(np.isfinite(targets)):
         raise ValueError("target must contain only finite values.")
     return targets
+
+
+def _r_col_means(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Column means computed exactly as R's ``colMeans`` on a double matrix.
+
+    R accumulates each column sequentially in long double and divides in long
+    double before rounding to double. ``np.mean`` uses pairwise double summation
+    and can differ in the last ulp, which is enough to flip the copula's
+    exact-equality shortcut when an observation sits on the mean (REG-10).
+    On platforms where ``np.longdouble`` is plain double this degrades to a
+    sequential double sum.
+    """
+    n = values.shape[0]
+    out = np.empty(values.shape[1], dtype=np.float64)
+    for column in range(values.shape[1]):
+        total = np.cumsum(values[:, column], dtype=np.longdouble)[-1]
+        out[column] = float(total / n)
+    return out
