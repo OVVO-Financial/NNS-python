@@ -92,6 +92,23 @@ def test_nns_seas_tied_periods_keep_r_order(values: np.ndarray, mod_only: bool) 
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.array([2.0, 0.0, 0.0, -2.0, 0.0]),
+        np.array([2.0, 0.0, 0.0, -2.0, 0.0, 0.0, 0.0, 0.0]),
+    ],
+)
+def test_nns_seas_zero_mean_zero_autocorrelation_matches_r(values: np.ndarray) -> None:
+    # Mean exactly 0 switches to the 1/|acf1| statistic; acf1 == 0 must give Inf
+    # (R's pow(0, -1)) rather than raising ZeroDivisionError.
+    expected = nns("NNS.seas", values.tolist(), None, True, False)
+    actual = nns_seas(values)
+
+    _assert_seas_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("values", [np.array([1.0, np.nan, 3.0]), np.array([1.0, np.inf, 3.0])])
 def test_nns_seas_non_finite_errors(values: np.ndarray) -> None:
     with pytest.raises(ValueError):

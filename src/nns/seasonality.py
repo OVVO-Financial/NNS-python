@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import math
 from collections import OrderedDict
 from typing import SupportsInt, TypedDict, cast
@@ -69,53 +70,29 @@ def _nns_seas_compute(
         _cache_put(cache_key, result)
         return _clone_result(result)
 
-    mean_var = _mean_exact(values)
+    mean_var = _seq_mean(values)
     use_cv = mean_var != 0.0
-    exact_cv = abs(mean_var) <= 1e-12
-    var_cov = (
-        abs(_sample_sd_from_mean(values, mean_var, exact=True) / mean_var)
-        if use_cv
-        else abs(_acf1(values)) ** -1.0
-    )
+    if use_cv:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            var_cov = abs(_seq_sd(values, mean_var) / mean_var)
+    else:
+        var_cov = _inverse_abs(_acf1(values))
     if not np.isfinite(var_cov):
         var_cov = math.inf
 
-    periods: list[int] = []
-    covs: list[float] = []
-    half_n = n // 2
-    variable_1 = values[:-1]
-    variable_2 = variable_1[:-1]
-    if use_cv:
-        for period in range(1, half_n + 1):
-            component = values[::-period]
-            t0 = _cv_stat(component, var_cov, exact_cv)
-            if t0 > var_cov:
-                continue
-            component = variable_1[::-period]
-            t1 = _cv_stat(component, var_cov, exact_cv)
-            if t1 > var_cov:
-                continue
-            component = variable_2[::-period]
-            t2 = _cv_stat(component, var_cov, exact_cv)
-            if t2 <= var_cov:
-                periods.append(period)
-                covs.append((t0 + t1 + t2) / 3.0)
-    else:
-        for period in range(1, half_n + 1):
-            t0 = _cv_or_fallback(_reverse_step(values, period), use_cv, var_cov, exact_cv)
-            if t0 > var_cov:
-                continue
-            t1 = _cv_or_fallback(_reverse_step(variable_1, period), use_cv, var_cov, exact_cv)
-            if t1 > var_cov:
-                continue
-            t2 = _cv_or_fallback(_reverse_step(variable_2, period), use_cv, var_cov, exact_cv)
-            if t2 <= var_cov:
-                periods.append(period)
-                covs.append((t0 + t1 + t2) / 3.0)
+    # R evaluates each period on the reverse-stride subsample of the series and of
+    # the series without its last one and two observations.
+    candidates = np.arange(1, n // 2 + 1, dtype=np.int64)
+    t0 = _subsample_stats(values, candidates, use_cv, var_cov)
+    t1 = _subsample_stats(values[:-1], candidates, use_cv, var_cov)
+    t2 = _subsample_stats(values[:-2], candidates, use_cv, var_cov)
+    passing = (t0 <= var_cov) & (t1 <= var_cov) & (t2 <= var_cov)
+    periods = candidates[passing]
+    covs = (t0[passing] + t1[passing] + t2[passing]) / 3.0
 
-    if periods:
-        period_arr = np.asarray(periods, dtype=np.int64)
-        coef_arr = np.asarray(covs, dtype=np.float64)
+    if periods.size:
+        period_arr = periods
+        coef_arr = covs
         var_arr = np.full(period_arr.size, var_cov, dtype=np.float64)
         period_arr, coef_arr, var_arr = _sort_periods(period_arr, coef_arr, var_arr)
     else:
@@ -157,100 +134,74 @@ def _validate_variable(variable: NDArray[np.float64]) -> NDArray[np.float64]:
     return values
 
 
-def _sample_sd(values: NDArray[np.float64]) -> float:
-    if values.size < 2:
-        return math.nan
-    mean = _mean(values)
-    return _sample_sd_from_mean(values, mean)
+def _seq_mean(values: NDArray[np.float64]) -> float:
+    # R NNS_seas.cpp::vec_mean accumulates left to right; np.cumsum is sequential
+    # too (np.sum would use pairwise summation and round differently).
+    return float(np.cumsum(values)[-1]) / float(values.size)
+
+
+def _seq_sd(values: NDArray[np.float64], mean: float) -> float:
+    delta = values - mean
+    return math.sqrt(float(np.cumsum(delta * delta)[-1]) / float(values.size - 1))
 
 
 def _acf1(values: NDArray[np.float64]) -> float:
-    n = values.size
-    if n < 2:
+    # R NNS_seas.cpp::acf1 (lag-1 autocorrelation, sequential sums); NaN if undefined.
+    if values.size < 2:
         return math.nan
-    mean = _mean(values)
-    numerator = 0.0
-    denom = 0.0
-    for index in range(1, n):
-        numerator += (float(values[index]) - mean) * (float(values[index - 1]) - mean)
-    for value in values:
-        delta = float(value) - mean
-        denom += delta * delta
-    if denom == 0.0:
+    delta = values - _seq_mean(values)
+    numerator = float(np.cumsum(delta[1:] * delta[:-1])[-1])
+    denominator = float(np.cumsum(delta * delta)[-1])
+    if denominator == 0.0:
         return math.nan
-    return numerator / denom
+    return numerator / denominator
 
 
-def _cv_or_fallback(
-    values: NDArray[np.float64],
+def _inverse_abs(value: float) -> float:
+    # R's std::pow(fabs(a), -1.0): Inf for a == 0 (Python's 0.0 ** -1.0 raises) and
+    # NaN for NaN. libm pow is kept on purpose: 1/x differs from it in the last bit
+    # for about 0.1% of inputs.
+    if math.isnan(value):
+        return math.nan
+    return math.inf if value == 0.0 else math.pow(abs(value), -1.0)
+
+
+def _subsample_stats(
+    series: NDArray[np.float64],
+    periods: NDArray[np.int64],
     use_cv: bool,
     var_cov: float,
-    exact_cv: bool,
-) -> float:
-    if values.size < 2:
-        return var_cov
-    if use_cv:
-        mean = _mean_exact(values) if exact_cv else _mean(values)
-        sd = _sample_sd_from_mean(values, mean, exact=exact_cv)
-        stat = abs(sd / mean) if mean != 0.0 else math.inf
-        if (
-            not exact_cv
-            and np.isfinite(stat)
-            and abs(stat - var_cov) <= 1e-12 * max(1.0, abs(var_cov))
-        ):
-            mean = _mean_exact(values)
-            sd = _sample_sd_from_mean(values, mean, exact=True)
-            stat = abs(sd / mean) if mean != 0.0 else math.inf
-    else:
-        acf = _acf1(values)
-        stat = abs(acf) ** -1.0
-    if not np.isfinite(stat):
-        return var_cov
-    return float(stat)
+) -> NDArray[np.float64]:
+    """R's cv_or_fallback on series[::-p] for every period p.
 
-
-def _cv_stat(values: NDArray[np.float64], var_cov: float, exact_cv: bool) -> float:
-    if values.size < 2:
-        return var_cov
-    mean = _mean_exact(values) if exact_cv else _mean(values)
-    sd = _sample_sd_from_mean(values, mean, exact=exact_cv)
-    stat = abs(sd / mean) if mean != 0.0 else math.inf
-    if not exact_cv and np.isfinite(stat) and abs(stat - var_cov) <= 1e-12 * max(1.0, abs(var_cov)):
-        mean = _mean_exact(values)
-        sd = _sample_sd_from_mean(values, mean, exact=True)
-        stat = abs(sd / mean) if mean != 0.0 else math.inf
-    if not np.isfinite(stat):
-        return var_cov
-    return float(stat)
-
-
-def _mean(values: NDArray[np.float64]) -> float:
-    # Match R NNS_seas_cpp::vec_mean exactly: sequential accumulation.
-    total = 0.0
-    for value in values:
-        total += float(value)
-    return total / float(values.size)
-
-
-def _mean_exact(values: NDArray[np.float64]) -> float:
-    total = 0.0
-    for value in values:
-        total += float(value)
-    return total / float(values.size)
-
-
-def _sample_sd_from_mean(values: NDArray[np.float64], mean: float, *, exact: bool = False) -> float:
-    del exact
-    # Match R NNS_seas_cpp::vec_sd exactly: sequential squared deviations.
-    ss = 0.0
-    for value in values:
-        delta = float(value) - mean
-        ss += delta * delta
-    return math.sqrt(ss / float(values.size - 1))
-
-
-def _reverse_step(values: NDArray[np.float64], step: int) -> NDArray[np.float64]:
-    return values[::-step]
+    Periods whose subsamples have the same length are evaluated together as rows of
+    one gathered matrix. Row sums use np.cumsum, which accumulates sequentially like
+    the C++ loops, so the statistics are bit-identical to R's.
+    """
+    m = series.size
+    out = np.full(periods.size, var_cov, dtype=np.float64)
+    if periods.size == 0 or m < 2:
+        return out
+    lengths = (m - 1) // periods + 1
+    bounds = np.concatenate(([0], np.flatnonzero(np.diff(lengths)) + 1, [periods.size]))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for lo, hi in itertools.pairwise(bounds.tolist()):
+            length = int(lengths[lo])
+            if length < 2:
+                continue
+            steps = np.arange(length, dtype=np.int64)
+            block = series[(m - 1) - periods[lo:hi, np.newaxis] * steps]
+            mean = np.cumsum(block, axis=1)[:, -1] / float(length)
+            delta = block - mean[:, np.newaxis]
+            sum_sq = np.cumsum(delta * delta, axis=1)[:, -1]
+            if use_cv:
+                stat = np.abs(np.sqrt(sum_sq / float(length - 1)) / mean)
+            else:
+                cross = np.cumsum(delta[:, 1:] * delta[:, :-1], axis=1)[:, -1]
+                acf = np.where(sum_sq == 0.0, math.nan, cross / sum_sq)
+                stat = np.asarray([_inverse_abs(float(a)) for a in acf], dtype=np.float64)
+            out[lo:hi] = np.where(np.isfinite(stat), stat, var_cov)
+    return out
 
 
 def _sort_periods(
