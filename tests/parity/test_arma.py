@@ -211,6 +211,43 @@ def test_nns_arma_pred_int_statistical_summary_is_close_to_r() -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.stochastic
+def test_nns_arma_single_lag_lin_pred_int_matches_r() -> None:
+    # R's vectorised single-lag "lin" branch returns intervals (it used to raise in Python).
+    t = np.arange(1, 97, dtype=np.float64)
+    variable = 100.0 + 2.0 * t + 10.0 * np.sin(2.0 * np.pi * t / 12.0) + 3.0 * np.cos(t)
+
+    expected = _dict(
+        nns_arma_pred_int(
+            variable.tolist(),
+            h=12,
+            seasonal_factor=12,
+            method="lin",
+            pred_int=0.95,
+            seed=123,
+        )
+    )
+    actual = nns_arma(
+        variable, h=12, seasonal_factor=12, method="lin", pred_int=0.95, random_seed=123
+    )
+    deterministic = nns_arma(variable, h=12, seasonal_factor=12, method="lin")
+
+    assert isinstance(actual, dict)
+    assert set(actual) == set(expected)
+    np.testing.assert_allclose(actual["Estimates"], expected["Estimates"], atol=COMPOUND)
+    np.testing.assert_allclose(actual["Estimates"], deterministic, atol=COMPOUND)
+    lower = actual["Lower 95% pred.int"]
+    upper = actual["Upper 95% pred.int"]
+    assert np.all(lower <= actual["Estimates"])
+    assert np.all(upper >= actual["Estimates"])
+    np.testing.assert_allclose(
+        [np.mean(lower), np.mean(upper)],
+        [np.mean(expected["Lower 95% pred.int"]), np.mean(expected["Upper 95% pred.int"])],
+        rtol=0.1,
+    )
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize(
     ("name", "h", "training_set", "lin_only"),
     [

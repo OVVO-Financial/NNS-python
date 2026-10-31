@@ -100,10 +100,25 @@ def test_nns_arma_pred_int_seed_reproducibility() -> None:
     assert not np.array_equal(first["Lower 80% pred.int"], third["Lower 80% pred.int"])
 
 
-def test_nns_arma_static_linear_pred_int_matches_installed_r_error() -> None:
+def test_nns_arma_static_linear_pred_int_returns_intervals() -> None:
+    t = np.arange(1, 61, dtype=np.float64)
+    variable = 50.0 + t + 5.0 * np.sin(2.0 * np.pi * t / 4.0) + np.cos(t)
+
+    result = nns_arma(variable, h=6, seasonal_factor=4, method="lin", pred_int=0.9, random_seed=1)
+    point = nns_arma(variable, h=6, seasonal_factor=4, method="lin")
+
+    assert isinstance(result, dict)
+    assert list(result) == ["Estimates", "Lower 90% pred.int", "Upper 90% pred.int"]
+    np.testing.assert_array_equal(result["Estimates"], point)
+    assert np.all(result["Lower 90% pred.int"] <= point)
+    assert np.all(result["Upper 90% pred.int"] >= point)
+
+
+def test_nns_arma_static_linear_pred_int_exact_line_matches_installed_r_error() -> None:
+    # An exactly linear forecast path has constant meboot residuals; R fails the same way.
     variable = np.arange(1, 21, dtype=np.float64)
 
-    with pytest.raises(TypeError, match="non-numeric argument"):
+    with pytest.raises(ValueError, match="cannot be evaluated at initial parameters"):
         nns_arma(variable, h=5, seasonal_factor=4, method="lin", pred_int=0.95)
 
 
