@@ -14,6 +14,7 @@ merged-grid semantics to unequal lengths.)
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -47,18 +48,29 @@ class _SDOrderStatPrecomputed:
     identical: NDArray[np.bool_]
 
 
-def fsd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """First-order stochastic dominance; ``x`` and ``y`` may differ in length."""
+def fsd(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") -> int:
+    """First-order stochastic dominance; ``x`` and ``y`` may differ in length.
+
+    ``type="discrete"`` compares empirical CDFs; ``type="continuous"`` compares the
+    degree-1 ratio ``LPM1 / (LPM1 + UPM1)``, as R's ``NNS.FSD(type=)`` does. Like R,
+    an unrecognised ``type`` warns and runs the continuous test; where both
+    partial moments vanish the ratio is taken as 0 (R's C++ convention; R's
+    R-level ``NNS.FSD`` returns ``NA`` there).
+    """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
-    return _sd_result(x_values, y_values, 1)
+    discrete = _checked_fsd_type(type) == "discrete"
+    return _sd_result(x_values, y_values, 1, discrete=discrete)
 
 
 def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") -> int:
-    """Unidirectional first-order stochastic dominance: 1 if x dominates y, else 0."""
+    """Unidirectional first-order stochastic dominance: 1 if x dominates y, else 0.
+
+    Like R's ``NNS.FSD.uni``, an unrecognised ``type`` warns and runs the discrete test.
+    """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
-    discrete = type.lower() != "continuous"
+    discrete = _checked_fsd_type(type) != "continuous"
     return int(_dominates_uni(x_values, y_values, 1, discrete=discrete))
 
 
@@ -98,7 +110,12 @@ def nns_sd_cluster(
     dendrogram: bool = False,
     names: Sequence[str] | None = None,
 ) -> dict[str, object]:
-    """Cluster variables by iteratively peeling stochastic-dominance efficient sets."""
+    """Cluster variables by iteratively peeling stochastic-dominance efficient sets.
+
+    Cluster members are named by ``names``, else by the columns of a DataFrame-like
+    ``data`` (R's ``colnames``), else ``X_1``, ``X_2``, ...
+    """
+    column_labels = getattr(data, "columns", None)
     values = np.asarray(data, dtype=np.float64)
     if values.ndim != 2:
         raise ValueError("data must be a 2D array.")
@@ -114,7 +131,9 @@ def nns_sd_cluster(
         raise ValueError("min_cluster must be non-negative.")
 
     column_count = values.shape[1]
-    if names is None:
+    if names is None and column_labels is not None and len(column_labels) == column_count:
+        all_names = [str(name) for name in column_labels]
+    elif names is None:
         all_names = [f"X_{index + 1}" for index in range(column_count)]
     else:
         all_names = [str(name) for name in names]
@@ -302,10 +321,22 @@ def _sd_degree(degree: object) -> int:
 
 
 def _sd_type_value(degree: int, type: str) -> str:
+    if degree != 1:
+        return "discrete"
+    # R's C++ efficient set warns for degree 1 and then runs the discrete test.
+    type_value = _checked_fsd_type(type, stacklevel=4)
+    return "continuous" if type_value == "continuous" else "discrete"
+
+
+def _checked_fsd_type(type: str, *, stacklevel: int = 3) -> str:
     type_value = type.lower()
-    if degree == 1 and type_value in {"discrete", "continuous"}:
-        return type_value
-    return "discrete"
+    if type_value not in {"discrete", "continuous"}:
+        warnings.warn(
+            "type needs to be either 'discrete' or 'continuous'",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+    return type_value
 
 
 def _prefix_sd_precompute(
@@ -648,16 +679,18 @@ def _pair_curve_values_at_thresholds(
     return (counts * thresholds * thresholds - 2.0 * thresholds * sums1 + sums2) / observations
 
 
-def _sd_result(x: NDArray[np.float64], y: NDArray[np.float64], degree: int) -> int:
-    if _dominates(x, y, degree):
+def _sd_result(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    degree: int,
+    *,
+    discrete: bool = True,
+) -> int:
+    if _dominates_uni(x, y, degree, discrete=discrete):
         return 1
-    if _dominates(y, x, degree):
+    if _dominates_uni(y, x, degree, discrete=discrete):
         return -1
     return 0
-
-
-def _dominates(x: NDArray[np.float64], y: NDArray[np.float64], degree: int) -> bool:
-    return _dominates_uni(x, y, degree, discrete=True)
 
 
 def _dominates_uni(
@@ -750,7 +783,13 @@ def _lpm_at_target(
 
 
 def _as_sd_values(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    values = _as_1d_values(x)
+    values = np.asarray(x, dtype=np.float64)
+    if values.ndim == 2:
+        # R accepts single-column matrices and data frames.
+        if values.shape[1] != 1:
+            raise ValueError(f"{name} must be a single-column object or numeric vector.")
+        values = values[:, 0]
+    values = _as_1d_values(values)
     if not np.all(np.isfinite(values)):
         raise ValueError(f"{name} must contain only finite values.")
     return values

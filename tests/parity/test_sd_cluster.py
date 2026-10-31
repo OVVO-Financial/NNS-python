@@ -206,3 +206,15 @@ def _normalize_dendrogram(value: RValue) -> dict[str, object]:
             "dist.method": None,
         },
     }
+
+
+def test_nns_sd_cluster_uses_dataframe_column_names() -> None:
+    pd = pytest.importorskip("pandas")
+    frame = pd.DataFrame(_known_matrix(), columns=["A", "B", "C", "D"])
+
+    actual = nns_sd_cluster(frame, degree=1, min_cluster=1)
+
+    assert actual == nns_sd_cluster(_known_matrix(), degree=1, names=["A", "B", "C", "D"])
+    assert actual == {"Clusters": {"Cluster_1": ["A", "D"], "Cluster_2": ["B"], "Cluster_3": ["C"]}}
+    renamed = nns_sd_cluster(frame, degree=1, names=["w", "x", "y", "z"])
+    assert renamed["Clusters"]["Cluster_1"] == ["w", "z"]
