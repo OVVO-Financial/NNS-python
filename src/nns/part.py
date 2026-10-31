@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import numbers
 from typing import Any, Literal, TypeAlias, TypedDict, cast
 
 import numpy as np
@@ -138,10 +139,7 @@ def nns_part(
         raise ValueError("[type] must be NULL or 'XONLY'.")
     x_values, y_values = _part_pair(x, y)
     noise = _validate_noise_reduction(noise_reduction)
-    if obs_req is None:
-        obs_req = 8
-    if obs_req < 0:
-        raise ValueError("obs_req must be non-negative.")
+    obs_req = _validate_obs_req(obs_req)
 
     if isinstance(order, str):
         if order.lower() != "max":
@@ -151,13 +149,7 @@ def nns_part(
     if order is None:
         max_order = max(math.ceil(math.log2(max(1, x_values.size))), 1)
     else:
-        if isinstance(order, bool) or not isinstance(order, int):
-            raise TypeError("order must be an integer, 'max', or None.")
-        max_order = order
-        if max_order == 0:
-            max_order = 1
-        if max_order < 0:
-            raise ValueError("order must be non-negative.")
+        max_order = _validate_order(order)
 
     xonly = type is not None
     n = x_values.size
@@ -235,6 +227,44 @@ def nns_part(
         },
         "regression.points": regression_points,
     }
+
+
+def _validate_order(order: object) -> int:
+    """R: [order] must be NULL, 'max', or a positive integer (integral doubles allowed)."""
+    if isinstance(order, (bool, np.bool_)):
+        raise TypeError("order must be an integer, 'max', or None.")
+    if isinstance(order, numbers.Integral):
+        value = int(order)
+    elif isinstance(order, numbers.Real):
+        as_float = float(order)
+        if not math.isfinite(as_float) or as_float != math.floor(as_float):
+            raise ValueError("order must be None, 'max', or a positive integer.")
+        value = int(as_float)
+    else:
+        raise TypeError("order must be an integer, 'max', or None.")
+    if value < 1:
+        raise ValueError("order must be None, 'max', or a positive integer.")
+    return value
+
+
+def _validate_obs_req(obs_req: object) -> int:
+    """R: [obs.req] must be a nonnegative integer (NULL means 8)."""
+    if obs_req is None:
+        return 8
+    if isinstance(obs_req, (bool, np.bool_)):
+        raise TypeError("obs_req must be a non-negative integer.")
+    if isinstance(obs_req, numbers.Integral):
+        value = int(obs_req)
+    elif isinstance(obs_req, numbers.Real):
+        as_float = float(obs_req)
+        if not math.isfinite(as_float) or as_float != math.floor(as_float):
+            raise ValueError("obs_req must be a non-negative integer.")
+        value = int(as_float)
+    else:
+        raise TypeError("obs_req must be a non-negative integer.")
+    if value < 0:
+        raise ValueError("obs_req must be non-negative.")
+    return value
 
 
 def _part_result_from_native(
