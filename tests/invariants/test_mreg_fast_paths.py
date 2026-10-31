@@ -282,10 +282,11 @@ def test_stack_rank_average_matches_average_ranks() -> None:
 def _reference_group_reduce(
     keys: np.ndarray, values: np.ndarray, noise_reduction: str, is_class: bool
 ) -> tuple[np.ndarray, np.ndarray]:
-    """The former loop: split on 15-significant-digit key strings."""
+    """The former loop: split on 15-significant-digit key strings (R prints
+    -0 as "0", so signed zeros share a key)."""
     order = np.argsort(keys, kind="stable")
     ks, vs = keys[order], values[order]
-    labels = [f"{v:.15g}" for v in ks]
+    labels = [f"{v + 0.0:.15g}" for v in ks]
     out_keys, reduced, start = [], [], 0
     for i in range(1, len(labels) + 1):
         if i == len(labels) or labels[i] != labels[start]:
