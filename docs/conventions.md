@@ -65,7 +65,10 @@ convenience for that stochastic path.
 peels `sd_efficient_set` results and returns a dictionary of `Cluster_1`,
 `Cluster_2`, ... memberships. The output contains variable names, not numeric
 cluster labels; when names are omitted, NNS Python uses R-style `X_1`, `X_2`, ...
-names. `type="continuous"` is supported for first-degree efficient sets.
+names, or the column names of a DataFrame input. `type="continuous"` is
+supported for first-degree efficient sets, `fsd`, and `fsd_uni`; as in R, an
+unrecognised `type` warns (and `fsd` then runs its continuous branch, while
+`fsd_uni` and the efficient-set routines run the discrete one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
 NNS Python does not plot the dendrogram; it only returns the object data.

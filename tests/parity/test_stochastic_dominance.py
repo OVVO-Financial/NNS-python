@@ -201,6 +201,12 @@ def _sd_result_from_r(
     return {x_dominates: 1, y_dominates: -1, none: 0}[result]
 
 
+def _sd_result_from_r_typed(x: np.ndarray, y: np.ndarray, type_: str) -> int:
+    result = nns("NNS.FSD", x.tolist(), y.tolist(), type_, False)
+    assert isinstance(result, str)
+    return {"X FSD Y": 1, "Y FSD X": -1, "NO FSD EXISTS": 0}[result]
+
+
 def _strings(value: RValue) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -229,3 +235,44 @@ def test_sd_efficient_set_truncates_degree_like_r(degree: object, r_degree: floa
 def test_sd_efficient_set_rejects_degrees_outside_one_to_three(degree: object) -> None:
     with pytest.raises(ValueError, match="degree must be 1, 2, or 3"):
         sd_efficient_set(np.zeros((3, 2)), degree)  # type: ignore[arg-type]
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("case", ["shifted", "stretched", "crossing", "random"])
+@pytest.mark.parametrize("sizes", [(40, 40), (37, 61)])
+def test_fsd_continuous_type_matches_r(case: str, sizes: tuple[int, int]) -> None:
+    rng = np.random.default_rng(sizes[0] + sizes[1])
+    x, y = _pair(case, max(sizes), rng)
+    x = x[: sizes[0]]
+    expected = _sd_result_from_r_typed(x, y, "continuous")
+
+    assert fsd(x, y, type="continuous") == expected
+    assert fsd(x, y, "discrete") == fsd(x, y)
+
+
+@pytest.mark.parity
+def test_fsd_unknown_type_warns_and_runs_r_branch() -> None:
+    # R's NNS.FSD runs its continuous (degree-1) branch for anything but
+    # "discrete"; NNS.FSD.uni and the efficient set run the discrete one.
+    x = np.array([0.15, 1.55, -0.86, -0.8, 0.25, 0.33])
+    y = np.array([-0.15, 1.17, 0.26, -0.04, -2.44, 1.19]) - 0.2
+    expected = _sd_result_from_r_typed(x, y, "contin")
+
+    with pytest.warns(UserWarning, match="type needs to be either"):
+        assert fsd(x, y, type="contin") == expected == fsd(x, y, type="continuous")
+    with pytest.warns(UserWarning, match="type needs to be either"):
+        assert fsd_uni(x, y, type="contin") == fsd_uni(x, y)
+    with pytest.warns(UserWarning, match="type needs to be either"):
+        assert sd_efficient_set(np.column_stack([x, y]), 1, type="contin") == sd_efficient_set(
+            np.column_stack([x, y]), 1
+        )
+
+
+def test_fsd_accepts_single_column_objects_like_r() -> None:
+    x = np.array([2.0, 3.0, 4.0, 5.0])
+    y = np.array([1.0, 2.0, 3.0])
+
+    assert fsd(x[:, None], y[:, None]) == fsd(x, y) == 1
+    assert fsd_uni(x[:, None], y) == 1
+    with pytest.raises(ValueError, match="x must be a single-column object"):
+        fsd(np.column_stack([x, x]), y)
