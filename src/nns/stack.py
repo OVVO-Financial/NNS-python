@@ -100,6 +100,69 @@ def _spearman_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[
     return out
 
 
+def _r_column_means(m: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Column means as R's cov.c MEAN macro: long-double sum, then refinement."""
+    ld = m.astype(np.longdouble)
+    n = np.longdouble(m.shape[0])
+    mean = np.cumsum(ld, axis=0)[-1] / n
+    refined = mean + np.cumsum(ld - mean, axis=0)[-1] / n
+    return np.asarray(np.where(np.isfinite(mean), refined, mean), dtype=np.float64)
+
+
+def _r_spearman_cor(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
+    """``stats::cor(x[, j], y, method = "spearman")`` for every column of ``x``.
+
+    Reproduces R's C_cor rounding (cov.c, two-argument complete-case path):
+    double deviations from long-double means, products summed sequentially in
+    long double, long-double square roots. Columns with zero spread give NaN.
+    """
+    n = x.shape[0]
+    if n < 2:
+        return np.full(x.shape[1], np.nan)
+    rx = np.column_stack([_rank_average(x[:, col]) for col in range(x.shape[1])])
+    ry = _rank_average(y)
+    dx = rx - _r_column_means(rx)
+    dy = ry - _r_column_means(ry[:, None])[0]
+    n1 = np.longdouble(n - 1)
+
+    def ld_sum(values: NDArray[np.float64]) -> NDArray[np.longdouble]:
+        return cast(NDArray[np.longdouble], np.cumsum(values.astype(np.longdouble), axis=0)[-1])
+
+    cov = (ld_sum(dx * dy[:, None]) / n1).astype(np.float64)
+    sd_x = np.sqrt(ld_sum(dx * dx) / n1).astype(np.float64)
+    sd_y = float(np.sqrt(ld_sum(dy * dy) / n1))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.clip(cov / (sd_x * sd_y), -1.0, 1.0)
+    out[(sd_x == 0.0) | (sd_y == 0.0)] = np.nan
+    return np.asarray(out, dtype=np.float64)
+
+
+def _r_matvec(design: NDArray[np.float64], coef: NDArray[np.float64]) -> NDArray[np.float64]:
+    """``design %*% coef`` in R's reference-BLAS dgemv order (column by column)."""
+    out = np.zeros(design.shape[0], dtype=np.float64)
+    for j in np.flatnonzero(coef != 0.0):
+        out = out + coef[j] * design[:, j]
+    return out
+
+
+def _r_xstar_path(design: NDArray[np.float64], coef: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R's ``NNS_xstar_path_cpp``: column m is the X* of the m largest |coef|.
+
+    Terms are accumulated in |coef|-descending order (ties by column), and
+    each column is divided by the number of non-zero coefficients so far.
+    """
+    order = np.argsort(-np.abs(coef), kind="stable")
+    all_zero = not np.any(coef != 0.0)
+    weights = np.ones_like(coef) if all_zero else coef
+    denom = np.cumsum((weights[order] != 0.0) | all_zero).astype(np.float64)
+    out = np.empty((design.shape[0], coef.size), dtype=np.float64)
+    numerator = np.zeros(design.shape[0], dtype=np.float64)
+    for m, j in enumerate(order):
+        numerator = numerator + design[:, j] * weights[j]
+        out[:, m] = numerator / denom[m]
+    return out
+
+
 def _scalar_logical(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
         raise ValueError(f"[{name}] must be TRUE or FALSE.")
@@ -613,7 +676,9 @@ def nns_stack(
             return coef
 
         def cor_coef() -> NDArray[np.float64]:
-            return _spearman_signed(design, response)
+            out = _r_spearman_cor(design, response)
+            out[~np.isfinite(out)] = 0.0
+            return out
 
         def dep_coef() -> NDArray[np.float64]:
             out = np.zeros(p, dtype=np.float64)
@@ -681,8 +746,8 @@ def nns_stack(
         if denom < 1:
             raise ValueError("No active dimension-reduction coefficients.")
         return (
-            np.asarray(train_design @ coef / denom, dtype=np.float64),
-            np.asarray(test_design @ coef / denom, dtype=np.float64),
+            _r_matvec(train_design, coef) / denom,
+            _r_matvec(test_design, coef) / denom,
         )
 
     def fit_univariate_raw(
@@ -796,11 +861,12 @@ def nns_stack(
                 coef_fold = coefficient_vector(fold_design["train"], y[train_idx])
                 balanced_idx = balance_indices(y[train_idx])
 
+                # R builds every cumulative projection with NNS_xstar_path_cpp.
+                path_train = _r_xstar_path(fold_design["train"], coef_fold)
+                path_test = _r_xstar_path(fold_design["test"], coef_fold)
                 for m in range(1, encoded_p + 1):
-                    active = active_coefficients(coef_fold, m)
-                    xs_train, xs_test = project_xstar(
-                        fold_design["train"], fold_design["test"], active
-                    )
+                    xs_train = path_train[:, m - 1]
+                    xs_test = path_test[:, m - 1]
                     fit = fit_univariate_raw(
                         xs_train[balanced_idx],
                         y_fit_all[train_idx][balanced_idx],
@@ -839,9 +905,12 @@ def nns_stack(
         dim_full_coef = active_coefficients(
             coefficient_vector(full_design["train"], y), dim_best_count
         )
-        dim_full_xstar_train, dim_full_xstar_test = project_xstar(
-            full_design["train"], full_design["test"], dim_full_coef
-        )
+        dim_full_xstar_train = _r_xstar_path(full_design["train"], dim_full_coef)[
+            :, dim_best_count - 1
+        ]
+        dim_full_xstar_test = _r_xstar_path(full_design["test"], dim_full_coef)[
+            :, dim_best_count - 1
+        ]
         active_magnitudes = np.abs(dim_full_coef[np.abs(dim_full_coef) > 0])
         if dim_best_count >= dim_full_coef.size:
             dim_threshold_report = 0.0

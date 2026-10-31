@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -385,6 +386,48 @@ def test_nns_stack_dim_red_selection_matches_r(dim_red_method: str) -> None:
 
     assert isinstance(expected, dict)
     assert _SELECTION_KEYS <= set(expected)
+    _assert_stack_matches(actual, expected)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("folds", [3, 5])
+def test_nns_stack_boston_cor_partitions_match_r(folds: int) -> None:
+    # The cor coefficients and the X* projections feed NNS partitions, where a
+    # last-ulp difference can move a regression point. The port reproduces R's
+    # long-double cor and its summation orders so the folds partition alike.
+    data = np.genfromtxt(
+        Path(__file__).resolve().parents[1] / "data" / "boston_housing.csv",
+        delimiter=",",
+        skip_header=1,
+    )
+    x, y = data[:356, :-1], data[:356, -1]
+    x_test = data[356:380, :-1]
+
+    expected = nns_stack_numeric(
+        x.tolist(),
+        y.tolist(),
+        x_test.tolist(),
+        cv_size=0.25,
+        folds=folds,
+        method=[1, 2],
+        order=None,
+        stack=True,
+        dim_red_method="cor",
+        seed=123,
+    )
+    actual = nns_stack(
+        x,
+        y,
+        x_test,
+        cv_size=0.25,
+        folds=folds,
+        method=(1, 2),
+        stack=True,
+        dim_red_method="cor",
+        dist=None,
+        seed=123,
+    )
+
     _assert_stack_matches(actual, expected)
 
 

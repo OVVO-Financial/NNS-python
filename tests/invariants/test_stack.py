@@ -432,3 +432,37 @@ def test_nns_stack_default_result_has_no_fit_key() -> None:
     y = x[:, 0] - x[:, 2]
     result = nns_stack(x, y, ivs_test=x[:5], order="max", folds=2)
     assert "_fit" not in result
+
+
+def test_r_spearman_cor_matches_spearman_and_flags_constant_columns() -> None:
+    from scipy.stats import spearmanr  # type: ignore[import-untyped]
+
+    from nns.stack import _r_spearman_cor
+
+    rng = np.random.default_rng(3)
+    x = np.column_stack((rng.normal(size=80), np.round(rng.normal(size=80), 1), np.ones(80)))
+    y = rng.exponential(size=80)
+
+    result = _r_spearman_cor(x, y)
+
+    expected = [spearmanr(x[:, j], y)[0] for j in range(2)]
+    np.testing.assert_allclose(result[:2], expected, rtol=1e-14)
+    assert np.isnan(result[2])
+
+
+def test_r_xstar_path_matches_active_projections() -> None:
+    from nns.stack import _r_matvec, _r_xstar_path
+
+    rng = np.random.default_rng(4)
+    design = rng.uniform(size=(30, 4))
+    coef = np.array([0.2, -0.7, 0.0, 0.7])
+
+    path = _r_xstar_path(design, coef)
+
+    # |coef|-descending with ties by column: columns 1, 3, 0, then 2 (zero).
+    for m, active in enumerate(([1], [1, 3], [1, 3, 0], [1, 3, 0])):
+        weights = np.zeros(4)
+        weights[active] = coef[active]
+        np.testing.assert_allclose(
+            path[:, m], _r_matvec(design, weights) / len(active), rtol=1e-14
+        )
