@@ -182,3 +182,27 @@ def test_weighted_mode_rows_match_per_row_mode() -> None:
     weights[6] = -1.0  # nothing kept
     expected = np.array([_mreg_weighted_mode(v, w) for v, w in zip(values, weights, strict=True)])
     assert _same(_mreg_weighted_mode_rows(values, weights), expected)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{}, {"type": "CLASS"}, {"order": "max"}, {"n_best": 1}, {"confidence_interval": 0.9}],
+)
+def test_multivariate_point_only_matches_full_fit(kwargs: dict[str, object]) -> None:
+    rng = np.random.default_rng(13)
+    x = rng.normal(size=(250, 3))
+    y = x[:, 0] - x[:, 1] ** 2 + rng.normal(scale=0.3, size=250)
+    if kwargs.get("type") == "CLASS":
+        y = (y > 0).astype(float)
+    point = rng.normal(size=(20, 3))
+    full = nns_reg(x, y, point_est=point, **kwargs)
+    only = nns_reg(x, y, point_est=point, point_only=True, **kwargs)
+    assert only["R2"] is None
+    assert only["Fitted.xy"] is None
+    assert only["n.best"] == full["n.best"]
+    assert _same(np.asarray(only["Point.est"]), np.asarray(full["Point.est"]))
+    for key in full["RPM"]:
+        assert _same(np.asarray(only["RPM"][key]), np.asarray(full["RPM"][key]))
+    if full["pred.int"] is not None:
+        for key in full["pred.int"]:
+            assert _same(np.asarray(only["pred.int"][key]), np.asarray(full["pred.int"][key]))

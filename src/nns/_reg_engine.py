@@ -1376,7 +1376,12 @@ def _m_reg(
         k = min(int(n_best), rpm_x.shape[0])
     k = max(1, k)
 
-    if order == "max" and k == 1:
+    if point_only and confidence_interval is None:
+        # Fitted values are only reported (R2, Fitted.xy) or used (interval
+        # residual quantiles) when point.only is FALSE or an interval is
+        # requested; skip the n x nrow(RPM) training-row search otherwise.
+        fitted_pred = np.full(y.size, np.nan)
+    elif order == "max" and k == 1:
         # R's exact limit shortcut (Multivariate_Regression.R): with order =
         # "max" every distinct training row is its own regression point and
         # duplicate rows share one, so the k = 1 rule returns that point's
@@ -1400,7 +1405,9 @@ def _m_reg(
         if point_pred is not None:
             point_pred = _snap_class(point_pred, observed)
 
-    metric = float(np.mean(fitted_pred == y)) if is_class else _r2(y, fitted_pred)
+    metric: float | None = None
+    if not point_only:
+        metric = float(np.mean(fitted_pred == y)) if is_class else _r2(y, fitted_pred)
     intervals = _intervals(
         y, fitted_pred, point_pred, confidence_interval, is_class,
         np.unique(y) if is_class else None,
@@ -1438,7 +1445,7 @@ def _m_reg(
         fitted_xy["conf.int.pos"] = intervals["conf_upper"]
 
     out: dict[str, Any] = {
-        "R2": None if point_only else metric,
+        "R2": metric,
         "rhs.partitions": rhs_dict,
         "RPM": rpm_dict,
         "Point.est": point_pred,
