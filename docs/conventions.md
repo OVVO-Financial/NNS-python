@@ -573,8 +573,9 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 `nns_anova` maps to R's non-plotting `NNS.ANOVA` paths. Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
-symmetric certainty matrix. Confidence interval bootstrapping is structurally
-identical to R but uses NumPy RNG instead of R's `sample()`, so exact per-call
-parity is not achievable; numeric values converge to the same population CI.
-Pass `random_seed` for reproducible NNS Python results. Degenerate zero-variance
-groups preserve R's `NaN` CDF/certainty convention.
+symmetric certainty matrix. Confidence-interval bootstrapping draws from a
+reproduction of R's Mersenne-Twister `sample()` stream, so
+`random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
+the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
+entropy. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+convention.
