@@ -158,7 +158,9 @@ def nns_sd_cluster(
         iteration += 1
 
         if len(active) <= min_cluster:
-            clusters[f"Cluster_{iteration}"] = [all_names[index] for index in active]
+            # R assigns colnames(<0-column matrix>) == NULL here, which adds nothing.
+            if active:
+                clusters[f"Cluster_{iteration}"] = [all_names[index] for index in active]
             break
 
     if len(active) > min_cluster and f"Cluster_{iteration}" not in clusters:

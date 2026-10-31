@@ -91,6 +91,23 @@ def test_nns_sd_cluster_random_matrix_matches_r(degree: int) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("min_cluster", [0, 1, 2])
+def test_nns_sd_cluster_shifted_copies_match_r(min_cluster: int) -> None:
+    # Each peel takes one column; with min_cluster=0 the last peel empties the
+    # pool and R adds no empty trailing cluster.
+    base = np.sin(np.arange(1, 21, dtype=np.float64))
+    data = np.column_stack([base + shift for shift in (3.0, 2.0, 1.0, 0.0, -1.0)])
+    expected = _normalize_clusters(
+        nns("NNS.SD.cluster", data.tolist(), 1, "discrete", min_cluster, False)
+    )
+
+    actual = nns_sd_cluster(data, degree=1, min_cluster=min_cluster)
+
+    assert actual == expected
+    assert all(actual["Clusters"].values())
+
+
+@pytest.mark.parity
 def test_nns_sd_cluster_continuous_type_matches_r() -> None:
     data = _known_matrix()
     expected = _normalize_clusters(nns("NNS.SD.cluster", data.tolist(), 1, "continuous", 1, False))
