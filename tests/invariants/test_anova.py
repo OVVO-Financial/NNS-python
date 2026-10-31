@@ -67,3 +67,16 @@ def test_nns_anova_robust_reproducible_with_seed() -> None:
     assert isinstance(first, dict)
     assert isinstance(second, dict)
     assert first == second
+
+
+def test_nns_anova_drops_nan_but_rejects_infinite_values() -> None:
+    x = np.linspace(-2.0, 2.0, 40)
+    y = x + 0.25
+    reference = nns_anova(x, y, confidence_interval=None)
+
+    assert nns_anova(np.r_[x, np.nan], y, confidence_interval=None) == reference
+    for bad in (np.inf, -np.inf):
+        with pytest.raises(ValueError, match="infinite"):
+            nns_anova(np.r_[x, bad], y, confidence_interval=None)
+        with pytest.raises(ValueError, match="infinite"):
+            nns_anova([x, np.r_[y, bad]], confidence_interval=None)
