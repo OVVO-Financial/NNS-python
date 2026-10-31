@@ -168,7 +168,8 @@ def _nns_meboot_one(
     dvtrim = _trimmed_mean(dv, trim)
     xmin = float(xx[0] - dvtrim) if xmin_arg is None else float(xmin_arg)
     xmax = float(xx[-1] + dvtrim) if xmax_arg is None else float(xmax_arg)
-    if xmin_arg is not None or xmax_arg is not None:
+    if (xmin_arg is not None or xmax_arg is not None) and force_clt:
+        # R: if (isTRUE(force.clt)) { expand.sd <- FALSE; force.clt <- FALSE }
         force_clt = False
         expand_sd = False
 
