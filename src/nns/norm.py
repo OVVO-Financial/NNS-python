@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast, overload
+from typing import Any, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,15 +21,21 @@ def nns_norm(
 ) -> NDArray[np.float64] | list[NDArray[np.float64]]: ...
 
 
+@overload
+def nns_norm(x: Any, linear: bool = ...) -> Any: ...
+
+
 def nns_norm(
-    x: NDArray[np.float64] | Sequence[NDArray[np.float64]],
+    x: NDArray[np.float64] | Sequence[NDArray[np.float64]] | Any,
     linear: bool = False,
-) -> NDArray[np.float64] | list[NDArray[np.float64]]:
+) -> NDArray[np.float64] | list[NDArray[np.float64]] | Any:
     """Normalize variables following R's NNS.norm scaling.
 
-    Two input conventions are supported, matching R's ``NNS.norm(X, ...)``:
+    Three input conventions are supported, matching R's ``NNS.norm(X, ...)``:
 
     * A 2-D array whose columns are variables. Returns the scaled 2-D array.
+    * A pandas DataFrame (R's data.frame input). Returns a DataFrame with the
+      same index and R's ``"<column> Normalized"`` column names.
     * A list or tuple of 1-D arrays, one per variable (R's list input; the
       elements are variables/columns, not observation rows). Equal-length
       vectors are column-stacked and normalized through the matrix path,
@@ -39,6 +45,15 @@ def nns_norm(
       aligned columns) and return a list of scaled arrays, one per input
       vector.
     """
+    if not isinstance(x, np.ndarray) and hasattr(x, "columns") and hasattr(x, "to_numpy"):
+        # Iterating a DataFrame yields its column labels, not its columns.
+        frame: Any = x
+        values = _as_matrix(np.ascontiguousarray(frame.to_numpy(dtype=np.float64)), "x")
+        return type(frame)(
+            _norm_matrix(values, linear),
+            index=frame.index,
+            columns=[f"{name} Normalized" for name in frame.columns],
+        )
     if isinstance(x, np.ndarray):
         values = _as_matrix(x, "x")
     else:
@@ -48,6 +63,10 @@ def nns_norm(
         if len({item.size for item in series}) > 1:
             return _norm_unequal_series(series)
         values = _as_matrix(np.column_stack(series), "x")
+    return _norm_matrix(values, linear)
+
+
+def _norm_matrix(values: NDArray[np.float64], linear: bool) -> NDArray[np.float64]:
     means = np.mean(values.astype(np.longdouble), axis=0).astype(np.float64)
     means = means.copy()
     means[means == 0.0] = 1e-10
