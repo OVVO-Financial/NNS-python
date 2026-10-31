@@ -331,7 +331,9 @@ def _strict_cap(
     n: int,
     var_cov: float,
 ) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.float64]]:
-    keep = periods < (n / 2.0)
+    # R NNS_seas.cpp compares against the C++ integer division n/2, so for odd n the
+    # period floor(n/2) (two points per subsample) is excluded as well.
+    keep = periods < (n // 2)
     if np.any(keep):
         return _sort_periods(periods[keep], coef[keep], var_arr[keep])
     return (
