@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from numbers import Real
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -778,14 +778,91 @@ def _lag_mtx(
 # LPM / UPM Value-at-Risk (R LPM.VaR / UPM.VaR)
 # --------------------------------------------------------------------------
 
-def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
-    """Lower partial-moment VaR matching R's LPM.VaR."""
+@overload
+def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float: ...
+
+
+@overload
+def lpm_var(
+    percentile: Sequence[float] | NDArray[np.float64], degree: float, x: NDArray[np.float64]
+) -> NDArray[np.float64]: ...
+
+
+def lpm_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+) -> float | NDArray[np.float64]:
+    """Lower partial-moment VaR matching R's ``LPM.VaR``.
+
+    Returns the target ``t`` with ``LPM.ratio(degree, t, x) = percentile``.
+    ``percentile`` may be a scalar (returns a float) or array-like (returns an
+    ndarray of the same shape, like R's vectorised call); values are clamped to
+    ``[0, 1]``. Non-finite ``x`` values are dropped. ``degree=0`` is the type-7
+    (linear) sample quantile.
+    """
+    return _partial_moment_var(percentile, degree, x, lower=True)
+
+
+@overload
+def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float: ...
+
+
+@overload
+def upm_var(
+    percentile: Sequence[float] | NDArray[np.float64], degree: float, x: NDArray[np.float64]
+) -> NDArray[np.float64]: ...
+
+
+def upm_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+) -> float | NDArray[np.float64]:
+    """Upper partial-moment VaR matching R's ``UPM.VaR``.
+
+    Returns the target ``t`` with ``UPM.ratio(degree, t, x) = percentile``.
+    ``percentile`` may be a scalar (returns a float) or array-like (returns an
+    ndarray of the same shape); values are clamped to ``[0, 1]``.
+    """
+    return _partial_moment_var(percentile, degree, x, lower=False)
+
+
+def _partial_moment_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+    *,
+    lower: bool,
+) -> float | NDArray[np.float64]:
     values = _finite_values(x)
-    pct = min(max(float(percentile), 0.0), 1.0)
+    requested = np.asarray(percentile, dtype=np.float64)
+    pcts = np.clip(requested.reshape(-1), 0.0, 1.0)
+    # LPM.ratio(t) = p; UPM.ratio(t) = p is equivalent to LPM.ratio(t) = 1 - p
+    # for the quantile and the integer-degree inversion.
+    lpm_pcts = pcts if lower else 1.0 - pcts
     if degree == 0:
-        return float(np.quantile(values, pct, method="linear"))
-    if _is_supported_integer_degree(degree):
-        return _lpm_var_integer(pct, int(degree), values)
+        out = np.asarray(np.quantile(values, lpm_pcts, method="linear"), dtype=np.float64)
+    elif _is_supported_integer_degree(degree):
+        solve = _lpm_var_integer_solver(int(degree), values)
+        out = np.array([solve(float(p)) for p in lpm_pcts], dtype=np.float64)
+    else:
+        ratio = lpm_ratio if lower else upm_ratio
+        out = np.array(
+            [_var_optimize(ratio, float(p), degree, values) for p in pcts], dtype=np.float64
+        )
+    if requested.ndim == 0:
+        return float(out[0])
+    return out.reshape(requested.shape)
+
+
+def _var_optimize(
+    ratio: Callable[..., Any],
+    pct: float,
+    degree: float,
+    values: NDArray[np.float64],
+) -> float:
+    """Fractional degree: R's optimize() on |ratio(degree, t, x) - p| over [min, max]."""
     xmin = float(np.min(values))
     xmax = float(np.max(values))
     if xmin == xmax:
@@ -794,32 +871,7 @@ def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
     from scipy.optimize import minimize_scalar  # type: ignore[import-untyped]
 
     result = minimize_scalar(
-        lambda target: abs(float(lpm_ratio(degree, target, values)) - pct),
-        bounds=(xmin, xmax),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return float(result.x)
-
-
-def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
-    """Upper partial-moment VaR matching R's UPM.VaR."""
-    values = _finite_values(x)
-    pct = min(max(float(percentile), 0.0), 1.0)
-    if degree == 0:
-        return float(np.quantile(values, 1.0 - pct, method="linear"))
-    if _is_supported_integer_degree(degree):
-        # UPM.ratio(t) = p is equivalent to LPM.ratio(t) = 1 - p.
-        return _lpm_var_integer(1.0 - pct, int(degree), values)
-    xmin = float(np.min(values))
-    xmax = float(np.max(values))
-    if xmin == xmax:
-        return xmin
-
-    from scipy.optimize import minimize_scalar
-
-    result = minimize_scalar(
-        lambda target: abs(float(upm_ratio(degree, target, values)) - pct),
+        lambda target: abs(float(ratio(degree, target, values)) - pct),
         bounds=(xmin, xmax),
         method="bounded",
         options={"xatol": _R_OPTIMIZE_TOL},
@@ -839,12 +891,18 @@ def _is_supported_integer_degree(degree: float) -> bool:
 
 
 def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> float:
-    """Exact integer-degree LPM VaR inversion matching R NNS 13.0.
+    """Exact integer-degree LPM VaR inversion matching R NNS 13.0 (one percentile)."""
+    return _lpm_var_integer_solver(degree, values)(pct)
+
+
+def _lpm_var_integer_solver(degree: int, values: NDArray[np.float64]) -> Callable[[float], float]:
+    """Build the integer-degree LPM VaR inversion once and return a per-percentile solver.
 
     Mirrors R's ``.NNS_LPM_VaR_integer``: within an interval between sorted
     unique observations, LPM_d(t) and UPM_d(t) are degree-d polynomials in t,
     so VaR solves ``(1 - p) * LPM_d(t) - p * UPM_d(t) = 0`` exactly on the
-    located order-statistic interval.
+    located order-statistic interval. The sort and prefix powers depend only on
+    ``x``, so a vector of percentiles shares them (as R's vectorised call does).
     """
     n = values.size
     x_sorted = np.sort(values)
@@ -856,7 +914,8 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
     x_min = float(x_sorted[0])
     x_max = float(x_sorted[-1])
     if n == 1 or x_min == x_max:
-        return x_min + shift
+        constant = x_min + shift
+        return lambda pct: constant
 
     unique_x, counts = np.unique(x_sorted, return_counts=True)
     k_break = np.cumsum(counts)
@@ -887,6 +946,25 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
     ratio_break[0] = 0.0
     ratio_break[-1] = 1.0
 
+    def solve(pct: float) -> float:
+        return _lpm_var_integer_interval(
+            pct, degree, shift, x_min, x_max, unique_x, ratio_break, prefix_power, total_power
+        )
+
+    return solve
+
+
+def _lpm_var_integer_interval(
+    pct: float,
+    degree: int,
+    shift: float,
+    x_min: float,
+    x_max: float,
+    unique_x: NDArray[np.float64],
+    ratio_break: NDArray[np.float64],
+    prefix_power: NDArray[np.float64],
+    total_power: NDArray[np.float64],
+) -> float:
     if pct <= 0.0:
         return x_min + shift
     if pct >= 1.0:
