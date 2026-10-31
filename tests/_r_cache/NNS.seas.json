@@ -209,6 +209,15 @@
       "best.period": 0.0,
       "periods": 0.0
     },
+    "53f4f87585fa7aaa0550343e64d192fc80db702deae472721872a000a586da9a": {
+      "all.periods": {
+        "Coefficient.of.Variation": Infinity,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": Infinity
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
     "58fdb063182469619d7f98b02c08747b4d253365a914ef5cd47731a15252d08a": {
       "all.periods": {
         "Coefficient.of.Variation": [
@@ -557,6 +566,31 @@
         14.0,
         16.0,
         18.0
+      ]
+    },
+    "b3776005273d5b4de09d8708f1171783baa5e875e6be7ed9f594186e7c53e144": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          5.3,
+          Infinity,
+          Infinity
+        ],
+        "Period": [
+          2.0,
+          1.0,
+          3.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          "Inf",
+          "Inf",
+          "Inf"
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        1.0,
+        3.0
       ]
     },
     "b93e008a38dbda637112c3455857671da5ca1168fb9d70f7475311dcd6faa937": {
