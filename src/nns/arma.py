@@ -291,9 +291,11 @@ def nns_arma_optim(
 
     del final_predicted, values
 
-    if pred_int is None:
-        raise TypeError("non-numeric argument to mathematical function")
-    pi_width = abs(float(upm_var((1.0 - float(pred_int)) / 2.0, 0.0, errors))) + abs(bias)
+    pi_width = (
+        None
+        if pred_int is None
+        else abs(float(upm_var((1.0 - float(pred_int)) / 2.0, 0.0, errors))) + abs(bias)
+    )
 
     if h_oos is None:
         result_h = h_eval
@@ -320,8 +322,13 @@ def nns_arma_optim(
             shrink=nns_shrink,
         )
     model_results = model_results - bias
-    lower_pi = model_results - pi_width
-    upper_pi = model_results + pi_width
+    if pi_width is None:
+        # R returns numeric(0) bounds for pred.int = NULL.
+        lower_pi = np.array([], dtype=np.float64)
+        upper_pi = np.array([], dtype=np.float64)
+    else:
+        lower_pi = model_results - pi_width
+        upper_pi = model_results + pi_width
     if not negative_values:
         model_results = np.maximum(0.0, model_results)
         lower_pi = np.maximum(0.0, lower_pi)
@@ -334,7 +341,7 @@ def nns_arma_optim(
         "method": nns_method,
         "shrink": bool(nns_shrink),
         "nns.regress": bool(nns_regress),
-        "bias.shift": -float(bias),
+        "bias.shift": 0.0 - float(bias),  # never -0.0
         "errors": errors,
         "results": model_results,
         "lower.pred.int": lower_pi,
@@ -372,6 +379,11 @@ def nns_arma(
     if horizon < 1:
         raise ValueError("h must be a positive integer.")
     values = _as_variable(variable)
+    if seasonal_factor is None:
+        # R: !is.numeric(NULL) with a non-NULL best.periods turns seasonal.factor into FALSE.
+        seasonal_factor = False
+    elif isinstance(seasonal_factor, str):
+        raise TypeError("seasonal_factor must be True, False or numeric lag(s).")
 
     def _finish(
         forecast: NDArray[np.float64] | dict[str, NDArray[np.float64]],
@@ -399,9 +411,21 @@ def nns_arma(
 
     if training_set is not None:
         train_n = int(training_set)
+        if not 1 <= train_n <= values.size:
+            raise ValueError(
+                f"training_set must be between 1 and the length of variable ({values.size})."
+            )
         values = values[:train_n].astype(np.float64, copy=True)
     else:
         values = values.astype(np.float64, copy=True)
+    if values.size < 2:
+        raise ValueError("[y] must contain at least two observations.")
+    if not _is_numeric_seasonal(seasonal_factor) and values.size < 5:
+        # NNS.seas needs 5 observations; below that R returns NaN, 0 or an error.
+        raise ValueError(
+            "Automatic seasonality detection needs at least 5 observations; "
+            "pass a numeric seasonal_factor for shorter series."
+        )
 
     estimates = np.zeros(horizon, dtype=np.float64)
     if not _is_numeric_seasonal(seasonal_factor) and np.ptp(values) == 0.0:
@@ -689,23 +713,25 @@ def _with_prediction_intervals(
 ) -> NDArray[np.float64] | dict[str, NDArray[np.float64]]:
     if pred_int is None:
         return estimates
-    if estimates.size < 2:
-        raise ValueError("incorrect number of dimensions")
-
-    mc_result = nns_mc(
-        estimates,
-        lower_rho=-1.0,
-        upper_rho=1.0,
-        by=0.2,
-        random_seed=random_seed,
-    )
-    replicates = mc_result["replicates"]
-    if not isinstance(replicates, dict):
-        raise TypeError("nns_mc returned an unexpected replicate structure.")
-    matrices = [np.asarray(matrix, dtype=np.float64) for matrix in replicates.values()]
-    if not matrices:
-        raise ValueError("NNS.MC returned no prediction-interval replicates.")
-    intervals = np.column_stack(matrices)
+    if estimates.size == 1:
+        # R fails here ("incorrect number of dimensions"). NNS.meboot of a single value
+        # returns the value itself, so the band reduces to estimate +/- lin.resid.
+        intervals = estimates.reshape(1, 1)
+    else:
+        mc_result = nns_mc(
+            estimates,
+            lower_rho=-1.0,
+            upper_rho=1.0,
+            by=0.2,
+            random_seed=random_seed,
+        )
+        replicates = mc_result["replicates"]
+        if not isinstance(replicates, dict):
+            raise TypeError("nns_mc returned an unexpected replicate structure.")
+        matrices = [np.asarray(matrix, dtype=np.float64) for matrix in replicates.values()]
+        if not matrices:
+            raise ValueError("NNS.MC returned no prediction-interval replicates.")
+        intervals = np.column_stack(matrices)
 
     alpha = (1.0 - float(pred_int)) / 2.0
     upper_pi = np.empty(estimates.size, dtype=np.float64)
@@ -746,12 +772,17 @@ def _resolve_lags_and_weights(
         lags = np.asarray(seasonal_factor, dtype=np.int64).reshape(-1)
         if lags.size == 0:
             lags = np.array([1], dtype=np.int64)
+        if np.any(lags < 1) or np.any(lags > variable.size):
+            raise ValueError(
+                "seasonal_factor lags must be between 1 and the number of training "
+                f"observations ({variable.size})."
+            )
         if weights is None:
             lag_weights = _numeric_seasonal_weights(variable, lags)
         elif isinstance(weights, str):
             raise TypeError("non-numeric weights are not supported with numeric seasonal_factor.")
         else:
-            lag_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
+            lag_weights = _user_lag_weights(weights, lags)
         return lags, lag_weights
 
     seasonality = nns_seas(variable, modulo=modulo, mod_only=mod_only, plot=False)
@@ -779,8 +810,20 @@ def _resolve_lags_and_weights(
         if isinstance(weights, str):
             lag_weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
         else:
-            lag_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
+            lag_weights = _user_lag_weights(weights, lags)
     return lags, lag_weights
+
+
+def _user_lag_weights(
+    weights: NDArray[np.float64] | float, lags: NDArray[np.int64]
+) -> NDArray[np.float64]:
+    lag_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
+    if lag_weights.size != lags.size:
+        raise ValueError(
+            f"weights has {lag_weights.size} element(s) but there are {lags.size} seasonal "
+            f"lag(s) {lags.tolist()}; supply one weight per lag."
+        )
+    return lag_weights
 
 
 def _numeric_seasonal_weights(

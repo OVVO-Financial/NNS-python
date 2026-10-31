@@ -102,7 +102,7 @@ def plot_nns_arma_optim(
 
     lower = result.get("lower.pred.int")
     upper = result.get("upper.pred.int")
-    if lower is not None and upper is not None:
+    if lower is not None and upper is not None and np.size(lower) == h:
         ax.fill_between(
             fc_x,
             np.asarray(lower, dtype=np.float64),
