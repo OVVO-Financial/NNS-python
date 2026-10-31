@@ -168,6 +168,28 @@ def test_nns_anova_effect_size_bootstrap_matches_seeded_r(
         np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
 
 
+@pytest.mark.parity
+@pytest.mark.parametrize("tails", ["left", "right"])
+@pytest.mark.parametrize("robust", [False, True])
+def test_nns_anova_one_sided_ci_raises_where_r_fails(tails: str, robust: bool) -> None:
+    control, treatment = _groups(30)
+
+    r_result = _r_anova_seeded(
+        control, treatment, seed=1, ci=0.95, tails=tails, robust=robust, catch=True
+    )
+    assert "not found" in str(r_result["error"])
+    with pytest.raises(ValueError, match="confidence_interval is not supported"):
+        nns_anova(control, treatment, tails=tails, robust=robust, random_seed=1)
+
+    # Without an interval the tail choice is irrelevant to the binary test.
+    expected = _r_anova_seeded(control, treatment, seed=1, ci=None, tails=tails)
+    actual = nns_anova(control, treatment, tails=tails, confidence_interval=None)
+    assert isinstance(actual, dict)
+    assert set(actual) == set(expected)
+    for key, value in expected.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
 def _r_anova_seeded(
     control: np.ndarray,
     treatment: np.ndarray,
