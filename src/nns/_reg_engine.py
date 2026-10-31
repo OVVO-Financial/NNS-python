@@ -28,6 +28,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rmean import r_mean
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -352,7 +353,7 @@ def _reduce_value(z: NDArray[np.float64], noise_reduction: str, is_class: bool =
         values, counts = np.unique(z, return_counts=True)
         return float(values[int(np.argmax(counts))])
     if noise_reduction == "mean":
-        return float(np.mean(z))
+        return r_mean(z)  # R's mean(): exact for tied values, unlike np.mean
     if noise_reduction == "median":
         return float(np.median(z))
     if noise_reduction == "mode":
