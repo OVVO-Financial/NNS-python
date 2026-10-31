@@ -104,12 +104,11 @@ def nns_sd_cluster(
         raise ValueError("data must be a 2D array.")
     if values.shape[0] == 0:
         raise ValueError("data must have at least one row.")
-    if not 1 <= int(degree) <= 3:
-        raise ValueError("degree must be 1, 2, or 3.")
+    degree_int = _sd_degree(degree)
     if not np.all(np.isfinite(values)):
         raise ValueError("data must contain only finite values.")
-    type_value = _sd_type_value(int(degree), type)
-    discrete = int(degree) != 1 or type_value != "continuous"
+    type_value = _sd_type_value(degree_int, type)
+    discrete = degree_int != 1 or type_value != "continuous"
     min_cluster = int(min_cluster)
     if min_cluster < 0:
         raise ValueError("min_cluster must be non-negative.")
@@ -122,7 +121,6 @@ def nns_sd_cluster(
         if len(all_names) != column_count:
             raise ValueError("names length must match the number of data columns.")
 
-    degree_int = int(degree)
     order_stat_dominance_matrix = None
     prefix_precomputed = None
     if degree_int == 1 and discrete:
@@ -240,14 +238,17 @@ def sd_efficient_set(
     degree: int,
     type: str = "discrete",
 ) -> list[int]:
-    """Return indices of non-dominated columns at the requested SD degree."""
+    """Return indices of non-dominated columns at the requested SD degree.
+
+    ``degree`` is coerced like R's ``as.integer``: 1.5 runs first-order (FSD) and
+    ``"2"`` runs second-order; anything that does not truncate to 1, 2 or 3 raises.
+    """
     values = np.asarray(returns, dtype=np.float64)
     if values.ndim != 2:
         raise ValueError("returns must be a 2D array.")
     if values.shape[0] == 0:
         raise ValueError("returns must have at least one row.")
-    if not 1 <= degree <= 3:
-        raise ValueError("degree must be 1, 2, or 3.")
+    degree = _sd_degree(degree)
     if not np.all(np.isfinite(values)):
         raise ValueError("returns must contain only finite values.")
 
@@ -285,6 +286,17 @@ def _sd_efficient_set_names(
     names: Sequence[str],
 ) -> list[str]:
     return [names[index] for index in sd_efficient_set(values, degree, type=type)]
+
+
+def _sd_degree(degree: object) -> int:
+    """R's ``as.integer(degree)`` (truncation toward zero), restricted to 1, 2 or 3."""
+    try:
+        value = int(float(degree))  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("degree must be 1, 2, or 3.") from error
+    if value not in (1, 2, 3):
+        raise ValueError("degree must be 1, 2, or 3.")
+    return value
 
 
 def _sd_type_value(degree: int, type: str) -> str:
