@@ -42,7 +42,7 @@ from nns import stochastic_dominance as sd
         ),
     ],
 )
-def test_prefix_pair_dominance_matrix_matches_pairwise_tests(
+def test_prefix_pair_evaluator_matches_pairwise_tests(
     degree: int,
     discrete: bool,
     returns: np.ndarray,
@@ -50,17 +50,13 @@ def test_prefix_pair_dominance_matrix_matches_pairwise_tests(
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
 
     expected = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
-    actual = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    actual = _prefix_dominance_matrix(prefix_precomputed, degree, discrete=discrete)
 
     np.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_prefix_pair_dominance_matrix_matches_random_pairwise_tests(degree: int) -> None:
+def test_prefix_pair_evaluator_matches_random_pairwise_tests(degree: int) -> None:
     rng = np.random.default_rng(20260517 + degree)
     returns = rng.normal(size=(11, 9))
     returns[:, 1] = returns[:, 0]
@@ -70,11 +66,7 @@ def test_prefix_pair_dominance_matrix_matches_random_pairwise_tests(degree: int)
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=True)
 
     expected = _pairwise_dominance_matrix(returns, degree, discrete=True)
-    actual = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=True,
-    )
+    actual = _prefix_dominance_matrix(prefix_precomputed, degree, discrete=True)
 
     np.testing.assert_array_equal(actual, expected)
 
@@ -126,11 +118,7 @@ def test_order_stat_dominance_matrix_matches_prefix_and_pairwise(returns: np.nda
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
 
     pairwise_expected = _pairwise_dominance_matrix(returns, 1, discrete=True)
-    prefix_expected = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    prefix_expected = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
     actual = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
 
     np.testing.assert_array_equal(actual, pairwise_expected)
@@ -149,11 +137,7 @@ def test_order_stat_dominance_matrix_matches_random_prefix_matrix() -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, 1, discrete=True)
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
 
-    expected = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    expected = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
     actual = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
 
     np.testing.assert_array_equal(actual, expected)
@@ -201,11 +185,7 @@ def test_prefix_pair_one_direction_evaluator_matches_matrix(
     returns: np.ndarray,
 ) -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     for source_index in range(returns.shape[1]):
         for target_index in range(returns.shape[1]):
@@ -240,11 +220,7 @@ def test_prefix_pair_one_direction_evaluator_matches_random_matrix(
     returns[:, 4] = np.linspace(-1.0, 1.0, returns.shape[0])
     returns[:, 5] = returns[:, 4][::-1]
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     for source_index in range(returns.shape[1]):
         for target_index in range(returns.shape[1]):
@@ -285,11 +261,7 @@ def test_order_stat_active_subset_matches_prefix_matrix() -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, 1, discrete=True)
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
     dominance_matrix = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
-    prefix_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    prefix_matrix = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -313,11 +285,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(deg
     active = [0, 1, 2, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
     discrete = True
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -349,11 +317,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
     )
     active = list(range(returns.shape[1]))
     prefix_precomputed = sd._prefix_sd_precompute(returns, 2, discrete=True)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        2,
-        discrete=True,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, 2, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -382,11 +346,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
     returns[:, 3] = returns[:, 0] + 0.3
     active = list(range(returns.shape[1]))
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=True)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=True,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -445,6 +405,27 @@ def _pairwise_dominance_matrix(
                 out[source, target] = sd._dominates_uni(
                     returns[:, source],
                     returns[:, target],
+                    degree,
+                    discrete=discrete,
+                )
+    return out
+
+
+def _prefix_dominance_matrix(
+    precomputed: sd._SDPrefixPrecomputed,
+    degree: int,
+    *,
+    discrete: bool,
+) -> np.ndarray:
+    columns = precomputed.sorted_values.shape[1]
+    out = np.zeros((columns, columns), dtype=np.bool_)
+    for source in range(columns):
+        for target in range(columns):
+            if source != target:
+                out[source, target] = sd._dominates_from_prefix_pair(
+                    precomputed,
+                    source,
+                    target,
                     degree,
                     discrete=discrete,
                 )
