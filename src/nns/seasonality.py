@@ -258,7 +258,10 @@ def _sort_periods(
     coef: NDArray[np.float64],
     var_cov: NDArray[np.float64],
 ) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.float64]]:
-    order = np.lexsort((periods, coef))
+    # R sorts on the CV alone (std::sort, an insertion sort for <= 16 elements, so
+    # ties keep their insertion order). A stable sort reproduces that order exactly
+    # for small tables and stays deterministic for larger ones.
+    order = np.argsort(coef, kind="stable")
     return periods[order], coef[order], var_cov[order]
 
 
