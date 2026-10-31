@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from typing import Any, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,12 +12,47 @@ from nns._native import native_fn
 from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
 
 
+@overload
 def nns_dep(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
     asym: bool = False,
-) -> dict[str, float]:
-    """Return NNS nonlinear correlation and dependence for a pair of variables."""
+) -> dict[str, float]: ...
+
+
+@overload
+def nns_dep(
+    x: Any,
+    y: None = None,
+    asym: bool = False,
+) -> dict[str, Any]: ...
+
+
+def nns_dep(
+    x: Any,
+    y: NDArray[np.float64] | None = None,
+    asym: bool = False,
+) -> dict[str, float] | dict[str, Any]:
+    """Return NNS nonlinear correlation and dependence (R ``NNS.dep``).
+
+    Bivariate form ``nns_dep(x, y)``: returns ``{"Correlation": float,
+    "Dependence": float}``. ``Correlation`` is signed in ``[-1, 1]`` and
+    ``Dependence`` is in ``[0, 1]``. With ``asym=False`` (default) the measure is
+    symmetric, ``nns_dep(x, y) == nns_dep(y, x)``. With ``asym=True`` the
+    partition is built on ``x`` only and the result measures the dependence of
+    ``y`` on ``x`` (y as a function of x); e.g. ``nns_dep(x, x**2, asym=True)``
+    is close to 1 while ``nns_dep(x**2, x, asym=True)`` is not.
+
+    Matrix form ``nns_dep(X)`` (``y=None``, ``X`` a 2-D array or DataFrame with
+    one column per variable): returns ``{"Correlation": M, "Dependence": M}``
+    with ones on the diagonal, like R's ``NNS.dep(X)``. With ``asym=True`` entry
+    ``[i, j]`` is ``nns_dep(X[:, i], X[:, j], asym=True)``, i.e. row variable ->
+    column variable. A DataFrame input returns labelled DataFrames.
+
+    Inputs must be finite. R's ``p.value`` option is not implemented.
+    """
+    if y is None:
+        return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
 
     native_dep_pair = native_fn("nns_dep_pair")
@@ -36,6 +72,58 @@ def nns_dep(
     quad_yx = _xonly_partition(y_values, obs_req)
     correlation, dependence = _dep_pair(x_values, y_values, quad_xy, quad_yx, asym)
     return {"Correlation": correlation, "Dependence": dependence}
+
+
+def _dep_matrix(x: Any, asym: bool) -> dict[str, Any]:
+    """R NNS.dep.matrix: pairwise NNS.dep over the columns of ``x``."""
+    labels = _column_labels(x)
+    values = np.asarray(x, dtype=np.float64)
+    if values.ndim != 2:
+        raise ValueError("supply both 'x' and 'y' or a matrix-like 'x'.")
+    if values.shape[1] < 2:
+        raise ValueError("matrix input to nns_dep needs at least two columns.")
+    n_vars = values.shape[1]
+    rhos = np.zeros((n_vars, n_vars), dtype=np.float64)
+    deps = np.zeros((n_vars, n_vars), dtype=np.float64)
+    for i in range(n_vars - 1):
+        for j in range(i + 1, n_vars):
+            upper = nns_dep(values[:, i], values[:, j], asym=asym)
+            if asym:
+                # Lower triangle: [j, i] = NNS.dep(x_j, x_i); R zeroes NaN there.
+                lower = nns_dep(values[:, j], values[:, i], asym=True)
+                rhos[j, i] = _finite_or_zero(lower["Correlation"])
+                deps[j, i] = _finite_or_zero(lower["Dependence"])
+                rhos[i, j] = upper["Correlation"]
+                deps[i, j] = upper["Dependence"]
+            else:
+                rhos[i, j] = rhos[j, i] = upper["Correlation"]
+                deps[i, j] = deps[j, i] = upper["Dependence"]
+    np.fill_diagonal(rhos, 1.0)
+    np.fill_diagonal(deps, 1.0)
+    return {
+        "Correlation": _labelled_matrix(rhos, labels),
+        "Dependence": _labelled_matrix(deps, labels),
+    }
+
+
+def _column_labels(x: Any) -> list[Any] | None:
+    """Column labels of a DataFrame-like input (R keeps colnames as dimnames)."""
+    columns = getattr(x, "columns", None)
+    if columns is None:
+        return None
+    try:
+        return list(columns)
+    except TypeError:
+        return None
+
+
+def _labelled_matrix(matrix: NDArray[np.float64], labels: list[Any] | None) -> Any:
+    """Return ``matrix`` as a DataFrame indexed by ``labels`` when the input had them."""
+    if labels is None or len(labels) != matrix.shape[0]:
+        return matrix
+    import pandas as pd  # type: ignore[import-untyped]  # labels imply a pandas-like input
+
+    return pd.DataFrame(matrix, index=labels, columns=labels)
 
 
 def nns_cor(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
