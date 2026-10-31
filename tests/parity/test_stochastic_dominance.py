@@ -136,6 +136,22 @@ def test_sd_efficient_set_continuous_fsd_matches_r() -> None:
     ]
 
 
+@pytest.mark.parity
+@pytest.mark.parametrize("junk_columns", [0, 71, 72])
+def test_sd_efficient_set_tsd_with_extra_knots_matches_r(junk_columns: int) -> None:
+    # z's knot at 0.16 lies where LPM2_x - LPM2_y peaks between the (x, y) knots;
+    # R tests each pair on its own merged grid, so y stays dominated by x.
+    x = [-0.85, -1.52, 0.68]
+    y = [-0.21, -0.33, -1.67]
+    z = [-3.0, 0.16, 0.2]
+    junk = [[-10.0 - index, -9.0 - index, -8.0 - index] for index in range(junk_columns)]
+    returns = np.column_stack([x, y, z, *junk])
+
+    expected = nns("NNS.SD.efficient.set", returns.tolist(), 3, "discrete", False)
+
+    assert _strings(expected) == [f"X_{index + 1}" for index in sd_efficient_set(returns, 3)]
+
+
 SDPairFunction = Callable[[np.ndarray, np.ndarray], int]
 
 

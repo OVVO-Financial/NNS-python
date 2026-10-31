@@ -91,12 +91,14 @@ the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
 equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
 intentional extension carrying the same merged-grid semantics. The
 matrix-based efficient-set and cluster routines operate on data columns and
-therefore remain equal-length by construction. The full prefix-pair dominance matrix remains available
-internally for verification and fallback. Large degree-1 discrete calls use an
-exact order-statistic dominance matrix: with equal-length empirical samples,
-one sample first-order stochastically dominates another exactly when every
-sorted order statistic is at least as large and at least one is strictly larger.
-Large degree-1 continuous and degree 2/3 calls use a lazy kept-only prefix scan.
+therefore remain equal-length by construction. Every efficient-set and cluster
+call, whatever the column count, tests each pair on that pair's own grid, so a
+pair's verdict never depends on which other columns are present. Degree-1
+discrete calls use an exact order-statistic dominance matrix: with equal-length
+empirical samples, one sample first-order stochastically dominates another
+exactly when every sorted order statistic is at least as large and at least one
+is strictly larger. Degree-1 continuous and degree 2/3 calls use a lazy
+kept-only prefix scan.
 Columns are visited in R's LPM-at-global-maximum order with original-index tie
 breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating

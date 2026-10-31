@@ -14,7 +14,7 @@ merged-grid semantics to unequal lengths.)
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -24,21 +24,8 @@ from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
 from nns.core import _as_1d_values, lpm
 
-_SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS = 75
-_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS = 75
 _SD_PREFIX_PAIR_TARGET_BLOCK_COLUMNS = 64
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
-
-
-@dataclass(frozen=True)
-class _SDPrecomputed:
-    values: NDArray[np.float64]
-    sorted_values: NDArray[np.float64]
-    curves: NDArray[np.float64]
-    curve_sums: NDArray[np.float64]
-    minimums: NDArray[np.float64]
-    means: NDArray[np.float64]
-    identical: NDArray[np.bool_]
 
 
 @dataclass(frozen=True)
@@ -138,17 +125,11 @@ def nns_sd_cluster(
     degree_int = int(degree)
     order_stat_dominance_matrix = None
     prefix_precomputed = None
-    precomputed = None
-    if column_count >= _SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS:
-        if degree_int == 1 and discrete:
-            order_stat_precomputed = _order_stat_sd_precompute(values)
-            order_stat_dominance_matrix = _dominance_matrix_from_order_stats(
-                order_stat_precomputed
-            )
-        else:
-            prefix_precomputed = _prefix_sd_precompute(values, degree_int, discrete=discrete)
+    if degree_int == 1 and discrete:
+        order_stat_precomputed = _order_stat_sd_precompute(values)
+        order_stat_dominance_matrix = _dominance_matrix_from_order_stats(order_stat_precomputed)
     else:
-        precomputed = _precompute_sd_table(values, degree_int, discrete=discrete)
+        prefix_precomputed = _prefix_sd_precompute(values, degree_int, discrete=discrete)
     active = list(range(column_count))
     clusters: dict[str, list[str]] = {}
     iteration = 1
@@ -161,16 +142,14 @@ def nns_sd_cluster(
                 degree_int,
                 order_stat_dominance_matrix,
             )
-        elif prefix_precomputed is not None:
+        else:
+            assert prefix_precomputed is not None
             sd_set_indices = _sd_efficient_active_indices_from_prefix_kept(
                 prefix_precomputed,
                 active,
                 degree_int,
                 discrete=discrete,
             )
-        else:
-            assert precomputed is not None
-            sd_set_indices = _sd_efficient_active_indices(precomputed, active, degree_int)
         sd_set = [all_names[index] for index in sd_set_indices]
         if not sd_set:
             break
@@ -278,26 +257,25 @@ def sd_efficient_set(
     if values.shape[1] == 0:
         return []
 
+    # Every pair is evaluated on its own merged threshold grid (as R does), so
+    # the verdict for a pair never depends on which other columns are present.
     active = list(range(values.shape[1]))
-    if values.shape[1] >= _SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS:
-        if degree == 1 and discrete:
-            order_stat_precomputed = _order_stat_sd_precompute(values)
-            dominance_matrix = _dominance_matrix_from_order_stats(order_stat_precomputed)
-            return _sd_efficient_active_indices_from_matrix(
-                values,
-                active,
-                degree,
-                dominance_matrix,
-            )
-        prefix_precomputed = _prefix_sd_precompute(values, degree, discrete=discrete)
-        return _sd_efficient_active_indices_from_prefix_kept(
-            prefix_precomputed,
+    if degree == 1 and discrete:
+        order_stat_precomputed = _order_stat_sd_precompute(values)
+        dominance_matrix = _dominance_matrix_from_order_stats(order_stat_precomputed)
+        return _sd_efficient_active_indices_from_matrix(
+            values,
             active,
             degree,
-            discrete=discrete,
+            dominance_matrix,
         )
-    precomputed = _precompute_sd_table(values, degree, discrete=discrete)
-    return _sd_efficient_active_indices(precomputed, active, degree)
+    prefix_precomputed = _prefix_sd_precompute(values, degree, discrete=discrete)
+    return _sd_efficient_active_indices_from_prefix_kept(
+        prefix_precomputed,
+        active,
+        degree,
+        discrete=discrete,
+    )
 
 
 def _sd_efficient_set_names(
@@ -314,25 +292,6 @@ def _sd_type_value(degree: int, type: str) -> str:
     if degree == 1 and type_value in {"discrete", "continuous"}:
         return type_value
     return "discrete"
-
-
-def _precompute_sd_table(
-    values: NDArray[np.float64],
-    degree: int,
-    *,
-    discrete: bool,
-) -> _SDPrecomputed:
-    sorted_values = np.sort(values, axis=0)
-    curves = _sd_curve_table(sorted_values, degree, discrete=discrete)
-    return _SDPrecomputed(
-        values=values,
-        sorted_values=sorted_values,
-        curves=curves,
-        curve_sums=np.sum(curves, axis=0),
-        minimums=sorted_values[0, :],
-        means=np.mean(values, axis=0),
-        identical=_identical_sorted_columns(sorted_values),
-    )
 
 
 def _prefix_sd_precompute(
@@ -409,35 +368,6 @@ def _own_threshold_curves(
     return curves
 
 
-def _sd_efficient_active_indices(
-    precomputed: _SDPrecomputed,
-    active: Sequence[int],
-    degree: int,
-) -> list[int]:
-    if not active:
-        return []
-
-    active_array = np.asarray(active, dtype=np.intp)
-    tmax = float(np.max(precomputed.values[:, active_array]))
-    order_lpm = _lpm_at_target(precomputed.values[:, active_array], tmax, degree)
-    order = [
-        active[int(position)]
-        for position in sorted(
-            range(len(active)),
-            key=lambda position: (order_lpm[position], active[position]),
-        )
-    ]
-
-    keep: list[int] = []
-    for index in order:
-        dominated = any(
-            _dominates_from_precomputed(kept, index, degree, precomputed) for kept in keep
-        )
-        if not dominated:
-            keep.append(index)
-    return keep
-
-
 def _sd_efficient_active_indices_from_matrix(
     values: NDArray[np.float64],
     active: Sequence[int],
@@ -499,26 +429,6 @@ def _sd_efficient_active_indices_from_prefix_kept(
         if not dominated:
             keep.append(index)
     return keep
-
-
-def _dominance_matrix_from_precomputed(
-    precomputed: _SDPrecomputed,
-    degree: int,
-) -> NDArray[np.bool_]:
-    curves = precomputed.curves
-    columns = curves.shape[1]
-    any_gt = np.zeros((columns, columns), dtype=np.bool_)
-    for start, stop in _curve_comparison_chunks(curves.shape[0], columns):
-        block = curves[start:stop, :]
-        any_gt |= np.any(block[:, :, np.newaxis] > block[:, np.newaxis, :], axis=0)
-
-    dominates = np.logical_not(any_gt) & any_gt.T
-    dominates &= np.logical_not(precomputed.identical)
-    dominates &= precomputed.minimums[:, np.newaxis] >= precomputed.minimums[np.newaxis, :]
-    if degree > 1:
-        dominates &= precomputed.means[:, np.newaxis] >= precomputed.means[np.newaxis, :]
-    np.fill_diagonal(dominates, False)
-    return dominates
 
 
 def _dominance_matrix_from_prefix_pairs(
@@ -724,29 +634,6 @@ def _pair_curve_values_at_thresholds(
     return (counts * thresholds * thresholds - 2.0 * thresholds * sums1 + sums2) / observations
 
 
-def _dominates_from_precomputed(
-    x_index: int,
-    y_index: int,
-    degree: int,
-    precomputed: _SDPrecomputed,
-) -> bool:
-    if precomputed.identical[x_index, y_index]:
-        return False
-    if precomputed.minimums[x_index] < precomputed.minimums[y_index]:
-        return False
-    if degree > 1 and precomputed.means[x_index] < precomputed.means[y_index]:
-        return False
-
-    x_curve = precomputed.curves[:, x_index]
-    y_curve = precomputed.curves[:, y_index]
-    if precomputed.curve_sums[x_index] == precomputed.curve_sums[y_index] and np.array_equal(
-        x_curve,
-        y_curve,
-    ):
-        return False
-    return bool(not np.any(x_curve > y_curve))
-
-
 def _sd_result(x: NDArray[np.float64], y: NDArray[np.float64], degree: int) -> int:
     if _dominates(x, y, degree):
         return 1
@@ -830,103 +717,6 @@ def _dominates_from_curves(
     return bool(not np.any(x_curve > y_curve))
 
 
-def _sd_curve_table(
-    sorted_values: NDArray[np.float64],
-    degree: int,
-    *,
-    discrete: bool = True,
-) -> NDArray[np.float64]:
-    grid = np.unique(sorted_values.reshape(-1))
-    observations, columns = sorted_values.shape
-    curves = np.empty((grid.size, columns), dtype=np.float64)
-
-    if degree == 1:
-        if discrete:
-            _fill_cdf_curves(curves, grid, sorted_values)
-        else:
-            _fill_continuous_fsd_curves(curves, grid, sorted_values)
-        return curves
-
-    prefix1 = _prefix_sum(sorted_values)
-    if degree == 2:
-        _fill_lpm_degree1_curves(curves, grid, sorted_values, prefix1, observations)
-        return curves
-
-    prefix2 = _prefix_sum(sorted_values * sorted_values)
-    _fill_lpm_degree2_curves(curves, grid, sorted_values, prefix1, prefix2, observations)
-    return curves
-
-
-def _fill_cdf_curves(
-    curves: NDArray[np.float64],
-    grid: NDArray[np.float64],
-    sorted_values: NDArray[np.float64],
-) -> None:
-    observations = sorted_values.shape[0]
-    for start, stop in _grid_chunks(grid.size, sorted_values.shape[1]):
-        thresholds = grid[start:stop]
-        for index in range(sorted_values.shape[1]):
-            counts = np.searchsorted(sorted_values[:, index], thresholds, side="right")
-            curves[start:stop, index] = counts / observations
-
-
-def _fill_lpm_degree1_curves(
-    curves: NDArray[np.float64],
-    grid: NDArray[np.float64],
-    sorted_values: NDArray[np.float64],
-    prefix1: NDArray[np.float64],
-    observations: int,
-) -> None:
-    for start, stop in _grid_chunks(grid.size, sorted_values.shape[1]):
-        thresholds = grid[start:stop]
-        for index in range(sorted_values.shape[1]):
-            counts = np.searchsorted(sorted_values[:, index], thresholds, side="right")
-            sums1 = prefix1[counts, index]
-            curves[start:stop, index] = (counts * thresholds - sums1) / observations
-
-
-def _fill_continuous_fsd_curves(
-    curves: NDArray[np.float64],
-    grid: NDArray[np.float64],
-    sorted_values: NDArray[np.float64],
-) -> None:
-    observations = sorted_values.shape[0]
-    prefix1 = _prefix_sum(sorted_values)
-    totals = prefix1[-1, :]
-    for start, stop in _grid_chunks(grid.size, sorted_values.shape[1]):
-        thresholds = grid[start:stop]
-        for index in range(sorted_values.shape[1]):
-            counts = np.searchsorted(sorted_values[:, index], thresholds, side="right")
-            sums1 = prefix1[counts, index]
-            lower = (counts * thresholds - sums1) / observations
-            upper = (totals[index] - sums1 - (observations - counts) * thresholds) / observations
-            curves[start:stop, index] = np.divide(
-                lower,
-                lower + upper,
-                out=np.zeros_like(lower),
-                where=(lower + upper) != 0,
-            )
-
-
-def _fill_lpm_degree2_curves(
-    curves: NDArray[np.float64],
-    grid: NDArray[np.float64],
-    sorted_values: NDArray[np.float64],
-    prefix1: NDArray[np.float64],
-    prefix2: NDArray[np.float64],
-    observations: int,
-) -> None:
-    for start, stop in _grid_chunks(grid.size, sorted_values.shape[1]):
-        thresholds = grid[start:stop]
-        for index in range(sorted_values.shape[1]):
-            counts = np.searchsorted(sorted_values[:, index], thresholds, side="right")
-            sums1 = prefix1[counts, index]
-            sums2 = prefix2[counts, index]
-            curves[start:stop, index] = (
-                counts * thresholds * thresholds - 2.0 * thresholds * sums1 + sums2
-            ) / observations
-
-
 def _prefix_sum(values: NDArray[np.float64]) -> NDArray[np.float64]:
     prefix = np.empty((values.shape[0] + 1, values.shape[1]), dtype=np.float64, order="F")
     prefix[0, :] = 0.0
@@ -943,22 +733,6 @@ def _lpm_at_target(
     if degree > 1:
         deviations = deviations**degree
     return np.asarray(np.mean(deviations, axis=0), dtype=np.float64)
-
-
-def _grid_chunks(grid_size: int, columns: int) -> Iterator[tuple[int, int]]:
-    max_intermediate_bytes = 100 * 1024 * 1024
-    row_bytes = columns * np.dtype(np.float64).itemsize
-    chunk_size = max(1, max_intermediate_bytes // max(row_bytes, 1))
-    for start in range(0, grid_size, chunk_size):
-        yield start, min(start + chunk_size, grid_size)
-
-
-def _curve_comparison_chunks(grid_size: int, columns: int) -> Iterator[tuple[int, int]]:
-    max_intermediate_bytes = 100 * 1024 * 1024
-    row_bytes = columns * columns * np.dtype(np.bool_).itemsize
-    chunk_size = max(1, max_intermediate_bytes // max(row_bytes, 1))
-    for start in range(0, grid_size, chunk_size):
-        yield start, min(start + chunk_size, grid_size)
 
 
 def _as_sd_values(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
