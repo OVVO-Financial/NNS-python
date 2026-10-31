@@ -697,18 +697,25 @@ def _dy_dx_numeric(
         raise ValueError("eval_point must be finite.")
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
-    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5))).astype(np.int64)
+    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5)))
+    # R steps by gravity(|diff(x)|) * h_s[index]. When h_s holds a repeated
+    # bandwidth (n < 49), R's `deriv.points[[index]] <- ...` with a length-2
+    # index is a recursive assignment and rbind() drops those blocks, so R only
+    # uses the bandwidths that occur once. Below n = 16 every bandwidth repeats
+    # and R fails; use the distinct bandwidths there instead.
+    values, counts = np.unique(h_s, return_counts=True)
+    bandwidths = h_s[np.isin(h_s, values[counts == 1])]
+    if bandwidths.size == 0:
+        bandwidths = values
     spacing = float(_gravity(np.abs(np.diff(x))))
+    x_min = float(np.min(x))
+    x_max = float(np.max(x))
     rows: list[NDArray[np.float64]] = []
-    for h_value in h_s:
-        indices = np.flatnonzero(h_s == h_value).astype(np.float64) + 1.0
-        h_step = spacing * indices
-        length = max(eval_points.size, h_step.size)
-        eval_recycled = np.resize(eval_points, length)
-        h_recycled = np.resize(h_step, length)
-        lower = np.maximum(float(np.min(x)), eval_recycled - h_recycled)
-        upper = np.minimum(float(np.max(x)), eval_recycled + h_recycled)
-        rows.append(np.column_stack((lower, eval_recycled, upper)))
+    for h_value in bandwidths:
+        h_step = spacing * float(h_value)
+        lower = np.maximum(x_min, eval_points - h_step)
+        upper = np.minimum(x_max, eval_points + h_step)
+        rows.append(np.column_stack((lower, eval_points, upper)))
 
     deriv_points = np.vstack(rows)
     point_est = np.concatenate((deriv_points[:, 0], deriv_points[:, 1], deriv_points[:, 2]))
@@ -726,19 +733,13 @@ def _dy_dx_numeric(
     run_1 = deriv_points[:, 2] - deriv_points[:, 1]
     run_2 = deriv_points[:, 1] - deriv_points[:, 0]
 
-    zero_upper = run_1 == 0.0
-    zero_lower = run_2 == 0.0
-    if np.any(zero_upper) or np.any(zero_lower):
-        fallback_step = (abs(float(np.max(x) - np.min(x))) / float(n)) * float(len(h_s))
-        deriv_points[zero_upper, 2] = deriv_points[zero_upper, 1] - fallback_step
-        deriv_points[zero_lower, 2] = deriv_points[zero_lower, 1] - fallback_step
-        run_1 = deriv_points[:, 2] - deriv_points[:, 1]
-        run_2 = deriv_points[:, 1] - deriv_points[:, 0]
-
     rise_1 = estimates[:, 2] - estimates[:, 1]
     rise_2 = estimates[:, 1] - estimates[:, 0]
-    first = (rise_1 + rise_2) / (run_1 + run_2)
-    second = (rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0)
+    # At min(x) or max(x) one run is 0: R uses the one-sided slope for the
+    # first derivative and the second derivative is NaN/Inf.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        first = (rise_1 + rise_2) / (run_1 + run_2)
+        second = (rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0)
 
     unique_eval = np.array(sorted(set(float(v) for v in eval_col)), dtype=np.float64)
     first_out = np.empty(unique_eval.size, dtype=np.float64)

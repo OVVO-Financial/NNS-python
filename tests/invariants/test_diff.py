@@ -25,6 +25,18 @@ def test_nns_diff_smooth_function_derivative_has_bounded_error() -> None:
     assert result["DERIVATIVE"] == pytest.approx(np.cos(point), abs=1e-6)
 
 
+def test_dy_dx_numeric_small_sample_uses_distinct_bandwidths() -> None:
+    # Below n = 16 every R bandwidth repeats and R's dy.dx fails; the port
+    # falls back to the distinct bandwidths.
+    x = np.linspace(0.0, 1.0, 12)
+
+    result = dy_dx(x, 2.0 * x + 1.0, eval_point=np.array([0.3, 0.6]))
+
+    assert isinstance(result, dict)
+    np.testing.assert_allclose(result["first.derivative"], [2.0, 2.0], atol=1e-9)
+    np.testing.assert_allclose(result["second.derivative"], [0.0, 0.0], atol=1e-9)
+
+
 def test_dy_dx_numeric_eval_point_returns_derivative_table() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     y = x + np.sin(x)
