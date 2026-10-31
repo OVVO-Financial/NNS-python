@@ -73,6 +73,30 @@ def test_nns_anova_pairwise_matches_r() -> None:
 
 
 @pytest.mark.parity
+def test_nns_anova_quantile_targets_match_r_exactly() -> None:
+    # The 25%/12.5% targets use the exact LPM.VaR/UPM.VaR inversion (nns.var),
+    # not an optimiser, so the full Certainty agrees with R to rounding error.
+    rng = np.random.default_rng(14)
+    groups = [rng.standard_t(3, 400) * 0.01 + shift for shift in (0.0, 0.001, -0.002)]
+
+    binary = nns_anova(groups[0], groups[1], confidence_interval=None)
+    expected = _r_anova_binary(groups[0], groups[1])
+    assert isinstance(binary, dict)
+    for key, value in expected.items():
+        np.testing.assert_allclose(binary[key], value, rtol=0.0, atol=1e-12)
+
+    pairwise = nns_anova(groups, confidence_interval=None, pairwise=True)
+    np.testing.assert_allclose(
+        pairwise, _r_anova_groups(groups, pairwise=True), rtol=0.0, atol=1e-12
+    )
+    aggregate = nns_anova(groups, confidence_interval=None)
+    assert isinstance(aggregate, dict)
+    np.testing.assert_allclose(
+        aggregate["Certainty"], _r_anova_groups(groups, pairwise=False), rtol=0.0, atol=1e-12
+    )
+
+
+@pytest.mark.parity
 @pytest.mark.stochastic
 def test_nns_anova_robust_structure_matches_r_shape() -> None:
     control, treatment = _groups(30)

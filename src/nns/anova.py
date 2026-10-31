@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from nns.core import lpm_ratio, upm_ratio
 from nns.dependence import _gravity
+from nns.var import lpm_var, upm_var
 
 AnovaResult = dict[str, float]
 Tail = Literal["both", "left", "right"]
@@ -81,10 +82,10 @@ def nns_anova(
                 out[j, i] = certainty
         return out
 
-    upper_25 = float(np.mean([_upm_var(0.25, 1, group) for group in groups]))
-    lower_25 = float(np.mean([_lpm_var(0.25, 1, group) for group in groups]))
-    upper_125 = float(np.mean([_upm_var(0.125, 1, group) for group in groups]))
-    lower_125 = float(np.mean([_lpm_var(0.125, 1, group) for group in groups]))
+    upper_25 = float(np.mean([upm_var(0.25, 1, group) for group in groups]))
+    lower_25 = float(np.mean([lpm_var(0.25, 1, group) for group in groups]))
+    upper_125 = float(np.mean([upm_var(0.125, 1, group) for group in groups]))
+    lower_125 = float(np.mean([lpm_var(0.125, 1, group) for group in groups]))
 
     certainties = [
         _anova_bin(
@@ -133,13 +134,13 @@ def _anova_bin(
         treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
 
     if upper_25_target is None or lower_25_target is None:
-        upper_25_target = float(np.mean([_upm_var(0.25, 1, control), _upm_var(0.25, 1, treatment)]))
-        lower_25_target = float(np.mean([_lpm_var(0.25, 1, control), _lpm_var(0.25, 1, treatment)]))
+        upper_25_target = float(np.mean([upm_var(0.25, 1, control), upm_var(0.25, 1, treatment)]))
+        lower_25_target = float(np.mean([lpm_var(0.25, 1, control), lpm_var(0.25, 1, treatment)]))
         upper_125_target = float(
-            np.mean([_upm_var(0.125, 1, control), _upm_var(0.125, 1, treatment)])
+            np.mean([upm_var(0.125, 1, control), upm_var(0.125, 1, treatment)])
         )
         lower_125_target = float(
-            np.mean([_lpm_var(0.125, 1, control), _lpm_var(0.125, 1, treatment)])
+            np.mean([lpm_var(0.125, 1, control), lpm_var(0.125, 1, treatment)])
         )
     assert upper_25_target is not None
     assert lower_25_target is not None
@@ -150,8 +151,8 @@ def _anova_bin(
         lpm_ratio_1 = float(lpm_ratio(0, mean_of_means, control))
         lpm_ratio_2 = float(lpm_ratio(0, mean_of_means, treatment))
     else:
-        lpm_ratio_1 = _lower_area_share(mean_of_means, control)
-        lpm_ratio_2 = _lower_area_share(mean_of_means, treatment)
+        lpm_ratio_1 = float(lpm_ratio(1, mean_of_means, control))
+        lpm_ratio_2 = float(lpm_ratio(1, mean_of_means, treatment))
 
     upper_25_ratio_1 = float(upm_ratio(1, upper_25_target, control))
     upper_25_ratio_2 = float(upm_ratio(1, upper_25_target, treatment))
@@ -255,8 +256,8 @@ def _anova_robust(
 
     alpha = _ci_alpha(confidence_interval, tails)
     base["Robust Certainty Estimate"] = _gravity(certainties)
-    base["Lower Bound Robust Certainty"] = _lpm_var(alpha, 0, certainties)
-    base["Upper Bound Robust Certainty"] = _upm_var(alpha, 0, certainties)
+    base["Lower Bound Robust Certainty"] = _quantile_var(alpha, upper=False, values=certainties)
+    base["Upper Bound Robust Certainty"] = _quantile_var(alpha, upper=True, values=certainties)
     return base
 
 
@@ -286,11 +287,11 @@ def _effect_size_bounds(
     control_upper = treatment_upper = np.inf
     control_lower = treatment_lower = -np.inf
     if tails in {"both", "right"}:
-        control_upper = _upm_var(alpha, 0, control_stats)
-        treatment_upper = _upm_var(alpha, 0, treatment_stats)
+        control_upper = _quantile_var(alpha, upper=True, values=control_stats)
+        treatment_upper = _quantile_var(alpha, upper=True, values=treatment_stats)
     if tails in {"both", "left"}:
-        control_lower = _lpm_var(alpha, 0, control_stats)
-        treatment_lower = _lpm_var(alpha, 0, treatment_stats)
+        control_lower = _quantile_var(alpha, upper=False, values=control_stats)
+        treatment_lower = _quantile_var(alpha, upper=False, values=treatment_stats)
 
     if tails == "both":
         min_effect = treatment_lower - control_upper
@@ -315,12 +316,6 @@ def _ci_alpha(confidence_interval: float | None, tails: Tail) -> float:
     return (1.0 - interval) / 2.0 if tails == "both" else 1.0 - interval
 
 
-def _lower_area_share(target: float, values: NDArray[np.float64]) -> float:
-    lower = float(lpm_ratio(1, target, values))
-    upper = float(upm_ratio(1, target, values))
-    return lower / (lower + upper)
-
-
 def _r_min(left: float, right: float) -> float:
     return float(np.minimum(left, right))
 
@@ -329,52 +324,16 @@ def _r_max(left: float, right: float) -> float:
     return float(np.maximum(left, right))
 
 
-def _lpm_var(percentile: float, degree: int, values: NDArray[np.float64]) -> float:
-    percentile = float(np.clip(percentile, 0.0, 1.0))
-    values = values[np.isfinite(values)]
-    if values.size == 0:
+def _quantile_var(percentile: float, *, upper: bool, values: NDArray[np.float64]) -> float:
+    """R's ``LPM.VaR``/``UPM.VaR`` at degree 0 (type-7 quantile), NaN-tolerant.
+
+    Degenerate groups make every certainty NaN; R's VaR then stops, while NNS
+    Python keeps returning NaN bounds.
+    """
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
         return float("nan")
-    if degree == 0:
-        return float(np.quantile(values, percentile))
-    if float(np.min(values)) == float(np.max(values)):
-        return float(np.min(values))
-
-    def objective(target: float) -> float:
-        return abs(float(lpm_ratio(degree, target, values)) - percentile)
-
-    from scipy import optimize  # type: ignore[import-untyped]
-
-    result = optimize.minimize_scalar(
-        objective,
-        bounds=(float(np.min(values)), float(np.max(values))),
-        method="bounded",
-        options={"xatol": np.sqrt(np.finfo(float).eps)},
-    )
-    return float(result.x)
-
-
-def _upm_var(percentile: float, degree: int, values: NDArray[np.float64]) -> float:
-    percentile = float(np.clip(percentile, 0.0, 1.0))
-    values = values[np.isfinite(values)]
-    if values.size == 0:
-        return float("nan")
-    if degree == 0:
-        return float(np.quantile(values, 1.0 - percentile))
-    if float(np.min(values)) == float(np.max(values)):
-        return float(np.min(values))
-
-    def objective(target: float) -> float:
-        return abs(float(upm_ratio(degree, target, values)) - percentile)
-
-    from scipy import optimize
-
-    result = optimize.minimize_scalar(
-        objective,
-        bounds=(float(np.min(values)), float(np.max(values))),
-        method="bounded",
-        options={"xatol": np.sqrt(np.finfo(float).eps)},
-    )
-    return float(result.x)
+    return upm_var(percentile, 0, finite) if upper else lpm_var(percentile, 0, finite)
 
 
 def _as_group(value: object, name: str) -> NDArray[np.float64]:
