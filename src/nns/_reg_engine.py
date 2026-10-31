@@ -1307,10 +1307,22 @@ def _m_reg(
         k = min(int(n_best), rpm_x.shape[0])
     k = max(1, k)
 
-    fitted_pred = cast(
-        NDArray[np.float64],
-        _mreg_predict(x, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class),
-    )
+    if order == "max" and k == 1:
+        # R's exact limit shortcut (Multivariate_Regression.R): with order =
+        # "max" every distinct training row is its own regression point and
+        # duplicate rows share one, so the k = 1 rule returns that point's
+        # y.hat. Map rows to their RPM row (RPM rows are in sorted-ID order)
+        # instead of an n x nrow(RPM) distance search. "+ 0.0" mirrors the
+        # gravity of a single tied value (-0.0 -> +0.0) in regression mode.
+        _, rpm_index = np.unique(partition["ids"], return_inverse=True)
+        fitted_pred = np.asarray(rpm_yhat[rpm_index.reshape(-1)], dtype=np.float64)
+        if not is_class:
+            fitted_pred = fitted_pred + 0.0
+    else:
+        fitted_pred = cast(
+            NDArray[np.float64],
+            _mreg_predict(x, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class),
+        )
     point_pred = _mreg_predict(point_est, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class)
 
     if is_class:
