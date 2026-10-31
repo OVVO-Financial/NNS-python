@@ -74,6 +74,17 @@ def test_sd_uni_wrappers_match_r(
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("size", [8, 200, 30_000])
+@pytest.mark.parametrize("case", ["shifted", "stretched", "crossing", "random"])
+def test_fsd_uni_continuous_matches_r(size: int, case: str) -> None:
+    # n = 30_000 used to build a dense (2n x n) matrix and run out of memory.
+    x, y = _pair(case, size, np.random.default_rng(size))
+    for first, second in ((x, y), (y, x)):
+        expected = nns("NNS.FSD.uni", first.tolist(), second.tolist(), "continuous")
+        assert fsd_uni(first, second, "continuous") == int(np.asarray(expected).reshape(-1)[0])
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("degree", [1, 2, 3])
 @pytest.mark.parametrize("size", SIZES)
 @pytest.mark.parametrize("case", ["constructed", "random"])

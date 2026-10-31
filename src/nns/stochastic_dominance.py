@@ -785,15 +785,19 @@ def _dominance_curve(
     if degree == 1:
         if discrete:
             return np.asarray(lpm(0, grid, values), dtype=np.float64)
-        lower = np.asarray(lpm(1, grid, values), dtype=np.float64)
-        upper = np.mean(np.maximum(0.0, values - grid[:, np.newaxis]), axis=1)
-        ratio: NDArray[np.float64] = np.divide(
-            lower,
-            lower + upper,
-            out=np.zeros_like(lower),
-            where=(lower + upper) != 0,
+        # LPM1/(LPM1 + UPM1) from prefix sums of the sorted sample, as R's C++
+        # .uni walker does: O((n + grid) log n) instead of a dense grid x n matrix.
+        sorted_values = np.sort(values)
+        prefix1 = np.concatenate(([0.0], np.cumsum(sorted_values)))
+        return _pair_curve_values_at_thresholds(
+            sorted_values,
+            prefix1,
+            None,
+            grid,
+            sorted_values.size,
+            1,
+            discrete=False,
         )
-        return ratio
     return np.asarray(lpm(degree - 1, grid, values), dtype=np.float64)
 
 
