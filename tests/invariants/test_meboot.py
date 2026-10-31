@@ -114,3 +114,42 @@ def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     x_rank = np.argsort(np.argsort(x, kind="stable"), kind="stable").astype(np.float64)
     y_rank = np.argsort(np.argsort(y, kind="stable"), kind="stable").astype(np.float64)
     return float(np.corrcoef(x_rank, y_rank)[0, 1])
+
+
+def _slope(values: np.ndarray) -> float:
+    t = np.arange(1, values.size + 1, dtype=np.float64)
+    return float(np.polyfit(t, values, 1)[0])
+
+
+@pytest.mark.parametrize("argument", ["target_drift", "target_drift_scale"])
+def test_nns_meboot_vectorises_drift_arguments_like_r(argument: str) -> None:
+    # R's documented example: NNS.meboot(x, rho = 0, target_drift = c(1, 7)) returns
+    # one result per drift value (Vectorize over rho, target_drift, target_drift_scale).
+    t = np.arange(1, 61, dtype=np.float64)
+    x = 100.0 + 2.0 * t + 5.0 * np.sin(t)
+    targets = [0.5, 6.0]
+
+    results = nns_meboot(x, reps=20, rho=0.0, random_seed=4, **{argument: targets})
+    first = nns_meboot(x, reps=20, rho=0.0, random_seed=4, **{argument: targets[0]})
+
+    assert isinstance(results, list)
+    assert len(results) == 2
+    assert isinstance(first, dict)
+    # Results are produced in order from one generator, so the first matches a scalar call.
+    np.testing.assert_array_equal(results[0]["replicates"], first["replicates"])
+    assert _slope(results[0]["ensemble"]) < _slope(results[1]["ensemble"])
+
+
+def test_nns_meboot_recycles_vectorised_arguments_elementwise() -> None:
+    x = np.linspace(1.0, 4.0, 30) + 0.2 * np.sin(np.arange(30, dtype=np.float64))
+
+    paired = nns_meboot(x, reps=4, rho=[0.0, 0.5], target_drift=[0.1, 0.2], random_seed=1)
+    assert isinstance(paired, list)
+    assert len(paired) == 2
+
+    with pytest.warns(RuntimeWarning, match="not a multiple"):
+        recycled = nns_meboot(
+            x, reps=4, rho=[0.0, 0.5, 1.0], target_drift=[0.1, 0.2], random_seed=1
+        )
+    assert isinstance(recycled, list)
+    assert len(recycled) == 3
