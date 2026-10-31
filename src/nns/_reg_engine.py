@@ -439,7 +439,8 @@ def _group_reduce_sorted(
     order = np.argsort(keys, kind="stable")
     keys_sorted = keys[order]
     values_sorted = np.asarray(values[order], dtype=np.float64)
-    key_strings = [f"{v:.15g}" for v in keys_sorted]
+    # "+ 0.0": R prints -0 as "0", so -0.0 and 0.0 keys form one group.
+    key_strings = [f"{v + 0.0:.15g}" for v in keys_sorted]
     if not key_strings:
         return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
     labels = np.asarray(key_strings)
