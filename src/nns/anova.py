@@ -235,26 +235,27 @@ def _anova_robust(
     n_boot: int,
     rng: RRNG,
 ) -> AnovaResult:
-    # R draws the resample indices first: replicate(100, sample.int(l, replace =
-    # TRUE)) with l = min(length(treatment), length(control)). (Resampling only
-    # the first l observations of the longer group is shared with R; SDA-02.)
-    sample_size = min(control.size, treatment.size)
-    draws = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1)
-    # R's treatment_matrix is cbind(resample 1, resamples 100, 99, ..., 1), so
-    # control resample g is paired with treatment resample 1 for g = 1 and with
-    # 102 - g otherwise: the two groups are resampled (almost) independently.
-    treatment_draws = draws[np.r_[0, np.arange(99, 0, -1)]]
+    # R draws the resample indices first: replicate(100, sample.int(n, replace =
+    # TRUE)) for the control and then for the treatment, each group from its own
+    # full sample and size (R fix 546f765; the shared min(n1, n2) index matrix only
+    # ever resampled the first min(n1, n2) observations of the longer group).
+    control_draws = (rng.sample_int_replace(control.size, control.size * 100) - 1).reshape(
+        100, -1
+    )
+    treatment_draws = (
+        rng.sample_int_replace(treatment.size, treatment.size * 100) - 1
+    ).reshape(100, -1)
     certainties = np.array(
         [
             _anova_bin(
-                control[draws[replicate]],
+                control[control_draws[replicate]],
                 treatment[treatment_draws[replicate]],
                 means_only=means_only,
                 medians=medians,
                 confidence_interval=None,
                 tails=tails,
             )["Certainty"]
-            for replicate in range(draws.shape[0])
+            for replicate in range(100)
         ],
         dtype=np.float64,
     )
