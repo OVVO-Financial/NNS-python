@@ -15,6 +15,7 @@ finite_arrays = arrays(
         max_value=1e6,
         allow_nan=False,
         allow_infinity=False,
+        allow_subnormal=False,  # see tests/property/test_regression.py
         width=64,
     ),
 )
