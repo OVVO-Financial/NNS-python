@@ -143,9 +143,14 @@ def _xy(
     size: int,
     rho: float,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    covariance = np.array([[1.0, rho], [rho, 1.0]])
-    values = rng.multivariate_normal(np.array([0.0, 0.0]), covariance, size=size)
-    return values[:, 0], values[:, 1]
+    # Build the correlated pair from independent standard normals with an explicit
+    # Cholesky factor. multivariate_normal factorises the covariance with LAPACK,
+    # whose last bits differ across NumPy/BLAS builds, which changed the inputs and
+    # therefore the R cache keys from one environment to the next.
+    z = rng.standard_normal((size, 2))
+    x = z[:, 0]
+    y = rho * z[:, 0] + np.sqrt(1.0 - rho * rho) * z[:, 1]
+    return x, y
 
 
 def _targets(
