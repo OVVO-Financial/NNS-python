@@ -363,12 +363,13 @@ def test_arma_degenerate_objective_returns_nan_without_warning() -> None:
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
-def test_arma_constant_numeric_seasonal_weights_return_nan_without_warning() -> None:
+def test_arma_constant_numeric_seasonal_weights_are_equal_without_warning() -> None:
+    # R fix 3b6a6cf: a constant series (CV 0/0 for every lag) gets equal weights.
     values = np.full(20, 5.0, dtype=np.float64)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
-        result = _numeric_seasonal_weights(values, np.array([4], dtype=np.int64))
+        result = _numeric_seasonal_weights(values, np.array([4, 6], dtype=np.int64))
 
-    assert np.isnan(result).all()
+    np.testing.assert_array_equal(result, [0.5, 0.5])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
