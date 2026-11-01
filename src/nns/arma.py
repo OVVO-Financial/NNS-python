@@ -822,9 +822,12 @@ def _resolve_lags_and_weights(
         varcoef = np.asarray(table["Variable.Coefficient.of.Variation"], dtype=np.float64).reshape(
             -1
         )
-        if bool(seasonal_factor):
+        if bool(seasonal_factor) and best_periods is None:
             lags, lag_weights = _arma_seas_weighting(True, periods, coef, varcoef)
         else:
+            # R turns seasonal.factor = TRUE into FALSE whenever best.periods is set
+            # (the default best.periods = 1 then selects the best period, as TRUE does),
+            # so TRUE with best_periods = k weights the k best periods.
             if best_periods is not None:
                 count = min(int(best_periods), periods.size)
                 periods = periods[:count]
