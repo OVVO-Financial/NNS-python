@@ -1,0 +1,15 @@
+{
+  "entries": {
+    "4ac2a79035c904406914901984087a5f4afdabfc0a7ac1897ff1af2f5b8642e0": [
+      "0",
+      "0.333333333333333"
+    ],
+    "59f0198dc4c630dfafd024c6657a958bf66528d2e54e65d79d94920139c268e7": [
+      "0",
+      "1"
+    ]
+  },
+  "label": "labels.reg.numeric_class_levels",
+  "nns_version": "13.3",
+  "schema_version": 2
+}

@@ -241,8 +241,9 @@ predictor without dimension reduction runs the `NNS.M.reg` branch.
 
 Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
 
-- pandas column names are kept (as `make.names` keys in `RPM`, `Fitted.xy`
-  and `equation`), and `point_est` columns are matched to the training
+- pandas column names are kept as they are (R's `check.names = FALSE`; only
+  duplicates are renamed, by `make.unique`) as keys in `RPM`, `Fitted.xy` and
+  `equation`; factor dummy columns are `<column>_<make.names(level)>`. And `point_est` columns are matched to the training
   columns by name: the same set of names is reordered into training order,
   names disjoint from the training names (or an unnamed array) are taken
   positionally, and a partial overlap raises `ValueError`. A named row such as

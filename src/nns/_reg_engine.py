@@ -138,6 +138,11 @@ def _response_vector(y: Any) -> tuple[NDArray[Any], list[Any] | None]:
     return response_values(y, "[y] must be a vector or one-column object.")
 
 
+def _r_number_label(value: float) -> str:
+    """A numeric class code as R's ``as.character`` prints it (15 significant digits)."""
+    return f"{float(value):.15g}"
+
+
 def _task(
     type_value: str | None,
     y: NDArray[Any],
@@ -174,7 +179,7 @@ def _task(
         auto_class = True
         y_numeric = y.astype(np.float64)
         class_values = np.unique(y_numeric)
-        class_levels_out = [str(v) for v in class_values]
+        class_levels_out = [_r_number_label(v) for v in class_values]
     elif is_text(y):
         auto_class = True
         keys = level_keys(y, "[y] contains missing values.")
@@ -193,7 +198,7 @@ def _task(
     is_xonly = type_value == "xonly"
     if class_values is None and is_class:
         class_values = np.unique(y_numeric)
-        class_levels_out = [str(v) for v in class_values]
+        class_levels_out = [_r_number_label(v) for v in class_values]
 
     return {
         "is_class": is_class,
@@ -259,7 +264,8 @@ def _make_names(labels: list[str]) -> list[str]:
 def _input_column_names(x: Any, ncol: int) -> list[str]:
     """Column names for [x], mirroring R's .nns_reg_as_frame default naming.
 
-    A pandas frame contributes its own column labels; a bare matrix/array gets
+    A pandas frame contributes its own column labels (kept as they are, then
+    made unique with R's ``make.unique``); a bare matrix/array gets
     R's ``as.data.frame`` defaults ``V1, V2, ...``. Blank labels fall back to
     ``x{i}`` as in R.
     """
@@ -280,7 +286,8 @@ def _input_column_names(x: Any, ncol: int) -> list[str]:
         nm if nm not in ("", "None") and nm is not None else f"x{j + 1}"
         for j, nm in enumerate(names)
     ]
-    return _make_names(names)
+    # R keeps the raw labels (check.names = FALSE) and only de-duplicates them.
+    return r_make_unique(names, ".")
 
 
 def _prepare_points(point_est: Any, train_names: list[str]) -> list[NDArray[Any]] | None:
@@ -786,9 +793,35 @@ def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
     predicted_centered = predicted - float(np.mean(predicted))
     denominator = float(np.sum(actual_centered**2) * np.sum(predicted_centered**2))
     if denominator == 0.0:
-        return 1.0 if np.array_equal(actual, predicted) else 0.0
+        return 1.0 if _r_all_equal(actual, predicted) else 0.0
     numerator = float(np.sum(actual_centered * predicted_centered) ** 2)
     return float(np.clip(numerator / denominator, 0.0, 1.0))
+
+
+def _r_all_equal(
+    target: NDArray[np.float64], current: NDArray[np.float64], tolerance: float = 1.5e-8
+) -> bool:
+    """R's ``isTRUE(all.equal(target, current))`` for two numeric vectors.
+
+    Missing values must sit at the same positions. Over the elements that
+    differ, the mean absolute difference is taken relative to their mean
+    ``|target|`` when that exceeds ``tolerance`` and absolute otherwise.
+    """
+    if target.shape != current.shape:
+        return False
+    missing = np.isnan(target)
+    if not np.array_equal(missing, np.isnan(current)):
+        return False
+    differ = ~missing & (target != current)
+    if not np.any(differ):
+        return True
+    t = target[differ]
+    with np.errstate(invalid="ignore", over="ignore"):
+        xy = float(np.mean(np.abs(t - current[differ])))
+        xn = float(np.mean(np.abs(t)))
+    if math.isfinite(xn) and xn > tolerance:
+        xy /= xn
+    return not math.isnan(xy) and xy <= tolerance
 
 
 def _intervals(

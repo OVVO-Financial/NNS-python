@@ -446,3 +446,35 @@ def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
     via_frame = nns_reg(x, y.to_numpy(), point_est=pe)["Point.est"]
     np.testing.assert_allclose(via_design, _num(expected), atol=COMPOUND)
     np.testing.assert_allclose(via_frame, _num(expected), atol=COMPOUND)
+
+
+# --------------------------------------------------------------------------
+# REG-25: raw column names (check.names = FALSE) and numeric class labels
+# --------------------------------------------------------------------------
+
+def test_nns_reg_keeps_raw_column_names() -> None:
+    cars = _cars()
+    # A declared factor: R codes character columns by first appearance (REG-12).
+    cyl = pd.Categorical(cars.cyl, categories=["four", "six", "eight"])
+    x = pd.DataFrame({"my wt": cars.wt, "2nd": cars.hp, "my cyl": cyl})
+    expected = nns_frame_call(
+        "labels.reg.raw_names",
+        "r <- NNS.reg(x, y, ncores = 1); list(rpm = names(r$RPM), fitted = names(r$Fitted.xy))",
+        {"x": _spec(x), "y": _vec(cars.mpg)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_reg(x, cars.mpg)
+    assert list(actual["RPM"]) == expected["rpm"]
+    assert list(actual["Fitted.xy"]) == expected["fitted"]
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.0 / 3.0])
+def test_nns_reg_numeric_class_levels_print_like_r(scale: float) -> None:
+    cars = _cars()
+    y = pd.Series((cars.mpg > cars.mpg.median()).astype(float) * scale)
+    expected = nns_frame_call(
+        "labels.reg.numeric_class_levels",
+        'NNS.reg(x, y, type = "CLASS", ncores = 1)$class.levels',
+        {"x": _vec(cars.wt), "y": _vec(y)},
+    )
+    assert nns_reg(cars.wt, y, type="CLASS")["class.levels"] == expected
