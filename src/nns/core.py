@@ -76,6 +76,7 @@ def _moment(
         # R convention: equality with the target counts toward the lower moment.
         grid = targets[:, np.newaxis]
         moments = np.mean(values <= grid if lower else values > grid, axis=1)
+        moments[np.isnan(targets)] = np.nan
         return _result_for_target(moments, target)
 
     deviations = targets[:, np.newaxis] - values if lower else values - targets[:, np.newaxis]
@@ -149,8 +150,6 @@ def _as_targets(
         targets = targets.reshape(1)
     if targets.ndim != 1:
         raise ValueError("target must be scalar or 1D.")
-    if np.isnan(targets).any():
-        raise ValueError("target must not contain NaN.")
     return targets
 
 
