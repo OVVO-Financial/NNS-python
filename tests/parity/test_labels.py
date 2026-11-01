@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nns import nns_reg
+from nns import nns_m_reg, nns_reg
 from tests._r import nns_frame_call, r_column
 from tests._tolerances import COMPOUND
 
@@ -220,3 +220,46 @@ def test_missing_values_in_categorical_columns_raise() -> None:
         nns_reg(good, cars.mpg, point_est=pd.DataFrame({"g": [None], "wt": [3.0]}))
     with pytest.raises(ValueError, match=r"\[y\] contains missing values"):
         nns_reg(cars.wt, g)
+
+
+# --------------------------------------------------------------------------
+# REG-15 / REG-16: nns_m_reg
+# --------------------------------------------------------------------------
+
+def test_nns_m_reg_raw_factor_frame_matches_r() -> None:
+    cars = _cars()
+    x = cars[["cyl", "wt"]]
+    expected = nns_frame_call(
+        "labels.mreg.raw_factor",
+        "r <- NNS:::NNS.M.reg(x, y, point.est = x[1:3, ], ncores = 1); "
+        "list(pe = r$Point.est, r2 = r$R2, names = names(r$RPM), nbest = r$n.best)",
+        {"x": _spec(x), "y": _vec(cars.mpg)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_m_reg(x, cars.mpg, point_est=x.iloc[:3])
+    # Sorted vs first-appearance level order only permutes the dummy columns.
+    assert sorted(actual["RPM"]) == sorted(expected["names"])
+    np.testing.assert_allclose(actual["Point.est"], _num(expected["pe"]), atol=COMPOUND)
+    np.testing.assert_allclose(actual["R2"], _num(expected["r2"]), atol=COMPOUND)
+    assert actual["n.best"] == int(_num(expected["nbest"]))
+    # Column names are kept for numeric frames too.
+    assert list(nns_m_reg(cars[["wt", "hp"]], cars.mpg)["RPM"]) == ["wt", "hp", "y.hat"]
+
+
+def test_nns_m_reg_class_levels_stay_classification() -> None:
+    flowers = _flowers()
+    levels = ["virginica", "versicolor", "setosa"]
+    x = flowers[["a", "b"]]
+    y = pd.Series(pd.Categorical(flowers.species, categories=levels))
+    expected = nns_frame_call(
+        "labels.mreg.factor_y",
+        "r <- NNS:::NNS.M.reg(x, y, point.est = x[1:6, ], ncores = 1); "
+        "list(pe = r$Point.est, r2 = r$R2, levels = r$class.levels)",
+        {"x": _spec(x), "y": _vec(y)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_m_reg(x, flowers.species, point_est=x.iloc[:6], class_levels=levels)
+    assert actual["class.levels"] == levels == expected["levels"]
+    np.testing.assert_allclose(actual["Point.est"], _num(expected["pe"]), atol=COMPOUND)
+    np.testing.assert_allclose(actual["R2"], _num(expected["r2"]), atol=COMPOUND)
+    assert set(np.unique(actual["Fitted.xy"]["y.hat"])) <= {1.0, 2.0, 3.0}

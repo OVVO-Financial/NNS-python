@@ -1,0 +1,23 @@
+{
+  "entries": {
+    "6c5eed677e2b9a4ef7ea92fb68686e8b5f9564b65feee0c0c98b363797af5d83": {
+      "names": [
+        "cyl_four",
+        "cyl_six",
+        "cyl_eight",
+        "wt",
+        "y.hat"
+      ],
+      "nbest": 3.0,
+      "pe": [
+        20.2989667001237,
+        18.3059267596627,
+        25.5268296655321
+      ],
+      "r2": 0.0244149478111817
+    }
+  },
+  "label": "labels.mreg.raw_factor",
+  "nns_version": "13.3",
+  "schema_version": 2
+}
