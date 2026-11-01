@@ -96,9 +96,9 @@ _UNI_EDGE_CASES = [
 @pytest.mark.parity
 @pytest.mark.parametrize(("x", "y"), _UNI_EDGE_CASES)
 def test_sd_uni_edge_cases_match_patched_r(x: list[float], y: list[float]) -> None:
-    # R fixes 019fc1a (each sample walked with its own length), ec87e4a (no dominance
-    # when the curves coincide) and 05f6d3d (continuous FSD 0/0 ratio = the degree-0
-    # ratio, as LPM.ratio): the patched R .uni routines now agree with Python's and
+    # R's fixes (each sample walked with its own length, no dominance when the
+    # curves coincide, continuous FSD 0/0 ratio = the degree-0 ratio as in
+    # LPM.ratio): the patched R .uni routines now agree with Python's and
     # with the bidirectional tests.
     a = np.asarray(x)
     b = np.asarray(y)
@@ -179,7 +179,7 @@ def test_sd_efficient_set_continuous_fsd_matches_r() -> None:
 @pytest.mark.parametrize("junk_columns", [0, 71, 72])
 def test_sd_efficient_set_tsd_with_extra_knots_matches_r(junk_columns: int) -> None:
     # LPM2_x - LPM2_y peaks at +0.039 at t = 0.16, between the (x, y) knots, and z
-    # adds a knot there. R fix d4fc624 checks that interior maximum for every pair,
+    # adds a knot there. The patched R checks that interior maximum for every pair,
     # so x no longer TSD-dominates y, whatever other columns are present.
     x = [-0.85, -1.52, 0.68]
     y = [-0.21, -0.33, -1.67]
@@ -214,7 +214,7 @@ _INTERIOR_FSD_CONTINUOUS_PAIR = (
 @pytest.mark.parity
 @pytest.mark.parametrize(("x", "y"), _INTERIOR_TSD_PAIRS)
 def test_tsd_checks_the_curves_between_sample_points(x: list[float], y: list[float]) -> None:
-    # R fix d4fc624: the pairwise test also evaluates the vertex of the piecewise
+    # Patched R: the pairwise test also evaluates the vertex of the piecewise
     # quadratic LPM2 difference on each interval between knots.
     a = np.asarray(x)
     b = np.asarray(y)
@@ -234,7 +234,7 @@ def test_tsd_checks_the_curves_between_sample_points(x: list[float], y: list[flo
 
 @pytest.mark.parity
 def test_continuous_fsd_checks_the_curves_between_sample_points() -> None:
-    # R fix d4fc624: the continuous ratio L1/(L1+U1) is linear-fractional between
+    # Patched R: the continuous ratio L1/(L1+U1) is linear-fractional between
     # knots; the difference peaks at +0.003 at t = 0.50 although it is <= 0 at them.
     a = np.asarray(_INTERIOR_FSD_CONTINUOUS_PAIR[0])
     b = np.asarray(_INTERIOR_FSD_CONTINUOUS_PAIR[1])
@@ -272,7 +272,7 @@ def _mean_preserving_spread(shift: float) -> tuple[np.ndarray, np.ndarray]:
     ],
 )
 def test_sd_rounding_noise_does_not_decide_dominance(x: np.ndarray, y: np.ndarray) -> None:
-    # R fix 2ca5aca: differences up to 64 * eps * S^d are ties, and the bidirectional
+    # Patched R: differences up to 64 * eps * S^d are ties, and the bidirectional
     # tests take their verdict from the pairwise (.uni) test in both directions.
     assert ssd(x, y) == 1 == ssd_uni(x, y)
     assert tsd(x, y) == 1 == tsd_uni(x, y)

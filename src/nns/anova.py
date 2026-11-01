@@ -237,7 +237,7 @@ def _anova_robust(
 ) -> AnovaResult:
     # R draws the resample indices first: replicate(100, sample.int(n, replace =
     # TRUE)) for the control and then for the treatment, each group from its own
-    # full sample and size (R fix 546f765; the shared min(n1, n2) index matrix only
+    # full sample and size (the shared min(n1, n2) index matrix only
     # ever resampled the first min(n1, n2) observations of the longer group).
     control_draws = (rng.sample_int_replace(control.size, control.size * 100) - 1).reshape(
         100, -1
@@ -311,7 +311,7 @@ def _effect_size_bounds(
     )
     alpha = _ci_alpha(confidence_interval, tails)
 
-    # Every tail choice needs both quantiles of both groups (R fix 15b4bd8; R used
+    # Every tail choice needs both quantiles of both groups (R used
     # to compute only one side and failed on one-sided tails).
     control_upper = _quantile_var(alpha, upper=True, values=control_stats)
     treatment_upper = _quantile_var(alpha, upper=True, values=treatment_stats)

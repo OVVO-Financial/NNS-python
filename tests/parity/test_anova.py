@@ -105,8 +105,8 @@ def test_nns_anova_robust_matches_seeded_r(
     confidence_interval: float | None,
     medians: bool,
 ) -> None:
-    # Same resample indices as R (each group bootstrapped from its own full sample,
-    # R fix 546f765), so the robust estimate and its bounds match set.seed(seed).
+    # Same resample indices as the patched R (each group bootstrapped from its own
+    # full sample), so the robust estimate and its bounds match set.seed(seed).
     control, treatment = _groups(30)
     treatment = np.sin(3.0 * treatment[:26]) + 0.1
 
@@ -146,7 +146,7 @@ def test_nns_anova_robust_matches_seeded_r(
 
 @pytest.mark.parity
 def test_nns_anova_robust_resamples_all_of_the_longer_group() -> None:
-    # R fix 546f765: control = 50 x N(0,1)-like values then 150 shifted by 5; the
+    # Patched R: control = 50 x N(0,1)-like values then 150 shifted by 5; the
     # treatment matches only the first 50. Resampling just the first min(n1, n2)
     # control observations made the robust certainty look high.
     idx = np.arange(200, dtype=np.float64)
@@ -210,7 +210,7 @@ def test_nns_anova_effect_size_bootstrap_matches_seeded_r(
 def test_nns_anova_one_sided_ci_matches_patched_r(
     tails: str, robust: bool, confidence_interval: float
 ) -> None:
-    # R fix 15b4bd8: both bootstrap quantiles are computed for one-sided tails, so
+    # Patched R: both bootstrap quantiles are computed for one-sided tails, so
     # tails="left" gives (treatment_lower - control_upper, Inf) and "right" gives
     # (-Inf, treatment_upper - control_lower); R 13.3 stopped with "object not found".
     control, treatment = _groups(30)

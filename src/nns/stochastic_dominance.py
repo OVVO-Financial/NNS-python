@@ -15,7 +15,7 @@ tie break.
 
 Pairwise tests accept samples of unequal length: each sample's curve is
 evaluated on the merged threshold grid with its own length, as R's
-``NNS.FSD``/``NNS.SSD``/``NNS.TSD`` and (since R fix 019fc1a) the ``.uni``
+``NNS.FSD``/``NNS.SSD``/``NNS.TSD`` and (in the patched R) the ``.uni``
 walkers do.
 """
 
@@ -554,13 +554,13 @@ def _dominates_sorted(
     for TSD). Each curve is evaluated on the merged unique thresholds with the
     sample's own count ``k`` of observations ``<= t``. For TSD and continuous FSD
     the closed-form extremum of the curve difference inside each interval between
-    thresholds is checked too (R fix d4fc624).
+    thresholds is checked too, as the patched R does.
 
     Curve values from prefix sums that are equal in exact arithmetic can differ by
     rounding noise of order ``eps * S**degree`` (``S`` the largest absolute value of
     the two samples), so differences up to ``64 * eps * S**d`` are ties: ``d`` = 1 for
-    SSD and the mean gate, 2 for TSD, and a ratio analogue for continuous FSD (R fix
-    2ca5aca). Discrete FSD compares exact ECDF fractions with no tolerance.
+    SSD and the mean gate, 2 for TSD, and a ratio analogue for continuous FSD.
+    Discrete FSD compares exact ECDF fractions with no tolerance.
     """
     x_count = x_sorted.size
     y_count = y_sorted.size
@@ -656,7 +656,7 @@ def _ratio_deg1(
     upper = ((prefix1[-1] - sums1) - (observations - counts) * thresholds) / observations
     total = lower + upper
     # 0/0 (every observation equals the threshold): the degree-0 ratio, i.e. the
-    # right-continuous CDF value, as LPM.ratio does (R fix 05f6d3d; it was 0).
+    # right-continuous CDF value, as LPM.ratio does (it was 0).
     ratio: NDArray[np.float64] = np.divide(
         lower,
         total,
