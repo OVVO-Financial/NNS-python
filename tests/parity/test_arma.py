@@ -37,6 +37,15 @@ from nns import nns_arma, nns_arma_optim
         ),
         ("means", np.arange(1, 21, dtype=np.float64), 5, 4, "means", None, 1),
         (
+            "means-multi-lag",
+            np.sin(np.arange(1, 61, dtype=np.float64) / 2.0) + 3.0,
+            4,
+            [6, 12],
+            "means",
+            None,
+            1,
+        ),
+        (
             "auto-seasonal",
             np.sin(np.arange(1, 60, dtype=np.float64) / 3.0)
             + 0.1 * np.arange(1, 60, dtype=np.float64),
