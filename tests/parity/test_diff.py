@@ -75,9 +75,10 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
 def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
     # R steps by gravity(|diff(x)|) * h_s (the bandwidth value, not its index);
     # for n < 49 R keeps only the bandwidths that occur once in h_s.
+    # x on a 1/1024 grid makes x * x * x exact, so the cache key matches on every numpy build.
     rng = np.random.default_rng(size)
-    x = rng.uniform(-2.0, 2.0, size)
-    y = x**3 - x
+    x = rng.integers(-2048, 2049, size) / 1024.0
+    y = x * x * x - x
     eval_point = [-1.5, 0.0, 0.5, 1.5]
     expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
     actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
