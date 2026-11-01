@@ -136,3 +136,17 @@ def test_fsd_uni_continuous_matches_dense_ratio_definition(seed: int) -> None:
 
     assert fsd_uni(x, y, "continuous") == dominates(x, y)
     assert fsd_uni(y, x, "continuous") == dominates(y, x)
+
+
+def test_merged_thresholds_equal_union_and_searchsorted() -> None:
+    from nns.stochastic_dominance import _merged_thresholds
+
+    rng = np.random.default_rng(31)
+    for n, m, digits in ((1, 1, 0), (7, 3, 0), (50, 80, 1), (400, 400, 6), (300, 120, 15)):
+        x = np.sort(np.round(rng.normal(size=n), digits))
+        y = np.sort(np.round(rng.normal(size=m), digits))
+        thresholds, x_counts, y_counts = _merged_thresholds(x, y)
+        expected = np.union1d(x, y)
+        np.testing.assert_array_equal(thresholds, expected)
+        np.testing.assert_array_equal(x_counts, np.searchsorted(x, expected, side="right"))
+        np.testing.assert_array_equal(y_counts, np.searchsorted(y, expected, side="right"))
