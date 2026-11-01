@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import functools
 import math
-import re
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -36,10 +35,12 @@ from nns._labels import (
     codes_for,
     declared_codes,
     declared_levels,
+    is_logical,
     is_text,
     level_keys,
     match_columns,
     point_codes,
+    r_make_names,
     r_make_unique,
     resolve_factor_levels,
     response_values,
@@ -240,27 +241,6 @@ def _raw_column_names(cols: Columns) -> list[str]:
     return r_make_unique(names, ".")
 
 
-def _make_names(labels: list[str]) -> list[str]:
-    """Mimic R's make.names(): sanitise to syntactically valid, unique names."""
-    out: list[str] = []
-    for raw in labels:
-        s = re.sub(r"[^0-9A-Za-z._]", ".", str(raw))
-        if s == "" or not re.match(r"^[A-Za-z.]", s) or re.match(r"^\.[0-9]", s):
-            s = "X" + s
-        out.append(s)
-    # make.unique: append .1, .2, ... to duplicates
-    seen: dict[str, int] = {}
-    unique: list[str] = []
-    for s in out:
-        if s in seen:
-            seen[s] += 1
-            unique.append(f"{s}.{seen[s]}")
-        else:
-            seen[s] = 0
-            unique.append(s)
-    return unique
-
-
 def _input_column_names(x: Any, ncol: int) -> list[str]:
     """Column names for [x], mirroring R's .nns_reg_as_frame default naming.
 
@@ -339,8 +319,9 @@ def _encode_predictors(
     strings). Levels are the declared levels in their order; undeclared label
     columns use sorted levels. (R uses first-appearance order for character
     columns, which makes its fit depend on the row order; the sorted order is
-    R's ``factor()`` order.) Missing values in a categorical column are an
-    error, as in R. bool columns stay numeric 0/1.
+    R's ``factor()`` order.) bool columns are factors with levels FALSE/TRUE,
+    as R treats logicals. Missing values in a categorical column are an
+    error, as in R.
     """
     cols = _train_columns(x)
     p = len(cols.values)
@@ -364,7 +345,7 @@ def _encode_predictors(
         z = cols.values[j]
         zp = None if points is None else points[j]
         level_decl = declared[j] if declared[j] is not None else cols.categories[j]
-        categorical = level_decl is not None or is_text(z)
+        categorical = level_decl is not None or is_text(z) or is_logical(z)
 
         if categorical:
             missing = f"Predictor '{raw}' contains missing values."
@@ -399,7 +380,7 @@ def _encode_predictors(
                     )
                 )
                 encoded_names.extend(
-                    f"{nm}_{sanitized}" for sanitized in _make_names(list(levels))
+                    f"{nm}_{sanitized}" for sanitized in r_make_names(levels)
                 )
                 if codes_point is not None and point_parts is not None:
                     point_parts.append(

@@ -252,8 +252,10 @@ Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
   declares its levels, or when it holds labels: strings (including
   numeric-looking strings such as `"1"`, `"10"`, as in R) or an object column
   with any non-number. An object column of numbers (`df.to_numpy()` of a mixed
-  frame) is numeric. `bool` columns stay numeric 0/1 (R treats logicals as
-  factors).
+  frame) is numeric. `bool` columns (and object columns of booleans) are
+  factors with levels `FALSE`/`TRUE`, as R treats logicals: dummies
+  `<column>_FALSE.` / `<column>_TRUE.` (R's `make.names`), so even a single
+  bool predictor runs the `NNS.M.reg` branch.
 - Factor levels are the declared levels in their order (pandas categories, or
   `factor_levels=`: a mapping from column name to levels, one entry per column
   with `None` for numeric columns, or a flat level list for a single
