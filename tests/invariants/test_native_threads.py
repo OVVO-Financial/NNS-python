@@ -44,8 +44,13 @@ def test_native_threads_is_scoped_to_the_block_and_validates() -> None:
             assert set_call(1) == 1
         assert set_call(2) == 2
     assert set_call(0) == 0
-    for bad in (0, -1, 1.5, True, "2"):
+    for bad in (1.5, True, "2"):
         with pytest.raises(ValueError, match="ncores"), native_threads(bad):
+            pass
+    # 0 / negative values were silently ignored before ncores was honoured; they now
+    # mean "default" with a DeprecationWarning instead of raising.
+    for legacy in (0, -1):
+        with pytest.warns(DeprecationWarning, match="ncores"), native_threads(legacy):
             pass
 
 
@@ -79,8 +84,9 @@ def test_ncores_is_honoured_without_a_warning() -> None:
         serial = nns.nns_reg(x, y, ncores=1)["Fitted.xy"]["y.hat"]
         threaded = nns.nns_reg(x, y, ncores=4)["Fitted.xy"]["y.hat"]
     np.testing.assert_array_equal(serial, threaded)
-    with pytest.raises(ValueError, match="ncores"):
-        nns.nns_reg(x, y, ncores=0)
+    with pytest.warns(DeprecationWarning, match="ncores"):
+        legacy = nns.nns_reg(x, y, ncores=0)["Fitted.xy"]["y.hat"]
+    np.testing.assert_array_equal(serial, legacy)
 
 
 def test_native_kernels_run_concurrently_from_python_threads() -> None:
@@ -115,3 +121,17 @@ def test_warnings_point_at_the_callers_line() -> None:
     nowcast = [w for w in caught if "nowcast" in str(w.message)]
     assert nowcast
     assert nowcast[0].filename == __file__
+
+
+def test_fast_lm_fallback_matches_the_native_kernel_bit_for_bit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nns._helpers as helpers
+
+    if helpers.native_fn("fast_lm") is None:
+        pytest.skip("native extension not available")
+    x = np.array([1.0, 2.0, 3.0])
+    y = np.array([2.390137, 2.847274, 3.173205])
+    native = helpers._fast_lm(x, y)
+    monkeypatch.setattr(helpers, "native_fn", lambda name: None)
+    assert helpers._fast_lm(x, y) == native
