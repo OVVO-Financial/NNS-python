@@ -447,6 +447,84 @@ def test_nns_arma_optim_matches_r(
         )
 
 
+def _two_cycle_series(seed: int) -> np.ndarray:
+    t = np.arange(1, 161, dtype=np.float64)
+    noise = np.round(np.random.default_rng(seed).normal(0.0, 1.5, t.size), 8)
+    return 50.0 + 5.0 * np.sin(2.0 * np.pi * t / 12.0) + 4.0 * np.sin(2.0 * np.pi * t / 7.0) + noise
+
+
+_AIR_PASSENGERS_132 = np.array(
+    [
+        112, 118, 132, 129, 121, 135, 148, 148, 136, 119, 104, 118, 115, 126, 141, 135, 125,
+        149, 170, 170, 158, 133, 114, 140, 145, 150, 178, 163, 172, 178, 199, 199, 184, 162,
+        146, 166, 171, 180, 193, 181, 183, 218, 230, 242, 209, 191, 172, 194, 196, 196, 236,
+        235, 229, 243, 264, 272, 237, 211, 180, 201, 204, 188, 235, 227, 234, 264, 302, 293,
+        259, 229, 203, 229, 242, 233, 267, 269, 270, 315, 364, 347, 312, 274, 237, 278, 284,
+        277, 317, 313, 318, 374, 413, 405, 355, 306, 271, 306, 315, 301, 356, 348, 355, 422,
+        465, 467, 404, 347, 305, 336, 340, 318, 362, 348, 363, 435, 491, 505, 404, 359, 310,
+        337, 360, 342, 406, 396, 420, 472, 548, 559, 463, 407, 362, 405,
+    ],
+    dtype=np.float64,
+)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("name", "variable", "h", "training_set", "seasonal_factor", "objective", "approximation"),
+    [
+        # 5202d54: "both" is scored with NNS.ARMA(method="both").
+        ("both-scored", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", True),
+        # ce818bd: the equal-weights candidate is evaluated (and chosen here).
+        ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True),
+        # dc5e399: the nns.regress decision is applied to the results (shrink TRUE).
+        ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True),
+        # 5aae7c7: R now evaluates nonlin/both without the linear approximation.
+        ("exhaustive", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", False),
+    ],
+)
+def test_nns_arma_optim_selection_matches_patched_r(
+    name: str,
+    variable: np.ndarray,
+    h: int | None,
+    training_set: int | None,
+    seasonal_factor: list[int],
+    objective: str,
+    approximation: bool,
+) -> None:
+    del name
+    expected = _dict_any(
+        nns_arma_optim_custom(
+            variable.tolist(),
+            h=h,
+            training_set=training_set,
+            seasonal_factor=seasonal_factor,
+            objective=objective,
+            linear_approximation=approximation,
+        )
+    )
+    actual = nns_arma_optim(
+        variable,
+        h=h,
+        training_set=training_set,
+        seasonal_factor=seasonal_factor,
+        objective=objective,
+        linear_approximation=approximation,
+        print_trace=False,
+    )
+
+    assert actual["method"] == expected["method"]
+    assert bool(actual["shrink"]) == bool(_array_any(expected["shrink"]))
+    assert bool(actual["nns.regress"]) == bool(_array_any(expected["nns.regress"]))
+    if expected["weights"] is None:
+        assert actual["weights"] is None
+    else:
+        np.testing.assert_allclose(actual["weights"], _array_any(expected["weights"]))
+    for key in ("periods", "obj.fn", "bias.shift", "errors", "results", "lower.pred.int"):
+        np.testing.assert_allclose(
+            _array_any(actual[key]), _array_any(expected[key]), atol=COMPOUND, equal_nan=True
+        )
+
+
 @pytest.mark.parity
 def test_nns_arma_optim_without_pred_int_matches_r() -> None:
     # R 13.3 returns numeric(0) bounds for pred.int = NULL; Python used to raise TypeError.

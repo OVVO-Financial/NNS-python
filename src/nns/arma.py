@@ -77,7 +77,6 @@ def nns_arma_optim(
     previous_estimates: list[NDArray[np.float64]] = []
     overall_seasonals: list[NDArray[np.int64]] = []
     overall_estimates: list[float] = []
-    nonlin_predicted = np.array([], dtype=np.float64)
 
     for method in methods:
         current_seasonals: list[NDArray[np.int64]] = []
@@ -132,19 +131,20 @@ def nns_arma_optim(
                     negative_values,
                     None,
                 )
-                nonlin_predicted = predicted
                 estimates = np.asarray([float(objective_fn(predicted, actual))], dtype=np.float64)
             elif method == "both" and linear_approximation:
-                lin_predicted = _arma_optim_prediction(
+                # Score the model that is returned (R fix 5202d54): NNS.ARMA(method="both")
+                # averages lin and nonlin inside the recursion, which differs from the
+                # average of the separately forecast lin and nonlin paths.
+                predicted = _arma_optim_prediction(
                     values,
                     train_n,
                     h_eval,
                     overall_seasonals[0],
-                    "lin",
+                    "both",
                     negative_values,
                     None,
                 )
-                predicted = (lin_predicted + nonlin_predicted) / 2.0
                 estimates = np.asarray([float(objective_fn(predicted, actual))], dtype=np.float64)
             else:
                 estimates = np.asarray(
@@ -229,23 +229,32 @@ def nns_arma_optim(
     bias_score = float(objective_fn(predicted_shifted, actual))
 
     if nns_periods.size > 1:
-        weight_score = float(objective_fn(predicted, actual))
-        if _improves(weight_score, nns_score, objective_l):
-            nns_weights = np.full(nns_periods.size, 1.0 / float(nns_periods.size), dtype=np.float64)
-            predicted = _arma_optim_prediction(
-                values,
-                train_n,
-                h_eval,
-                nns_periods,
-                nns_method,
-                negative_values,
-                nns_weights,
-            )
+        # Candidate: equal weights across the selected periods (R fix ce818bd; the
+        # score used to come from the weights=None forecast, so equal weights could
+        # never be chosen).
+        equal_weights = np.full(nns_periods.size, 1.0 / float(nns_periods.size))
+        equal_predicted = _arma_optim_prediction(
+            values,
+            train_n,
+            h_eval,
+            nns_periods,
+            nns_method,
+            negative_values,
+            equal_weights,
+        )
+        weight_score = float(objective_fn(equal_predicted, actual))
+        if math.isnan(weight_score):
+            weight_score = math.inf if objective_l == "min" else -math.inf
+        if _improves_or_ties_bias(weight_score, nns_score, objective_l):
+            nns_weights = equal_weights
+            predicted = equal_predicted
             errors = predicted - actual
             bias = _finite_gravity(errors)
             predicted_shifted = predicted - bias
             bias_score = float(objective_fn(predicted_shifted, actual))
-            if not np.isfinite(bias_score) or not _improves(bias_score, weight_score, objective_l):
+            if math.isnan(bias_score) or (
+                bias_score > weight_score if objective_l == "min" else bias_score <= weight_score
+            ):
                 bias = 0.0
         elif not np.isfinite(bias_score) or not _improves_or_ties_bias(
             bias_score, nns_score, objective_l
@@ -287,10 +296,14 @@ def nns_arma_optim(
     smooth_score = float(objective_fn(smooth_predicted, actual))
     nns_regress = _improves(smooth_score, nns_score, objective_l)
     if nns_regress:
-        values = regressed_values
         final_predicted = smooth_predicted
+    del final_predicted
 
-    del final_predicted, values
+    # Apply the nns.regress decision (R fix dc5e399): it was tested on the smoothed
+    # series with shrink=True, so the returned forecast uses the same inputs.
+    final_values = regressed_values if nns_regress else original_values
+    if nns_regress:
+        nns_shrink = True
 
     pi_width = (
         None
@@ -301,7 +314,7 @@ def nns_arma_optim(
     if h_oos is None:
         result_h = h_eval
         model_results = _arma_optim_prediction(
-            original_values,
+            final_values,
             train_n,
             result_h,
             nns_periods,
@@ -313,7 +326,7 @@ def nns_arma_optim(
     else:
         result_h = h_oos
         model_results = _arma_optim_prediction(
-            original_values,
+            final_values,
             None,
             result_h,
             nns_periods,

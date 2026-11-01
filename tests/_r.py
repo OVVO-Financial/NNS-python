@@ -807,8 +807,10 @@ def nns_arma_optim_custom(
     seasonal_factor: list[int],
     lin_only: bool = False,
     pred_int: float | None = 0.95,
+    objective: str = "min",
+    linear_approximation: bool = True,
 ) -> RValue:
-    args = {
+    args: dict[str, Any] = {
         "variable": variable,
         "h": h,
         "training_set": training_set,
@@ -816,6 +818,11 @@ def nns_arma_optim_custom(
         "lin_only": lin_only,
         "pred_int": pred_int,
     }
+    # Only non-default options enter the payload, so existing cache keys are kept.
+    if objective != "min":
+        args["objective"] = objective
+    if not linear_approximation:
+        args["linear_approximation"] = False
     key = _cache_key("NNS.ARMA.optim.custom", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -1930,10 +1937,14 @@ def _call_r_arma_optim_custom(args: dict[str, Any]) -> RValue:
         "h_arg <- if (is.null(args$h)) NULL else as.integer(args$h)\n"
         "training_arg <- if (is.null(args$training_set)) NULL else as.integer(args$training_set)\n"
         "pred_arg <- if (is.null(args$pred_int)) NULL else as.numeric(args$pred_int)\n"
+        "objective_arg <- if (is.null(args$objective)) 'min' else args$objective\n"
+        "approx_arg <- if (is.null(args$linear_approximation)) TRUE "
+        "else isTRUE(args$linear_approximation)\n"
         "result <- NNS::NNS.ARMA.optim("
         "as.numeric(unlist(args$variable)), h = h_arg, training.set = training_arg, "
         "seasonal.factor = as.integer(unlist(args$seasonal_factor)), "
         "lin.only = isTRUE(args$lin_only), pred.int = pred_arg, ncores = 1, "
+        "objective = objective_arg, linear.approximation = approx_arg, "
         "print.trace = FALSE, plot = FALSE)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
