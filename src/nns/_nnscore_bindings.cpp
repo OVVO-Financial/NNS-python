@@ -22,6 +22,16 @@ namespace nb = nanobind;
 
 namespace {
 
+// Worker threads for the NNS-core kernels called from this OS thread: 0 means
+// the library default (nns::get_num_threads(): set_num_threads(), else the
+// NNS_NUM_THREADS environment variable, else the hardware thread count).
+// nns._native.native_threads(ncores) sets it for the duration of one public
+// call, so Python threads with different ncores do not interfere. Results never
+// depend on it: every parallel kernel writes disjoint output slots.
+thread_local int t_call_threads = 0;
+
+int call_threads() { return t_call_threads > 0 ? t_call_threads : -1; }
+
 using Vector = nb::ndarray<const double, nb::ndim<1>, nb::c_contig>;
 using IntVector = nb::ndarray<const int, nb::ndim<1>, nb::c_contig>;
 using Matrix = nb::ndarray<nb::numpy, double, nb::shape<-1, -1>, nb::f_contig>;
@@ -81,10 +91,11 @@ std::vector<double> moment_ratio_vector(bool lower, double degree, const Vector&
   if (n_targets == 0U) {
     return out;
   }
+  nb::gil_scoped_release release;
   if (lower) {
-    nns::lpm_ratio_v(degree, targets.data(), n_targets, x.data(), n, out.data());
+    nns::lpm_ratio_v(degree, targets.data(), n_targets, x.data(), n, out.data(), call_threads());
   } else {
-    nns::upm_ratio_v(degree, targets.data(), n_targets, x.data(), n, out.data());
+    nns::upm_ratio_v(degree, targets.data(), n_targets, x.data(), n, out.data(), call_threads());
   }
   return out;
 }
@@ -96,10 +107,11 @@ std::vector<double> moment_vector(bool lower, double degree, const Vector& targe
   if (n_targets == 0U) {
     return out;
   }
+  nb::gil_scoped_release release;
   if (lower) {
-    nns::lpm_v(degree, targets.data(), n_targets, x.data(), n, out.data());
+    nns::lpm_v(degree, targets.data(), n_targets, x.data(), n, out.data(), call_threads());
   } else {
-    nns::upm_v(degree, targets.data(), n_targets, x.data(), n, out.data());
+    nns::upm_v(degree, targets.data(), n_targets, x.data(), n, out.data(), call_threads());
   }
   return out;
 }
@@ -123,18 +135,19 @@ std::vector<double> co_moment_vector(const std::string& kind,
   if (n_out == 0U) {
     return out;
   }
+  nb::gil_scoped_release release;
   if (kind == "co_lpm") {
     nns::co_lpm_v(degree_x, degree_y, x.data(), y.data(), n_x, n_y, target_x.data(), n_target_x,
-                  target_y.data(), n_target_y, out.data());
+                  target_y.data(), n_target_y, out.data(), call_threads());
   } else if (kind == "co_upm") {
     nns::co_upm_v(degree_x, degree_y, x.data(), y.data(), n_x, n_y, target_x.data(), n_target_x,
-                  target_y.data(), n_target_y, out.data());
+                  target_y.data(), n_target_y, out.data(), call_threads());
   } else if (kind == "d_lpm") {
     nns::d_lpm_v(degree_x, degree_y, x.data(), y.data(), n_x, n_y, target_x.data(), n_target_x,
-                 target_y.data(), n_target_y, out.data());
+                 target_y.data(), n_target_y, out.data(), call_threads());
   } else if (kind == "d_upm") {
     nns::d_upm_v(degree_x, degree_y, x.data(), y.data(), n_x, n_y, target_x.data(), n_target_x,
-                 target_y.data(), n_target_y, out.data());
+                 target_y.data(), n_target_y, out.data(), call_threads());
   } else {
     throw std::invalid_argument("unknown co-moment kind.");
   }
@@ -153,8 +166,12 @@ nb::dict pm_matrix_dict(double degree_lpm,
     throw std::invalid_argument("target length must equal d.");
   }
   checked_flat_matrix_size(variable, n, d, "variable");
-  nns::PMMatrixResult result = nns::pm_matrix(degree_lpm, degree_upm, target.data(),
-                                              variable.data(), n, d, pop_adj, norm);
+  nns::PMMatrixResult result;
+  {
+    nb::gil_scoped_release release;
+    result = nns::pm_matrix(degree_lpm, degree_upm, target.data(), variable.data(), n, d, pop_adj,
+                            norm, call_threads());
+  }
   nb::dict out;
   out["cupm"] = matrix_from_column_major_vector(std::move(result.cupm), result.dim);
   out["dupm"] = matrix_from_column_major_vector(std::move(result.dupm), result.dim);
@@ -400,13 +417,16 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
   const double* x = xa.data();
   const double* y = ya.data();
 
-  PartitionLabels pl = partition_labels(x, y, n, xonly, max_order, obs_req, min_obs_stop);
-
+  PartitionLabels pl;
   std::vector<std::string> rp_quadrant;
   std::vector<double> rp_x;
   std::vector<double> rp_y;
-  regression_points_from_prior(x, y, n, pl.prior, x_is_discrete_like_r(x, n), &rp_quadrant, &rp_x,
-                               &rp_y);
+  {
+    nb::gil_scoped_release release;
+    pl = partition_labels(x, y, n, xonly, max_order, obs_req, min_obs_stop);
+    regression_points_from_prior(x, y, n, pl.prior, x_is_discrete_like_r(x, n), &rp_quadrant,
+                                 &rp_x, &rp_y);
+  }
 
   std::vector<double> dt_x(x, x + n);
   std::vector<double> dt_y(y, y + n);
@@ -512,10 +532,14 @@ nb::dict nns_dep_pair(const Vector& xa, const Vector& ya, bool asym) {
   const double* x = xa.data();
   const double* y = ya.data();
 
-  const int obs_req = std::max<int>(8, static_cast<int>(n / 8U));
-  const std::vector<uint64_t> quad_xy = hash_labels(dep_xonly_partition(x, n, obs_req));
-  const std::vector<uint64_t> quad_yx = hash_labels(dep_xonly_partition(y, n, obs_req));
-  const nns::DepResult res = nns::dep_pair(x, y, n, quad_xy.data(), quad_yx.data(), asym);
+  nns::DepResult res;
+  {
+    nb::gil_scoped_release release;
+    const int obs_req = std::max<int>(8, static_cast<int>(n / 8U));
+    const std::vector<uint64_t> quad_xy = hash_labels(dep_xonly_partition(x, n, obs_req));
+    const std::vector<uint64_t> quad_yx = hash_labels(dep_xonly_partition(y, n, obs_req));
+    res = nns::dep_pair(x, y, n, quad_xy.data(), quad_yx.data(), asym);
+  }
 
   nb::dict out;
   out["Correlation"] = res.correlation;
@@ -596,14 +620,14 @@ double upper_tri_pairwise(const std::vector<double>& m, std::size_t d) {
 
 double copula_nd(const double* data, std::size_t n, std::size_t d, const double* target,
                  bool continuous) {
-  const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false);
+  const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false, call_threads());
   const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
   if (disc_co == 1.0 || disc_co == 0.0) return 1.0;
   const double disc_d = nd_dpm_general(data, n, d, target, 0.0, true);
 
   double cont_co, cont_d;
   if (continuous) {
-    const nns::PMMatrixResult cont = nns::pm_matrix(1.0, 1.0, target, data, n, d, true, true);
+    const nns::PMMatrixResult cont = nns::pm_matrix(1.0, 1.0, target, data, n, d, true, true, call_threads());
     cont_co = upper_tri_pairwise(cont.cupm, d) + upper_tri_pairwise(cont.clpm, d);
     cont_d = nd_dpm_general(data, n, d, target, 1.0, true);
   } else {
@@ -702,19 +726,22 @@ NB_MODULE(_nnscore, m) {
                       double degree, bool norm) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
-    return nns::clpm_nd(data.data(), n, d, target.data(), degree, norm);
+    nb::gil_scoped_release release;
+    return nns::clpm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
   });
   m.def("cupm_nd", [](const Vector& data, std::size_t n, std::size_t d, const Vector& target,
                       double degree, bool norm) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
-    return nns::cupm_nd(data.data(), n, d, target.data(), degree, norm);
+    nb::gil_scoped_release release;
+    return nns::cupm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
   });
   m.def("dpm_nd", [](const Vector& data, std::size_t n, std::size_t d, const Vector& target,
                     double degree, bool norm) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
-    return nns::dpm_nd(data.data(), n, d, target.data(), degree, norm);
+    nb::gil_scoped_release release;
+    return nns::dpm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
   });
   m.def("clpm_nd_batch", [](const Vector& data, std::size_t n, std::size_t d,
                             const Vector& targets, std::size_t n_targets, double degree, bool norm) {
@@ -723,10 +750,25 @@ NB_MODULE(_nnscore, m) {
       throw std::invalid_argument("targets length must equal n_targets * d.");
     }
     std::vector<double> out(n_targets, 0.0);
-    nns::clpm_nd_batch(data.data(), n, d, targets.data(), n_targets, degree, norm, out.data());
+    nb::gil_scoped_release release;
+    nns::clpm_nd_batch(data.data(), n, d, targets.data(), n_targets, degree, norm, out.data(),
+                       call_threads());
     return out;
   });
   m.def("pm_matrix", &pm_matrix_dict);
+
+  m.def(
+      "set_num_threads", [](int n) { nns::set_num_threads(n); }, nb::arg("n"),
+      "Default NNS-core worker threads (n <= 0: NNS_NUM_THREADS or the hardware count).");
+  m.def("get_num_threads", []() { return nns::get_num_threads(); });
+  m.def(
+      "_set_call_threads",
+      [](int n) {
+        const int previous = t_call_threads;
+        t_call_threads = n > 0 ? n : 0;
+        return previous;
+      },
+      nb::arg("n"));
 
   m.def("fast_lm", &fast_lm_dict);
   m.def("fast_lm_mult", &fast_lm_mult_dict);
@@ -747,15 +789,20 @@ NB_MODULE(_nnscore, m) {
   m.def("generate_lin_vectors", &forecast_vectors_dict);
 
   m.def("gravity", [](const Vector& x, bool discrete) {
-    return nns::gravity(x.data(), checked_size(x, "x"), discrete);
+    const std::size_t n = checked_size(x, "x");
+    nb::gil_scoped_release release;
+    return nns::gravity(x.data(), n, discrete);
   });
 
   m.def("mode", [](const Vector& x, bool discrete, bool multi) {
-    return nns::mode(x.data(), checked_size(x, "x"), discrete, multi);
+    const std::size_t n = checked_size(x, "x");
+    nb::gil_scoped_release release;
+    return nns::mode(x.data(), n, discrete, multi);
   });
 
   m.def("stochastic_superiority", &stochastic_superiority_dict);
   m.def("gravity_exact", [](const Vector& x) {
+    nb::gil_scoped_release release;
     return gravity_exact_impl(x.data(), x.shape(0));
   });
   m.def("nns_part_off", &nns_part_off, nb::arg("x"), nb::arg("y"), nb::arg("xonly"),
@@ -770,6 +817,7 @@ NB_MODULE(_nnscore, m) {
         if (target.shape(0) != d) {
           throw std::invalid_argument("target length must equal d.");
         }
+        nb::gil_scoped_release release;
         return copula_nd(data.data(), n, d, target.data(), continuous);
       },
       nb::arg("data"), nb::arg("n"), nb::arg("d"), nb::arg("target"), nb::arg("continuous"));

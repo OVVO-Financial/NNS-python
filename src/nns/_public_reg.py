@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from nns._native import honours_ncores
 from nns.regression import _maybe_render_reg
 from nns.regression import nns_reg as _nns_reg
 
 
+@honours_ncores
 def nns_reg(
     x: Any,
     y: Any,

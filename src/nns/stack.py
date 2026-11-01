@@ -47,6 +47,7 @@ from nns._labels import (
     response_values,
     split_columns,
 )
+from nns._native import honours_ncores
 from nns._reg_engine import (
     _mreg_predict_path,
     _mreg_prepare,
@@ -142,6 +143,7 @@ def _scalar_integer(
 # Main entry point
 # --------------------------------------------------------------------------
 
+@honours_ncores
 def nns_stack(
     ivs_train: NDArray[Any],
     dv_train: NDArray[Any],

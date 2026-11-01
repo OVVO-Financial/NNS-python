@@ -9,6 +9,22 @@ should be preferred when available. Public APIs keep Python implementations and
 explicit fallback behavior, so native code remains a deliberate,
 benchmark-backed implementation detail rather than a public API.
 
+## Threads
+
+The native kernels (vectorised partial moments, the PM matrix, the n-dimensional
+co-moments and the copula) can use several threads. Inputs below a fixed amount of
+work always run serially, and results never depend on the thread count.
+`nns.set_num_threads(n)` sets the default; `n=None` restores the automatic choice,
+which is the `NNS_NUM_THREADS` environment variable when it is a positive integer
+and the number of hardware threads otherwise. `nns.get_num_threads()` returns the
+current default. The `ncores` argument of `nns_reg`, `nns_m_reg`, `nns_stack`,
+`nns_boost`, `nns_arma_optim` and `nns_var` caps the native threads for that call:
+`None` keeps the default, `1` runs serially, and anything other than `None` or a
+positive integer raises `ValueError`, as in R's `NNS.M.reg`. The cap applies per
+Python thread. R also uses `ncores` for its parallel `NNS.ARMA.optim` workers;
+NNS Python has no process-level parallelism. The heavy kernels release the GIL,
+so Python threads can run them concurrently.
+
 ## Degree-Zero Boundary
 
 At degree zero, `LPM` uses `x <= T` and `UPM` uses `x > T`.
@@ -465,8 +481,8 @@ co-movement objective falls back to MSE when it is undefined for every Method 1
 candidate, as in R. Series whose observed minimum is
 positive have their interpolated values floored at zero. The `h == 0` path is normalized to
 a Python dictionary containing `interpolated_and_extrapolated` and `names`
-rather than R's bare data-frame return. `ncores` and `nowcast` (row labelling
-only in R) are accepted for API compatibility.
+rather than R's bare data-frame return. `nowcast` (row labelling only in R) is
+accepted for API compatibility; `ncores` caps the native threads (see Threads).
 
 ## Meboot
 
