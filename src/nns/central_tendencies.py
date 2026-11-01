@@ -53,7 +53,16 @@ def nns_mode(
     discrete: bool = False,
     multi: bool = False,
 ) -> float | NDArray[np.float64]:
-    """Mode of a distribution matching R's NNS.mode."""
+    """Mode of a distribution matching R's ``NNS.mode``.
+
+    ``discrete=True`` returns the most frequent value after rounding to integers;
+    otherwise the mode of a fixed-width histogram. ``multi=True`` returns every
+    detected mode as an array and ``multi=False`` a single float.
+
+    Note the default differs from R: ``NNS.mode`` defaults to ``multi = TRUE``,
+    while ``nns_mode`` defaults to ``multi=False`` (one value). Pass
+    ``multi=True`` for R's default output. Explicit ``multi`` matches R.
+    """
     values = np.asarray(x, dtype=np.float64)
     finite = values[np.isfinite(values)]
     n = finite.size
