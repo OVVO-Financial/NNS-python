@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import inspect
 import numbers
+import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any, ParamSpec, TypeVar
@@ -89,6 +90,21 @@ def honours_ncores(func: Callable[_P, _R]) -> Callable[_P, _R]:
             return func(*args, **kwargs)
 
     return wrapper
+
+
+def external_stacklevel() -> int:
+    """``warnings.warn`` stacklevel of the first caller outside the nns package.
+
+    Called from the function that warns. Public entry points are wrapped (for
+    example by :func:`honours_ncores`), so a fixed stacklevel would point at the
+    wrapper rather than at the user's call.
+    """
+    frame = sys._getframe(1)
+    level = 1
+    while frame.f_back is not None and frame.f_globals.get("__name__", "").startswith("nns."):
+        frame = frame.f_back
+        level += 1
+    return level
 
 
 def _integer(value: Any, name: str) -> int:

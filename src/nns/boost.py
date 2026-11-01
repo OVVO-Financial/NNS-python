@@ -26,7 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._indices import ordered_complement
-from nns._native import honours_ncores
+from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
@@ -120,7 +120,9 @@ def nns_boost(
             raise ValueError("[type] must be NULL or 'CLASS'.")
         type = "class"
     if balance and type is None:
-        warnings.warn("type = 'CLASS' selected because balance = TRUE.", stacklevel=2)
+        warnings.warn(
+            "type = 'CLASS' selected because balance = TRUE.", stacklevel=external_stacklevel()
+        )
         type = "class"
 
     depth_value: Any = depth
@@ -357,7 +359,7 @@ def nns_boost(
         if len(test_features) < target:
             warnings.warn(
                 "Fewer unique feature subsets were generated than requested.",
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
 
     all_index = np.arange(n_obs, dtype=np.int64)
@@ -494,7 +496,7 @@ def nns_boost(
             "No feature combination re-passed the objective cutoff during epochs; "
             "using the best learner-trial combination. Consider a lower "
             "[threshold] probability.",
-            stacklevel=2,
+            stacklevel=external_stacklevel(),
         )
         keeper_features = best_trial_subset()
 

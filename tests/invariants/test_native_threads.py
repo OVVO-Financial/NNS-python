@@ -103,3 +103,15 @@ def test_native_kernels_run_concurrently_from_python_threads() -> None:
     for thread in threads:
         thread.join()
     assert not failures
+
+
+def test_warnings_point_at_the_callers_line() -> None:
+    # Public entry points are wrapped by honours_ncores; warnings must still be
+    # attributed to the user's call, not to the wrapper.
+    t = np.arange(40, dtype=np.float64)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        nns.nns_var(np.column_stack((np.sin(t), np.cos(t))), h=2, tau=1, nowcast=True)
+    nowcast = [w for w in caught if "nowcast" in str(w.message)]
+    assert nowcast
+    assert nowcast[0].filename == __file__
