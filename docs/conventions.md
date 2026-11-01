@@ -633,8 +633,9 @@ groups). It returns `Robust Certainty Estimate`
 plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
 `confidence_interval=None`. R names the effect-size keys of the robust output
 `Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
-`Effect_Size_LB`/`Effect_Size_UB`. One-sided (`tails="left"`/`"right"`)
-effect-size intervals raise a `ValueError` because R's `NNS.ANOVA` fails on
-them. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+`Effect_Size_LB`/`Effect_Size_UB`. One-sided effect-size intervals follow the
+patched R: `tails="left"` gives `(treatment_lower - control_upper, Inf)` and
+`tails="right"` gives `(-Inf, treatment_upper - control_lower)` (R 13.3 failed
+on them). Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
 convention; where every robust certainty is `NaN`, R's VaR stops while NNS Python
 returns `NaN` bounds.

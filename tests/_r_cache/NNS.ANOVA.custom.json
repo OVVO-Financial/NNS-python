@@ -47,8 +47,31 @@
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534
     },
-    "1b977f6ccc561a923428f62665be9c43298c604d3f18e13fe792b818b779f8a7": {
-      "error": "object 'control_upper' not found"
+    "1ca661516ecb4af2116fd5645129e3339ed280ecbb3f7921381ae64c3b88c103": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB.5%": -0.45052326764372,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Lower 95% bound": 0.166953573982277,
+      "Robust Certainty Estimate": 0.547493469936863,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "26871d4e1dd3c1592929cdb72c35f315fcd8722a5b0b21dd2f0fc9c60d09785d": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB.10%": -0.299741034954616,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Lower 90% bound": 0.259637954133639,
+      "Robust Certainty Estimate": 0.547493469936863,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
     },
     "3392263a9df071638ec41115a9ee2b623ef70de08a676d0775065b7f0586d826": {
       "Certainty": 0.559869943266573,
@@ -63,9 +86,6 @@
       "Treatment": -0.204031575160562,
       "Treatment_CDF": 0.538461538461538,
       "Upper 95% CI": 0.631229932901555
-    },
-    "44948d5b8dc3880a7fe9222e31bcc0f573827c4127178a0af043c55be1e13614": {
-      "error": "object 'control_lower' not found"
     },
     "4de4b84626028a4e4bb06e1bead01fa37cda372af67af58f721ee28a05f376bb": {
       "Certainty": 0.559869943266573,
@@ -100,9 +120,6 @@
       "Grand_Statistic": 0.359002798188493,
       "Treatment": 0.802319295960401,
       "Treatment_CDF": 0.154571915684601
-    },
-    "63404101082920ecc565a43b4712955171c42f820becf87e7bfae40e5c1226b7": {
-      "error": "object 'control_lower' not found"
     },
     "66185be7dcec1e619e0245b9ac01e7a5b2737f8d68bba4d592d12abbd8339795": {
       "Certainty": 0.117876703498708,
@@ -154,6 +171,17 @@
       "Treatment": 0.250951760813872,
       "Treatment_CDF": 0.437988436552643
     },
+    "784d5447784315c1b9ef23b4ac4e255ed84ac06c1f8c2acebadf54e150479f1a": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -0.442821391022809,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
     "78e5c083ff88ad6be3b8c2ad4ae0bdfa980bfb61ee8f6b3b8084f9c8a6d554c9": {
       "Certainty": 0.593734812147184,
       "Confidence_Level": 0.9,
@@ -167,6 +195,19 @@
       "Treatment": -0.0170085600235508,
       "Treatment_CDF": 0.514428021607363,
       "Upper 90% CI": 0.642182867065756
+    },
+    "82d9cf99aa540e6faaa16758b1272842fcd6610f8ebfab6de2cebb9c6a94080b": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB.95%": 0.953137035117179,
+      "Grand_Statistic": 0.142983064395218,
+      "Robust Certainty Estimate": 0.547493469936863,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534,
+      "Upper 95% bound": 0.837985734174412
     },
     "869e561b5396396d491cae5660ac70152520d16e79d9ce87de1d8dc32242b603": {
       "Certainty": 0.630393828439154,
@@ -206,6 +247,17 @@
       "Treatment": 0.000730748962808379,
       "Treatment_CDF": 1.0,
       "Upper 95% CI": 0.0
+    },
+    "8c39594ed7003f7ec012b77d5311f75ca4046631dae84ca0e7f475343d30f969": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -0.297426616903692,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
     },
     "9da8bc56ddaf6f4048144e571a875f06166e114ae7a13ed7dd111a153805d1e0": {
       "Certainty": 0.698395184350024,
@@ -272,6 +324,19 @@
       "Treatment": 0.255934316991368,
       "Treatment_CDF": 0.437373319363984
     },
+    "b55ca3489c1648f1844b107d19fda921febf3920bfd28350a077850506b31a38": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB.90%": 0.789848593011295,
+      "Grand_Statistic": 0.142983064395218,
+      "Robust Certainty Estimate": 0.547493469936863,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534,
+      "Upper 90% bound": 0.802809000097423
+    },
     "c3b8b15b7e66a481f92a53f4d277f9132ac76d05cadef357b0506c11a407d19d": {
       "Certainty": 0.650680858554691,
       "Control": -0.0978939595880533,
@@ -317,6 +382,17 @@
       "Treatment": -0.204031575160562,
       "Treatment_CDF": 0.538461538461538
     },
+    "d3295db46db9a5142fe6913d63a7dd856b470bb8450f326c31caf6568720d590": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB": 0.959168007934833,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
     "e6072467aed71515ac6affca8a36c592ded1469670b095fbae39128585ccb774": {
       "Certainty": 0.559869943266573,
       "Control": -0.0978939595880533,
@@ -339,9 +415,6 @@
       "Treatment": -0.0170085600235508,
       "Treatment_CDF": 0.514428021607363,
       "Upper 95% CI": 0.661928966614469
-    },
-    "eef2a64e9150b43020d73428148f333041b4f1a141c94ebc4dd85a4a4d5ceac2": {
-      "error": "object 'control_upper' not found"
     },
     "f129e7aa1783f152f8b2657be872b2b6e85c4ac404e699e8e749847c1d0f4c64": {
       "Certainty": 0.614235794289578,
@@ -368,6 +441,17 @@
         1.0
       ]
     ],
+    "f99514f884af74819e8520a1d49f38c4d171195e7f13b8de056b87e9774c2c03": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB": 0.786044098158566,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
     "fa7174a124977d2d8e5a55562c0f3079e04a9f6dfc7f3531811ebf4b63faef6c": {
       "Certainty": 0.593734812147184,
       "Confidence_Level": 0.95,
