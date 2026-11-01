@@ -603,7 +603,10 @@ double nd_dpm_general(const double* data, std::size_t n, std::size_t d, const do
     double prod_abs = 1.0;
     for (std::size_t c = 0; c < d; ++c) {
       const double diff = data[i + c * n] - target[c];
-      if (!(diff < 0.0)) below = false;
+      // Degree 0 partitions the sample like CLPM (all <= target) and CUPM (all >
+      // target), as R's DPM_nD (CORE-09); at degree 1 a tied coordinate adds a
+      // zero factor either way.
+      if (!(diff <= 0.0)) below = false;
       if (!(diff > 0.0)) above = false;
       prod_abs *= std::abs(diff);
     }
@@ -631,7 +634,12 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
                  bool continuous) {
   const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false, call_threads());
   const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
-  if (disc_co == 1.0 || disc_co == 0.0) return 1.0;
+  // Perfect dependence: every pair fully concordant (sum = d(d-1)/2) or, for two
+  // variables, fully discordant (sum 0); R fix "NNS.copula: dimension-generic
+  // perfect-dependence early return" (CORE-10). The old test (sum == 1 or 0) was
+  // the bivariate rule and fired for interior values when d >= 3.
+  const double n_pairs = 0.5 * static_cast<double>(d) * static_cast<double>(d - 1U);
+  if (std::abs(disc_co - n_pairs) < 1e-9 || (d == 2U && std::abs(disc_co) < 1e-9)) return 1.0;
   const double disc_d = nd_dpm_general(data, n, d, target, 0.0, true);
 
   double cont_co, cont_d;
