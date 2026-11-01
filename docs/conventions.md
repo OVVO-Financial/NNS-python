@@ -441,11 +441,12 @@ recursive: each estimate is appended before the next horizon step. Plot
 arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`; exact
 stochastic parity with R is not expected because RNG streams differ.
 `random_seed` is a NNS Python-only convenience for reproducible interval tests.
-No-`pred_int` deterministic forecasts are parity-tested except where NNS Python
-intentionally uses a more direct seasonal-lag weighting convention.
-`seasonal_factor=True` uses only the first detected period from `nns_seas`,
-matching `ARMA.seas.weighting(TRUE, ...)`; `seasonal_factor=False` uses the
-selected `best_periods` rows. `dynamic=True` with numeric seasonal factors
+No-`pred_int` deterministic forecasts are parity-tested against R.
+As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
+`seasonal_factor=False`: it weights the `best_periods` best periods from
+`nns_seas` (the default `best_periods=1` selects the best period).
+`seasonal_factor=True, best_periods=None` uses the first detected period
+(weight 1), and `seasonal_factor=False, best_periods=None` weights all periods. `dynamic=True` with numeric seasonal factors
 raises with R's static-seasonality error. Constant-series behavior follows
 installed R, including zero forecasts for automatic seasonality paths and `NaN`
 forecasts for some explicit numeric-lag paths. Character `weights` with numeric

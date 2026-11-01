@@ -602,3 +602,56 @@ def _array_any(value: object) -> np.ndarray:
     if isinstance(value, list):
         return np.asarray(value, dtype=np.float64)
     raise AssertionError(f"Unexpected value type: {type(value)!r}")
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("variable", "best_periods", "modulo", "method", "dynamic"),
+    [
+        (_AIR_PASSENGERS_132, 2, None, "nonlin", False),
+        (_AIR_PASSENGERS_132, 3, None, "lin", False),
+        (_AIR_PASSENGERS_132, 2, None, "both", False),
+        (_TREND_SEASONAL, 2, 12, "nonlin", False),
+        (_TREND_SEASONAL, 2, None, "nonlin", True),
+        (_WHITE_NOISE, 3, 7, "nonlin", False),
+    ],
+)
+def test_nns_arma_seasonal_true_honours_best_periods_like_r(
+    variable: np.ndarray,
+    best_periods: int,
+    modulo: int | None,
+    method: str,
+    dynamic: bool,
+) -> None:
+    # R sets seasonal.factor = TRUE to FALSE whenever best.periods is given, so
+    # TRUE with best.periods = k weights the k best periods (= seasonal_factor=False);
+    # Python used only the top period and ignored best_periods.
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        4,
+        None,
+        True,
+        None,
+        best_periods,
+        modulo,
+        True,
+        False,
+        method,
+        dynamic,
+        False,
+        False,
+        False,
+        None,
+    )
+    kwargs: dict[str, Any] = {
+        "h": 4,
+        "best_periods": best_periods,
+        "modulo": modulo,
+        "method": method,
+        "dynamic": dynamic,
+    }
+    actual = nns_arma(variable, seasonal_factor=True, **kwargs)
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+    np.testing.assert_array_equal(actual, nns_arma(variable, seasonal_factor=False, **kwargs))
