@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from _tolerances import EXACT
 
-from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, pm_matrix, upm
+from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, lpm_ratio, pm_matrix, upm
 
 
 def test_co_lpm_self_equals_lpm_with_doubled_degree() -> None:
@@ -107,3 +107,22 @@ def test_co_moments_and_pm_matrix_reject_non_finite_input() -> None:
         pm_matrix(1, 1, None, np.column_stack([x, finite]), pop_adj=False)
     with pytest.raises(ValueError, match="target must contain only finite values"):
         pm_matrix(1, 1, np.nan, np.column_stack([finite, finite]), pop_adj=False)
+
+
+@pytest.mark.parametrize("degree", [np.nan, -1.0])
+def test_partial_moments_reject_nan_and_negative_degrees(degree: float) -> None:
+    # Patched R stops on a negative or NaN degree; a NaN used to pass `degree < 0`.
+    x = np.array([1.0, 2.0, 3.0])
+    variable = np.column_stack([x, x[::-1]])
+    calls = [
+        lambda: lpm(degree, 2.0, x),
+        lambda: upm(degree, 2.0, x),
+        lambda: lpm_ratio(degree, 2.0, x),
+        lambda: co_lpm(degree, x, x, 2.0, 2.0),
+        lambda: co_upm(1.0, x, x, 2.0, 2.0, degree_y=degree),
+        lambda: pm_matrix(degree, 1, None, variable, pop_adj=False),
+        lambda: pm_matrix(1, degree, None, variable, pop_adj=False),
+    ]
+    for call in calls:
+        with pytest.raises(ValueError, match="degree must be non-negative"):
+            call()

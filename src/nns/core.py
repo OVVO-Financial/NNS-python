@@ -235,7 +235,7 @@ def _as_targets(
 
 def _as_degree(degree: float) -> float:
     degree = float(degree)
-    if degree < 0:
+    if not degree >= 0:
         raise ValueError("degree must be non-negative.")
     return degree
 
