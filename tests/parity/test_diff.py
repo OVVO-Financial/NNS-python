@@ -151,6 +151,25 @@ def test_dy_d_mean_wrt_matches_r(wrt: int) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("wrt", [1, 2])
+@pytest.mark.parametrize("eval_points", ["mean", "median"])
+def test_dy_d_irrelevant_regressor_gets_no_slope_like_r(wrt: int, eval_points: str) -> None:
+    # R fix cebf750: f(x +/- h e_wrt) comes from the multivariate NNS.reg fit on
+    # the actual regressors. The old NNS.stack fit on rowMeans(x) gave every
+    # regressor about the index slope / p (y = 2*x1: dy/dx2 about 1).
+    rng = np.random.default_rng(2)
+    x = np.round(rng.standard_normal((200, 2)), 8)
+    y = 2.0 * x[:, 0]
+    expected = _dict_array(dy_d_scalar(x.tolist(), y.tolist(), wrt, eval_points))
+    actual = dy_d(x, y, wrt=wrt, eval_points=eval_points, messages=False)
+    _assert_dy_d_dict_close(actual, expected)
+    if wrt == 2:
+        assert abs(float(np.ravel(actual["First"])[0])) < 0.25
+    else:
+        assert float(np.ravel(actual["First"])[0]) > 1.0
+
+
+@pytest.mark.parity
 def test_dy_d_nonlinear_wrt1_mean_matches_r() -> None:
     x = np.column_stack(
         (np.array([-2, -1, 0, 1, 2], dtype=float), np.array([1, 3, 5, 7, 9], dtype=float))
