@@ -77,6 +77,16 @@ from nns import nns_arma, nns_arma_optim
         ("constant-auto", np.full(20, 5.0), 3, True, "nonlin", None, 1),
         ("constant-explicit", np.full(20, 5.0), 3, 4, "lin", None, 1),
         ("negative-both", np.sin(np.arange(1, 31, dtype=np.float64)), 3, 5, "both", None, 1),
+        (
+            "negative-nonlin-sine",
+            3.0 * np.sin(2.0 * np.pi * np.arange(1, 121, dtype=np.float64) / 12.0)
+            + 0.3 * np.cos(np.arange(1, 121, dtype=np.float64)),
+            12,
+            12,
+            "nonlin",
+            None,
+            1,
+        ),
     ],
 )
 def test_nns_arma_matches_r(
