@@ -107,6 +107,29 @@ proxy-restricted runners that cannot install R), the cache cannot be regenerated
 live; rerun the local-source install and `scripts/regenerate_r_cache.py` on a
 host with R.
 
+## Cache provenance: R 13.3 + patches
+
+The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus a
+local series of R bug fixes (R commit `39a10ae` on the local branch
+`fix/combined`; the patch files are to be submitted upstream), not from the
+unpatched 13.3 release. The Python fixes that mirror them say so in their commit
+subjects (`mirror of R fix <hash>`). Every shard was rebuilt from that R build
+with the full test suite; shards for functions the patches do not touch came out
+unchanged. Exceptions:
+
+- seven `NNS.dep` entries (the quadratic/noise cases and the matrix form in
+  `tests/parity/test_dependence.py`) keep their 13.3 values: they contain fully
+  discordant partition cells, whose sign the patched R fixes (R fix `1f1490e`),
+  and the default native `nns_dep_pair` kernel still has the old early return
+  until it is rebuilt (the NumPy path is already fixed);
+- the C++ kernel fixes of the same series (prefix-backend LPM/UPM for more than
+  32 targets at degree >= 3, discrete `NNS.mode` outside the int range, histogram
+  bounds) are not mirrored in Python's native kernels yet.
+
+To reproduce, install the patched package and point `R_LIBS` at it when
+regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
+`nns_version` stamp stays `13.3`.
+
 ## Automated parity check (with deferred autofix agent)
 
 `NNS-python` automates R-behavior fidelity detection. The automated **fixing
