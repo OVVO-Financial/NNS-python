@@ -71,14 +71,20 @@ def _fast_lm(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, flo
         coef = result["coef"]
         return float(coef[0]), float(coef[1])
 
-    mean_x = float(np.mean(x_values))
-    mean_y = float(np.mean(y_values))
+    # Same arithmetic as NNS-core's fast_lm (R's Rcpp kernel): long-double two-pass
+    # means and sequential double sums. np.mean/np.sum sum pairwise and can differ in
+    # the last bit, which reorders tied residuals (e.g. nns_meboot's ordxx).
+    from nns._rmean import r_mean
+
+    mean_x = r_mean(x_values)
+    mean_y = r_mean(y_values)
     dx = x_values - mean_x
-    var_x = float(np.sum(dx * dx))
+    dy = y_values - mean_y
+    var_x = float(np.cumsum(dx * dx)[-1])
     if var_x == 0.0:
         return mean_y, 0.0
 
-    slope = float(np.sum(dx * (y_values - mean_y)) / var_x)
+    slope = float(np.cumsum(dx * dy)[-1]) / var_x
     intercept = mean_y - slope * mean_x
     return intercept, slope
 
