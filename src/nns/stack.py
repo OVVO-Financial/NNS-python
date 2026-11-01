@@ -108,15 +108,6 @@ def _pearson(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
     return float(a @ b) / denom
 
 
-def _spearman_scores(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
-    y_rank = _rank_average(y)
-    scores = np.empty(x.shape[1], dtype=np.float64)
-    for col in range(x.shape[1]):
-        scores[col] = abs(_pearson(_rank_average(x[:, col]), y_rank))
-    scores[~np.isfinite(scores)] = 0.0
-    return scores
-
-
 def _spearman_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
     """Signed Spearman correlations, R cor(method='spearman') semantics."""
     y_rank = _rank_average(y)

@@ -47,16 +47,6 @@ def _scalar_logical(value: Any, name: str) -> bool:
     return bool(value)
 
 
-def _column_is_numeric(column: NDArray[Any]) -> bool:
-    if column.dtype.kind in {"f", "i", "u"}:
-        return True
-    try:
-        np.asarray(column, dtype=np.float64)
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
 def _scalar_integer(
     value: Any, name: str, minimum: int = 0, allow_null: bool = False
 ) -> int | None:
