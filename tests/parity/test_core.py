@@ -10,7 +10,7 @@ from _tolerances import EXACT
 from conftest import EdgeCase
 from numpy.typing import NDArray
 
-from nns import lpm, lpm_ratio, upm
+from nns import lpm, lpm_ratio, upm, upm_ratio
 
 DEGREES = [0.0, 0.5, 1.0, 2.0, 3.0]
 SIZES = [10, 100, 1000]
@@ -95,6 +95,27 @@ def test_lpm_ratio_matches_r_vector_target(rng: np.random.Generator, degree: flo
     expected = nns("LPM.ratio", degree, target.tolist(), x.tolist())
     assert isinstance(expected, np.ndarray)
     np.testing.assert_allclose(lpm_ratio(degree, target, x), expected, atol=EXACT)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("degree", [0.0, 0.5, 1.0, 2.0])
+@pytest.mark.parametrize(
+    "target, x",
+    [(3.0, [3.0, 3.0, 3.0, 3.0]), ([1.0, 3.0, 4.0], [3.0, 3.0]), (2.0, [2.0])],
+)
+def test_ratios_at_a_point_mass_match_r(
+    degree: float, target: float | list[float], x: list[float]
+) -> None:
+    # R fix 2cf9cbc: the 0/0 case at degree > 0 returns the degree-0 ratio.
+    values = np.asarray(x)
+    for label, function in (("LPM.ratio", lpm_ratio), ("UPM.ratio", upm_ratio)):
+        expected = nns(label, degree, target, x)
+        assert isinstance(expected, np.ndarray)
+        np.testing.assert_allclose(
+            np.asarray(function(degree, np.asarray(target), values)).reshape(-1),
+            expected.reshape(-1),
+            atol=EXACT,
+        )
 
 
 @pytest.mark.parity

@@ -109,7 +109,9 @@ def _ratio(
             np.ascontiguousarray(targets),
             np.ascontiguousarray(values),
         )
-        return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
+        ratio = np.asarray(native_result, dtype=np.float64).reshape(-1)
+        ratio = _fill_degenerate_ratio(ratio, degree, targets, values, lower)
+        return _result_for_target(ratio, target)
 
     if degree == 0:
         return _moment(degree, target, x, lower=lower)
@@ -118,8 +120,32 @@ def _ratio(
     upper_moment = np.asarray(upm(degree, target, x))
     numerator = lower_moment if lower else upper_moment
     with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = numerator / (lower_moment + upper_moment)
-    return _result_for_target(np.asarray(ratio).reshape(-1), target)
+        ratio = np.asarray(numerator / (lower_moment + upper_moment)).reshape(-1)
+    ratio = _fill_degenerate_ratio(ratio, degree, targets, values, lower)
+    return _result_for_target(ratio, target)
+
+
+def _fill_degenerate_ratio(
+    ratio: NDArray[np.float64],
+    degree: float,
+    targets: NDArray[np.float64],
+    values: NDArray[np.float64],
+    lower: bool,
+) -> NDArray[np.float64]:
+    """Replace the degree > 0 ``0/0`` ratio by the degree-0 ratio (R ``fill_degenerate_ratio``).
+
+    When every observation equals the target, ``LPM + UPM`` is 0; R returns the
+    frequency ratio there (the degree -> 0 limit, ECDF convention ``x <= target``),
+    i.e. ``LPM.ratio`` 1 and ``UPM.ratio`` 0.
+    """
+    if degree <= 0:
+        return ratio
+    missing = np.isnan(ratio)
+    if not missing.any():
+        return ratio
+    out = ratio.copy()
+    out[missing] = np.asarray(_moment(0.0, targets[missing], values, lower=lower))
+    return out
 
 
 def _native_safe(
