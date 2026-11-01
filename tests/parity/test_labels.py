@@ -477,3 +477,48 @@ def test_nns_reg_numeric_class_levels_print_like_r(scale: float) -> None:
         {"x": _vec(cars.wt), "y": _vec(y)},
     )
     assert nns_reg(cars.wt, y, type="CLASS")["class.levels"] == expected
+
+
+# --------------------------------------------------------------------------
+# REG-21: logical predictors are factors, as R's is.logical branch
+# --------------------------------------------------------------------------
+
+def _logical_frame() -> tuple[pd.DataFrame, pd.Series]:
+    cars = _cars()
+    heavy = (cars.wt > 3.2).to_numpy().copy()
+    heavy[0] = False  # R levels by first appearance; keep it equal to sorted
+    return pd.DataFrame({"heavy": heavy, "hp": cars.hp}), cars.mpg
+
+
+def test_nns_reg_univariate_logical_predictor_is_a_factor() -> None:
+    x, y = _logical_frame()
+    heavy = x["heavy"]
+    expected = nns_frame_call(
+        "labels.reg.logical_uni",
+        "r <- NNS.reg(x, y, point.est = c(TRUE, FALSE), ncores = 1); "
+        "list(pe = r$Point.est, r2 = r$R2, rpm = names(r$RPM))",
+        {"x": r_column(heavy.tolist(), "logical"), "y": _vec(y)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_reg(heavy.to_numpy(), y, point_est=np.array([True, False]))
+    assert list(actual["RPM"]) == expected["rpm"]
+    np.testing.assert_allclose(actual["Point.est"], _num(expected["pe"]), atol=COMPOUND)
+    np.testing.assert_allclose(actual["R2"], _num(expected["r2"]), atol=COMPOUND)
+
+
+@pytest.mark.parametrize("dummy", [True, False])
+def test_nns_reg_logical_column_is_a_factor(dummy: bool) -> None:
+    x, y = _logical_frame()
+    spec = {"frame": [r_column(x["heavy"].tolist(), "logical", "heavy"),
+                      r_column(x["hp"].astype(float).tolist(), "numeric", "hp")]}
+    expected = nns_frame_call(
+        "labels.reg.logical_frame",
+        f"r <- NNS.reg(x, y, point.est = x[1:5, ], factor.2.dummy = {str(dummy).upper()}, "
+        "ncores = 1); list(pe = r$Point.est, r2 = r$R2, rpm = names(r$RPM))",
+        {"x": spec, "y": _vec(y)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_reg(x, y, point_est=x.iloc[:5], factor_2_dummy=dummy)
+    assert list(actual["RPM"]) == expected["rpm"]
+    np.testing.assert_allclose(actual["Point.est"], _num(expected["pe"]), atol=COMPOUND)
+    np.testing.assert_allclose(actual["R2"], _num(expected["r2"]), atol=COMPOUND)

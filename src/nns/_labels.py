@@ -151,6 +151,18 @@ def is_text(values: NDArray[Any]) -> bool:
     return any(not is_missing(v) and not _is_number(v) for v in values.tolist())
 
 
+def is_logical(values: NDArray[Any]) -> bool:
+    """Whether a column is logical (R ``is.logical``): bool dtype, or an object
+    column whose non-missing elements are all booleans."""
+    kind = values.dtype.kind
+    if kind == "b":
+        return True
+    if kind != "O":
+        return False
+    present = [v for v in values.tolist() if not is_missing(v)]
+    return bool(present) and all(isinstance(v, (bool, np.bool_)) for v in present)
+
+
 def as_float(values: NDArray[Any]) -> NDArray[np.float64]:
     """Numeric conversion where missing or unparsable elements become NaN."""
     try:
