@@ -69,7 +69,8 @@ these are the only predictors behind ``stack``); names are the frame's column
 names, ``V1..Vp`` for an unnamed matrix and ``X1`` for a vector, as in R.
 ``NNS.dim.red.coefficients`` is a dict from encoded column name (factor
 dummies are ``<name>__<level>``) to its final coefficient. Both are ``None``
-when ``method`` excludes 2."""
+when ``method`` excludes 2. ``NNS.reg.n.best`` is ``NaN`` when the all-points
+candidate wins with a single predictor (R's ``NA``)."""
 
 
 # --------------------------------------------------------------------------
@@ -1189,8 +1190,11 @@ def nns_stack(
                 y,
             )
             reg_pred_int_raw = translate_interval(reg_fit["pred.int"])
+            # R reports NA here: a univariate "all" fit has no k (Stack.R sets
+            # reg_best_k <- NA when "all" wins and only the multivariate branch
+            # replaces it with the RPM row count).
             if reg_best_is_all:
-                reg_best_k = train_design.shape[0]
+                reg_best_k = None
         else:
             reg_fit = nns_reg_engine(
                 train_design,
