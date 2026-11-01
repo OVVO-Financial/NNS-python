@@ -880,15 +880,33 @@ def _lpm_deg2_interior_excess(
 def _prefix_sum_1d(values: NDArray[np.float64]) -> NDArray[np.float64]:
     prefix = np.empty(values.size + 1, dtype=np.float64)
     prefix[0] = 0.0
-    np.cumsum(values, out=prefix[1:])
+    prefix[1:] = _compensated_cumsum(values)
     return prefix
 
 
 def _prefix_sum(values: NDArray[np.float64]) -> NDArray[np.float64]:
     prefix = np.empty((values.shape[0] + 1, values.shape[1]), dtype=np.float64, order="F")
     prefix[0, :] = 0.0
-    np.cumsum(values, axis=0, out=prefix[1:, :])
+    prefix[1:, :] = _compensated_cumsum(values)
     return prefix
+
+
+def _compensated_cumsum(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Neumaier-compensated running sums along axis 0, as R's SD ``finish_col``.
+
+    A plain running sum drifts by up to ``m * eps * |x|``, which for large samples
+    exceeds the tie tolerance of ``_dominates_sorted``. ``np.cumsum`` adds in order,
+    so each step's rounding error can be recovered from the running sums.
+    """
+    sums = np.cumsum(values, axis=0)
+    previous = np.zeros_like(sums)
+    previous[1:] = sums[:-1]
+    errors = np.where(
+        np.abs(previous) >= np.abs(values),
+        (previous - sums) + values,
+        (values - sums) + previous,
+    )
+    return np.asarray(sums + np.cumsum(errors, axis=0), dtype=np.float64)
 
 
 def _lpm_at_target(

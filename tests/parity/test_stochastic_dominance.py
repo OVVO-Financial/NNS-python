@@ -281,10 +281,10 @@ def test_continuous_fsd_counts_curves_that_differ_only_between_knots(
     ]
 
 
-def _mean_preserving_spread(shift: float) -> tuple[np.ndarray, np.ndarray]:
+def _mean_preserving_spread(shift: float, size: int = 100) -> tuple[np.ndarray, np.ndarray]:
     from scipy.stats import norm  # type: ignore[import-untyped]
 
-    base = norm.ppf((np.arange(1, 101) - 0.5) / 100.0)
+    base = norm.ppf((np.arange(1, size + 1) - 0.5) / size)
     return base + shift, 2.0 * base + shift
 
 
@@ -296,6 +296,9 @@ def _mean_preserving_spread(shift: float) -> tuple[np.ndarray, np.ndarray]:
         # and X TSD Y; 13.3 said NO SSD (LPM1 difference +8.9e-16, mean -3.7e-18).
         _mean_preserving_spread(0.0),
         _mean_preserving_spread(0.37),
+        # n = 1e5 around 100: plain prefix sums put the mean difference at 1.9e-12,
+        # above the 1.55e-12 tolerance; compensated sums keep it a tie.
+        _mean_preserving_spread(100.0, 100_000),
         # 0.1 + 0.7 = 0.7999999999999999: 13.3 said NO SSD, the same data x10 X SSD Y.
         (np.array([0.1, 0.7]), np.array([0.0, 0.8])),
         (np.array([1.0, 7.0]), np.array([0.0, 8.0])),
