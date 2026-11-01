@@ -37,6 +37,12 @@ def nns_cdf(
     values = np.asarray(variable, dtype=np.float64)
     if values.ndim == 0:
         values = values.reshape(1)
+    # As R's NNS.CDF: drop missing observations (complete rows for a matrix) so the
+    # evaluation grid and the denominator agree; infinite values are rejected below.
+    if values.ndim == 1:
+        values = values[~np.isnan(values)]
+    elif values.ndim == 2:
+        values = values[~np.isnan(values).any(axis=1)]
     if values.ndim == 1 or (values.ndim == 2 and values.shape[1] == 1):
         result = _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
         if plot:
@@ -67,9 +73,11 @@ def _univariate_cdf(
     type_value: str,
 ) -> dict[str, object]:
     if values.size == 0:
-        raise ValueError("variable must be non-empty.")
+        raise ValueError("variable must contain at least one non-missing value.")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("variable must contain only finite values.")
     target_value = _univariate_target(target, values)
-    x = np.sort(values[~np.isnan(values)])
+    x = np.sort(values)
     pval = _r_lpm_ratio(degree, x, values)
     column_name = {
         "cdf": "CDF",
@@ -135,7 +143,7 @@ def _multivariate_cdf(
     names: Sequence[str] | None,
 ) -> dict[str, object]:
     if values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError("variable must have at least one row and one column.")
+        raise ValueError("variable must have at least one complete row and one column.")
     if not np.all(np.isfinite(values)):
         raise ValueError("variable must contain only finite values.")
     target_values = _multivariate_target(target, values)
@@ -197,8 +205,8 @@ def _univariate_target(
     if target_array.ndim != 0 and target_array.size != 1:
         raise ValueError("target must be scalar for univariate NNS.CDF.")
     target_value = float(target_array.reshape(-1)[0])
-    if np.isnan(values).any():
-        raise ValueError("missing value where TRUE/FALSE needed")
+    if not np.isfinite(target_value):
+        raise ValueError("target must be finite.")
     if target_value < float(np.min(values)) or target_value > float(np.max(values)):
         raise ValueError("target out of bounds")
     return target_value
@@ -235,48 +243,11 @@ def _r_lpm_ratio(
     targets: NDArray[np.float64],
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """R's ``LPM.ratio(degree, targets, values)``, including its NA handling.
-
-    R's ratio kernels skip NA observations in the partial-moment sums but keep them in
-    the denominator ``n``.  For ``degree > 0`` the ``n`` cancels in ``LPM / (LPM + UPM)``,
-    so the ratio equals the ratio over the non-missing values; for ``degree == 0`` the
-    ratio is the non-missing count scaled by ``n_finite / n``.
-    """
+    """R's ``LPM.ratio(degree, targets, values)`` on finite ``values``."""
     target_values = np.asarray(targets, dtype=np.float64).reshape(-1)
-    variable_values = np.asarray(values, dtype=np.float64).reshape(-1)
-    if variable_values.size == 0:
-        raise ValueError("variable must be non-empty.")
-    if np.isinf(variable_values).any() or not np.all(np.isfinite(target_values)):
-        # R's comparisons give Inf - Inf = NaN, which drops out of both partial sums;
-        # reproduce that rare quirk with the direct (target x observation) evaluation.
-        return _dense_lpm_ratio(degree, target_values, variable_values)
-    finite = variable_values[~np.isnan(variable_values)]
     if target_values.size == 0:
         return np.array([], dtype=np.float64)
-    if finite.size == 0:
-        fill = 0.0 if degree == 0.0 else np.nan
-        return np.full(target_values.size, fill, dtype=np.float64)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = np.asarray(lpm_ratio(degree, target_values, finite), dtype=np.float64)
-    if degree == 0.0 and finite.size != variable_values.size:
-        ratio = ratio * (finite.size / variable_values.size)
-    return ratio
-
-
-def _dense_lpm_ratio(
-    degree: float,
-    targets: NDArray[np.float64],
-    values: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    with np.errstate(invalid="ignore", divide="ignore"):
-        diff = targets[:, np.newaxis] - values[np.newaxis, :]
-        lower = np.where(diff >= 0.0, np.abs(diff), 0.0)
-        upper = np.where(-diff > 0.0, np.abs(diff), 0.0)
-        if degree == 0.0:
-            return np.asarray(np.mean(diff >= 0.0, axis=1), dtype=np.float64)
-        lpm_values = np.mean(np.where(diff >= 0.0, lower**degree, 0.0), axis=1)
-        upm_values = np.mean(np.where(-diff > 0.0, upper**degree, 0.0), axis=1)
-        return np.asarray(lpm_values / (lpm_values + upm_values), dtype=np.float64)
+    return np.asarray(lpm_ratio(degree, target_values, values), dtype=np.float64)
 
 
 def _co_lpm_nd_rows(values: NDArray[np.float64], degree: float) -> NDArray[np.float64]:

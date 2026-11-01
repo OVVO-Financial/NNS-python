@@ -64,25 +64,38 @@ def test_nns_cdf_univariate_target_matches_r(type_name: str) -> None:
 
 
 @pytest.mark.parity
-def test_nns_cdf_univariate_installed_r_nan_quirk() -> None:
-    actual = nns_cdf(np.array([1.0, np.nan, 2.0]), degree=0.0)
-    function = cast(dict[str, np.ndarray], actual["Function"])
+@pytest.mark.parametrize("degree", [0.0, 1.0])
+def test_nns_cdf_univariate_drops_missing_values_like_r(degree: float) -> None:
+    # R fix 41c3297: NNS.CDF drops NA first, so the CDF reaches 1 (13.3 capped it at
+    # n_finite / n) and a target can be evaluated.
+    x = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
+    finite = x[~np.isnan(x)]
 
-    np.testing.assert_allclose(function["x"], np.array([1.0, 2.0]), atol=EXACT)
-    np.testing.assert_allclose(function["CDF"], np.array([1.0 / 3.0, 2.0 / 3.0]), atol=EXACT)
-
-
-@pytest.mark.parity
-def test_nns_cdf_univariate_installed_r_inf_quirk() -> None:
-    actual = nns_cdf(np.array([1.0, np.inf, 2.0]), degree=0.0)
-    function = cast(dict[str, np.ndarray], actual["Function"])
-
-    np.testing.assert_allclose(function["x"], np.array([1.0, 2.0, np.inf]), atol=EXACT)
-    np.testing.assert_allclose(
-        function["CDF"],
-        np.array([1.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0]),
-        atol=EXACT,
+    expected = cast(
+        dict[str, object], nns_cdf_custom(finite.tolist(), degree=degree, target=2.0)
     )
+    actual = nns_cdf(x, degree=degree, target=2.0)
+
+    _assert_cdf_result(actual, expected)
+    assert cast(dict[str, np.ndarray], actual["Function"])["CDF"][-1] == 1.0
+
+
+def test_nns_cdf_multivariate_drops_incomplete_rows() -> None:
+    matrix = np.array([[1.0, 2.0], [2.0, np.nan], [3.0, 1.0], [4.0, 4.0]])
+    actual = nns_cdf(matrix)
+    function = cast(dict[str, np.ndarray], actual["Function"])
+
+    np.testing.assert_array_equal(function["1"], [1.0, 3.0, 4.0])
+    np.testing.assert_allclose(function["CDF"], [1.0 / 3.0, 1.0 / 3.0, 1.0], atol=EXACT)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [np.array([1.0, np.inf, 2.0]), np.array([[1.0, 2.0], [2.0, -np.inf], [3.0, 1.0]])],
+)
+def test_nns_cdf_rejects_infinite_values(variable: np.ndarray) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        nns_cdf(variable)
 
 
 @pytest.mark.parity

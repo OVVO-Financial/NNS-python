@@ -142,8 +142,11 @@ uses R's lower-partial-moment frequency convention, and positive degrees use
 `LPM.ratio` deformation. Univariate output columns follow installed R (`x` plus
 `CDF`, `S(x)`, `h(x)`, or `H(x)`), while multivariate output keeps the final
 column named `CDF` for all types, including survival, hazard, and cumulative
-hazard. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
-handled inside `nns_cdf` without loosening the global partial-moment APIs.
+hazard. Plotting is ignored. As in the patched R (see [parity](parity.md)), missing
+values are dropped first (complete rows for a matrix), so the CDF reaches 1, and
+infinite values raise `ValueError`. For `d >= 3` columns the survival, hazard and
+cumulative hazard use the joint survival `P(X_1 > t_1, ..., X_d > t_d)` by
+inclusion-exclusion over all column subsets.
 
 ## Dependence
 

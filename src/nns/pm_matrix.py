@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.core import _as_degree
+from nns.core import _as_degree, _require_finite
 
 Target: TypeAlias = float | Literal["mean"] | NDArray[np.float64] | None
 PMMatrixResult: TypeAlias = dict[str, Any]
@@ -148,6 +148,8 @@ def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
         raise ValueError("variable must be 2D.")
     if values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError("variable must be non-empty.")
+    # As R's PM.matrix: NaN would be counted in n but in no quadrant.
+    _require_finite(values, "variable")
     return values
 
 
@@ -157,9 +159,10 @@ def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.floa
 
     targets = np.asarray(target, dtype=np.float64)
     if targets.ndim == 0:
-        return np.full(variable.shape[1], float(targets), dtype=np.float64)
+        targets = np.full(variable.shape[1], float(targets), dtype=np.float64)
     if targets.ndim != 1:
         raise ValueError("target must be 1D.")
     if targets.size != variable.shape[1]:
         raise ValueError("variable matrix cols != target vector length.")
+    _require_finite(targets, "target")
     return targets

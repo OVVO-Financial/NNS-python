@@ -92,3 +92,14 @@ def test_partial_moment_ratios_degenerate_denominator_use_degree0_ratio() -> Non
     assert upper == 0.0
     np.testing.assert_array_equal(lower_vector, [1.0, 1.0])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
+
+
+@pytest.mark.parametrize("function", [lpm_ratio, upm_ratio])
+def test_partial_moment_ratios_reject_non_finite_targets(function: object) -> None:
+    # R fix 41c3297: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
+    x = np.array([1.0, 2.0, 3.0])
+    for target in (np.nan, np.array([1.0, np.inf])):
+        with pytest.raises(ValueError, match="target must contain only finite values"):
+            function(1, target, x)  # type: ignore[operator]
+    with pytest.raises(ValueError, match="x must contain only finite values"):
+        function(0, 2.0, np.array([1.0, np.nan]))  # type: ignore[operator]
