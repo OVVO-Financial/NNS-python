@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import math
 from itertools import pairwise
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.interpolate import BSpline  # type: ignore[import-untyped]
+
+
+def _bspline() -> Any:
+    """Import scipy's BSpline lazily: scipy.interpolate costs ~0.4 s to import and
+    only ``smooth=True`` needs it."""
+    from scipy.interpolate import BSpline  # type: ignore[import-untyped]
+
+    return BSpline
 
 
 class RSmoothSpline:
@@ -17,7 +25,7 @@ class RSmoothSpline:
         x_min: float,
         x_range: float,
     ) -> None:
-        self._spline = BSpline(knots, coef, 3, extrapolate=True)
+        self._spline = _bspline()(knots, coef, 3, extrapolate=True)
         self.x_min = x_min
         self.x_range = x_range
 
@@ -143,14 +151,15 @@ def _basis_matrix(
     n_coef: int,
 ) -> NDArray[np.float64]:
     eye = np.eye(n_coef, dtype=np.float64)
-    columns = [BSpline(knots, eye[index], 3, extrapolate=True)(x_scaled) for index in range(n_coef)]
+    bspline = _bspline()
+    columns = [bspline(knots, eye[index], 3, extrapolate=True)(x_scaled) for index in range(n_coef)]
     return np.column_stack(columns).astype(np.float64)
 
 
 def _sigma_matrix(knots: NDArray[np.float64], n_coef: int) -> NDArray[np.float64]:
     eye = np.eye(n_coef, dtype=np.float64)
     second = [
-        BSpline(knots, eye[index], 3, extrapolate=True).derivative(2) for index in range(n_coef)
+        _bspline()(knots, eye[index], 3, extrapolate=True).derivative(2) for index in range(n_coef)
     ]
     sigma = np.zeros((n_coef, n_coef), dtype=np.float64)
     nodes, weights = np.polynomial.legendre.leggauss(3)
