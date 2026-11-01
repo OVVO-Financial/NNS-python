@@ -539,14 +539,6 @@ def test_public_nns_var_h0_returns_normalized_interpolation_dict() -> None:
 
 _VAR_KEYS = ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble")
 
-_AWAITS_VAR_FIXES = pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Python NNS.VAR here has the forecast-row fix but not the stack fixes, so no "
-        "R build matches it until the stack fixes are mirrored."
-    ),
-)
-
 
 def _driven_variables(n: int = 60, seed: int = 21) -> np.ndarray:
     """x is a random walk, y is driven by lagged x, z is noisy seasonal."""
@@ -612,7 +604,6 @@ def test_public_nns_var_own_lag_weights_match_r() -> None:
     _assert_var_matches(cast(dict[str, Any], actual), expected)
 
 
-@_AWAITS_VAR_FIXES
 def test_public_nns_var_objective_max_matches_r() -> None:
     variables = _driven_variables()
     expected = _custom_var_reference(variables, h=3, tau=1, objective="max")
