@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 # Project name and version lockstep with NNS releases
-project(nnscore VERSION 13.0.0 LANGUAGES CXX)
+project(nnscore VERSION 13.3.0 LANGUAGES CXX)
 
 # Enforce C++17 Standard (Required for std::optional and modern standard library features)
 set(CMAKE_CXX_STANDARD 17)
@@ -19,6 +19,9 @@ add_library(nnscore
     src/seasonality.cpp
     src/fast_lm.cpp
     src/internal_functions.cpp
+    src/mreg_setup.cpp
+    src/mreg_predict.cpp
+    src/stack_fast.cpp
 )
 
 # Set the public include directories so consumers can `#include "nns/nns.hpp"`
@@ -37,10 +40,15 @@ target_link_libraries(nnscore PUBLIC Threads::Threads)
 
 option(NNSCORE_BUILD_TESTS "Build Catch2 unit and conformance tests" ON)
 option(NNSCORE_BUILD_PYTHON "Build Python bindings via nanobind" OFF)
+option(NNSCORE_BUILD_FIDELITY "Build the live-R fidelity evaluation helper (nns_eval)" OFF)
 
 if(NNSCORE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/CMakeLists.txt")
     enable_testing()
     add_subdirectory(tests/cpp)
+endif()
+
+if(NNSCORE_BUILD_FIDELITY AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fidelity/CMakeLists.txt")
+    add_subdirectory(tests/fidelity)
 endif()
 
 if(NNSCORE_BUILD_PYTHON)

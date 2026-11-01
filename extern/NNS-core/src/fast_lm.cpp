@@ -1,6 +1,6 @@
 // src/fast_lm.cpp
 //
-// Pure C++ port of NNS 13.0 fast_lm.cpp. Decoupled from Rcpp.
+// Pure C++ port of NNS fast_lm.cpp (unchanged through R 13.3, 82a92eb). Decoupled from Rcpp.
 //
 // This file preserves the numerical rules and return payloads of the original
 // Rcpp functions:
@@ -35,11 +35,22 @@ inline double design_value(const double* x, std::size_t n, std::size_t row,
   return (col_with_intercept == 0) ? 1.0 : at(x, n, row, col_with_intercept - 1U);
 }
 
+// Port of Rcpp sugar mean() for numeric vectors, which the R kernels call:
+// long-double accumulation followed by one correction pass (as in R's
+// summary.c). A plain double running sum differs from it in the last bits,
+// and by much more for data with a large offset.
 inline double mean_vec(const double* x, std::size_t n) {
   if (n == 0U) return kNaN;
-  double s = 0.0;
+  const long double nd = static_cast<long double>(n);
+  long double s = 0.0L;
   for (std::size_t i = 0; i < n; ++i) s += x[i];
-  return s / static_cast<double>(n);
+  s /= nd;
+  if (std::isfinite(static_cast<double>(s))) {
+    long double t = 0.0L;
+    for (std::size_t i = 0; i < n; ++i) t += x[i] - s;
+    s += t / nd;
+  }
+  return static_cast<double>(s);
 }
 
 std::string dim_msg(const char* prefix, std::size_t a, std::size_t b) {
