@@ -65,6 +65,22 @@ def test_nns_moments_degenerate_input_returns_nan_like_r(
         )
 
 
+@pytest.mark.parity
+def test_nns_moments_sample_skewness_is_adjusted_fisher_pearson() -> None:
+    # R fix 1be7306: the sample skewness divides by s^3 with s the (n - 1) sample sd
+    # (adjusted Fisher-Pearson G1), not by the population variance^(3/2).
+    x = np.array([1.0, 2.0, 4.0, 8.0, 16.0])
+    expected = cast(dict[str, np.ndarray], nns("NNS.moments", x.tolist(), False))
+    actual = nns_moments(x, population=False)
+
+    n = x.size
+    z = x - x.mean()
+    g1 = n / ((n - 1) * (n - 2)) * np.sum(z**3) / np.std(x, ddof=1) ** 3
+    assert actual["skewness"] == pytest.approx(1.325315, abs=1e-6)
+    assert actual["skewness"] == pytest.approx(g1, abs=EXACT)
+    assert actual["skewness"] == pytest.approx(float(expected["skewness"]), abs=EXACT)
+
+
 def test_skew_and_kurt_pm_of_constant_input_are_nan() -> None:
     x = np.full(6, 2.5)
     assert np.isnan(skew_pm(x))
