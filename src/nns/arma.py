@@ -419,6 +419,12 @@ def nns_arma(
             'Nothing dynamic about static seasonal factors!  Please set "dynamic = FALSE" '
             'or "seasonal.factor = FALSE"'
         )
+    if weights is not None and not isinstance(weights, str) and dynamic:
+        raise ValueError(
+            'Numeric "weights" cannot be used with "dynamic = TRUE", which re-selects the '
+            'seasonal lags at every step.  Please set "weights" to NULL or "equal", or '
+            '"dynamic = FALSE"'
+        )
 
     method_l = method.lower()
     if method_l not in {"lin", "nonlin", "both", "means"}:
@@ -492,7 +498,7 @@ def nns_arma(
             lags, lag_weights = _resolve_lags_and_weights(
                 current,
                 seasonal_factor=seasonal_factor,
-                weights=None,
+                weights=weights,
                 best_periods=best_periods,
                 modulo=modulo,
                 mod_only=mod_only,

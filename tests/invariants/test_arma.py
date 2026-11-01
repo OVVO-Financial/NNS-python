@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import Any
 from unittest import mock
 
 import numpy as np
@@ -40,6 +41,29 @@ def test_nns_arma_numeric_seasonal_dynamic_raises() -> None:
 
     with pytest.raises(ValueError, match="dynamic"):
         nns_arma(variable, h=3, seasonal_factor=5, dynamic=True)
+
+
+def test_nns_arma_numeric_weights_dynamic_raises() -> None:
+    variable = np.sin(np.arange(1, 40, dtype=np.float64)) + 2.0
+
+    with pytest.raises(ValueError, match="dynamic"):
+        nns_arma(
+            variable, h=3, seasonal_factor=False, weights=np.array([1.0, 0.0]), dynamic=True
+        )
+
+
+def test_nns_arma_dynamic_equal_weights_match_repeated_one_step_forecasts() -> None:
+    # As in patched R, weights="equal" applies to the lags each dynamic step selects
+    # (they used to be replaced by the NNS.seas weights).
+    variable = 100.0 + np.arange(60.0) + 15.0 * np.sin(np.arange(60.0) * np.pi / 6.0)
+    options: dict[str, Any] = {"seasonal_factor": False, "best_periods": 2, "weights": "equal"}
+
+    dynamic = nns_arma(variable, h=3, dynamic=True, **options)
+    path = variable.copy()
+    for _ in range(3):
+        path = np.append(path, nns_arma(path, h=1, **options))
+
+    np.testing.assert_allclose(dynamic, path[-3:], rtol=1e-12)
 
 
 def test_numeric_seasonal_weights_constant_subsample_is_finite() -> None:
