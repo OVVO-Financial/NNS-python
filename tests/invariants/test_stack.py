@@ -510,3 +510,28 @@ def test_r_xstar_path_matches_active_projections() -> None:
         np.testing.assert_allclose(
             path[:, m], _r_matvec(design, weights) / len(active), rtol=1e-14
         )
+
+
+def test_obj_fn_must_return_one_numeric_value() -> None:
+    rng = np.random.default_rng(21)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_stack(x, y, obj_fn=lambda p, a: (p - a) ** 2, folds=2, method=1)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_stack(x, y, obj_fn=lambda p, a: "bad", folds=2, method=1)
+    one = nns_stack(x, y, obj_fn=lambda p, a: np.array([np.sum((p - a) ** 2)]), folds=2, method=1)
+    ref = nns_stack(x, y, folds=2, method=1)
+    assert one["OBJfn.reg"] == ref["OBJfn.reg"]
+
+
+def test_random_seed_alias_conflict_raises() -> None:
+    rng = np.random.default_rng(22)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    with pytest.raises(ValueError, match="random_seed"):
+        nns_stack(x, y, seed=7, random_seed=5, folds=2, method=1)
+    alias = nns_stack(x, y, random_seed=5, folds=2, method=1)
+    assert alias["OBJfn.reg"] == nns_stack(x, y, seed=5, folds=2, method=1)["OBJfn.reg"]
+    same = nns_stack(x, y, seed=5, random_seed=5, folds=2, method=1)
+    assert same["OBJfn.reg"] == alias["OBJfn.reg"]

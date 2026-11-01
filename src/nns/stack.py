@@ -183,6 +183,25 @@ def _r_xstar_path(design: NDArray[np.float64], coef: NDArray[np.float64]) -> NDA
     return out
 
 
+def _resolve_seed(seed: int | None, random_seed: int | None) -> int | None:
+    """``random_seed`` is an alias for ``seed``; conflicting explicit values raise."""
+    if random_seed is None:
+        return seed
+    if seed is not None and seed != 123 and seed != random_seed:
+        raise ValueError(
+            "[seed] and its alias [random_seed] were both given with different values."
+        )
+    return random_seed
+
+
+def _objective_value(value: Any) -> float:
+    """Validate an ``obj_fn`` result like R's "[obj.fn] must return one numeric value."."""
+    arr = np.asarray(value)
+    if arr.size != 1 or arr.dtype.kind not in "biuf":
+        raise ValueError("[obj.fn] must return one numeric value.")
+    return float(arr.reshape(-1)[0])
+
+
 def _scalar_logical(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
         raise ValueError(f"[{name}] must be TRUE or FALSE.")
@@ -236,8 +255,7 @@ def nns_stack(
     random_seed: int | None = None,
 ) -> StackResult:
     del ncores
-    if random_seed is not None and seed == 123:
-        seed = random_seed
+    seed = _resolve_seed(seed, random_seed)
 
     optimize_threshold = _scalar_logical(optimize_threshold, "optimize.threshold")
     balance = _scalar_logical(balance, "balance")
@@ -385,7 +403,7 @@ def nns_stack(
             raise ValueError(
                 "The objective received predicted and actual vectors of different lengths."
             )
-        value = float(cast(Callable[..., float], obj_fn)(predicted, actual))
+        value = _objective_value(cast(Callable[..., Any], obj_fn)(predicted, actual))
         return value if math.isfinite(value) else float("nan")
 
     def sanitize_raw(
