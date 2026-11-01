@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -222,12 +223,18 @@ def dy_d(
     messages: bool = True,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Faithful Python port of R's ``dy.d_`` (NNS 13.2, reconciled).
+    """Partial derivatives of ``y`` with respect to column ``wrt`` (R's ``dy.d_``).
 
-    This is the reconciled finite-difference estimator that matches R's
-    ``NNS::dy.d_`` bit-for-bit: a locally-adaptive ``dy.dx`` step combined with
-    an ``NNS.stack`` fit on the equal-weight synthetic regressor. See
-    :func:`dy_d_best` for the full description of the algorithm.
+    Finite differences of the multivariate ``nns_reg`` fit on the actual
+    regressors, ``f(x +/- h e_wrt)``, with a locally-adaptive ``dy.dx`` step
+    ``h = VaR(p + H, 1, x_wrt) - VaR(p - H, 1, x_wrt)``, ``p = LPM.ratio(1, eval,
+    x_wrt)``. Bandwidths follow NNS 0.5.7: ``H`` in ``1/log(size(x), [2, 10])``
+    extended by ``10 * H`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First
+    and second derivatives use the central-difference forms
+    ``(upper - lower) / (2 h)`` and ``(upper - 2 f(x) + lower) / h ** 2``, averaged
+    over the bandwidths. This follows the patched R (fix cebf750): NNS 13.3
+    estimated ``f`` from ``NNS.stack`` on the equal-weight index ``rowMeans(x)``,
+    so every regressor received about the index slope / p whatever its true effect.
 
     ``wrt`` uses R-style 1-based indexing and selects a column of the
     factor-expanded predictor matrix. A scalar/1-D ``eval_points`` evaluates
@@ -270,41 +277,13 @@ def dy_d_best(
     messages: bool = False,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Reconciled ``dy.d_`` partial-derivative estimator.
-
-    This is the reconciliation of the original NNS 0.5.7 ``dy.d_`` (Vinod & Viole
-    2020, SSRN 3681436) with the current regression engine. It keeps the v0.5.7
-    finite-difference scaffolding but makes two changes that make the estimates
-    uniform across identically-distributed regressors and independent of the old
-    data.table machinery:
-
-    * **Step (``h_step``) shares the ``dy.dx`` logic** - a locally-adaptive step
-      centred on the evaluation point's percentile,
-      ``h_step = VaR(p + H, 1, x) - VaR(p - H, 1, x)`` with
-      ``p = LPM.ratio(1, eval, x)`` - instead of a global quantile spacing with a
-      cumulative window. This is what removes the cross-regressor scatter.
-    * **Estimates come from** ``nns_stack`` on the equal-weight synthetic regressor
-      ``X*`` via the increased-dimension trick ``cbind(X*, X*)``, with
-      ``method=(1, 2)``, ``dim_red_method="equal"``, ``order="max"`` and
-      ``folds=5``. The stack's cross-validated ``n.best`` regularises the (sharper)
-      current engine back toward the paper's regime.
-
-    Bandwidths follow v0.5.7: ``h_s = 1/log(size(x), [2, 10])`` extended by
-    ``10 * h_s`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First and second
-    derivatives use the central-difference forms
-    ``First = (upper - lower) / (2 h_step)`` and
-    ``Second = (upper - 2 f(x) + lower) / h_step ** 2`` (matching ``dy.dx``),
-    blended across bandwidths with a plain ``nanmean``.
-
-    ``wrt`` uses R-style 1-based indexing into the factor-expanded predictor
-    matrix. A scalar/1-D ``eval_points`` evaluates only the selected regressor
-    (averaged over the distribution of the other regressors); a 2-D array
-    evaluates complete predictor tuples.
-
-    This is kept as an explicit alias of :func:`dy_d`; both share the same
-    reconciled engine and differ only in the default ``messages`` value.
-    """
-    return _dy_d_reconciled(
+    """Deprecated alias of :func:`dy_d` (they always returned the same numbers)."""
+    warnings.warn(
+        "dy_d_best is deprecated and will be removed; use dy_d (same estimator).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return dy_d(
         x,
         y,
         wrt,
@@ -325,7 +304,7 @@ def _dy_d_reconciled(
     messages: bool = False,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Shared reconciled ``dy.d_`` engine backing :func:`dy_d`/:func:`dy_d_best`."""
+    """Shared ``dy.d_`` engine backing :func:`dy_d`."""
     raw_x = np.asarray(x)
     if raw_x.ndim != 2:
         raise ValueError("Please ensure (x) is a matrix or data.frame type object.")
@@ -345,11 +324,9 @@ def _dy_d_reconciled(
 
     wrt_values = _dy_d_validate_wrt(wrt, x_values.shape[1])
 
-    # Every regressor shares the same X* = rowMeans(x) training design, so the
-    # NNS.stack fit (CV n.best, dimension-reduction coefficients, blend weight)
-    # is identical for all of them and for every bandwidth. Gather the test
-    # blocks from all regressors and run a SINGLE NNS.stack fit + prediction,
-    # then hand each regressor's slice back to its reducer.
+    # Every regressor and bandwidth uses the same multivariate nns_reg fit on the
+    # actual regressors. Gather the test blocks from all regressors and run a
+    # SINGLE fit + prediction, then hand each regressor's slice back to its reducer.
     plans = [
         _dy_d_best_plan(
             x_values,
@@ -385,31 +362,22 @@ def _dy_d_best_reg_estimates(
     y: NDArray[np.float64],
     test_points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """f(x +/- h) via NNS.stack on the equal-weight synthetic regressor X*.
+    """f(x +/- h e_wrt) from the multivariate nns_reg fit on the actual regressors.
 
-    Reduces both the training design and the test points to the equal-weight
-    synthetic regressor X* = rowMeans(.), then estimates with the NNS
-    increased-dimension trick cbind(X*, X*) under
-    ``method=(1, 2), dim_red_method="equal", order="max", folds=5``. The
-    cross-validated ``n.best`` is what regularises the current engine.
+    R fix cebf750: ``NNS.reg(x, y, point.est = pts, order = NULL)``. The previous
+    ``NNS.stack`` fit on the equal-weight index ``rowMeans(x)`` made every estimate
+    depend on ``mean(x)`` only (y = 2*x1 gave dy/dx2 of about 1).
     """
-    from nns.stack import nns_stack
+    from nns.regression import nns_reg
 
-    x_star = np.asarray(x, dtype=np.float64).mean(axis=1)
-    test_star = np.asarray(test_points, dtype=np.float64).mean(axis=1)
-    result = nns_stack(
-        ivs_train=np.column_stack([x_star, x_star]),
-        dv_train=y,
-        ivs_test=np.column_stack([test_star, test_star]),
-        method=(1, 2),
-        dim_red_method="equal",
-        status=False,
-        order="max",
-        folds=5,
-        ncores=1,
-        dist=None,
+    result = nns_reg(
+        np.asarray(x, dtype=np.float64),
+        y,
+        point_est=np.asarray(test_points, dtype=np.float64),
+        order=None,
+        plot=False,
     )
-    return np.asarray(result["stack"], dtype=np.float64).reshape(-1)
+    return np.asarray(result["Point.est"], dtype=np.float64).reshape(-1)
 
 
 def _r_seq(start: float, stop: float, by: float) -> NDArray[np.float64]:
