@@ -6,10 +6,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+from _r import nns
 
 from nns import nns_reg
 from nns._reg_engine import _group_reduce_sorted
-from tests._r import nns
 
 
 def _r_reg(x: np.ndarray, y: np.ndarray, order: Any, noise: str, point: np.ndarray) -> Any:

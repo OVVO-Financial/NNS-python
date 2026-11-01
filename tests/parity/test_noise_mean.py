@@ -12,10 +12,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+from _r import nns
 
 from nns import nns_part, nns_reg
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
-from tests._r import nns
 
 BOSTON_CSV = Path(__file__).resolve().parents[1] / "data" / "boston_housing.csv"
 
