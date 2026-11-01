@@ -315,3 +315,54 @@ def test_univariate_group_reduce_matches_reference(noise_reduction: str, is_clas
         for a, b in zip(got, ref, strict=True):
             assert _same(a, b)
             assert np.array_equal(np.signbit(a), np.signbit(b))
+
+
+def _numpy_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nns._reg_engine as engine
+
+    monkeypatch.setattr(engine, "native_fn", lambda name: None)
+
+
+@pytest.mark.parametrize("dist", ["NNS", "L1", "L2", "FACTOR"])
+@pytest.mark.parametrize("is_class", [False, True])
+def test_native_mreg_predict_matches_numpy_path(
+    dist: str, is_class: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # NNS-core's port of R's NNS_mreg_predict_v2_cpp / _path_v2_cpp. On data
+    # without exact distance ties it agrees with the NumPy path to rounding.
+    from nns._native import native_fn
+
+    if native_fn("mreg_predict") is None:
+        pytest.skip("native extension not available")
+    rng = np.random.default_rng(31)
+    rpm = rng.normal(size=(250, 4))
+    yhat = np.round(rng.normal(size=250)) if is_class else rng.normal(size=250)
+    if dist == "FACTOR":
+        rpm = np.round(rpm)
+    noise = 0.0 if dist == "FACTOR" else 0.05 * rng.normal(size=(60, 4))
+    xt = rpm[rng.integers(0, 250, 60)] + noise
+    mins, maxs = rpm.min(axis=0), rpm.max(axis=0)
+    native = [_mreg_predict(xt, rpm, yhat, k, dist, mins, maxs, is_class) for k in (1, 3, 40)]
+    path = None if is_class else _mreg_predict_path(xt, rpm, yhat, 25, dist, mins, maxs)
+    _numpy_only(monkeypatch)
+    for k, got in zip((1, 3, 40), native, strict=True):
+        expected = _mreg_predict(xt, rpm, yhat, k, dist, mins, maxs, is_class)
+        np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-14)
+    if path is not None:
+        expected_path = _mreg_predict_path(xt, rpm, yhat, 25, dist, mins, maxs)
+        np.testing.assert_allclose(path, expected_path, rtol=1e-12, atol=1e-14)
+
+
+def test_native_mreg_gate_rejects_underflowing_student_weights() -> None:
+    # Far outside the training ranges the Student-t weight underflows, and the
+    # closed form in NNS-core and Rmath's dt underflow differently; those
+    # queries use the NumPy (SciPy) path, which matches R there.
+    from nns._reg_engine import _native_mreg_is_exact
+
+    mins = np.zeros(3)
+    maxs = np.ones(3)
+    inside = np.array([[0.2, 0.5, 0.9]])
+    far = np.array([[0.2, 0.5, 300.0]])
+    assert _native_mreg_is_exact(inside, mins, maxs, 200, "NNS")
+    assert not _native_mreg_is_exact(far, mins, maxs, 200, "NNS")
+    assert _native_mreg_is_exact(far, mins, maxs, 200, "FACTOR")
