@@ -345,10 +345,17 @@ def _hazard_proxy(x: NDArray[np.float64], pval: NDArray[np.float64]) -> NDArray[
     n = x.size
     if n == 0:
         return np.array([], dtype=np.float64)
+    if x[0] == x[-1]:
+        raise ValueError("type = 'hazard' requires at least two distinct values of variable")
     half_window = min(10, n - 1) // 2
     index = np.arange(n)
     lo = np.maximum(0, index - half_window)
     hi = np.minimum(n - 1, index + half_window)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.asarray((pval[hi] - pval[lo]) / (x[hi] - x[lo]), dtype=np.float64)
+    # A window lying inside a run of tied values has zero width (0/0): widen it to
+    # the neighbouring distinct values (x is sorted), as R's NNS.CDF does.
+    tied = x[hi] == x[lo]
+    if np.any(tied):
+        lo = np.where(tied, np.maximum(0, np.searchsorted(x, x, side="left") - 1), lo)
+        hi = np.where(tied, np.minimum(n - 1, np.searchsorted(x, x, side="right")), hi)
+    return np.asarray((pval[hi] - pval[lo]) / (x[hi] - x[lo]), dtype=np.float64)
 
