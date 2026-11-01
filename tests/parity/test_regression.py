@@ -817,7 +817,7 @@ def test_nns_reg_raw_character_class_labels_encode_like_r() -> None:
     result = nns_reg(x, y, type="class")
 
     # R 13.3 + patches gives 1 1 2 2 2 2: x is integer-valued and the regression
-    # points keep their x centroids (R fix 9328583; 13.3 rounded them: 1 1 1 2 2 2).
+    # points keep their x centroids (13.3 rounded them: 1 1 1 2 2 2).
     np.testing.assert_array_equal(
         np.asarray(result["Fitted.xy"]["y.hat"], dtype=np.float64),
         np.array([1.0, 1.0, 2.0, 2.0, 2.0, 2.0]),

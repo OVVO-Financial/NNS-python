@@ -217,7 +217,7 @@ def test_nns_arma_short_series_raise_value_error(length: int) -> None:
 
 
 def test_nns_arma_short_series_with_numeric_lag_still_forecasts() -> None:
-    # R 13.3 + patches (R fix 9328583, no rounding of integer-x regression points):
+    # R 13.3 + patches (no rounding of integer-x regression points):
     # NNS.ARMA(c(1,2,4), h=2, seasonal.factor=1) = 5.8333333333333339 7.5714285714285721.
     result = nns_arma(np.array([1.0, 2.0, 4.0]), h=2, seasonal_factor=1)
 

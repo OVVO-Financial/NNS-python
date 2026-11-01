@@ -49,7 +49,7 @@ def test_nns_causation_integer_tau_matches_r(tau: float) -> None:
 
 @pytest.mark.parametrize("tau", [1.5, -1, "3", "foo", 48, True, float("nan")])
 def test_nns_causation_rejects_invalid_tau(tau: object) -> None:
-    # R fix 6d016c0: tau must be "cs", "ts" or a single non-negative integer
+    # Patched R: tau must be "cs", "ts" or a single non-negative integer
     # smaller than length(x) - 2 (R used fractional subscripts, ignored -1, ...).
     rng = np.random.default_rng(3)
     x = rng.standard_normal(50)

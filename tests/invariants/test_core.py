@@ -96,7 +96,7 @@ def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
 
 
 def test_partial_moment_ratios_degenerate_denominator_use_degree0_ratio() -> None:
-    # R fix 2cf9cbc: the 0/0 ratio (every observation equals the target) is the
+    # Patched R: the 0/0 ratio (every observation equals the target) is the
     # degree-0 ratio, i.e. the ECDF value: LPM.ratio 1, UPM.ratio 0.
     x = np.array([2.0, 2.0])
 
@@ -154,7 +154,7 @@ def test_numpy_fallback_cdf_does_not_allocate_an_n_by_n_matrix(
 
 @pytest.mark.parametrize("function", [lpm_ratio, upm_ratio])
 def test_partial_moment_ratios_reject_non_finite_targets(function: object) -> None:
-    # R fix 41c3297: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
+    # Patched R: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
     x = np.array([1.0, 2.0, 3.0])
     for target in (np.nan, np.array([1.0, np.inf])):
         with pytest.raises(ValueError, match="target must contain only finite values"):

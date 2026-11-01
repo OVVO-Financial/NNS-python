@@ -263,7 +263,7 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
 
     concordant, d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
     # Every point concordant: perfect positive dependence; every point discordant:
-    # perfect negative dependence (R fix 1f1490e; this used to return +1 too). The
+    # perfect negative dependence (as in the patched R; this used to return +1 too). The
     # count is compared with n, not the share with 1: count * (1/n) is not exactly 1
     # for many n (49 * (1/49) != 1), DEP-08.
     if concordant == n:

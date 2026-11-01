@@ -60,7 +60,7 @@ def _excess_moment(
     """R ``LPM``/``UPM`` with ``excess_ret = TRUE``: element-wise targets, one mean.
 
     At degree 0 the lower moment counts ties (``x_i <= target_i``) as the non-excess
-    path does (R fix c5a8bed), so ``LPM0 + UPM0 = 1``.
+    path does, so ``LPM0 + UPM0 = 1``.
     """
     values = _as_1d_values(x)
     targets = _as_targets(target, values)

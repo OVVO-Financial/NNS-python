@@ -66,7 +66,7 @@ def test_nns_cdf_univariate_target_matches_r(type_name: str) -> None:
 @pytest.mark.parity
 @pytest.mark.parametrize("degree", [0.0, 1.0])
 def test_nns_cdf_univariate_drops_missing_values_like_r(degree: float) -> None:
-    # R fix 41c3297: NNS.CDF drops NA first, so the CDF reaches 1 (13.3 capped it at
+    # Patched R: NNS.CDF drops NA first, so the CDF reaches 1 (13.3 capped it at
     # n_finite / n) and a target can be evaluated.
     x = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
     finite = x[~np.isnan(x)]
@@ -115,7 +115,7 @@ _HAZARD_TIE_RUNS = [
 @pytest.mark.parametrize("x", _HAZARD_TIE_RUNS)
 @pytest.mark.parametrize("degree", [0.0, 1.0])
 def test_nns_cdf_hazard_with_tie_runs_matches_r(x: list[float], degree: float) -> None:
-    # R fix be02460: a zero-width window inside a tie run is widened to the
+    # Patched R: a zero-width window inside a tie run is widened to the
     # neighbouring distinct values (13.3 divided 0/0 and nns_reg stopped).
     expected = cast(
         dict[str, object],
@@ -201,7 +201,7 @@ def _trivariate_matrix() -> np.ndarray:
 @pytest.mark.parametrize("degree", [0.0, 1.0])
 @pytest.mark.parametrize("type_name", ["survival", "hazard", "cumulative hazard"])
 def test_nns_cdf_trivariate_types_and_target_match_r(type_name: str, degree: float) -> None:
-    # R fix 0f94f02: the joint survival for d >= 3 uses inclusion-exclusion over all
+    # Patched R: the joint survival for d >= 3 uses inclusion-exclusion over all
     # subsets, and target.value is the same function as the rows.
     matrix = _trivariate_matrix()
     target = [0.1, 0.0, -0.2]

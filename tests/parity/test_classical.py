@@ -67,7 +67,7 @@ def test_nns_moments_degenerate_input_returns_nan_like_r(
 
 @pytest.mark.parity
 def test_nns_moments_sample_skewness_is_adjusted_fisher_pearson() -> None:
-    # R fix 1be7306: the sample skewness divides by s^3 with s the (n - 1) sample sd
+    # Patched R: the sample skewness divides by s^3 with s the (n - 1) sample sd
     # (adjusted Fisher-Pearson G1), not by the population variance^(3/2).
     x = np.array([1.0, 2.0, 4.0, 8.0, 16.0])
     expected = cast(dict[str, np.ndarray], nns("NNS.moments", x.tolist(), False))

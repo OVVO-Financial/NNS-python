@@ -35,7 +35,7 @@ def nns_causation(
 ) -> CausationResult:
     """Return R's default bivariate NNS.caus vector as a dict."""
     x_values, y_values = _as_pair(x, y)
-    # R NNS.caus validation (R fix 6d016c0): causation is undefined for a variable
+    # R NNS.caus validation: causation is undefined for a variable
     # with no variation, and tau must be "cs", "ts" or an integer below n - 2.
     if _is_constant(x_values) or _is_constant(y_values):
         raise ValueError(

@@ -12,7 +12,7 @@ def test_nns_anova_identical_degenerate_groups_match_r_convention() -> None:
 
     result = nns_anova(constant, constant, confidence_interval=None)
 
-    # The degree-1 ratios at a point mass are the degree-0 ratios (R fix 2cf9cbc), so
+    # The degree-1 ratios at a point mass are the degree-0 ratios, so
     # the CDFs are 1 and the patched R reports Certainty 0 (13.3 gave NaN).
     assert isinstance(result, dict)
     assert result["Control_CDF"] == result["Treatment_CDF"] == 1.0

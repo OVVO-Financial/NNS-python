@@ -25,7 +25,7 @@ def test_r_nns_13_regression_points_smoke_value() -> None:
         multivariate_call=True,
     )
 
-    # R 13.3 + patches (R fix 9328583: the x centroid of a cell is no longer
+    # R 13.3 + patches (the x centroid of a cell is no longer
     # rounded for integer-valued x, so the centre point stays at x = 1.5).
     np.testing.assert_allclose(result["x"], np.array([1.0, 1.5, 2.0]), atol=EXACT)
     np.testing.assert_allclose(result["y"], np.array([148.0, 141.5, 135.0]), atol=EXACT)
@@ -97,7 +97,7 @@ def test_r_nns_13_arma_airline_smoke_values() -> None:
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
 
     np.testing.assert_allclose(seasonal, np.array([118, 134, 150, 141, 129, 163]), atol=EXACT)
-    # NNS.ARMA nonseasonal forecast from R 13.3 + patches (R fix 9328583).
+    # NNS.ARMA nonseasonal forecast from R 13.3 + patches.
     np.testing.assert_allclose(
         nonseasonal,
         np.array([122.0, 102.0, 162.0, 213.66666666666666]),

@@ -105,7 +105,7 @@ def test_lpm_ratio_matches_r_vector_target(rng: np.random.Generator, degree: flo
 )
 def test_excess_ret_moments_match_r(degree: float, target: float | list[float]) -> None:
     # R LPM/UPM(excess_ret = TRUE): element-wise targets; degree-0 LPM counts ties
-    # (R fix c5a8bed), so LPM0 + UPM0 = 1.
+    # (patched R), so LPM0 + UPM0 = 1.
     x = [1.0, 2.0, 3.0, 0.5, 4.0]
     for label, function in (("LPM", lpm), ("UPM", upm)):
         expected = nns(label, degree, target, x, True)
@@ -133,7 +133,7 @@ def test_excess_ret_rejects_mismatched_target_length() -> None:
 def test_ratios_at_a_point_mass_match_r(
     degree: float, target: float | list[float], x: list[float]
 ) -> None:
-    # R fix 2cf9cbc: the 0/0 case at degree > 0 returns the degree-0 ratio.
+    # Patched R: the 0/0 case at degree > 0 returns the degree-0 ratio.
     values = np.asarray(x)
     for label, function in (("LPM.ratio", lpm_ratio), ("UPM.ratio", upm_ratio)):
         expected = nns(label, degree, target, x)

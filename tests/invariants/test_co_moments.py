@@ -87,7 +87,7 @@ def test_co_upm_is_symmetric() -> None:
 
 
 def test_co_moments_and_pm_matrix_reject_non_finite_input() -> None:
-    # R fix 41c3297: Co.LPM/Co.UPM/D.LPM/D.UPM/PM.matrix stop on NA/Inf instead of
+    # Patched R: Co.LPM/Co.UPM/D.LPM/D.UPM/PM.matrix stop on NA/Inf instead of
     # counting NA observations in n (Co.LPM(0, x, x, 6, 6) was 0.8 with one NA).
     x = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
     finite = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
