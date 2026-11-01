@@ -73,8 +73,9 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
 @pytest.mark.parity
 @pytest.mark.parametrize("size", [30, 60, 250])
 def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
-    # R steps by gravity(|diff(x)|) * h_s (the bandwidth value, not its index);
-    # for n < 49 R keeps only the bandwidths that occur once in h_s.
+    # R steps by gravity(diff(sort(unique(x)))) * h_s (the bandwidth value, not its
+    # index; R fix 4afe296 sorts x first); for n < 49 R keeps only the bandwidths
+    # that occur once in h_s.
     rng = np.random.default_rng(size)
     x = rng.uniform(-2.0, 2.0, size)
     y = x**3 - x
@@ -84,6 +85,25 @@ def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
     assert isinstance(actual, dict)
     for key in actual:
         np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+def test_dy_dx_numeric_does_not_depend_on_row_order() -> None:
+    # R fix 4afe296: with diff() of x in row order, 500 unsorted U(-2, 2) points
+    # gave dy/dx of x^3 of about 3.7 everywhere (truth 6.75 0 0.75 6.75).
+    rng = np.random.default_rng(1)
+    x = np.round(rng.uniform(-2.0, 2.0, 500), 8)
+    y = x**3
+    eval_point = [-1.5, 0.0, 0.5, 1.5]
+    expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
+    actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
+    order = np.argsort(x)
+    sorted_actual = dy_dx(x[order], y[order], eval_point=np.asarray(eval_point))
+    assert isinstance(actual, dict) and isinstance(sorted_actual, dict)
+    for key in actual:
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+        np.testing.assert_allclose(actual[key], sorted_actual[key], atol=1e-12)
+    np.testing.assert_allclose(actual["first.derivative"], [6.75, 0.0, 0.75, 6.75], atol=0.2)
 
 
 @pytest.mark.parity

@@ -701,7 +701,7 @@ def _dy_dx_numeric(
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
     h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5)))
-    # R steps by gravity(|diff(x)|) * h_s[index]. When h_s holds a repeated
+    # R steps by gravity(diff(sort(unique(x)))) * h_s[index]. When h_s holds a repeated
     # bandwidth (n < 49), R's `deriv.points[[index]] <- ...` with a length-2
     # index is a recursive assignment and rbind() drops those blocks, so R only
     # uses the bandwidths that occur once. Below n = 16 every bandwidth repeats
@@ -710,7 +710,10 @@ def _dy_dx_numeric(
     bandwidths = h_s[np.isin(h_s, values[counts == 1])]
     if bandwidths.size == 0:
         bandwidths = values
-    spacing = float(_gravity(np.abs(np.diff(x))))
+    # Typical spacing between neighbouring x values (R fix 4afe296): diff() of x
+    # in row order measured the gap between consecutive rows, so unsorted input
+    # gave steps spanning the whole range and depended on row order.
+    spacing = float(_gravity(np.diff(np.unique(x))))
     x_min = float(np.min(x))
     x_max = float(np.max(x))
     rows: list[NDArray[np.float64]] = []
