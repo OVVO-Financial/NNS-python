@@ -52,6 +52,15 @@ Matrix matrix_from_column_major_vector(std::vector<double>&& values, std::size_t
   return Matrix(storage->data(), {dim, dim}, owner, {1, static_cast<int64_t>(dim)});
 }
 
+Matrix matrix_from_column_major(std::vector<double>&& values, std::size_t rows,
+                                 std::size_t cols) {
+  auto* storage = new std::vector<double>(std::move(values));
+  nb::capsule owner(storage, [](void* p) noexcept {
+    delete static_cast<std::vector<double>*>(p);
+  });
+  return Matrix(storage->data(), {rows, cols}, owner, {1, static_cast<int64_t>(rows)});
+}
+
 void check_same_size(const Vector& x, const Vector& y, const char* x_name, const char* y_name) {
   if (checked_size(x, x_name) != checked_size(y, y_name)) {
     throw std::invalid_argument(std::string(x_name) + " and " + y_name + " must have the same length.");
@@ -648,6 +657,49 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
   return std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
 }
 
+// --- NNS.M.reg prediction kernels (NNS-core ports of R 13.3) ----------------
+// Matrices are passed flattened column-major (element (i, j) at i + j * rows).
+// NNS-core's mreg_setup and xstar_path are not bound: the NumPy partition, RPM
+// reduction and X* path already take a few ms, and mreg_setup's "mode" reducer
+// is the exact-frequency mode rather than NNS.mode (CORE-03).
+
+void check_mreg_predict_args(const Vector& rpm_x, std::size_t n, std::size_t p,
+                             const Vector& yhat, const Vector& xtest, std::size_t m,
+                             const Vector& mins, const Vector& maxs) {
+  checked_flat_matrix_size(rpm_x, n, p, "rpm_x");
+  if (yhat.shape(0) != n) throw std::invalid_argument("yhat length must equal n.");
+  if (xtest.shape(0) != m * p) throw std::invalid_argument("xtest length must equal m * p.");
+  if (mins.shape(0) != p || maxs.shape(0) != p) {
+    throw std::invalid_argument("mins and maxs must have one value per column.");
+  }
+}
+
+std::vector<double> mreg_predict_vector(const Vector& rpm_x, std::size_t n, std::size_t p,
+                                        const Vector& yhat, const Vector& xtest, std::size_t m,
+                                        int k, int dist_code, const Vector& mins,
+                                        const Vector& maxs, bool is_class) {
+  check_mreg_predict_args(rpm_x, n, p, yhat, xtest, m, mins, maxs);
+  if (m == 0U) return {};
+  nb::gil_scoped_release release;
+  return nns::mreg_predict(rpm_x.data(), n, p, yhat.data(), xtest.data(), m, k, dist_code,
+                           mins.data(), maxs.data(), is_class, call_threads());
+}
+
+Matrix mreg_predict_path_matrix(const Vector& rpm_x, std::size_t n, std::size_t p,
+                                const Vector& yhat, const Vector& xtest, std::size_t m, int kmax,
+                                int dist_code, const Vector& mins, const Vector& maxs,
+                                bool is_class) {
+  check_mreg_predict_args(rpm_x, n, p, yhat, xtest, m, mins, maxs);
+  const std::size_t cols = std::min<std::size_t>(static_cast<std::size_t>(std::max(kmax, 1)), n);
+  std::vector<double> out;
+  if (m > 0U) {
+    nb::gil_scoped_release release;
+    out = nns::mreg_predict_path(rpm_x.data(), n, p, yhat.data(), xtest.data(), m, kmax,
+                                 dist_code, mins.data(), maxs.data(), is_class, call_threads());
+  }
+  return matrix_from_column_major(std::move(out), m, cols);
+}
+
 }  // namespace
 
 NB_MODULE(_nnscore, m) {
@@ -807,6 +859,12 @@ NB_MODULE(_nnscore, m) {
   });
   m.def("nns_part_off", &nns_part_off, nb::arg("x"), nb::arg("y"), nb::arg("xonly"),
         nb::arg("max_order"), nb::arg("obs_req"), nb::arg("min_obs_stop"));
+  m.def("mreg_predict", &mreg_predict_vector, nb::arg("rpm_x"), nb::arg("n"), nb::arg("p"),
+        nb::arg("yhat"), nb::arg("xtest"), nb::arg("m"), nb::arg("k"), nb::arg("dist_code"),
+        nb::arg("mins"), nb::arg("maxs"), nb::arg("is_class"));
+  m.def("mreg_predict_path", &mreg_predict_path_matrix, nb::arg("rpm_x"), nb::arg("n"),
+        nb::arg("p"), nb::arg("yhat"), nb::arg("xtest"), nb::arg("m"), nb::arg("kmax"),
+        nb::arg("dist_code"), nb::arg("mins"), nb::arg("maxs"), nb::arg("is_class"));
   m.def("nns_dep_pair", &nns_dep_pair, nb::arg("x"), nb::arg("y"), nb::arg("asym"));
   m.def(
       "copula_nd",
