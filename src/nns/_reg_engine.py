@@ -397,10 +397,10 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     except Exception:
         d1 = float("nan")
     try:
-        from nns.copula import _copula
+        from nns.copula import _copula, _r_col_means
 
         m = np.column_stack((_rescale_01(x), _rescale_01(x), _rescale_01(y)))
-        target = cast(NDArray[np.float64], np.mean(m, axis=0))
+        target = _r_col_means(m)
         d2 = float(_copula(m, target, continuous=True))
     except Exception:
         d2 = float("nan")
