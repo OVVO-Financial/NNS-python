@@ -82,7 +82,7 @@
       "NNS.dim.red.coefficients": null,
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
-      "NNS.reg.n.best": 1.0,
+      "NNS.reg.n.best": 3.0,
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "class.levels": [
@@ -92,7 +92,7 @@
       "dim.red": NaN,
       "dim.red.pred.int": null,
       "pred.int": null,
-      "probability.threshold": 0.5,
+      "probability.threshold": 0.91,
       "reg": [
         1.0,
         1.0,
@@ -925,7 +925,7 @@
       ],
       "dim.red.pred.int": null,
       "pred.int": null,
-      "probability.threshold": 0.66,
+      "probability.threshold": 0.5,
       "reg": NaN,
       "reg.pred.int": null,
       "stack": [
@@ -1040,6 +1040,42 @@
       "weights": [
         0.0,
         1.0
+      ]
+    },
+    "b16937cc6be018a2f6ffac079425b6868b3f95ea551b7a6c658032fdd4886547": {
+      "NNS.dim.red.coefficients": null,
+      "NNS.dim.red.threshold": NaN,
+      "NNS.dim.red.variables": null,
+      "NNS.reg.n.best": 1.0,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.875,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        1.0,
+        3.0,
+        2.0,
+        3.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        3.0,
+        2.0,
+        3.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
       ]
     },
     "b71a2ad7a272d0d4309d01ec0f15a1dd4dae36fb6be0f1a069c6f7641dfa4f9b": {
@@ -1204,7 +1240,7 @@
       ],
       "dim.red.pred.int": null,
       "pred.int": null,
-      "probability.threshold": 0.6,
+      "probability.threshold": 0.5,
       "reg": [
         1.0,
         1.0,
@@ -1685,7 +1721,7 @@
           1.0,
           1.0,
           1.0,
-          1.0
+          2.0
         ],
         "pred.int.pos": [
           1.0,
@@ -1706,7 +1742,7 @@
           1.0,
           1.0,
           1.0,
-          1.0
+          2.0
         ],
         "pred.int.pos": [
           1.0,
@@ -1774,9 +1810,9 @@
       ],
       "NNS.dim.red.threshold": 0.93162133593563,
       "NNS.dim.red.variables": "V1",
-      "NNS.reg.n.best": 2.0,
+      "NNS.reg.n.best": 1.0,
       "OBJfn.dim.red": 1.0,
-      "OBJfn.reg": 0.75,
+      "OBJfn.reg": 0.583333333333333,
       "class.levels": [
         "A",
         "B",
@@ -1790,12 +1826,12 @@
       ],
       "dim.red.pred.int": null,
       "pred.int": null,
-      "probability.threshold": 0.58,
+      "probability.threshold": 0.43,
       "reg": [
-        2.0,
-        2.0,
-        2.0,
-        2.0
+        1.0,
+        1.0,
+        3.0,
+        3.0
       ],
       "reg.pred.int": null,
       "stack": [
@@ -1805,8 +1841,8 @@
         3.0
       ],
       "weights": [
-        0.33,
-        0.67
+        0.15,
+        0.85
       ]
     },
     "f430b5121c48fd5b5202044d2a2d285cf6d5fab3ad3da3de9ffcf26adfbab117": {
