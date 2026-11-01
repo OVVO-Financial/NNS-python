@@ -19,7 +19,7 @@ from __future__ import annotations
 import itertools
 import math
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -569,6 +569,17 @@ def nns_boost(
 
     results_raw = final_stack["reg"]
     pred_int_output = final_stack["reg.pred.int"]
+    stack_levels = final_stack.get("class.levels")
+    if not is_class and stack_levels is not None:
+        # nns_stack auto-classifies a two-valued numeric response even when boost
+        # treats it as a regression; map its class codes back to the response
+        # values (R fix 9219a12; the codes 1/2 used to be returned as estimates).
+        results_raw = _decode_stack_codes(results_raw, stack_levels)
+        if pred_int_output is not None:
+            pred_int_output = {
+                key: _decode_stack_codes(value, stack_levels)
+                for key, value in pred_int_output.items()
+            }
 
     estimates_code = sanitize_predictions(
         np.asarray(results_raw, dtype=np.float64), y
@@ -607,3 +618,13 @@ def nns_boost(
         "feature.frequency": plot_table,
         "class.levels": class_values if is_class else None,
     }
+
+
+def _decode_stack_codes(values: Any, levels: Sequence[Any]) -> NDArray[np.float64]:
+    """R ``stack_values[pmin(pmax(round(v), 1), K)]`` on the finite entries."""
+    level_values = np.asarray(levels, dtype=np.float64)
+    out = np.asarray(values, dtype=np.float64).reshape(-1).copy()
+    ok = np.isfinite(out)
+    codes = np.clip(np.round(out[ok]).astype(np.int64), 1, level_values.size)
+    out[ok] = level_values[codes - 1]
+    return out
