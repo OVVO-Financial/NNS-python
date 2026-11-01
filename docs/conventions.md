@@ -130,7 +130,12 @@ handled inside `nns_cdf` without loosening the global partial-moment APIs.
 
 ## Dependence
 
-`nns_dep` follows R's `NNS.dep` bivariate path, including `NNS.gravity` handling
+`nns_dep(x, y)` follows R's `NNS.dep` bivariate path. With `asym=True` the partition
+is on `x` and the result measures `y` as a function of `x`. `nns_dep(X)` on a 2-D
+array or DataFrame returns R's `Correlation` and `Dependence` matrices; with
+`asym=True` entry `[i, j]` is `nns_dep(X[:, i], X[:, j], asym=True)` (row variable
+-> column variable, which is what R returns although its manual states the
+reverse). R's `p.value` option is not implemented. The bivariate path includes `NNS.gravity` handling
 for zero-range inputs and non-positive or non-finite bin widths. The gravity
 histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
 single outlier that makes R allocate millions of empty bins costs nothing and gives
@@ -144,16 +149,22 @@ dependence component for near-binary inputs.
 
 ## Copula
 
-`nns_copula(x, y)` is the bivariate scalar form of R's `NNS.copula(cbind(x, y))`.
-When targets are omitted, NNS Python uses column means, matching R's `target = NULL`.
-The `target_x` and `target_y` arguments map to R's two-element target vector.
+`nns_copula(x, y)` is the bivariate form of R's `NNS.copula(cbind(x, y))`, and
+`nns_copula(X)` takes a 2-D matrix with any number of columns (at least two), as R
+does; `target` gives the per-column targets of the matrix form. When targets are
+omitted NNS Python uses the column means computed like R's `colMeans` (long-double
+sequential sum), matching R's `target = NULL` to the last bit. The `target_x` and
+`target_y` arguments map to R's two-element target vector. Empty or non-finite
+input raises `ValueError` (R stops on missing values).
 
 ## Causation
 
 `nns_causation(x, y)` maps to R's `NNS.caus(x, y, tau = 0, p.value = FALSE)`
 numeric-vector path. It returns the two directional components and the named
 signed net log-ratio key selected by R, either `C(x--->y)` or `C(y--->x)`.
-`causal_matrix` maps to R's `NNS.caus.matrix` antisymmetric matrix convention.
+`causal_matrix` maps to R's `NNS.caus` on a matrix (internally `NNS.caus.matrix`):
+an antisymmetric matrix whose entry `[i, j]` is the net causation of column `i` on
+column `j`. A DataFrame input returns a DataFrame labelled with its columns.
 `tau='ts'` uses `nns_seas(... )["periods"]` exactly like installed R: the first
 period not exceeding `sqrt(length(x))` is selected per variable, including
 harmonics when R selects them. Inputs with no eligible selected period follow
@@ -164,13 +175,15 @@ supported.
 
 `nns_part` maps to R's `NNS.part` but returns plain NumPy arrays instead of
 `data.table` objects: `"dt"` and `"regression.points"` are dictionaries of
-arrays. Installed R 13.0 only distinguishes `type = NULL` from any non-null
-`type`: `None` uses XY quadrant splits, while every non-`None` value uses
-X-only splits. This differs from documentation that implies separate `"X"`,
-`"Y"`, and `"XONLY"` modes. NNS Python matches the installed binary.
-`order="max"` is rejected with `TypeError`; installed R coerces it to `NA` and
-returns a useless zero-order map. All five `noise_reduction` modes are
-supported: `"off"`, `"mean"`, `"median"`, `"mode"`, and `"mode_class"`.
+arrays. As in R 13.3, `type` must be `None` (XY quadrant splits) or `"XONLY"`
+(any case); other values raise `ValueError`. `order` is `None`, a positive
+integer (NumPy integers and integral floats are accepted), or `"max"`, which
+returns R's explicit maximum partition (one point per observation, or per unique
+`x` for `XONLY`). `obs_req` must be a non-negative integer. The returned `order`
+is the depth actually reached; it never exceeds `floor(log2(n))` and can be smaller
+than requested. Pairs with `NaN` in either variable are dropped and infinities are
+kept, as in R. All five `noise_reduction` modes are supported: `"off"`, `"mean"`,
+`"median"`, `"mode"`, and `"mode_class"`.
 
 ## Regression
 

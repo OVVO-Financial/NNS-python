@@ -134,6 +134,10 @@ def nns_part(
     Mirrors the repaired R NNS.part: pairs with NA/NaN in either variable are
     dropped (complete-case handling keeps infinities), and ``order='max'``
     returns the explicit maximum partition representation without recursion.
+    ``type`` is ``None`` (XY quadrants) or ``"XONLY"``; ``order`` is ``None``,
+    ``"max"`` or a positive integer and ``obs_req`` a non-negative integer
+    (NumPy integers and integral floats are accepted). The returned ``order`` is
+    the depth reached, at most ``floor(log2(n))``.
     """
     if type is not None and (not isinstance(type, str) or type.lower() != "xonly"):
         raise ValueError("[type] must be NULL or 'XONLY'.")
