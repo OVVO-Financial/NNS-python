@@ -137,11 +137,11 @@ reverse). R's `p.value` option is not implemented. The bivariate path includes `
 for zero-range inputs and non-positive or non-finite bin widths. The gravity
 histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
 single outlier that makes R allocate millions of empty bins costs nothing and gives
-R's value. Like R, a bin count beyond the C `int` range collapses to one bin. The
-compiled `gravity_exact` kernel used by `nns_part`/`nns_dep` clips its dense
-histogram at 1e6 bins; NNS Python checks every gravity call of a native partition
-against that cap and recomputes in Python when it would bind, so results match R
-on such data too. `abs(Correlation) <= Dependence` is not guaranteed by
+R's value. The compiled kernel (NNS-core `nns::gravity`) and the NumPy fallback
+compute the same value bit for bit. They differ from R 13.3 only when the bin count
+exceeds the C `int` range: R's cast overflows there and the histogram collapses to
+one bin, while NNS Python (like the patched R) keeps the real histogram.
+`abs(Correlation) <= Dependence` is not guaranteed by
 `NNS.dep`; both R and NNS Python can return signed correlation magnitudes above the
 dependence component for near-binary inputs.
 

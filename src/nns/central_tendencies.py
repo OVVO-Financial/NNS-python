@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.dependence import _quartiles_like_r_code, _simple_bin_counts
+from nns.dependence import _gravity_python, _quartiles_like_r_code, _simple_bin_counts
 
 
 def nns_rescale(
@@ -100,38 +100,8 @@ def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     if native_gravity is not None:
         return float(native_gravity(np.ascontiguousarray(finite), discrete))
 
-    value_range = float(abs(finite[-1] - finite[0]))
-    if value_range == 0.0:
-        return float(finite[0])
-
-    q1, q2, q3 = _quartiles_like_r_code(finite)
-    width = (q3 - q1) * n**-0.5
-    if width <= 0.0 or not np.isfinite(width):
-        width = value_range / 128.0
-
-    bin_names, counts = _simple_bin_counts(finite, width, float(finite[0]))
-    max_count = int(np.max(counts))
-    max_positions = np.flatnonzero(counts == max_count)
-    if max_positions.size == 1:
-        center = int(max_positions[0])
-        lo = max(0, center - 1)
-        hi = min(counts.size - 1, center + 1)
-    else:
-        lo = 0
-        hi = counts.size - 1
-
-    selected_names = bin_names[lo : hi + 1]
-    selected_counts = counts[lo : hi + 1]
-    denominator = float(np.sum(selected_counts))
-    mode_gravity = (
-        float(np.sum(selected_names * selected_counts) / denominator)
-        if denominator > 0.0
-        else float(bin_names[(lo + hi) // 2])
-    )
-    out = 0.25 * (q2 + mode_gravity + float(np.mean(finite)) + 0.5 * (q1 + q3))
-    if not math.isfinite(out):
-        out = q2
-    return _nearest_int_half_up(out) if discrete else float(out)
+    out = _gravity_python(finite)
+    return _nearest_int_half_up(out) if discrete else out
 
 
 def _discrete_mode(values: NDArray[np.float64], multi: bool) -> float | NDArray[np.float64]:
