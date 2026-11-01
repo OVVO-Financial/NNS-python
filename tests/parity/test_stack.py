@@ -718,6 +718,49 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("columns", [1, 2])
+def test_nns_stack_all_candidate_is_scored_with_the_deployed_estimator(columns: int) -> None:
+    # R fix 70224e6: the Method 1 "ALL" candidate was scored out of fold as the
+    # constant training mean, but the deployed model is the univariate NNS.reg fit
+    # or NNS.reg(n.best = "all"). On pure noise ALL used to win with the SSE of a
+    # constant (the same OBJfn.reg for one and two columns).
+    rng = np.random.default_rng(5)
+    variable = np.round(rng.standard_normal((200, 2)), 8)[:, :columns]
+    y = np.round(rng.standard_normal(200), 8)
+
+    expected = nns_stack_numeric(
+        variable[:160].tolist(),
+        y[:160].tolist(),
+        variable[160:].tolist(),
+        cv_size=0.25,
+        folds=5,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        seed=5,
+    )
+    actual = nns_stack(
+        variable[:160],
+        y[:160],
+        variable[160:],
+        cv_size=0.25,
+        folds=5,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        random_seed=5,
+        dist=None,
+    )
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(
+        actual["OBJfn.reg"], float(np.asarray(expected["OBJfn.reg"])), rtol=1e-10
+    )
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
+
+
+@pytest.mark.parity
 @pytest.mark.stochastic
 def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
     # R fix 7e170c9: sample(g, k) on a one-member class g sampled from 1:g and

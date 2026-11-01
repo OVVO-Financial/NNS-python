@@ -1001,8 +1001,30 @@ def nns_stack(
                         sum_list[str(k)][rows] += raw[good]
                         count_list[str(k)][rows] += 1
 
-                # Mandatory all-points candidate: constant mean response.
-                all_raw = np.full(valid_idx.size, float(np.mean(train_y_fit)) - _RESPONSE_OFFSET)
+                # Mandatory all-points candidate, scored with the estimator deployed
+                # when ALL wins (R fix 70224e6; it was a constant training mean): the
+                # univariate NNS.reg fit, or NNS.reg(n.best = "all").
+                if train_design.shape[1] == 1:
+                    all_raw = fit_univariate_raw(
+                        train_design[:, 0], train_y_fit, valid_design[:, 0]
+                    )["raw"]
+                else:
+                    all_fit = nns_reg_engine(
+                        train_design,
+                        train_y_fit,
+                        point_est=valid_design,
+                        n_best="all",
+                        order=order_value,
+                        type=None,
+                        factor_2_dummy=False,
+                        dist=dist_value,
+                        point_only=True,
+                    )
+                    all_raw = sanitize_raw(
+                        np.asarray(all_fit["Point.est"], dtype=np.float64).reshape(-1)
+                        - _RESPONSE_OFFSET,
+                        y[train_idx],
+                    )
                 good = np.isfinite(all_raw)
                 rows = valid_idx[good]
                 sum_list["all"][rows] += all_raw[good]
