@@ -308,7 +308,10 @@ def _clpm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     if degree == 0.0:
         return float(np.mean(np.all(diff >= 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    return float(np.mean(np.where(valid, np.prod(diff**degree, axis=1), 0.0)))
+    # Clamp before the power: rows with a negative deviation are masked out anyway,
+    # and a fractional power of a negative number only produced RuntimeWarnings.
+    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
+    return float(np.mean(np.where(valid, powered, 0.0)))
 
 
 def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: float) -> float:
@@ -316,7 +319,8 @@ def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     if degree == 0.0:
         return float(np.mean(np.all(diff >= 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    return float(np.mean(np.where(valid, np.prod(diff**degree, axis=1), 0.0)))
+    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
+    return float(np.mean(np.where(valid, powered, 0.0)))
 
 
 def co_lpm_nd(
