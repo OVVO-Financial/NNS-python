@@ -857,34 +857,47 @@ def _partial_moment_var(
     else:
         ratio = lpm_ratio if lower else upm_ratio
         out = np.array(
-            [_var_optimize(ratio, float(p), degree, values) for p in pcts], dtype=np.float64
+            [_var_uniroot(ratio, float(p), degree, values) for p in pcts], dtype=np.float64
         )
     if requested.ndim == 0:
         return float(out[0])
     return out.reshape(requested.shape)
 
 
-def _var_optimize(
+def _var_uniroot(
     ratio: Callable[..., Any],
     pct: float,
     degree: float,
     values: NDArray[np.float64],
 ) -> float:
-    """Fractional degree: R's optimize() on |ratio(degree, t, x) - p| over [min, max]."""
+    """Fractional degree: solve ``ratio(degree, t, x) = p`` on [min, max], as R's uniroot().
+
+    The ratio is monotone in the target, so a bracketing root finder at a tolerance
+    relative to the range of ``x`` replaces R 13.3's optimize() on ``|ratio - p|``,
+    which stopped at its default absolute tolerance (about 1.2e-4 in x units; R fix
+    3b6ed41). A root at or beyond an end of the support returns that end.
+    """
     xmin = float(np.min(values))
     xmax = float(np.max(values))
     if xmin == xmax:
         return xmin
 
-    from scipy.optimize import minimize_scalar  # type: ignore[import-untyped]
+    def gap(target: float) -> float:
+        return float(ratio(degree, target, values)) - pct
 
-    result = minimize_scalar(
-        lambda target: abs(float(ratio(degree, target, values)) - pct),
-        bounds=(xmin, xmax),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return float(result.x)
+    gap_lower = gap(xmin)
+    gap_upper = gap(xmax)
+    if gap_lower == 0.0:
+        return xmin
+    if gap_upper == 0.0:
+        return xmax
+    if np.sign(gap_lower) == np.sign(gap_upper):
+        return xmin if abs(gap_lower) <= abs(gap_upper) else xmax
+
+    from nns.diff import _zeroin2
+
+    tol = _UNIROOT_TOL * (xmax - xmin)
+    return _zeroin2(gap, xmin, xmax, gap_lower, gap_upper, tol, 1000)
 
 
 _UNIROOT_TOL = float(np.finfo(float).eps ** 0.5)
@@ -1009,7 +1022,7 @@ def _lpm_var_integer_interval(
         return upper + shift
 
     if math.isfinite(f_lower) and math.isfinite(f_upper) and f_lower * f_upper <= 0.0:
-        from scipy.optimize import brentq
+        from scipy.optimize import brentq  # type: ignore[import-untyped]
 
         root = float(brentq(root_value, lower, upper, xtol=tol))
         return min(max(root, lower), upper) + shift
