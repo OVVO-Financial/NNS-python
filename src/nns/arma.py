@@ -497,7 +497,9 @@ def nns_arma(
                 ],
                 dtype=np.float64,
             )
-            regression_estimates = np.maximum(0.0, regression_estimates)
+            if not negative_values:
+                # R fix 8db15ae: honour negative_values like the linear branch.
+                regression_estimates = np.maximum(0.0, regression_estimates)
             nonlin_estimate = float(np.sum(regression_estimates * lag_weights))
 
         lin_estimate = math.nan
