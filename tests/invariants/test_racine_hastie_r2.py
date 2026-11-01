@@ -44,6 +44,17 @@ def test_r2_constant_series_degeneracy_is_explicit() -> None:
         assert helper(varying, exact) == 0.0
 
 
+def test_r2_constant_series_uses_r_all_equal() -> None:
+    # R's .nns_reg_r2 compares degenerate series with isTRUE(all.equal(...)):
+    # f(rep(3, 5), rep(3 + 1e-12, 5)) = 1, f(rep(3, 5), rep(3 + 1e-7, 5)) = 0,
+    # f(rep(0, 5), rep(1e-9, 5)) = 1 (absolute difference below the tolerance).
+    exact = np.full(5, 3.0)
+    for helper in (engine_r2, legacy_r2):
+        assert helper(exact, exact + 1e-12) == 1.0
+        assert helper(exact, exact + 1e-7) == 0.0
+        assert helper(np.zeros(5), np.full(5, 1e-9)) == 1.0
+
+
 def test_public_regression_r2_values_are_bounded() -> None:
     x = np.linspace(-2.0, 2.0, 40)
     y = np.sin(4.0 * x) + x**2

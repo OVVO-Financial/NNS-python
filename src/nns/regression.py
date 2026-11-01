@@ -474,6 +474,8 @@ def _r2(y: NDArray[np.float64], y_hat: NDArray[np.float64]) -> float:
     y_hat_centered = y_hat - float(np.mean(y_hat))
     denominator = float(np.sum(y_centered**2) * np.sum(y_hat_centered**2))
     if denominator == 0.0:
-        return 1.0 if np.array_equal(y, y_hat) else 0.0
+        from nns._reg_engine import _r_all_equal
+
+        return 1.0 if _r_all_equal(y, y_hat) else 0.0
     numerator = float(np.sum(y_centered * y_hat_centered) ** 2)
     return float(np.clip(numerator / denominator, 0.0, 1.0))
