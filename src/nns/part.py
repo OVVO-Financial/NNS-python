@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from nns._native import native_fn
 from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
-from nns.dependence import _gravity
+from nns.dependence import _gravity, _gravity_subsets_are_safe, _native_partition_is_exact
 
 NoiseReduction: TypeAlias = Literal["off", "mean", "median", "mode", "mode_class"]
 
@@ -168,7 +168,19 @@ def nns_part(
             int(obs_req),
             bool(min_obs_stop),
         )
-        return _part_result_from_native(res, x_values, y_values)
+        native_result = _part_result_from_native(res, x_values, y_values)
+        # Every gravity call is on a group of more than obs_req points (or on all
+        # points when nothing is split).
+        min_size = min(obs_req + 1, n)
+        if (
+            _gravity_subsets_are_safe(x_values, min_size)
+            and _gravity_subsets_are_safe(y_values, min_size)
+        ) or _native_partition_is_exact(
+            x_values, y_values, native_result["dt"]["quadrant"], xonly
+        ):
+            return native_result
+        # Some gravity centre hit the native kernel's 1e6-bin histogram cap (data
+        # with extreme outliers); recompute with the exact Python gravity.
 
     # Groups are tracked as dense integer ids whose numeric order equals the
     # lexicographic order of their quadrant labels: the current labels are the
