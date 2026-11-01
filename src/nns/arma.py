@@ -528,12 +528,14 @@ def nns_arma(
                 lin_estimate = float(np.maximum(0.0, lin_estimate))
             lin_regression_estimates = linear_estimates
 
+        # lin_estimate / nonlin_estimate are already weighted sums over the lags
+        # (R fix 06ec89a: the weights used to be applied a second time here).
         if method_l == "lin":
-            estimate = float(np.sum(lin_estimate * lag_weights))
+            estimate = lin_estimate
         elif method_l == "both":
             estimate = float(np.mean(np.array([lin_estimate, nonlin_estimate], dtype=np.float64)))
         elif method_l == "nonlin":
-            estimate = float(np.sum(nonlin_estimate * lag_weights))
+            estimate = nonlin_estimate
         else:
             # method="means": the weighted seasonal means (R fix b33e9f3; was 0).
             estimate = lin_estimate
@@ -784,7 +786,7 @@ def _resolve_lags_and_weights(
         if weights is None:
             lag_weights = _numeric_seasonal_weights(variable, lags)
         elif isinstance(weights, str):
-            raise TypeError("non-numeric weights are not supported with numeric seasonal_factor.")
+            lag_weights = _equal_weights(lags)
         else:
             lag_weights = _user_lag_weights(weights, lags)
         return lags, lag_weights
@@ -812,22 +814,30 @@ def _resolve_lags_and_weights(
 
     if weights is not None:
         if isinstance(weights, str):
-            lag_weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+            lag_weights = _equal_weights(lags)
         else:
             lag_weights = _user_lag_weights(weights, lags)
     return lags, lag_weights
 
 
+def _equal_weights(lags: NDArray[np.int64]) -> NDArray[np.float64]:
+    return np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+
+
 def _user_lag_weights(
     weights: NDArray[np.float64] | float, lags: NDArray[np.int64]
 ) -> NDArray[np.float64]:
+    """One weight per lag, used as relative weights (rescaled to sum to 1) like R."""
     lag_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
     if lag_weights.size != lags.size:
         raise ValueError(
             f"weights has {lag_weights.size} element(s) but there are {lags.size} seasonal "
             f"lag(s) {lags.tolist()}; supply one weight per lag."
         )
-    return lag_weights
+    total = float(np.sum(lag_weights))
+    if not np.all(np.isfinite(lag_weights)) or total == 0.0:
+        raise ValueError("weights must be finite and must not sum to 0.")
+    return lag_weights / total
 
 
 def _numeric_seasonal_weights(

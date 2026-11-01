@@ -131,6 +131,55 @@ def test_nns_arma_matches_r(
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("method", ["lin", "nonlin", "both"])
+@pytest.mark.parametrize(
+    ("seasonal_factor", "weights"),
+    [([6, 12], [1.0, 1.0]), ([6, 12], [3.0, 1.0]), (12, [0.5]), ([6, 12], "equal")],
+)
+def test_nns_arma_weights_are_relative_and_applied_once_like_r(
+    method: str, seasonal_factor: Any, weights: Any
+) -> None:
+    # R fix 06ec89a: weights are applied once, rescaled to sum to 1, and "equal" is
+    # accepted with numeric seasonal factors (c(1, 1) used to give 4x the forecast).
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0) + 0.05 * np.arange(1, 73)
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        3,
+        None,
+        seasonal_factor,
+        weights,
+        1,
+        None,
+        True,
+        False,
+        method,
+        False,
+        False,
+        False,
+        False,
+        None,
+    )
+    actual = nns_arma(
+        variable,
+        h=3,
+        seasonal_factor=seasonal_factor,
+        method=method,
+        weights=weights if isinstance(weights, str) else np.asarray(weights),
+    )
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+
+
+def test_nns_arma_rejects_bad_weights() -> None:
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    with pytest.raises(ValueError, match="one weight per lag"):
+        nns_arma(variable, h=2, seasonal_factor=[6, 12], weights=np.array([1.0]))
+    with pytest.raises(ValueError, match="must not sum to 0"):
+        nns_arma(variable, h=2, seasonal_factor=[6, 12], weights=np.array([1.0, -1.0]))
+
+
+@pytest.mark.parity
 def test_nns_arma_dynamic_means_matches_r() -> None:
     variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
 
