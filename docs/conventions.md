@@ -7,7 +7,10 @@ acceleration through `nns._nnscore` where available. Source builds use
 `scikit-build-core` and `nanobind` to compile the extension; published wheels
 should be preferred when available. Public APIs keep Python implementations and
 explicit fallback behavior, so native code remains a deliberate,
-benchmark-backed implementation detail rather than a public API.
+benchmark-backed implementation detail rather than a public API. Setting the
+environment variable `NNS_DISABLE_NATIVE=1` before importing `nns` forces the
+NumPy fallbacks, as when the extension is not built; CI runs the invariant and
+cached parity tests that way too.
 
 ## Threads
 

@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import inspect
 import numbers
+import os
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -13,7 +14,15 @@ from typing import Any, ParamSpec, TypeVar
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
-_NNSCORE_SPEC = importlib.util.find_spec("nns._nnscore")
+# NNS_DISABLE_NATIVE=1 (or true/yes/on) forces the pure-Python/NumPy fallbacks,
+# exactly as when the extension is not built (for testing them, CORE-17).
+_NATIVE_DISABLED = os.environ.get("NNS_DISABLE_NATIVE", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_NNSCORE_SPEC = None if _NATIVE_DISABLED else importlib.util.find_spec("nns._nnscore")
 
 try:
     _nnscore = importlib.import_module("nns._nnscore") if _NNSCORE_SPEC is not None else None
