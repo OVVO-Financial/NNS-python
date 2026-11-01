@@ -1,4 +1,4 @@
-From 352c0667cf0df29516d500c07cb099139e0ea439 Mon Sep 17 00:00:00 2001
+From 115129d7b00cb281f01618970d9358f0ee5224c9 Mon Sep 17 00:00:00 2001
 From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 23:32:14 +0000
 Subject: [PATCH 2/7] partial_moments: stop() on negative or NaN degrees
@@ -29,10 +29,10 @@ wrong number.
  3 files changed, 31 insertions(+)
 
 diff --git a/src/partial_moments.cpp b/src/partial_moments.cpp
-index 7b4ea09..47a5780 100644
+index 5c3a50c..ff32f06 100644
 --- a/src/partial_moments.cpp
 +++ b/src/partial_moments.cpp
-@@ -442,6 +442,7 @@ NumericVector CoLPM_nD_batch_RCPP(const NumericMatrix& data,
+@@ -448,6 +448,7 @@ NumericVector CoLPM_nD_batch_RCPP(const NumericMatrix& data,
                                    const NumericMatrix& targets,
                                    double degree = 0.0,
                                    bool norm = true) {
@@ -40,7 +40,7 @@ index 7b4ea09..47a5780 100644
    if (data.ncol() != targets.ncol()) {
      stop("`targets` must have the same number of columns as `data`");
    }
-@@ -921,6 +922,8 @@ List PMMatrix_CPv(
+@@ -927,6 +928,8 @@ List PMMatrix_CPv(
      const bool &pop_adj,
      const bool &norm
  ) {
@@ -72,10 +72,10 @@ index 020502d..13b1cbf 100644
  
  // Keep very large integer degrees on the legacy full-scan path. This prevents
 diff --git a/src/partial_moments_rcpp.cpp b/src/partial_moments_rcpp.cpp
-index e8fbf54..604bc78 100644
+index 8b58804..5db2b99 100644
 --- a/src/partial_moments_rcpp.cpp
 +++ b/src/partial_moments_rcpp.cpp
-@@ -33,6 +33,7 @@ double CoLPM_nD_RCPP(const NumericMatrix &data,
+@@ -67,6 +67,7 @@ double CoLPM_nD_RCPP(const NumericMatrix &data,
                       const NumericVector &target,
                       const double &degree,
                       const bool &norm ) {
@@ -83,7 +83,7 @@ index e8fbf54..604bc78 100644
    return clpm_nD_cpp(data, target, degree, norm);
  }
  
-@@ -41,6 +42,7 @@ double CoUPM_nD_RCPP(const NumericMatrix &data,
+@@ -75,6 +76,7 @@ double CoUPM_nD_RCPP(const NumericMatrix &data,
                       const NumericVector &target,
                       const double &degree,
                       const bool &norm ) {
@@ -91,7 +91,7 @@ index e8fbf54..604bc78 100644
    return cupm_nD_cpp(data, target, degree, norm);
  }
  
-@@ -49,6 +51,7 @@ double DPM_nD_RCPP(const NumericMatrix &data,
+@@ -83,6 +85,7 @@ double DPM_nD_RCPP(const NumericMatrix &data,
                       const NumericVector &target,
                       const double &degree,
                       const bool &norm ) {
@@ -99,23 +99,23 @@ index e8fbf54..604bc78 100644
    return dpm_nD_cpp(data, target, degree, norm);
  } 
  
-@@ -59,6 +62,7 @@ NumericVector LPM_RCPP(const double &degree,
+@@ -93,6 +96,7 @@ NumericVector LPM_RCPP(const double &degree,
                         const RObject &target,
                         const RObject &variable,
                         const bool &excess_ret) {
 +  nns_check_degree(degree, "degree");
    NumericVector variable_vec = as<NumericVector>(clone(variable));
    NumericVector target_vec;
-   if (is<NumericVector>(target) && !target.isNULL()) {
-@@ -94,6 +98,7 @@ NumericVector UPM_RCPP(const double &degree,
+   if (is_supplied_target(target)) {
+@@ -130,6 +134,7 @@ NumericVector UPM_RCPP(const double &degree,
                         const RObject &target,
                         const RObject &variable,
                         const bool &excess_ret) {
 +  nns_check_degree(degree, "degree");
    NumericVector variable_vec = as<NumericVector>(clone(variable));
    NumericVector target_vec;
-   if (is<NumericVector>(target) && !target.isNULL()) {
-@@ -149,6 +154,7 @@ NumericVector UPM_RCPP(const double &degree,
+   if (is_supplied_target(target)) {
+@@ -187,6 +192,7 @@ NumericVector UPM_RCPP(const double &degree,
  //' @export
  // [[Rcpp::export("LPM.ratio", rng = false)]]
   NumericVector LPM_ratio_RCPP(const double &degree, const RObject &target, const RObject &variable) {
@@ -123,7 +123,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_vec, variable_vec;
     if (is<NumericVector>(variable))
       variable_vec=as<NumericVector>(variable);
-@@ -190,6 +196,7 @@ NumericVector UPM_RCPP(const double &degree,
+@@ -233,6 +239,7 @@ NumericVector UPM_RCPP(const double &degree,
  //' @export
  // [[Rcpp::export("UPM.ratio", rng = false)]]
   NumericVector UPM_ratio_RCPP(const double &degree, const RObject &target, const RObject &variable) {
@@ -131,7 +131,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_vec, variable_vec;
     if (is<NumericVector>(variable))
       variable_vec=as<NumericVector>(variable);
-@@ -217,6 +224,8 @@ NumericVector CoLPM_RCPP(
+@@ -263,6 +270,8 @@ NumericVector CoLPM_RCPP(
       const RObject &target_x, const RObject &target_y,
       const double &degree_y
   ) {
@@ -140,7 +140,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_x_vec, target_y_vec, x_vec, y_vec;
     if (is<NumericVector>(x))    x_vec=as<NumericVector>(x);
     else if (is<IntegerVector>(x))	x_vec=as<NumericVector>(x);
-@@ -252,6 +261,8 @@ NumericVector CoUPM_RCPP(
+@@ -302,6 +311,8 @@ NumericVector CoUPM_RCPP(
       const RObject &target_x, const RObject &target_y,
       const double &degree_y
   ) {
@@ -149,7 +149,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_x_vec, target_y_vec, x_vec, y_vec;
     if (is<NumericVector>(x))    x_vec=as<NumericVector>(x);
     else if (is<IntegerVector>(x))	x_vec=as<NumericVector>(x);
-@@ -305,6 +316,8 @@ NumericVector CoUPM_RCPP(
+@@ -359,6 +370,8 @@ NumericVector CoUPM_RCPP(
       const RObject &x, const RObject &y, 
       const RObject &target_x, const RObject &target_y
   ) {
@@ -158,7 +158,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_x_vec, target_y_vec, x_vec, y_vec;
     if (is<NumericVector>(x))    x_vec=as<NumericVector>(x);
     else if (is<IntegerVector>(x))	x_vec=as<NumericVector>(x);
-@@ -358,6 +371,8 @@ NumericVector CoUPM_RCPP(
+@@ -416,6 +429,8 @@ NumericVector CoUPM_RCPP(
       const RObject &x, const RObject &y, 
       const RObject &target_x, const RObject &target_y
   ) {
@@ -167,7 +167,7 @@ index e8fbf54..604bc78 100644
     NumericVector target_x_vec, target_y_vec, x_vec, y_vec;
     if (is<NumericVector>(x))    x_vec=as<NumericVector>(x);
     else if (is<IntegerVector>(x))	x_vec=as<NumericVector>(x);
-@@ -396,6 +411,8 @@ NumericVector CoUPM_RCPP(
+@@ -458,6 +473,8 @@ NumericVector CoUPM_RCPP(
       const bool pop_adj,
       const bool norm
   ) {

@@ -8,8 +8,8 @@ the folder can be dropped once the PRs land.
 | `findings/{PM,DEP,REG,STK,TS,SDA,CORE,X}.md` | 177 findings (bug, evidence, which side is right, proposed fix), one file per area |
 | `findings/REVIEW.md` | Independent review of the branch diff after the fixes |
 | `R_PROPOSALS.md` | Method questions for the R author (no behaviour changed for these) |
-| `r-patches/r-bugs/*.patch` | 61 R-level fixes for OVVO-Financial/NNS (`git am` on NNS-Beta-Version @ 82a92eb) |
-| `r-patches/cpp-core-bugs/*.patch` | 7 C++ fixes for the same repo (apply after r-bugs) |
+| `r-patches/r-bugs/*.patch` | 61 R-level fixes for OVVO-Financial/NNS: `git am --keep-cr` on NNS-Beta-Version @ 82a92eb (the R sources use CRLF) |
+| `r-patches/cpp-core-bugs/*.patch` | 7 C++ fixes, based on r-bugs: apply after it with `git am --keep-cr`; the result equals the tested fixed-R build |
 | `repro/` | Repro and A/B scripts referenced by the findings (`work/<GROUP>/...` paths) |
 | `journal.md` | Append-only log of what was examined, decided and committed |
 
