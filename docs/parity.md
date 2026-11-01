@@ -109,9 +109,9 @@ host with R.
 
 ## Cache provenance: R 13.3 + patches
 
-The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus a
-local series of R bug fixes (the local branch `fix/combined`; the patch files
-are to be submitted upstream), not from the unpatched 13.3 release. Every shard
+The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus
+the fixes in OVVO-Financial/NNS pull requests #73-#92, not from the unpatched
+13.3 release. Every shard
 was rebuilt from that R build with the full test suite; shards for functions the
 patches do not touch came out unchanged. Where Python has not mirrored one of
 those fixes yet, the parity tests that depend on it are marked xfail until it is.
