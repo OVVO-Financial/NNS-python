@@ -9,7 +9,9 @@ R/Multivariate_Regression.R at the NNS 13.1 Beta repair revision):
   (batch-independent predictions),
 - restricted automatic classification (factor/character/logical or exact
   binary 0/1 responses only),
-- predictive ``R2 = 1 - SSE/SST``,
+- R's data-frame input rules: column names kept and [point.est] matched by
+  name, categorical columns coded in their declared level order,
+- bounded Racine-Hastie ``R2`` (squared correlation of fitted and actual),
 - ``order = "max"`` with fitted values and predictions from the same rule,
 - one prediction-interval row per point (quantile type 8 residual bands),
 - strict argument validation mirroring the R messages.
@@ -28,6 +30,21 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._labels import (
+    Columns,
+    as_float,
+    codes_for,
+    declared_codes,
+    declared_levels,
+    is_text,
+    level_keys,
+    match_columns,
+    point_codes,
+    r_make_unique,
+    resolve_factor_levels,
+    response_values,
+    split_columns,
+)
 from nns._rmean import r_mean
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
@@ -113,16 +130,24 @@ def _validate_ci(confidence_interval: Any) -> float | None:
 # Response / task resolution (.nns_reg_response_vector / .nns_reg_type)
 # --------------------------------------------------------------------------
 
-def _response_vector(y: Any) -> NDArray[Any]:
-    values = np.asarray(y)
-    if values.ndim == 2 and values.shape[1] == 1:
-        values = values[:, 0]
-    if values.ndim != 1:
-        raise ValueError("[y] must be a vector or one-column object.")
-    return values
+def _response_vector(y: Any) -> tuple[NDArray[Any], list[Any] | None]:
+    """R ``.nns_reg_response_vector``: the values plus any declared categories."""
+    return response_values(y, "[y] must be a vector or one-column object.")
 
 
-def _task(type_value: str | None, y: NDArray[Any]) -> dict[str, Any]:
+def _task(
+    type_value: str | None,
+    y: NDArray[Any],
+    categories: list[Any] | None = None,
+    class_levels: Any = None,
+) -> dict[str, Any]:
+    """R ``.nns_reg_type``.
+
+    A factor response (pandas categorical, or explicit ``class_levels``) is
+    coded in its declared level order; a character response in sorted order
+    (R ``factor(y)``); everything else is numeric. An object array of numbers
+    (``df.to_numpy()`` of a mixed frame) is numeric, not a set of labels.
+    """
     if type_value is not None:
         if not isinstance(type_value, str):
             raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
@@ -130,39 +155,49 @@ def _task(type_value: str | None, y: NDArray[Any]) -> dict[str, Any]:
         if type_value not in {"class", "xonly"}:
             raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
 
-    categorical = y.dtype.kind in {"U", "S", "O", "b"}
-    if categorical:
+    declared = class_levels if class_levels is not None else categories
+    what = "class_levels" if class_levels is not None else "y categories"
+    if declared is not None:
+        levels = declared_levels(declared, what)
+        y_numeric, _, unknown = declared_codes(y, levels, "[y] contains missing values.")
+        if unknown:
+            raise ValueError(
+                f"[y] contains values absent from {what}: " + ", ".join(unknown)
+            )
+        class_values = np.unique(y_numeric)
+        class_levels_out: list[str] | None = levels
         auto_class = True
+    elif y.dtype.kind == "b":
+        auto_class = True
+        y_numeric = y.astype(np.float64)
+        class_values = np.unique(y_numeric)
+        class_levels_out = [str(v) for v in class_values]
+    elif is_text(y):
+        auto_class = True
+        keys = level_keys(y, "[y] contains missing values.")
+        levels = sorted(set(keys))
+        y_numeric = codes_for(keys, levels)
+        class_values = np.unique(y_numeric)
+        class_levels_out = levels
     else:
-        numeric = y.astype(np.float64)
-        unique = np.unique(numeric)
+        y_numeric = as_float(y)
+        unique = np.unique(y_numeric)
         auto_class = unique.size == 2 and set(unique.tolist()) == {0.0, 1.0}
+        class_values = None
+        class_levels_out = None
 
     is_class = type_value == "class" or (type_value is None and auto_class)
     is_xonly = type_value == "xonly"
-
-    if y.dtype.kind == "b":
-        y_numeric = y.astype(np.float64)
+    if class_values is None and is_class:
         class_values = np.unique(y_numeric)
-        class_levels = [str(v) for v in class_values]
-    elif categorical:
-        as_str = np.asarray([str(v) for v in y.tolist()])
-        levels = sorted(set(as_str.tolist()))
-        codes = np.asarray([levels.index(v) + 1 for v in as_str], dtype=np.float64)
-        y_numeric = codes
-        class_values = np.unique(codes)
-        class_levels = levels
-    else:
-        y_numeric = y.astype(np.float64)
-        class_values = np.unique(y_numeric) if is_class else None
-        class_levels = [str(v) for v in class_values] if is_class else None
+        class_levels_out = [str(v) for v in class_values]
 
     return {
         "is_class": is_class,
         "is_xonly": is_xonly,
         "y": y_numeric,
         "class_values": class_values,
-        "class_levels": class_levels,
+        "class_levels": class_levels_out,
     }
 
 
@@ -170,15 +205,31 @@ def _task(type_value: str | None, y: NDArray[Any]) -> dict[str, Any]:
 # Predictor encoding (.nns_reg_encode_predictors, numeric/object columns)
 # --------------------------------------------------------------------------
 
-def _as_train_matrix(x: Any) -> NDArray[Any]:
-    values = np.asarray(x)
-    if values.ndim == 0:
+def _train_columns(x: Any) -> Columns:
+    if np.ndim(x) == 0:
         raise ValueError("[x] must contain at least one predictor.")
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    if values.ndim != 2:
+    if np.ndim(x) > 2:
         raise ValueError("[x] must be a vector, matrix, or data frame.")
-    return values
+    cols = split_columns(x)
+    if not cols.values:
+        raise ValueError("[x] must contain at least one predictor.")
+    return cols
+
+
+def _raw_column_names(cols: Columns) -> list[str]:
+    """R ``.nns_reg_as_frame`` names (``check.names = FALSE``, ``make.unique``).
+
+    These are the names [point.est] columns are matched against.
+    """
+    p = len(cols.values)
+    if cols.labels is not None:
+        names = list(cols.labels)
+    elif cols.vector:
+        names = ["x"]
+    else:
+        names = [f"V{j + 1}" for j in range(p)]
+    names = [nm if nm != "" else f"x{j + 1}" for j, nm in enumerate(names)]
+    return r_make_unique(names, ".")
 
 
 def _make_names(labels: list[str]) -> list[str]:
@@ -229,83 +280,132 @@ def _input_column_names(x: Any, ncol: int) -> list[str]:
     return _make_names(names)
 
 
-def _prepare_points(point_est: Any, p: int) -> NDArray[Any] | None:
+def _prepare_points(point_est: Any, train_names: list[str]) -> list[NDArray[Any]] | None:
+    """R ``.nns_reg_prepare_points``: [point.est] columns in training order.
+
+    Labelled columns (a data frame, or a named row such as ``df.iloc[0]``) are
+    matched to the training predictors by name: the same names are reordered,
+    names disjoint from the training names are taken positionally, and a
+    partial overlap is an error. A single predictor is always positional.
+    """
     if point_est is None:
         return None
-    values = np.asarray(point_est)
-    if values.ndim == 0:
-        values = values.reshape(1, 1)
-    if values.ndim == 1:
+    p = len(train_names)
+    cols = split_columns(point_est)
+    if cols.vector:
+        values = cols.values[0]
         if p == 1:
-            values = values.reshape(-1, 1)
-        elif values.size == p:
-            values = values.reshape(1, -1)
-        else:
+            return [values]
+        if values.size != p:
             raise ValueError(f"A vector [point.est] must have exactly {p} values.")
-    if values.ndim != 2 or values.shape[1] != p:
+        row = [values[j : j + 1] for j in range(p)]
+        supplied = cols.row_labels
+        if supplied is not None and all(nm != "" for nm in supplied):
+            ordering = match_columns(r_make_unique(supplied, "."), train_names, "point.est")
+            if ordering is not None:
+                row = [row[j] for j in ordering]
+        return row
+    if len(cols.values) != p:
         raise ValueError(f"[point.est] must contain exactly {p} predictor columns.")
-    return values
+    out = list(cols.values)
+    supplied = cols.labels
+    if p > 1 and supplied is not None and all(nm != "" for nm in supplied):
+        ordering = match_columns(r_make_unique(supplied, "."), train_names, "point.est")
+        if ordering is not None:
+            out = [out[j] for j in ordering]
+    return out
 
 
 def _encode_predictors(
     x: Any,
     point_est: Any,
     factor_2_dummy: bool,
+    factor_levels: Any = None,
 ) -> dict[str, Any]:
-    train = _as_train_matrix(x)
-    points = _prepare_points(point_est, train.shape[1])
-    column_names = _input_column_names(x, train.shape[1])
+    """R ``.nns_reg_encode_predictors``.
+
+    A column is categorical when it is a pandas categorical, has declared
+    ``factor_levels``, or holds labels (strings, including numeric-looking
+    strings). Levels are the declared levels in their order; undeclared label
+    columns use sorted levels. (R uses first-appearance order for character
+    columns, which makes its fit depend on the row order; the sorted order is
+    R's ``factor()`` order.) Missing values in a categorical column are an
+    error, as in R. bool columns stay numeric 0/1.
+    """
+    cols = _train_columns(x)
+    p = len(cols.values)
+    raw_names = _raw_column_names(cols)
+    points = _prepare_points(point_est, raw_names)
+    column_names = _input_column_names(x, p)
+    declared = resolve_factor_levels(factor_levels, raw_names, cols.labels)
+
+    n = cols.values[0].shape[0]
+    if any(z.shape[0] != n for z in cols.values):
+        raise ValueError("[x] columns must all have the same length.")
 
     train_parts: list[NDArray[np.float64]] = []
     point_parts: list[NDArray[np.float64]] | None = None if points is None else []
     metadata: list[dict[str, Any]] = []
     encoded_names: list[str] = []
 
-    for j in range(train.shape[1]):
+    for j in range(p):
         nm = column_names[j]
-        z = train[:, j]
-        zp = None if points is None else points[:, j]
-        categorical = z.dtype.kind in {"U", "S", "O", "b"} and not _numeric_like(z)
+        raw = raw_names[j]
+        z = cols.values[j]
+        zp = None if points is None else points[j]
+        level_decl = declared[j] if declared[j] is not None else cols.categories[j]
+        categorical = level_decl is not None or is_text(z)
 
         if categorical:
-            values_train = np.asarray([str(v) for v in z.tolist()])
-            levels = sorted(set(values_train.tolist()))
+            missing = f"Predictor '{raw}' contains missing values."
+            by_code = False
+            if level_decl is None:
+                keys_train = level_keys(z, missing)
+                levels = sorted(set(keys_train))
+                codes_train = codes_for(keys_train, levels)
+            else:
+                levels = declared_levels(level_decl, f"factor_levels for '{raw}'")
+                codes_train, by_code, absent = declared_codes(z, levels, missing)
+                if absent:
+                    raise ValueError(
+                        f"Predictor '{raw}' contains values absent from its levels: "
+                        + ", ".join(absent)
+                    )
+            codes_point = None
             if zp is not None:
-                values_point = np.asarray([str(v) for v in zp.tolist()])
-                unseen = sorted(set(values_point.tolist()) - set(levels))
+                codes_point, unseen = point_codes(
+                    zp, levels, by_code,
+                    f"[point.est] predictor '{raw}' contains missing values.",
+                )
                 if unseen:
                     raise ValueError(
                         f"[point.est] predictor {j + 1} contains unseen level(s): "
                         + ", ".join(unseen)
                     )
             if factor_2_dummy:
-                tr = np.column_stack(
-                    [(values_train == level).astype(np.float64) for level in levels]
+                train_parts.append(
+                    np.column_stack(
+                        [(codes_train == k + 1).astype(np.float64) for k in range(len(levels))]
+                    )
                 )
-                train_parts.append(tr)
                 encoded_names.extend(
                     f"{nm}_{sanitized}" for sanitized in _make_names(list(levels))
                 )
-                if zp is not None and point_parts is not None:
-                    pt = np.column_stack(
-                        [(values_point == level).astype(np.float64) for level in levels]
+                if codes_point is not None and point_parts is not None:
+                    point_parts.append(
+                        np.column_stack(
+                            [(codes_point == k + 1).astype(np.float64)
+                             for k in range(len(levels))]
+                        )
                     )
-                    point_parts.append(pt)
             else:
-                codes = np.asarray(
-                    [levels.index(v) + 1 for v in values_train.tolist()], dtype=np.float64
-                ).reshape(-1, 1)
-                train_parts.append(codes)
+                train_parts.append(codes_train.reshape(-1, 1))
                 encoded_names.append(nm)
-                if zp is not None and point_parts is not None:
-                    pcodes = np.asarray(
-                        [levels.index(v) + 1 for v in values_point.tolist()],
-                        dtype=np.float64,
-                    ).reshape(-1, 1)
-                    point_parts.append(pcodes)
+                if codes_point is not None and point_parts is not None:
+                    point_parts.append(codes_point.reshape(-1, 1))
             metadata.append({"categorical": True, "levels": levels})
         else:
-            tr = np.asarray(z, dtype=np.float64).reshape(-1, 1)
+            tr = as_float(z).reshape(-1, 1)
             if not np.all(np.isfinite(tr)):
                 raise ValueError(
                     f"Predictor {j + 1} must contain only finite numeric values."
@@ -313,7 +413,7 @@ def _encode_predictors(
             train_parts.append(tr)
             encoded_names.append(nm)
             if zp is not None and point_parts is not None:
-                pt = np.asarray(zp, dtype=np.float64).reshape(-1, 1)
+                pt = as_float(zp).reshape(-1, 1)
                 if not np.all(np.isfinite(pt)):
                     raise ValueError(
                         f"[point.est] predictor {j + 1} must contain only finite numeric values."
@@ -329,16 +429,6 @@ def _encode_predictors(
         "metadata": metadata,
         "encoded_names": encoded_names,
     }
-
-
-def _numeric_like(z: NDArray[Any]) -> bool:
-    if z.dtype.kind in {"f", "i", "u"}:
-        return True
-    try:
-        np.asarray(z, dtype=np.float64)
-    except (TypeError, ValueError):
-        return False
-    return True
 
 
 # --------------------------------------------------------------------------
@@ -1494,7 +1584,16 @@ def nns_reg_engine(
     dist: str | None = None,
     point_only: bool = False,
     multivariate_call: bool = False,
+    class_levels: Any = None,
+    factor_levels: Any = None,
+    multivariate_only: bool = False,
 ) -> dict[str, Any]:
+    """Port of R ``NNS.reg`` (and, with ``multivariate_only``, ``NNS.M.reg``).
+
+    ``class_levels`` declares the response levels (codes ``1..K`` in that
+    order, as for an R factor) and implies classification; ``factor_levels``
+    declares predictor levels (see :func:`nns._labels.resolve_factor_levels`).
+    """
     factor_2_dummy = _scalar_logical(factor_2_dummy, "factor.2.dummy")
     smooth = _scalar_logical(smooth, "smooth")
     point_only = _scalar_logical(point_only, "point.only")
@@ -1505,21 +1604,23 @@ def nns_reg_engine(
     noise_reduction = _validate_noise(noise_reduction)
     confidence_interval = _validate_ci(confidence_interval)
 
-    y_raw = _response_vector(y)
+    y_raw, y_categories = _response_vector(y)
     if y_raw.size < 2:
         raise ValueError("[y] must contain at least two observations.")
-    task = _task(type, y_raw)
+    task = _task(type, y_raw, y_categories, class_levels)
     y_numeric = cast(NDArray[np.float64], task["y"])
     if not np.all(np.isfinite(y_numeric)):
         raise ValueError("[y] must contain finite values.")
 
-    encoded = _encode_predictors(x, point_est, factor_2_dummy)
+    encoded = _encode_predictors(x, point_est, factor_2_dummy, factor_levels)
     ex = cast(NDArray[np.float64], encoded["x"])
     ep = cast(NDArray[np.float64] | None, encoded["point_est"])
     if ex.shape[0] != y_numeric.size:
         raise ValueError(
             f"[x] has {ex.shape[0]} rows but [y] has {y_numeric.size} values."
         )
+    if multivariate_only and ex.shape[1] < 2:
+        raise ValueError("NNS.M.reg requires at least two encoded predictors.")
     if task["is_xonly"] and ex.shape[1] != 1:
         raise ValueError("[type = 'XONLY'] is only valid for a single encoded predictor.")
 

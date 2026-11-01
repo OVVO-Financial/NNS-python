@@ -197,13 +197,21 @@ def nns_reg(
 ) -> Any:
     """Repaired NNS.reg port with the original bounded Racine-Hastie R2.
 
-    Plotting arguments and the legacy class_levels/factor_levels emulation
-    parameters are accepted for API compatibility and ignored.
+    pandas inputs keep their column names and types: [point_est] columns are
+    matched to the training columns by name (reordered when the names are the
+    same set, positional when they share none, an error otherwise), string and
+    categorical columns are factors, and a pandas categorical response or
+    predictor is coded in its declared category order. ``class_levels`` gives
+    the response levels explicitly (codes ``1..K`` in that order; it implies
+    classification) and ``factor_levels`` the predictor levels: a mapping from
+    column name to levels, one entry per column (``None`` for numeric
+    columns), or a flat level list for a single predictor. Plotting arguments
+    are handled by the public wrapper; ``return_values`` and ``ncores`` are
+    accepted for API compatibility and ignored.
     """
     from nns._reg_engine import nns_reg_engine
 
     del return_values, plot, plot_regions, residual_plot, ncores
-    del class_levels, factor_levels
     return nns_reg_engine(
         x,
         y,
@@ -221,6 +229,8 @@ def nns_reg(
         dist=dist,
         point_only=point_only,
         multivariate_call=multivariate_call,
+        class_levels=class_levels,
+        factor_levels=factor_levels,
     )
 
 

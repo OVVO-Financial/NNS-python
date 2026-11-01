@@ -740,6 +740,8 @@ def test_nns_reg_factor_levels_return_numeric_codes() -> None:
         class_levels=levels,
     )
 
+    # The R reference is fitted on the codes; the port maps them to the labels.
+    assert actual["class.levels"] == levels
     _assert_reg_matches(actual, expected)
 
 
@@ -769,6 +771,8 @@ def test_nns_reg_factor_levels_class_confidence_interval_matches_r() -> None:
         class_levels=levels,
     )
 
+    # The R reference is fitted on the codes; the port maps them to the labels.
+    assert actual["class.levels"] == levels
     _assert_reg_matches(actual, expected)
 
 
