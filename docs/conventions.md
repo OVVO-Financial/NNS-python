@@ -573,7 +573,9 @@ rounds results to `digits`, matching R's default output convention.
 "overall")` path and returns the mean fitted gradient from unsmoothed
 `nns_reg`. Numeric `dy_dx` evaluation points use R's finite-difference grid
 around smooth `nns_reg` point estimates, stepping by
-`gravity(|diff(x)|) * h` for each bandwidth `h` in R's `h_s`, and return a
+`gravity(diff(sort(unique(x)))) * h` for each bandwidth `h` in R's `h_s` (the
+spacing of the sorted values, as in the patched R, so row order does not matter),
+and return a
 table-like dictionary with `eval.point`, `first.derivative`, and
 `second.derivative`. At `min(x)` or `max(x)` the first derivative is R's
 one-sided slope and the second derivative is NaN. As in R, bandwidths that
