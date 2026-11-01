@@ -312,3 +312,11 @@ Key paths
 - Final: cache-only 2808 passed; NNS_DISABLE_NATIVE 2650 passed; ruff/mypy clean. Pushed.
 - audit/ folder committed to NNS-python (findings incl. REVIEW.md, R_PROPOSALS, journal, 68 R patches, repro scripts);
   excluded from sdist and ruff.
+
+## 2026-11-01 08:16 UTC  Wrap-up
+- R patches: cpp-core-bugs re-exported rebased on r-bugs; both series apply in order with git am --keep-cr and reproduce
+  fix/combined exactly (68 commits). Patch files marked -text in audit/r-patches/.gitattributes.
+- Report republished (version 2): https://claude.ai/artifact/JgQLrMULk3zxwxjVjQa5YF ; copy at audit/report.html.
+- Final branch state: NNS-python 135+ commits pushed (12 PR groups), NNS-core 22 pushed, R 68 patches.
+- Open: DEP-06, DEP-19, DEP-21, TS-10 (design/docs) + REVIEW #3-#5 + R_PROPOSALS decisions. Push access to OVVO-Financial/NNS needed
+  to open the R PR.
