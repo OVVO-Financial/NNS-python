@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -389,9 +390,7 @@ def nns_arma(
     """Autoregressive NNS forecast matching R's installed NNS.ARMA behavior."""
     del seasonal_plot  # R plotting side effect; NNS Python returns data instead.
 
-    horizon = int(h)
-    if horizon < 1:
-        raise ValueError("h must be a positive integer.")
+    horizon = _arma_horizon(h)
     values = _as_variable(variable)
     if seasonal_factor is None:
         # R: !is.numeric(NULL) with a non-NULL best.periods turns seasonal.factor into FALSE.
@@ -765,6 +764,21 @@ def _format_r_percent(value: float) -> str:
         return "0"
     text = f"{value:.2f}".rstrip("0").rstrip(".")
     return text if text != "-0" else "0"
+
+
+def _arma_horizon(h: object) -> int:
+    """R's ``[h] must be a positive integer.`` check (R fix 8aeddb8).
+
+    ``h`` must be one finite whole number >= 1: 13.3 ran ``for (j in 1:h)``, so
+    ``h = 0`` returned one forecast and a fractional ``h`` was silently truncated
+    (as ``int(h)`` did here).
+    """
+    if isinstance(h, (bool, np.bool_)) or not isinstance(h, Real):
+        raise ValueError("[h] must be a positive integer.")
+    value = float(h)
+    if not math.isfinite(value) or value < 1 or value != round(value):
+        raise ValueError("[h] must be a positive integer.")
+    return int(value)
 
 
 def _is_numeric_seasonal(value: object) -> bool:

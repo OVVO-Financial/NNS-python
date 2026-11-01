@@ -171,6 +171,22 @@ def test_nns_arma_weights_are_relative_and_applied_once_like_r(
     np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
 
 
+@pytest.mark.parametrize("h", [0, -1, 2.5, float("nan"), float("inf"), True, "3", [2, 3]])
+def test_nns_arma_requires_a_positive_integer_h(h: object) -> None:
+    # R fix 8aeddb8: h = 0 returned one forecast, h = 2.5 was truncated to 2 and
+    # h = -1 failed with "invalid 'length' argument"; R now stops with this message.
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    with pytest.raises(ValueError, match=r"^\[h\] must be a positive integer\.$"):
+        nns_arma(variable, h=h, seasonal_factor=12)  # type: ignore[arg-type]
+
+
+def test_nns_arma_accepts_whole_number_h() -> None:
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    expected = nns_arma(variable, h=3, seasonal_factor=12)
+    for h in (3.0, np.int64(3), np.float64(3.0)):
+        np.testing.assert_array_equal(nns_arma(variable, h=h, seasonal_factor=12), expected)  # type: ignore[arg-type]
+
+
 def test_nns_arma_rejects_bad_weights() -> None:
     variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
     with pytest.raises(ValueError, match="one weight per lag"):
