@@ -1119,3 +1119,51 @@ def _assert_stack_class_structure(
         for values in actual_pred_int.values():
             assert values.shape == (point_rows,)
             assert np.all(np.isfinite(values))
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("balance", [False, True])
+def test_nns_stack_univariate_class_threshold_uses_the_deployed_fit(balance: bool) -> None:
+    # Patched R scores only the deployed univariate nns_reg fit for one predictor
+    # (the k-NN candidates it used to rank were never deployed), so the class
+    # threshold is tuned on that fit's out-of-fold predictions.
+    rng = np.random.default_rng(12)
+    x = np.round(np.concatenate([rng.normal(1.5, 0.3, 30), rng.normal(4.3, 0.5, 30),
+                                 rng.normal(5.6, 0.6, 30)]), 6)
+    y = np.repeat([1.0, 2.0, 3.0], 30)
+    test = np.array([2.1, 2.4, 4.9, 5.1])
+
+    expected = nns_stack_numeric(
+        x.reshape(-1, 1).tolist(),
+        y.tolist(),
+        test.reshape(-1, 1).tolist(),
+        cv_size=0.25,
+        folds=5,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        type="CLASS",
+        balance=balance,
+        seed=1,
+    )
+    actual = nns_stack(
+        x.reshape(-1, 1),
+        y,
+        test.reshape(-1, 1),
+        type="CLASS",
+        cv_size=0.25,
+        folds=5,
+        method=(1,),
+        stack=False,
+        balance=balance,
+        random_seed=1,
+    )
+
+    assert isinstance(expected, dict)
+    assert np.isnan(actual["NNS.reg.n.best"])
+    np.testing.assert_allclose(
+        actual["probability.threshold"], float(np.asarray(expected["probability.threshold"]))
+    )
+    np.testing.assert_allclose(actual["OBJfn.reg"], float(np.asarray(expected["OBJfn.reg"])))
+    np.testing.assert_array_equal(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))

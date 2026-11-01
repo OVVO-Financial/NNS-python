@@ -358,9 +358,8 @@ def test_nns_stack_factor_predictor_levels_and_names() -> None:
 
 
 def test_nns_stack_univariate_n_best_matches_r() -> None:
-    # R reports NA for n.best when the "all" candidate wins on a univariate
-    # design; now that the "all" candidate is scored with the model it deploys, a k
-    # candidate wins on this data, so compare with R either way.
+    # Patched R scores only the deployed univariate fit for one predictor, so
+    # n.best is NA.
     rs = np.random.RandomState(5)
     n = 200
     a = rs.normal(size=n)
@@ -380,6 +379,7 @@ def test_nns_stack_univariate_n_best_matches_r() -> None:
     np.testing.assert_allclose(
         float(actual["NNS.reg.n.best"]), float(_num(expected["nbest"])), equal_nan=True
     )
+    assert np.isnan(actual["NNS.reg.n.best"])
     np.testing.assert_allclose(actual["reg"], _num(expected["reg"]), atol=COMPOUND)
 
 
