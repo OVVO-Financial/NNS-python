@@ -356,6 +356,28 @@ def test_nns_stack_factor_predictor_levels_and_names() -> None:
     np.testing.assert_allclose(by_levels["stack"], actual["stack"])
 
 
+def test_nns_stack_univariate_all_n_best_is_na_like_r() -> None:
+    rs = np.random.RandomState(5)
+    n = 200
+    a = rs.normal(size=n)
+    rs.normal(size=n)
+    rs.normal(size=n)
+    y = rs.normal(size=n)
+    train = pd.DataFrame({"a": a[:160]})
+    test = pd.DataFrame({"a": a[160:]})
+    expected = nns_frame_call(
+        "labels.stack.nbest_all",
+        "r <- NNS.stack(x, y, IVs.test = te, status = FALSE, ncores = 1); "
+        "list(nbest = r$NNS.reg.n.best, reg = r$reg)",
+        {"x": _spec(train), "y": r_column(y[:160].tolist(), "numeric"), "te": _spec(test)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_stack(train, y[:160], test)
+    assert np.isnan(_num(expected["nbest"]))
+    assert np.isnan(actual["NNS.reg.n.best"])
+    np.testing.assert_allclose(actual["reg"], _num(expected["reg"]), atol=COMPOUND)
+
+
 # --------------------------------------------------------------------------
 # STK-08: nns_boost feature names
 # --------------------------------------------------------------------------
