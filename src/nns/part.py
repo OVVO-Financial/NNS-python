@@ -146,13 +146,17 @@ def nns_part(
             raise ValueError("order must be None, 'max', or a positive integer.")
         return _part_max(x_values, y_values, type, noise)
 
+    n = x_values.size
+    floor_order = math.floor(math.log2(max(1, n)))
     if order is None:
-        max_order = max(math.ceil(math.log2(max(1, x_values.size))), 1)
+        max_order = max(math.ceil(math.log2(max(1, n))), 1)
     else:
         max_order = _validate_order(order)
+    # The partition never goes deeper than floor(log2(n)) (the loop below stops
+    # there), so a larger requested order is equivalent to that depth.
+    max_order = max(1, min(max_order, floor_order))
 
     xonly = type is not None
-    n = x_values.size
 
     native_part = native_fn("nns_part_off")
     if native_part is not None and noise == "off":
@@ -166,54 +170,68 @@ def nns_part(
         )
         return _part_result_from_native(res, x_values, y_values)
 
-    floor_order = math.floor(math.log2(max(1, n)))
-    quadrants = np.full(n, "q", dtype=f"<U{max_order + 1}")
-    prior_quadrants = np.full(n, "pq", dtype=f"<U{max_order + 1}")
+    # Groups are tracked as dense integer ids whose numeric order equals the
+    # lexicographic order of their quadrant labels: the current labels are the
+    # leaves of the partition tree (prefix-free), so ordering children by
+    # (parent id, appended digit) keeps the label order.
+    group = np.zeros(n, dtype=np.intp)
+    labels = ["q"]
+    prior_group = np.full(n, -1, dtype=np.intp)  # index into prior_labels; -1 is "pq"
+    prior_labels: list[str] = []
     depth = 0
 
-    while True:
-        if depth >= max_order:
-            break
-        if depth >= floor_order:
-            break
-
-        groups, inverse, counts = np.unique(quadrants, return_inverse=True, return_counts=True)
-        split_group_ids = np.flatnonzero(counts > obs_req)
+    while depth < max_order and depth < floor_order:
+        counts = np.bincount(group, minlength=len(labels))
+        split = counts > obs_req
+        split_group_ids = np.flatnonzero(split)
         if split_group_ids.size == 0:
             break
 
         center_x, center_y = _centers_for_groups(
             x_values,
             y_values,
-            inverse,
-            groups.size,
+            group,
+            counts,
             split_group_ids,
             noise,
         )
 
-        for group_id in split_group_ids:
-            mask = inverse == group_id
-            prior_quadrants[mask] = groups[group_id]
-            cx = center_x[group_id]
-            if xonly:
-                low_x = np.isfinite(x_values[mask]) & np.isfinite(cx) & (x_values[mask] > cx)
-                digits = np.where(low_x, "2", "1")
-            else:
-                cy = center_y[group_id]
-                low_x = np.isfinite(x_values[mask]) & np.isfinite(cx) & (x_values[mask] <= cx)
-                low_y = np.isfinite(y_values[mask]) & np.isfinite(cy) & (y_values[mask] <= cy)
-                qn = 1 + low_x.astype(np.int64) + 2 * low_y.astype(np.int64)
-                digits = qn.astype(str)
-            quadrants[mask] = np.char.add(quadrants[mask], digits)
+        in_split = split[group]
+        prior_index = np.full(len(labels), -1, dtype=np.intp)
+        prior_index[split_group_ids] = len(prior_labels) + np.arange(split_group_ids.size)
+        prior_labels.extend(labels[g] for g in split_group_ids.tolist())
+        split_group = group[in_split]
+        prior_group[in_split] = prior_index[split_group]
 
+        xs = x_values[in_split]
+        cx = center_x[split_group]
+        if xonly:
+            high_x = np.isfinite(xs) & np.isfinite(cx) & (xs > cx)
+            digits = 1 + high_x.astype(np.intp)
+        else:
+            ys = y_values[in_split]
+            cy = center_y[split_group]
+            low_x = np.isfinite(xs) & np.isfinite(cx) & (xs <= cx)
+            low_y = np.isfinite(ys) & np.isfinite(cy) & (ys <= cy)
+            digits = 1 + low_x.astype(np.intp) + 2 * low_y.astype(np.intp)
+        digit = np.zeros(n, dtype=np.intp)
+        digit[in_split] = digits
+
+        keys, group = np.unique(group * 5 + digit, return_inverse=True)
+        group = group.reshape(-1)
+        labels = [
+            labels[key // 5] + (str(key % 5) if key % 5 else "") for key in keys.tolist()
+        ]
         depth += 1
 
-        if min_obs_stop:
-            _, post_counts = np.unique(quadrants, return_counts=True)
-            if int(np.min(post_counts)) <= obs_req:
-                break
+        if min_obs_stop and int(np.min(np.bincount(group))) <= obs_req:
+            break
 
-    regression_points = _regression_points(x_values, y_values, prior_quadrants, noise)
+    all_prior_labels = [*prior_labels, "pq"]
+    prior_group[prior_group < 0] = len(prior_labels)
+    regression_points = _regression_points(
+        x_values, y_values, prior_group, all_prior_labels, noise
+    )
     if _is_discrete_like_r(x_values):
         regression_points["x"] = _nearest_int_half_up_array(regression_points["x"])
 
@@ -222,8 +240,8 @@ def nns_part(
         "dt": {
             "x": x_values.copy(),
             "y": y_values.copy(),
-            "quadrant": quadrants.astype(str),
-            "prior.quadrant": prior_quadrants.astype(str),
+            "quadrant": np.asarray(labels)[group],
+            "prior.quadrant": np.asarray(all_prior_labels)[prior_group],
         },
         "regression.points": regression_points,
     }
@@ -291,49 +309,98 @@ def _part_result_from_native(
     }
 
 
+def _group_slices(group: NDArray[np.intp], counts: NDArray[np.intp]) -> tuple[
+    NDArray[np.intp], NDArray[np.intp]
+]:
+    """Stable ordering of the points by group and each group's start offset.
+
+    ``values[order[start:start + count]]`` equals ``values[group == g]`` element for
+    element (same values, same order), so per-group reductions are bit-identical
+    to the boolean-mask formulation without its O(n * groups) cost.
+    """
+    order = np.argsort(group, kind="stable")
+    starts = np.zeros(counts.size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    return order, starts
+
+
+def _group_medians(
+    values: NDArray[np.float64],
+    group: NDArray[np.intp],
+    counts: NDArray[np.intp],
+    group_ids: NDArray[np.intp],
+) -> NDArray[np.float64]:
+    """np.median of each listed group (odd: middle value; even: mean of the middle two)."""
+    order = np.lexsort((values, group))
+    sorted_values = values[order]
+    starts = np.zeros(counts.size, dtype=np.intp)
+    np.cumsum(counts[:-1], out=starts[1:])
+    m = counts[group_ids]
+    lo = starts[group_ids] + (m - 1) // 2
+    hi = starts[group_ids] + m // 2
+    with np.errstate(invalid="ignore"):
+        medians: NDArray[np.float64] = (sorted_values[lo] + sorted_values[hi]) / 2.0
+    return medians
+
+
 def _centers_for_groups(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    inverse: NDArray[np.int64],
-    n_groups: int,
-    split_group_ids: NDArray[np.int64],
+    group: NDArray[np.intp],
+    counts: NDArray[np.intp],
+    split_group_ids: NDArray[np.intp],
     noise: NoiseReduction,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    n_groups = counts.size
     center_x = np.full(n_groups, np.nan, dtype=np.float64)
     center_y = np.full(n_groups, np.nan, dtype=np.float64)
 
     if noise == "mean":
-        counts = np.bincount(inverse, minlength=n_groups).astype(np.float64)
-        center_x[:] = np.bincount(inverse, weights=x, minlength=n_groups) / counts
-        center_y[:] = np.bincount(inverse, weights=y, minlength=n_groups) / counts
+        float_counts = counts.astype(np.float64)
+        with np.errstate(invalid="ignore"):
+            center_x[:] = np.bincount(group, weights=x, minlength=n_groups) / float_counts
+            center_y[:] = np.bincount(group, weights=y, minlength=n_groups) / float_counts
         return center_x, center_y
 
-    for group_id in split_group_ids:
-        values_x = x[inverse == group_id]
-        values_y = y[inverse == group_id]
-        center_x[group_id] = _aggregate_x(values_x, noise)
-        center_y[group_id] = _aggregate_y(values_y, noise)
+    if noise == "median":
+        center_x[split_group_ids] = _group_medians(x, group, counts, split_group_ids)
+        center_y[split_group_ids] = _group_medians(y, group, counts, split_group_ids)
+        return center_x, center_y
+
+    order, starts = _group_slices(group, counts)
+    for group_id in split_group_ids.tolist():
+        idx = order[starts[group_id] : starts[group_id] + counts[group_id]]
+        center_x[group_id] = _aggregate_x(x[idx], noise)
+        center_y[group_id] = _aggregate_y(y[idx], noise)
     return center_x, center_y
 
 
 def _regression_points(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
-    prior_quadrants: NDArray[np.str_],
+    prior_group: NDArray[np.intp],
+    prior_labels: list[str],
     noise: NoiseReduction,
 ) -> RegressionPoints:
-    groups = np.unique(prior_quadrants)
-    out_x = np.empty(groups.size, dtype=np.float64)
-    out_y = np.empty(groups.size, dtype=np.float64)
-    for index, group in enumerate(groups):
-        mask = prior_quadrants == group
-        out_x[index] = _aggregate_x(x[mask], noise)
-        out_y[index] = _aggregate_y(y[mask], noise)
-    order = np.argsort(groups)
+    counts = np.bincount(prior_group, minlength=len(prior_labels))
+    present = np.flatnonzero(counts > 0)
+    if noise == "median":
+        out_x = _group_medians(x, prior_group, counts, present)
+        out_y = _group_medians(y, prior_group, counts, present)
+    else:
+        order, starts = _group_slices(prior_group, counts)
+        out_x = np.empty(present.size, dtype=np.float64)
+        out_y = np.empty(present.size, dtype=np.float64)
+        for index, group_id in enumerate(present.tolist()):
+            idx = order[starts[group_id] : starts[group_id] + counts[group_id]]
+            out_x[index] = _aggregate_x(x[idx], noise)
+            out_y[index] = _aggregate_y(y[idx], noise)
+    names = np.asarray([prior_labels[g] for g in present.tolist()])
+    label_order = np.argsort(names, kind="stable")
     return {
-        "quadrant": groups[order].astype(str),
-        "x": out_x[order],
-        "y": out_y[order],
+        "quadrant": names[label_order],
+        "x": out_x[label_order],
+        "y": out_y[label_order],
     }
 
 
