@@ -72,7 +72,18 @@ def native_threads(ncores: Any) -> Iterator[None]:
         return
     value = _integer(ncores, "ncores")
     if value < 1:
-        raise ValueError("[ncores] must be NULL or a positive integer.")
+        # Earlier releases ignored ncores, and R's univariate paths accept any value,
+        # so treat 0 / negative (e.g. scikit-style -1) as "default" with a warning.
+        import warnings
+
+        warnings.warn(
+            "ncores < 1 is treated as the default thread count; pass None instead. "
+            "This will raise in a future release.",
+            DeprecationWarning,
+            stacklevel=external_stacklevel(),
+        )
+        yield
+        return
     setter = native_fn("_set_call_threads")
     if setter is None:
         yield
