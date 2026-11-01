@@ -226,7 +226,7 @@ def _smooth_counts_tri7(counts: NDArray[np.int64]) -> NDArray[np.float64]:
     index = np.clip(index, 0, n - 1)
     weights = np.array([1, 2, 3, 4, 3, 2, 1], dtype=np.int64)
     acc = np.sum(counts[index].astype(np.int64) * weights[None, :], axis=1)
-    return acc.astype(np.float64) / 16.0
+    return np.asarray(acc, dtype=np.float64) / 16.0
 
 
 def _peak_indices(smoothed: NDArray[np.float64]) -> NDArray[np.int64]:
