@@ -429,13 +429,6 @@ def nns_arma(
         )
 
     estimates = np.zeros(horizon, dtype=np.float64)
-    if not _is_numeric_seasonal(seasonal_factor) and np.ptp(values) == 0.0:
-        return _finish(_with_prediction_intervals(
-            estimates,
-            lin_residual=0.0,
-            pred_int=pred_int,
-            random_seed=random_seed,
-        ))
     lags, lag_weights = _resolve_lags_and_weights(
         values,
         seasonal_factor=seasonal_factor,
@@ -863,13 +856,19 @@ def _numeric_seasonal_weights(
         # relative 0 -> 1/relative = Inf -> Inf/Inf = NaN in the normalisation below,
         # poisoning the forecast. Floor relative so that (maximally seasonal) lag gets a
         # large but finite weight. A fully constant series (baseline CV 0 -> relative
-        # NaN) is intentionally left to propagate NaN, matching the R reference.
+        # NaN) is handled after the normalisation.
         floor = np.finfo(np.float64).eps
         seasonal_weighting = 1.0 / np.maximum(relative, floor)
 
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
     denom = float(np.sum(observation_weighting * seasonal_weighting))
-    return (seasonal_weighting * observation_weighting) / denom
+    with np.errstate(invalid="ignore", divide="ignore"):
+        weights = (seasonal_weighting * observation_weighting) / denom
+    if not np.all(np.isfinite(weights)):
+        # A constant series has CV 0/0 for every lag: weight the lags equally instead
+        # of propagating NaN into the forecast (R fix 3b6a6cf).
+        weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+    return weights
 
 
 def _arma_seas_weighting(
@@ -889,10 +888,13 @@ def _arma_seas_weighting(
     lag_weighting = variable_coefficient[:m] - coefficient[:m]
     weights_product = lag_weighting * observation_weighting[:m]
     denom = float(np.sum(weights_product))
-    if denom == 0.0:
-        lag_weights = np.zeros(weights_product.size, dtype=np.float64)
-    else:
+    with np.errstate(invalid="ignore", divide="ignore"):
         lag_weights = weights_product / denom
+    if lag_weights.size and (np.all(lag_weights == 0.0) or not np.all(np.isfinite(lag_weights))):
+        # Every selected row has CV == VarCV (no-seasonality sentinel, modulo-added
+        # periods, a constant series): the weights are 0/0. R fix ed0a68c uses equal
+        # weights instead of zeros, which forced a forecast of 0.
+        lag_weights = np.full(m, 1.0 / float(m), dtype=np.float64)
     return lags[:m], lag_weights
 
 

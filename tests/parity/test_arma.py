@@ -179,6 +179,77 @@ def test_nns_arma_rejects_bad_weights() -> None:
         nns_arma(variable, h=2, seasonal_factor=[6, 12], weights=np.array([1.0, -1.0]))
 
 
+_WHITE_NOISE = np.round(10.0 + np.random.default_rng(11).standard_normal(120), 6)
+_TREND_SEASONAL = np.round(
+    100.0
+    + 2.0 * np.arange(1, 97, dtype=np.float64)
+    + 15.0 * np.sin(2.0 * np.pi * np.arange(1, 97, dtype=np.float64) / 12.0),
+    6,
+)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("variable", "h", "seasonal_factor", "best_periods", "modulo", "method", "dynamic"),
+    [
+        (_WHITE_NOISE, 4, True, 1, 7, "nonlin", False),
+        (_WHITE_NOISE, 4, True, 1, 5, "lin", False),
+        (np.full(60, 5.0), 3, True, 1, None, "nonlin", False),
+        (np.full(60, 5.0), 3, 12, 1, None, "nonlin", False),
+        (np.full(60, 5.0), 3, [12, 24], 1, None, "both", False),
+        (np.full(60, 5.0), 3, [12, 24], 1, None, "means", False),
+        (np.full(30, -2.0), 2, 7, 1, None, "nonlin", False),
+        (_TREND_SEASONAL, 4, False, 2, 12, "nonlin", True),
+        (_TREND_SEASONAL, 4, False, 2, None, "nonlin", True),
+        (_TREND_SEASONAL, 3, True, None, None, "nonlin", False),
+    ],
+)
+def test_nns_arma_degenerate_weights_match_r(
+    variable: np.ndarray,
+    h: int,
+    seasonal_factor: Any,
+    best_periods: int | None,
+    modulo: int | None,
+    method: str,
+    dynamic: bool,
+) -> None:
+    # R fixes ed0a68c / 3b6a6cf: all-zero seasonal weights (no-seasonality sentinel,
+    # modulo-added periods, constant series) and the NaN weights of a constant series
+    # with a numeric seasonal_factor fall back to equal weights instead of forecasting
+    # 0 or NaN; 7f941b4 / 5b82067: best period for best_periods=None and best_periods /
+    # modulo when dynamic=True (Python already did both).
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        h,
+        None,
+        seasonal_factor,
+        None,
+        best_periods,
+        modulo,
+        True,
+        False,
+        method,
+        dynamic,
+        False,
+        False,
+        False,
+        None,
+    )
+    actual = nns_arma(
+        variable,
+        h=h,
+        seasonal_factor=seasonal_factor,
+        best_periods=best_periods,
+        modulo=modulo,
+        method=method,
+        dynamic=dynamic,
+    )
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+    assert np.all(actual != 0.0)
+
+
 @pytest.mark.parity
 def test_nns_arma_dynamic_means_matches_r() -> None:
     variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
