@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.core import _as_degree, _as_targets, _is_scalar
+from nns.core import _as_degree, _as_targets, _is_scalar, _require_finite
 
 
 def co_lpm(
@@ -98,6 +98,9 @@ def _co_moment(
     # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
     x_targets = _as_targets(target_x, x_values)
     y_targets = _as_targets(target_y, y_values)
+    # As R's Co.LPM/Co.UPM/D.LPM/D.UPM: NaN would be counted in n but in no quadrant.
+    _require_finite(x_targets, "target_x")
+    _require_finite(y_targets, "target_y")
     degree_x = _as_degree(degree_x)
     degree_y = _as_degree(degree_y)
 
@@ -154,6 +157,8 @@ def _as_pair(
         raise ValueError("x and y must be 1D.")
     if x_values.size != y_values.size:
         raise ValueError("x and y must have the same length.")
+    _require_finite(x_values, "x")
+    _require_finite(y_values, "y")
     return x_values, y_values
 
 

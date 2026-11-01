@@ -1262,6 +1262,40 @@
       },
       "target.value": 0.333333333333333
     },
+    "c818bf7960f365d173a2559556df65c3bd1694fea0fb3a2ece694267823a6ae6": {
+      "Function": {
+        "CDF": [
+          0.0,
+          0.2,
+          0.6,
+          1.0
+        ],
+        "x": [
+          1.0,
+          2.0,
+          3.0,
+          5.0
+        ]
+      },
+      "target.value": 0.2
+    },
+    "d11d20319c4b95075e34cebebe6cf1d956b9f44af5d7e330b536c34e1b8607ff": {
+      "Function": {
+        "CDF": [
+          0.25,
+          0.5,
+          0.75,
+          1.0
+        ],
+        "x": [
+          1.0,
+          2.0,
+          3.0,
+          5.0
+        ]
+      },
+      "target.value": 0.5
+    },
     "dddee25db660b5cf7f704816a7311bda4c4fc1044605099cef83cfc126c7e2d9": {
       "Function": {
         "h(x)": [

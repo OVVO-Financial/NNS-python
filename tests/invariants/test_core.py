@@ -150,6 +150,17 @@ def test_numpy_fallback_cdf_does_not_allocate_an_n_by_n_matrix(
     assert peak < n * n * 8
 
 
+@pytest.mark.parametrize("function", [lpm_ratio, upm_ratio])
+def test_partial_moment_ratios_reject_non_finite_targets(function: object) -> None:
+    # R fix 41c3297: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
+    x = np.array([1.0, 2.0, 3.0])
+    for target in (np.nan, np.array([1.0, np.inf])):
+        with pytest.raises(ValueError, match="target must contain only finite values"):
+            function(1, target, x)  # type: ignore[operator]
+    with pytest.raises(ValueError, match="x must contain only finite values"):
+        function(0, 2.0, np.array([1.0, np.nan]))  # type: ignore[operator]
+
+
 def test_lpm_upm_reject_non_finite_targets_like_r() -> None:
     x = np.array([1.0, 2.0, 3.0])
     for function in (lpm, upm):

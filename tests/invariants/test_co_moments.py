@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from _tolerances import EXACT
 
-from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, upm
+from nns import co_lpm, co_upm, d_lpm, d_upm, lpm, pm_matrix, upm
 
 
 def test_co_lpm_self_equals_lpm_with_doubled_degree() -> None:
@@ -83,3 +84,26 @@ def test_co_upm_is_symmetric() -> None:
         co_upm(2, y, x, target_y, target_x),
         atol=EXACT,
     )
+
+
+def test_co_moments_and_pm_matrix_reject_non_finite_input() -> None:
+    # R fix 41c3297: Co.LPM/Co.UPM/D.LPM/D.UPM/PM.matrix stop on NA/Inf instead of
+    # counting NA observations in n (Co.LPM(0, x, x, 6, 6) was 0.8 with one NA).
+    x = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
+    finite = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    for function in (co_lpm, co_upm):
+        with pytest.raises(ValueError, match="x must contain only finite values"):
+            function(0, x, finite, 6.0, 6.0)
+        with pytest.raises(ValueError, match="y must contain only finite values"):
+            function(0, finite, x, 6.0, 6.0)
+        with pytest.raises(ValueError, match="target_x must contain only finite values"):
+            function(0, finite, finite, np.nan, 6.0)
+    for function in (d_lpm, d_upm):
+        with pytest.raises(ValueError, match="x must contain only finite values"):
+            function(1, 1, x, finite, 0.0, 0.0)
+        with pytest.raises(ValueError, match="target_y must contain only finite values"):
+            function(1, 1, finite, finite, 0.0, np.inf)
+    with pytest.raises(ValueError, match="variable must contain only finite values"):
+        pm_matrix(1, 1, None, np.column_stack([x, finite]), pop_adj=False)
+    with pytest.raises(ValueError, match="target must contain only finite values"):
+        pm_matrix(1, 1, np.nan, np.column_stack([finite, finite]), pop_adj=False)

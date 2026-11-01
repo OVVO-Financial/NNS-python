@@ -101,6 +101,8 @@ def _ratio(
     values = _as_1d_values(x)
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
+    # R's LPM.ratio/UPM.ratio reject a non-finite target as LPM() does.
+    _require_finite(targets, "target")
 
     native = native_fn("lpm_ratio_v" if lower else "upm_ratio_v")
     if native is not None and targets.size > 0 and _native_safe(values, targets):
@@ -166,6 +168,11 @@ def _as_1d_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
         # counted in n but in neither tail, so degree-0 moments stop summing to 1.
         raise ValueError("x must contain only finite values.")
     return values
+
+
+def _require_finite(values: NDArray[np.float64], name: str) -> None:
+    if not np.all(np.isfinite(values)):
+        raise ValueError(f"{name} must contain only finite values.")
 
 
 def _is_scalar(target: object) -> bool:
