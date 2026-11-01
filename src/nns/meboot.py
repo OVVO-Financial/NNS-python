@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._rmean import r_mean
 from nns.dependence import nns_dep
 
 
@@ -158,7 +159,13 @@ def _nns_meboot_one(
         recon_slope = target
     else:
         recon_slope = 0.0
-    baseline = intercept + recon_slope * time
+    keeps_drift = recon_slope == orig_drift
+    # A changed slope pivots about mean(x), so the replicates keep the level.
+    baseline = (
+        intercept + recon_slope * time
+        if keeps_drift
+        else r_mean(x) + recon_slope * (time - (n + 1) / 2.0)
+    )
 
     xx = np.sort(orig_res)
     ordxx_zero = np.argsort(orig_res, kind="stable")
@@ -193,31 +200,34 @@ def _nns_meboot_one(
 
     res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
     res_mat = _meboot_expand_sd(orig_res, res_mat, rng)
+
+    # The ME density lives on the residuals, so scale them against their own mean and sd.
+    if scl_adjustment:
+        zz = np.concatenate(([xmin], z, [xmax]))
+        v = np.diff(zz**2) / 12.0
+        xb = r_mean(orig_res)
+        s1 = float(np.sum((desintxb - xb) ** 2))
+        uv = (s1 + float(np.sum(v))) / n
+        desired_sd = _sample_sd(orig_res)
+        actual_me_sd = float(np.sqrt(uv))
+        if actual_me_sd <= 0.0:
+            raise ValueError("actualME.sd<=0 Error")
+        kappa = (desired_sd / actual_me_sd) - 1.0
+        res_mat = res_mat + kappa * (res_mat - xb)
+    else:
+        kappa = None
+
     ensemble = res_mat + baseline[:, np.newaxis]
 
     if np.array_equal(ordxx_zero[::-1], ordxx_zero) and reps > 1:
         for i in range(ensemble.shape[0]):
             ensemble[i, :] = rng.choice(ensemble[i, :], size=reps, replace=True)
 
-    if expand_sd:
+    # sd(x) includes the original drift, so expand toward it only when it is kept.
+    if expand_sd and keeps_drift:
         ensemble = _meboot_expand_sd(x, ensemble, rng)
     if force_clt and reps > 1:
-        ensemble = _force_clt(x, ensemble)
-
-    if scl_adjustment:
-        zz = np.concatenate(([xmin], z, [xmax]))
-        v = np.diff(zz**2) / 12.0
-        xb = float(np.mean(x))
-        s1 = float(np.sum((desintxb - xb) ** 2))
-        uv = (s1 + float(np.sum(v))) / n
-        desired_sd = _sample_sd(x)
-        actual_me_sd = float(np.sqrt(uv))
-        if actual_me_sd <= 0.0:
-            raise ValueError("actualME.sd<=0 Error")
-        kappa = (desired_sd / actual_me_sd) - 1.0
-        ensemble = ensemble + kappa * (ensemble - xb)
-    else:
-        kappa = None
+        ensemble = _force_clt(x if keeps_drift else baseline + orig_res, ensemble)
 
     if xmin_arg is not None:
         ensemble = np.maximum(float(xmin_arg), ensemble)
