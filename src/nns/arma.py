@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
-from nns._native import honours_ncores
+from nns._native import honours_ncores, native_fn
 from nns.co_moments import co_lpm, co_upm
 from nns.dependence import _gravity
 from nns.mc import nns_mc
@@ -477,6 +477,9 @@ def nns_arma(
     buffer[: values.size] = values
     current_len = values.size
     lin_regression_estimates = np.array([], dtype=np.float64)
+    # 1..N for the component indices: a prefix slice holds the same values as
+    # np.arange(1, m + 1) without allocating one per lag and step.
+    index_pool = np.arange(1, buffer.size + 1, dtype=np.float64)
     for index in range(horizon):
         current = buffer[:current_len]
         if dynamic:
@@ -489,9 +492,11 @@ def nns_arma(
                 mod_only=mod_only,
             )
 
-        generated = _generate_vectors(current, lags)
-        component_index = generated["Component.index"]
-        component_series = generated["Component.series"]
+        needs_components = method_l in {"nonlin", "both", "means"} or shrink
+        if needs_components:
+            generated = _generate_vectors(current, lags)
+            component_index = generated["Component.index"]
+            component_series = generated["Component.series"]
 
         nonlin_estimate = math.nan
         if method_l in {"nonlin", "both"}:
@@ -511,13 +516,7 @@ def nns_arma(
         # R also runs the linear fits for method="nonlin" when pred.int is set: the
         # interval residual lin.resid comes from them.
         if method_l in {"lin", "both", "means"} or pred_int is not None:
-            linear_estimates = np.asarray(
-                [
-                    _linear_forecast_for_lag(component_index[i], component_series[i])
-                    for i in range(lags.size)
-                ],
-                dtype=np.float64,
-            )
+            linear_estimates = _linear_forecasts(current, lags, index_pool)
             if method_l == "means" or shrink:
                 means = np.asarray(
                     [_means_forecast_for_lag(series) for series in component_series],
@@ -1029,6 +1028,35 @@ def _linear_static_numeric_forecast(
     if not negative_values:
         output = np.maximum(0.0, output)
     return output, component_estimates
+
+
+def _linear_forecasts(
+    current: NDArray[np.float64],
+    lags: NDArray[np.int64],
+    index_pool: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """``_linear_forecast_for_lag`` over every lag, without the per-lag overhead.
+
+    Same component series, same index values and the same native ``fast_lm``
+    call as ``_generate_vectors`` + ``_linear_forecast_for_lag``, so the result is
+    bit-identical; only the Python-level copies and validation are skipped. Falls
+    back to the general path when the native kernel is missing or a component is
+    empty (which raises there).
+    """
+    native_fast_lm = native_fn("fast_lm")
+    n = current.size
+    out = np.empty(lags.size, dtype=np.float64)
+    for i, lag_raw in enumerate(lags.tolist()):
+        lag = int(lag_raw)
+        series = current[n % lag :: lag] if lag > 0 else current[:0]
+        m = series.size
+        if native_fast_lm is None or m == 0:
+            index = index_pool[:m] if m else np.array([], dtype=np.float64)
+            out[i] = _linear_forecast_for_lag(index, series.astype(np.float64, copy=True))
+            continue
+        coef = native_fast_lm(index_pool[:m], np.ascontiguousarray(series))["coef"]
+        out[i] = float(coef[0]) + float(coef[1]) * (float(m) + 1.0)
+    return out
 
 
 def _linear_forecast_for_lag(
