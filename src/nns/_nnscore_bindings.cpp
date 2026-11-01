@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -555,11 +556,10 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
   return out;
 }
 
-// --- NNS.dep faithful port (nns.dependence.nns_dep) -------------------------
-// Matches numpy's pairwise summation so means/sums used as comparison
-// thresholds are bit-identical to np.mean/np.sum. Co-moments reuse the
-// verified nns:: kernels; the n-d partial moments and copula logic mirror the
-// pure-Python formulas exactly.
+// --- NumPy-faithful sums and the NNS.dep partition -------------------------
+// np_pairwise_sum matches numpy's pairwise summation, so means/sums used as
+// comparison thresholds by the copula port below are bit-identical to
+// np.mean/np.sum.
 
 double np_pairwise_sum(const double* a, std::size_t n) {
   if (n < 8U) {
@@ -588,116 +588,6 @@ double np_pairwise_sum(const double* a, std::size_t n) {
 double np_mean(const double* a, std::size_t n) { return np_pairwise_sum(a, n) / static_cast<double>(n); }
 
 double clamp01(double v) { return std::min(std::max(v, 0.0), 1.0); }
-
-std::size_t unique_count(const double* a, std::size_t n) {
-  std::vector<double> v(a, a + n);
-  std::sort(v.begin(), v.end());
-  return static_cast<std::size_t>(std::distance(v.begin(), std::unique(v.begin(), v.end())));
-}
-
-double dep_ols_sign(const double* x, const double* y, std::size_t n) {
-  if (n < 2U) return 0.0;
-  const double mx = np_mean(x, n);
-  std::vector<double> dx(n), dxy(n);
-  for (std::size_t i = 0; i < n; ++i) dx[i] = (x[i] - mx) * (x[i] - mx);
-  const double denom = np_pairwise_sum(dx.data(), n);
-  if (denom == 0.0) return 0.0;
-  const double my = np_mean(y, n);
-  for (std::size_t i = 0; i < n; ++i) dxy[i] = (x[i] - mx) * (y[i] - my);
-  const double slope = np_pairwise_sum(dxy.data(), n) / denom;
-  if (slope > 0.0) return 1.0;
-  if (slope < 0.0) return -1.0;
-  return 0.0;
-}
-
-// _dpm_nd(degree=0, norm=True) == mean(discordant)
-double nd_dpm_deg0(const double* x, const double* y, std::size_t n, double tx, double ty) {
-  std::vector<double> disc(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const double dxi = x[i] - tx, dyi = y[i] - ty;
-    const bool below = (dxi < 0.0) && (dyi < 0.0);
-    const bool above = (dxi > 0.0) && (dyi > 0.0);
-    disc[i] = (below || above) ? 0.0 : 1.0;
-  }
-  return np_mean(disc.data(), n);
-}
-
-double nd_clpm_deg1(const double* x, const double* y, std::size_t n, double tx, double ty) {
-  std::vector<double> v(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const double cdx = tx - x[i], cdy = ty - y[i];
-    v[i] = (cdx >= 0.0 && cdy >= 0.0) ? cdx * cdy : 0.0;
-  }
-  return np_mean(v.data(), n);
-}
-
-double nd_cupm_deg1(const double* x, const double* y, std::size_t n, double tx, double ty) {
-  std::vector<double> v(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const double ddx = x[i] - tx, ddy = y[i] - ty;
-    v[i] = (ddx >= 0.0 && ddy >= 0.0) ? ddx * ddy : 0.0;
-  }
-  return np_mean(v.data(), n);
-}
-
-// _dpm_nd(degree=1, norm=True)
-double nd_dpm_deg1_norm(const double* x, const double* y, std::size_t n, double tx, double ty) {
-  std::vector<double> v(n);
-  for (std::size_t i = 0; i < n; ++i) {
-    const double dxi = x[i] - tx, dyi = y[i] - ty;
-    const bool below = (dxi < 0.0) && (dyi < 0.0);
-    const bool above = (dxi > 0.0) && (dyi > 0.0);
-    const bool discordant = !(below || above);
-    v[i] = discordant ? std::abs(dxi) * std::abs(dyi) : 0.0;
-  }
-  const double dpm = np_mean(v.data(), n);
-  const double clpm = nd_clpm_deg1(x, y, n, tx, ty);
-  const double cupm = nd_cupm_deg1(x, y, n, tx, ty);
-  const double total = clpm + cupm + dpm;
-  return total > 0.0 ? dpm / total : 0.0;
-}
-
-double dep_copula_signed(const double* x, const double* y, std::size_t n) {
-  if (n < 2U) return 0.0;
-  const double tx = np_mean(x, n), ty = np_mean(y, n);
-  const double d0_cupm = nns::co_upm(0.0, 0.0, x, y, n, n, tx, ty);
-  const double d0_clpm = nns::co_lpm(0.0, 0.0, x, y, n, n, tx, ty);
-  const double d0_co = d0_cupm + d0_clpm;
-  if (d0_co == 1.0 || d0_co == 0.0) return 1.0;
-
-  double c1_cupm = nns::co_upm(1.0, 1.0, x, y, n, n, tx, ty);
-  double c1_clpm = nns::co_lpm(1.0, 1.0, x, y, n, n, tx, ty);
-  double c1_dlpm = nns::d_lpm(1.0, 1.0, x, y, n, n, tx, ty);
-  double c1_dupm = nns::d_upm(1.0, 1.0, x, y, n, n, tx, ty);
-  const double adjust = static_cast<double>(n) / (static_cast<double>(n) - 1.0);
-  c1_cupm *= adjust; c1_clpm *= adjust; c1_dlpm *= adjust; c1_dupm *= adjust;
-  const double total = c1_cupm + c1_dupm + c1_dlpm + c1_clpm;
-  if (total > 0.0) { c1_cupm /= total; c1_clpm /= total; }
-
-  const double dpm_d0 = nd_dpm_deg0(x, y, n, tx, ty);
-  const double dpm_d1 = nd_dpm_deg1_norm(x, y, n, tx, ty);
-  const double discrete_dep = clamp01(std::abs(d0_co - 0.5) / 0.5);
-  const double continuous_dep = clamp01(std::abs(c1_cupm + c1_clpm - 0.5) / 0.5);
-  // Bivariate discordant independence null is 1 - 2*0.5^2 = 0.5 (DPM counts a
-  // point concordant when all-below OR all-above the target), not 1 - 0.5^2 =
-  // 0.75. The old 0.75 anchor left a fixed 1/3 residual per discordant term and
-  // a ~0.41 dependence floor that never vanished for independent data.
-  const double nd_disc = std::abs(dpm_d0 - 0.5) / 0.5;
-  const double nd_cont = std::abs(dpm_d1 - 0.5) / 0.5;
-  const double copula = std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
-  return copula * dep_ols_sign(x, y, n);
-}
-
-double dep_copula_degree0_unsigned(const double* x, const double* y, std::size_t n) {
-  const double tx = np_mean(x, n), ty = np_mean(y, n);
-  const double d0_co =
-      nns::co_upm(0.0, 0.0, x, y, n, n, tx, ty) + nns::co_lpm(0.0, 0.0, x, y, n, n, tx, ty);
-  const double dpm_d0 = nd_dpm_deg0(x, y, n, tx, ty);
-  const double disc_dep = clamp01(std::abs(d0_co - 0.5) / 0.5);
-  // Bivariate discordant independence null is 1 - 2*0.5^2 = 0.5, not 0.75.
-  const double nd_disc = std::abs(dpm_d0 - 0.5) / 0.5;
-  return std::sqrt((disc_dep + nd_disc) / 2.0);
-}
 
 std::vector<std::string> dep_xonly_partition(const double* x, std::size_t n, int obs_req) {
   int max_order = 0;
@@ -728,36 +618,20 @@ std::vector<std::string> dep_xonly_partition(const double* x, std::size_t n, int
   return quad;
 }
 
-void dep_directional(const double* x, const double* y, const std::vector<std::string>& quad,
-                     double fallback, double& corr_out, double& dep_out) {
-  // group by first-seen quadrant order (matches Python defaultdict iteration).
-  std::map<std::string, std::size_t> seen;
-  std::vector<std::vector<std::size_t>> groups;
-  for (std::size_t i = 0; i < quad.size(); ++i) {
-    auto it = seen.find(quad[i]);
-    if (it == seen.end()) {
-      seen.emplace(quad[i], groups.size());
-      groups.emplace_back();
-      groups.back().push_back(i);
-    } else {
-      groups[it->second].push_back(i);
-    }
-  }
-  const double n = static_cast<double>(quad.size());
-  double corr = 0.0, dep = 0.0;
-  std::vector<double> gx, gy;
-  for (const auto& idx : groups) {
-    gx.clear(); gy.clear();
-    gx.reserve(idx.size()); gy.reserve(idx.size());
-    for (const std::size_t i : idx) { gx.push_back(x[i]); gy.push_back(y[i]); }
-    double cop = dep_copula_signed(gx.data(), gy.data(), gx.size());
-    if (!std::isfinite(cop)) cop = fallback;
-    const double weight = static_cast<double>(idx.size()) / n;
-    corr += cop * weight;
-    dep += std::abs(cop) * weight;
-  }
-  corr_out = corr;
-  dep_out = dep;
+// NNS.dep = R NNS_dep_pair_cpp on the X-only partitions of x and y. The
+// labels are hashed with std::hash<std::string> exactly as the R wrapper does,
+// and nns::dep_pair is the NNS-core port of R's NNS_dep_pair_core: cell
+// means are sequential double sums / n, the moments are one-pass sums, and the
+// cell weights are accumulated in the same unordered_map order as R. A
+// pairwise (NumPy) cell mean differs from R's in the last ulp on evenly spaced
+// or tied cells, and a point sitting exactly on the mean then changes
+// quadrant counts (R seq(0, 4*pi, pi/100), sin: dependence 0.92402 vs R
+// 0.92466).
+std::vector<uint64_t> hash_labels(const std::vector<std::string>& labels) {
+  const std::hash<std::string> hasher;
+  std::vector<uint64_t> out(labels.size());
+  for (std::size_t i = 0; i < labels.size(); ++i) out[i] = hasher(labels[i]);
+  return out;
 }
 
 nb::dict nns_dep_pair(const Vector& xa, const Vector& ya, bool asym) {
@@ -766,53 +640,14 @@ nb::dict nns_dep_pair(const Vector& xa, const Vector& ya, bool asym) {
   const double* x = xa.data();
   const double* y = ya.data();
 
-  nb::dict out;
-  bool x_const = true, y_const = true;
-  for (std::size_t i = 1; i < n; ++i) {
-    if (x[i] != x[0]) x_const = false;
-    if (y[i] != y[0]) y_const = false;
-  }
-  if (x_const || y_const) {
-    out["Correlation"] = 0.0;
-    out["Dependence"] = 0.0;
-    return out;
-  }
-
   const int obs_req = std::max<int>(8, static_cast<int>(n / 8U));
-  const std::vector<std::string> quad_xy = dep_xonly_partition(x, n, obs_req);
-  const std::vector<std::string> quad_yx = dep_xonly_partition(y, n, obs_req);
+  const std::vector<uint64_t> quad_xy = hash_labels(dep_xonly_partition(x, n, obs_req));
+  const std::vector<uint64_t> quad_yx = hash_labels(dep_xonly_partition(y, n, obs_req));
+  const nns::DepResult res = nns::dep_pair(x, y, n, quad_xy.data(), quad_yx.data(), asym);
 
-  double global_cop = dep_copula_signed(x, y, n);
-  if (!std::isfinite(global_cop)) global_cop = 0.0;
-
-  double corr_xy, dep_xy, corr_yx, dep_yx;
-  dep_directional(x, y, quad_xy, global_cop, corr_xy, dep_xy);
-  dep_directional(y, x, quad_yx, global_cop, corr_yx, dep_yx);
-
-  const bool discrete_case =
-      static_cast<double>(unique_count(x, n)) < std::sqrt(static_cast<double>(n)) &&
-      static_cast<double>(unique_count(y, n)) < std::sqrt(static_cast<double>(n));
-  if (discrete_case) {
-    double disc_cop = dep_copula_degree0_unsigned(x, y, n);
-    if (!std::isfinite(disc_cop)) disc_cop = std::max(dep_xy, dep_yx);
-    if (asym) {
-      const double pair[2] = {dep_xy, disc_cop};
-      dep_xy = gravity_exact_impl(pair, 2);
-    } else {
-      const double pair[2] = {std::max(dep_xy, dep_yx), disc_cop};
-      const double dep_sym = gravity_exact_impl(pair, 2);
-      dep_xy = dep_sym;
-      dep_yx = dep_sym;
-    }
-  }
-
-  if (asym) {
-    out["Correlation"] = corr_xy;
-    out["Dependence"] = dep_xy;
-  } else {
-    out["Correlation"] = std::max(corr_xy, corr_yx);
-    out["Dependence"] = std::max(dep_xy, dep_yx);
-  }
+  nb::dict out;
+  out["Correlation"] = res.correlation;
+  out["Dependence"] = res.dependence;
   return out;
 }
 

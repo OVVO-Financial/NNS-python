@@ -76,14 +76,16 @@ def test_causal_matrix_ts_tau_no_longer_raises() -> None:
 
 @pytest.mark.parametrize("n", [5, 40, 600])
 def test_causation_native_asym_dep_matches_python_partition(n: int) -> None:
-    # _asym_dep now uses the native nns_dep(asym=True) kernel; it must equal the
-    # pure-Python X-only partition it replaced, bit for bit.
+    # _asym_dep uses the native nns_dep(asym=True) kernel. The pure-Python X-only
+    # partition computes the same cells and cell copulas; only the order in which
+    # the cell terms are added differs (R's std::unordered_map order natively,
+    # first-seen order in Python), which moves the total by a few ulp at most.
     from nns.causation import _asym_dep, _asym_dep_python
 
     rng = np.random.default_rng(n)
     x = rng.normal(size=n)
     for y in (x**2 + rng.normal(size=n), rng.normal(size=n), np.round(x), -x):
-        assert _asym_dep(x, y) == _asym_dep_python(x, y)
-        assert _asym_dep(y, x) == _asym_dep_python(y, x)
+        assert _asym_dep(x, y) == pytest.approx(_asym_dep_python(x, y), rel=1e-14, abs=1e-15)
+        assert _asym_dep(y, x) == pytest.approx(_asym_dep_python(y, x), rel=1e-14, abs=1e-15)
     ints = rng.integers(0, 4, size=n).astype(float)
-    assert _asym_dep(ints, x) == _asym_dep_python(ints, x)
+    assert _asym_dep(ints, x) == pytest.approx(_asym_dep_python(ints, x), rel=1e-14, abs=1e-15)
