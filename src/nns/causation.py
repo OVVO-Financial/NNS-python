@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import numbers
 from typing import Any
 
 import numpy as np
@@ -34,12 +35,19 @@ def nns_causation(
 ) -> CausationResult:
     """Return R's default bivariate NNS.caus vector as a dict."""
     x_values, y_values = _as_pair(x, y)
-    if tau == "ts":
+    # R NNS.caus validation (R fix 6d016c0): causation is undefined for a variable
+    # with no variation, and tau must be "cs", "ts" or an integer below n - 2.
+    if _is_constant(x_values) or _is_constant(y_values):
+        raise ValueError(
+            "x and y must not be constant: causation is undefined for a variable "
+            "with no variation."
+        )
+    if isinstance(tau, str) and tau == "ts":
         x_tau, y_tau = _ts_tau_values(x_values, y_values)
         causation_x_given_y = _uni_caus(x_values, y_values, y_tau)
         causation_y_given_x = _uni_caus(y_values, x_values, x_tau)
     else:
-        tau_value = _tau_value(tau)
+        tau_value = _tau_value(tau, x_values.size)
         causation_x_given_y = _uni_caus(x_values, y_values, tau_value)
         causation_y_given_x = _uni_caus(y_values, x_values, tau_value)
     if not math.isfinite(causation_x_given_y):
@@ -79,8 +87,8 @@ def causal_matrix(
     """
     labels = _column_labels(x)
     values = _as_matrix(x, "x")
-    if tau != "ts":
-        tau = _tau_value(tau)
+    if not (isinstance(tau, str) and tau == "ts"):
+        tau = _tau_value(tau, values.shape[0])
     n_variables = values.shape[1]
     causes = np.zeros((n_variables, n_variables), dtype=np.float64)
 
@@ -164,13 +172,19 @@ def _asym_dep_python(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     return dep_xy
 
 
-def _tau_value(tau: int | str) -> int:
-    if tau == "cs":
+def _tau_value(tau: object, n: int | None = None) -> int:
+    """Validate a non-"ts" tau like R NNS.caus: "cs" or an integer in [0, n - 3]."""
+    if isinstance(tau, str) and tau == "cs":
         return 0
-    tau_value = int(tau)
-    if tau_value < 0:
-        raise ValueError("tau must be non-negative.")
-    return tau_value
+    message = 'tau must be "cs", "ts" or a single non-negative integer smaller than len(x) - 2.'
+    if isinstance(tau, bool) or not isinstance(tau, numbers.Real):
+        raise ValueError(message)
+    tau_float = float(tau)
+    if not math.isfinite(tau_float) or tau_float < 0 or tau_float != round(tau_float):
+        raise ValueError(message)
+    if n is not None and tau_float >= n - 2:
+        raise ValueError(message)
+    return int(tau_float)
 
 
 def _ts_tau_values(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[int, int]:
@@ -184,7 +198,10 @@ def _first_period_at_or_below_limit(values: NDArray[np.float64], limit: float) -
     periods = np.asarray(nns_seas(values, plot=False)["periods"], dtype=np.int64)
     eligible = periods[periods <= limit]
     if eligible.size == 0:
-        raise ValueError("tau='ts' did not find an eligible seasonal period.")
+        raise ValueError(
+            "tau='ts': nns_seas found no seasonal period <= sqrt(len(x)); "
+            "supply a numeric tau instead."
+        )
     return int(eligible[0])
 
 
