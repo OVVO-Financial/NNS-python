@@ -226,6 +226,28 @@ def test_nns_cdf_trivariate_degree0_survival_is_joint_exceedance() -> None:
     np.testing.assert_allclose(actual["target.value"], [target_brute], atol=1e-12)
 
 
+_NO_MASS_ABOVE = np.array([[0.0, 1.0, 3.0], [1.0, 0.0, 2.0], [2.0, 3.0, 0.0], [4.0, 2.0, 1.0]])
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("columns", [3, 2])
+def test_nns_cdf_multivariate_degree1_survival_is_joint_upm(columns: int) -> None:
+    # Patched R: at degree > 0 the survival is the normalised Co.UPM_nD, so it is 0
+    # where no observation lies above the target (inclusion-exclusion gave 0.0824
+    # for d = 3 and 0.1786 for d = 2).
+    matrix = _NO_MASS_ABOVE[:, :columns]
+    target = [4.0, 1.0, 1.0][:columns]
+
+    expected = cast(
+        dict[str, object],
+        nns_cdf_custom(matrix.tolist(), degree=1.0, target=target, type="survival"),
+    )
+    actual = nns_cdf(matrix, degree=1.0, target=np.array(target), type="survival")
+
+    np.testing.assert_allclose(actual["target.value"], [0.0], atol=EXACT)
+    _assert_cdf_result(actual, expected)
+
+
 def test_nns_cdf_multivariate_checks_every_target_coordinate() -> None:
     matrix = _trivariate_matrix()
     with pytest.raises(ValueError, match="target out of bounds"):

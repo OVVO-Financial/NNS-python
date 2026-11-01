@@ -324,8 +324,12 @@ def _joint_survival(
     Inclusion-exclusion over all subsets A of the coordinates,
     ``S = sum_A (-1)^|A| F_A(t_A)`` with ``F_A`` the joint CDF of the coordinates in A
     (``F_{}`` = 1, the full set is ``joint_cdf``); for d = 2 this is
-    ``1 - F_1 - F_2 + F_12``.  Mirrors R NNS.CDF's ``joint.survival``.
+    ``1 - F_1 - F_2 + F_12``.  At degree > 0 the subset terms have different
+    normalisers, so the survival is the normalised joint UPM ``Co.UPM_nD(X, t)``,
+    computed as ``Co.LPM_nD(-X, -t)``.  Mirrors R NNS.CDF's ``joint.survival``.
     """
+    if degree > 0:
+        return _co_lpm_nd_batch(-values, -points, degree)
     d = values.shape[1]
     marginals = np.column_stack(
         [_r_lpm_ratio(degree, points[:, col], values[:, col]) for col in range(d)]

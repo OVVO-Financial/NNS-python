@@ -5,7 +5,7 @@ from typing import cast
 import numpy as np
 import pytest
 
-from nns import nns_cdf
+from nns import co_upm_nd, nns_cdf
 
 
 def test_nns_cdf_return_keys_and_empty_target_value() -> None:
@@ -96,3 +96,12 @@ def test_nns_cdf_dataframe_column_named_cdf_keeps_its_coordinate() -> None:
 
     np.testing.assert_array_equal(function["CDF.1"], [1.0, 2.0, 3.0])
     np.testing.assert_allclose(function["CDF"], [1 / 3, 1 / 3, 1.0])
+
+
+def test_nns_cdf_multivariate_degree1_survival_equals_co_upm_nd() -> None:
+    rng = np.random.default_rng(7)
+    matrix = rng.standard_normal((30, 3))
+    survival = cast(dict[str, np.ndarray], nns_cdf(matrix, degree=1.0, type="survival")["Function"])
+    expected = [co_upm_nd(matrix, row, degree=1.0) for row in matrix]
+
+    np.testing.assert_allclose(survival["CDF"], expected, atol=1e-12)
