@@ -32,6 +32,17 @@ Native snapshots are vendored under:
 extern/NNS-core
 ```
 
+`.github/workflows/sync-from-nns-core.yml` receives NNS-core's
+`nns-core-updated` repository dispatch (payload
+`core_commit, r_repo, r_commit, r_version, r_src_tree_hash`). It can also be run
+by hand with a `core_commit`. It re-vendors the commit with
+`scripts/sync_nns_core_snapshot.py`, which copies the `CMakeLists.txt`,
+`include/` and `src/` of that commit and records `core_commit`. It then builds the
+extension, runs the invariant and cached parity gates with and without
+`NNS_DISABLE_NATIVE=1`, and opens a pull request, as a draft when a gate fails.
+The receiver is in `workflow-baseline.yml`'s protected list; NNS-core's
+`notify-python.yml` checks that it exists before dispatching.
+
 ## R behavior fidelity rule
 
 Python API behavior is tested directly against live `OVVO-Financial/NNS` at the
@@ -55,6 +66,7 @@ A Python sync PR is not complete until these pass:
 python -m pip install -e . --force-reinstall
 python -m pytest -q tests/invariants
 NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+NNS_DISABLE_NATIVE=1 NNS_R_CACHE_ONLY=1 python -m pytest -q tests/invariants tests/parity
 python -m pytest -q tests/parity/test_r13_smoke.py
 python -m pytest -q tests/docs/test_vignette_examples.py
 ruff check .
