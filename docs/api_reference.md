@@ -165,7 +165,7 @@ Divergent upper partial moment: `mean(max(target_x - x, 0)^degree_lpm * max(y - 
 
 #### `co_lpm_nd`, `co_upm_nd`, `dpm_nd`
 
-N-dimensional co-lower, co-upper and divergent partial moments (R `Co.LPM_nD`, `Co.UPM_nD`, `DPM_nD`).
+N-dimensional co-lower, co-upper and divergent partial moments (R `Co.LPM_nD`, `Co.UPM_nD`, `DPM_nD`). At degree 0 they count rows at or below the target in every coordinate, strictly above it in every coordinate, and the rest, so the three shares sum to 1.
 
 ### Classical moment helpers
 

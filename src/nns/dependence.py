@@ -225,8 +225,11 @@ def _sequential_sum(values: NDArray[np.float64]) -> float:
 
 def _copula_moments(
     x: NDArray[np.float64], y: NDArray[np.float64]
-) -> tuple[float, float, NDArray[np.float64], NDArray[np.float64]]:
-    """Degree-0 co-moment and DPM shares about the cell means, as R ``copula_signed``.
+) -> tuple[int, float, float, NDArray[np.float64], NDArray[np.float64]]:
+    """Degree-0 concordant count, co-moment and DPM shares about the cell means.
+
+    As R ``copula_signed``: a point is concordant when it is co-upper (both
+    deviations > 0) or co-lower (both <= 0) and discordant otherwise.
 
     R's ``NNS_dep.cpp`` takes the cell means as a sequential double sum / n and
     scales the counts by ``1 / n``. A pairwise (``np.mean``) cell mean can differ
@@ -237,13 +240,15 @@ def _copula_moments(
     dx = x - _sequential_sum(x) / n
     dy = y - _sequential_sum(y) / n
     inv_n = 1.0 / n
-    d0_concordant = np.count_nonzero((dx > 0.0) & (dy > 0.0)) + np.count_nonzero(
-        (dx <= 0.0) & (dy <= 0.0)
+    concordant = int(
+        np.count_nonzero((dx > 0.0) & (dy > 0.0)) + np.count_nonzero((dx <= 0.0) & (dy <= 0.0))
     )
-    aligned = ((dx < 0.0) & (dy < 0.0)) | ((dx > 0.0) & (dy > 0.0))
-    d0_co = float(d0_concordant) * inv_n
-    dpm_d0 = float(np.count_nonzero(~aligned)) * inv_n
-    return d0_co, dpm_d0, dx, dy
+    # Discordant = neither co-lower nor co-upper, the same split as the concordant
+    # count, so the degree-0 shares partition the cell (a tie used to count as
+    # co-lower and discordant at once; R fix for CORE-09).
+    d0_co = float(concordant) * inv_n
+    dpm_d0 = float(n - concordant) * inv_n
+    return concordant, d0_co, dpm_d0, dx, dy
 
 
 def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
@@ -256,12 +261,14 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     if n < 2:
         return 0.0
 
-    d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
+    concordant, d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
     # Every point concordant: perfect positive dependence; every point discordant:
-    # perfect negative dependence (R fix 1f1490e; this used to return +1 too).
-    if d0_co == 1.0:
+    # perfect negative dependence (R fix 1f1490e; this used to return +1 too). The
+    # count is compared with n, not the share with 1: count * (1/n) is not exactly 1
+    # for many n (49 * (1/49) != 1), DEP-08.
+    if concordant == n:
         return 1.0
-    if d0_co == 0.0:
+    if concordant == 0:
         return -1.0
 
     product = dx * dy
@@ -296,7 +303,7 @@ def _copula_degree0_unsigned(x: NDArray[np.float64], y: NDArray[np.float64]) -> 
     """R ``NNS_dep.cpp`` ``copula_degree0_unsigned`` (the discrete-case blend term)."""
     if x.size < 2:
         return 0.0
-    d0_co, dpm_d0, _, _ = _copula_moments(x, y)
+    _, d0_co, dpm_d0, _, _ = _copula_moments(x, y)
     disc_dep = min(1.0, max(0.0, abs(d0_co - 0.5) / 0.5))
     # Bivariate discordant independence null is 1 - 2*0.5**2 = 0.5 (see
     # _copula_signed); the old 0.75 anchor never vanished for independent data.
@@ -311,7 +318,11 @@ def _dpm_nd(
     norm: bool,
 ) -> float:
     diff = data - target[np.newaxis, :]
-    all_below = np.all(diff < 0.0, axis=1)
+    # Discordant = neither all-lower (x <= target, the CLPM count) nor all-upper
+    # (x > target, the CUPM count), so the degree-0 counts partition the sample
+    # (CORE-09; ties used to count as discordant and lower at once). At degree > 0
+    # a tied coordinate contributes a zero factor either way.
+    all_below = np.all(diff <= 0.0, axis=1)
     all_above = np.all(diff > 0.0, axis=1)
     discordant = ~(all_below | all_above)
 
@@ -344,7 +355,9 @@ def _clpm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
 def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: float) -> float:
     diff = data - target[np.newaxis, :]
     if degree == 0.0:
-        return float(np.mean(np.all(diff >= 0.0, axis=1)))
+        # Strictly above in every coordinate, as Co.UPM (x > target): ties belong
+        # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0 (CORE-09).
+        return float(np.mean(np.all(diff > 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
     powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
     return float(np.mean(np.where(valid, powered, 0.0)))
