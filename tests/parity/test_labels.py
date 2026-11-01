@@ -402,3 +402,42 @@ def test_nns_boost_feature_names_are_column_names() -> None:
         list(actual["feature.frequency"].values()), _num(freq["values"])
     )
     np.testing.assert_allclose(actual["results"], _num(expected["results"]), atol=COMPOUND)
+
+
+def _factor_frame() -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+    rng = np.random.default_rng(11)
+    levels = ["low", "mid", "high"]
+    rating = rng.choice(levels, size=60)
+    score = np.round(rng.normal(size=60), 6)
+    y = (np.searchsorted(levels, rating, sorter=np.argsort(levels)) + 1) * 2.0 + score
+    x = pd.DataFrame({"rating": pd.Categorical(rating, categories=levels), "score": score})
+    pe = pd.DataFrame(
+        {"rating": pd.Categorical(["high", "low"], categories=levels), "score": [0.5, -1.0]}
+    )
+    return x, pd.Series(np.round(y, 6)), pe
+
+
+def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
+    from nns import prepare_factor_predictors
+
+    x, y, pe = _factor_frame()
+    expected = nns_frame_call(
+        "labels.reg.factor_design",
+        "NNS.reg(x, y, point.est = pe, ncores = 1)$Point.est",
+        {"x": _spec(x), "y": _vec(y), "pe": _spec(pe)},
+    )
+    design = prepare_factor_predictors(
+        x.to_numpy(dtype=object),
+        point_est=pe.to_numpy(dtype=object),
+        factor_levels=(["low", "mid", "high"], None),
+        names=("rating", "score"),
+    )
+    # R's factor_2_dummy_FR: one column per level (not a dropped reference level).
+    assert design.feature_names == ("rating_low", "rating_mid", "rating_high", "score")
+    assert design.x.shape == (60, 4)
+    np.testing.assert_allclose(design.x[:, :3].sum(axis=1), 1.0)
+
+    via_design = nns_m_reg(design.x, y.to_numpy(), point_est=design.point_est)["Point.est"]
+    via_frame = nns_reg(x, y.to_numpy(), point_est=pe)["Point.est"]
+    np.testing.assert_allclose(via_design, _num(expected), atol=COMPOUND)
+    np.testing.assert_allclose(via_frame, _num(expected), atol=COMPOUND)
