@@ -13,7 +13,7 @@ from nns._native import native_fn
 from nns.categorical import encode_factor_codes, factor_2_dummy_fr
 from nns.causation import _uni_caus
 from nns.central_tendencies import nns_mode
-from nns.copula import _copula
+from nns.copula import _copula, _r_col_means
 from nns.dependence import _gravity, nns_dep
 from nns.part import NoiseReduction, PartResult, nns_part
 from nns.smoothing import r_smooth_spline_fixed_spar
@@ -1157,7 +1157,7 @@ def _rescale_01(values: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _nns_copula_matrix(values: NDArray[np.float64]) -> float:
-    target = cast(NDArray[np.float64], np.mean(values, axis=0))
+    target = _r_col_means(values)
     return _copula(values, target, continuous=True)
 
 
