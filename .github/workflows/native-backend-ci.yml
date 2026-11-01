@@ -51,6 +51,16 @@ jobs:
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
 
+      - name: Run invariants and cached parity with the pure-Python fallbacks
+        # NNS_DISABLE_NATIVE=1 makes nns._native report no extension, so every
+        # public function takes its NumPy fallback, as an install without the
+        # compiled extension would (CORE-17). Tests that call nns._nnscore
+        # directly still run against the extension.
+        env:
+          NNS_DISABLE_NATIVE: "1"
+          NNS_R_CACHE_ONLY: "1"
+        run: python -m pytest -q tests/invariants tests/parity
+
       - name: Run property tests
         run: python -m pytest -q tests/property
 

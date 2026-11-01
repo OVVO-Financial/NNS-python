@@ -219,7 +219,8 @@ def _sequential_sum(values: NDArray[np.float64]) -> float:
     """Left-to-right double sum, like a C++ ``for`` loop (``np.sum`` is pairwise)."""
     if values.size == 0:
         return 0.0
-    return float(np.cumsum(values)[-1])
+    # C++ starts the sum at +0.0, so an all-(-0.0) sum is +0.0.
+    return 0.0 + float(np.cumsum(values)[-1])
 
 
 def _copula_moments(
@@ -428,14 +429,15 @@ def _gravity_python(x: NDArray[np.float64]) -> float:
     sums. The histogram stores only the occupied bins: gravity reads at most the
     neighbours of the fullest bin, so the empty ones never matter (CORE-08).
     """
-    values = np.sort(x[np.isfinite(x)])
-    n = values.size
+    finite = x[np.isfinite(x)]
+    n = finite.size
     if n == 0:
         return float("nan")
     if n <= 3:
-        return float(np.median(values))
-    if np.all(values == values[0]):
-        return float(values[0])
+        return _small_median(finite)
+    if np.all(finite == finite[0]):
+        return float(finite[0])  # the first value in input order (+-0.0 kept)
+    values = np.sort(finite)
 
     value_range = abs(float(values[-1]) - float(values[0]))
     if value_range == 0.0:
@@ -459,11 +461,22 @@ def _gravity_python(x: NDArray[np.float64]) -> float:
         bins = occupied
         selected_counts = counts
     names = (origin + bins.astype(np.float64) * width).astype(np.longdouble)
-    weighted = np.cumsum(names * selected_counts.astype(np.longdouble))[-1]
+    # R's long-double sums start at +0.0 (an all-(-0.0) sum is +0.0).
+    zero = np.longdouble(0.0)
+    weighted = zero + np.cumsum(names * selected_counts.astype(np.longdouble))[-1]
     mode_gravity = float(weighted / np.longdouble(int(np.sum(selected_counts))))
-    mean = float(np.cumsum(values.astype(np.longdouble))[-1] / np.longdouble(n))
+    mean = float((zero + np.cumsum(values.astype(np.longdouble))[-1]) / np.longdouble(n))
     out = 0.25 * (q2 + mode_gravity + mean + 0.5 * (q1 + q3))
     return float(out) if math.isfinite(out) else float(q2)
+
+
+def _small_median(values: NDArray[np.float64]) -> float:
+    """Median as NNS-core computes it for n <= 3 (np.median maps -0.0 to +0.0)."""
+    ordered = np.sort(values)
+    half = ordered.size // 2
+    if ordered.size % 2:
+        return float(ordered[half])
+    return float(0.5 * (ordered[half - 1] + ordered[half]))
 
 
 def _quartiles_like_r_code(values: NDArray[np.float64]) -> tuple[float, float, float]:
@@ -492,35 +505,6 @@ def _interpolate_position(values: NDArray[np.float64], position: float) -> float
     ceil_pos = min(max(1, math.ceil(position)), n)
     weight = position - math.floor(position)
     return float(values[floor_pos - 1] + weight * (values[ceil_pos - 1] - values[floor_pos - 1]))
-
-
-_MAX_DENSE_BINS = 1_000_000
-
-
-def _simple_bin_counts(
-    values: NDArray[np.float64],
-    width: float,
-    origin: float,
-) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
-    int_max = np.iinfo(np.int32).max
-    if width <= 0.0 or not math.isfinite(width):
-        bin_count = 1
-    else:
-        bin_ratio = (float(values[-1]) - origin) / width + 1e-12
-        if not math.isfinite(bin_ratio) or bin_ratio > int_max:
-            bin_count = 1
-        else:
-            bin_count = math.floor(bin_ratio) + 1
-    # R (NNS 13.x) does not cap the bin count; the guard only bounds memory
-    # for pathologically narrow widths and never binds on realistic data.
-    bin_count = min(max(1, bin_count), _MAX_DENSE_BINS)
-    bin_names = origin + np.arange(bin_count, dtype=np.float64) * width
-    if bin_count == 1:
-        return bin_names, np.array([values.size], dtype=np.int64)
-    indices = np.floor((values - origin) / width).astype(np.int64)
-    indices = np.clip(indices, 0, bin_count - 1)
-    counts = np.bincount(indices, minlength=bin_count)
-    return bin_names, counts
 
 
 # NNS-core simple_bin_counts widens bins whose index would exceed 2**52 (R's
