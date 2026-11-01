@@ -1,8 +1,8 @@
 """Partitions on data whose gravity histogram exceeds 1e6 bins.
 
-The native gravity_exact kernel clips its dense histogram at 1e6 bins, which
-moves the mode term onto the outlier; R does not cap. These cases have a single
-outlier that pushes the bin count of the first gravity call past the cap.
+The native gravity_exact kernel used to clip its dense histogram at 1e6 bins,
+which moved the mode term onto the outlier; R does not cap. These cases have a
+single outlier that pushes the bin count of the first gravity call past 1e6.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from nns import nns_dep, nns_part
 from nns.dependence import (
     _gravity,
     _gravity_python,
-    _native_gravity_is_exact,
     _quartiles_like_r_code,
     _sparse_bin_counts,
 )
@@ -36,7 +35,6 @@ def _outlier_pair(n: int = 2000, outlier: float = -1e5) -> tuple[np.ndarray, np.
 @pytest.mark.parity
 def test_gravity_with_outlier_matches_r() -> None:
     x, _ = _outlier_pair()
-    assert not _native_gravity_is_exact(x)
 
     expected = float(np.asarray(nns("NNS.gravity", x.tolist(), False)))
 
@@ -81,26 +79,31 @@ def test_nns_dep_with_outlier_matches_r(asym: bool) -> None:
     )
 
 
-def test_python_gravity_is_bit_identical_to_native_below_the_cap() -> None:
+def test_python_gravity_is_bit_identical_to_native() -> None:
     from nns._native import native_fn
 
     native = native_fn("gravity_exact")
     if native is None:
         pytest.skip("native extension not available")
     rng = np.random.default_rng(0)
-    for trial in range(600):
+    for trial in range(900):
         n = int(rng.integers(1, 300))
-        kind = trial % 4
+        kind = trial % 6
         if kind == 0:
             x = rng.normal(size=n)
         elif kind == 1:
             x = rng.integers(0, 5, n).astype(float)
         elif kind == 2:
             x = np.round(rng.standard_t(2, size=n), 2)
-        else:
+        elif kind == 3:
             x = np.concatenate((np.full(n, 0.1), rng.normal(size=3), [np.nan]))
-        if _native_gravity_is_exact(x):
-            assert _gravity_python(x) == float(native(np.ascontiguousarray(x)))
+        elif kind == 4:
+            # More than 1e6 bins (DEP-10), or more than INT_MAX (DEP-11).
+            x = np.append(rng.normal(size=n), -(10.0 ** rng.integers(5, 10)))
+        else:
+            # Tight IQR plus one far value (CORE-08).
+            x = np.append(5.0 + 1e-7 * rng.normal(size=n), 6.0)
+        assert _gravity_python(x) == float(native(np.ascontiguousarray(x)))
 
 
 def test_sparse_gravity_needs_no_dense_histogram() -> None:
@@ -110,8 +113,9 @@ def test_sparse_gravity_needs_no_dense_histogram() -> None:
     values = np.sort(x)
     q1, _, q3 = _quartiles_like_r_code(values)
     width = (q3 - q1) * values.size**-0.5
-    bin_count, occupied, counts = _sparse_bin_counts(values, width, float(values[0]))
+    bin_count, used_width, occupied, counts = _sparse_bin_counts(values, width, float(values[0]))
     assert bin_count > 100_000_000
+    assert used_width == width
     assert occupied.size == counts.size <= values.size
     assert int(counts.sum()) == values.size
     assert np.all(np.diff(occupied) > 0)

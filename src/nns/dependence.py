@@ -55,7 +55,7 @@ def nns_dep(
     x_values, y_values = _as_pair(x, y)
 
     native_dep_pair = native_fn("nns_dep_pair")
-    if native_dep_pair is not None and _dep_native_is_exact(x_values, y_values):
+    if native_dep_pair is not None:
         res = native_dep_pair(
             np.ascontiguousarray(x_values),
             np.ascontiguousarray(y_values),
@@ -411,19 +411,23 @@ def _as_nd_moment_inputs(
 def _gravity(x: NDArray[np.float64]) -> float:
     """NNS gravity central tendency (R ``NNS.gravity``) used by the partitioners.
 
-    The native ``gravity_exact`` kernel is bit-identical to the Python code below
-    except that it clips its dense histogram at 1e6 bins (R does not), which moves
-    the mode term onto outliers. It is used only when the bin count is
-    provably below that cap.
+    The native ``gravity_exact`` kernel is NNS-core's ``nns::gravity``; the
+    NumPy fallback below computes the same value bit for bit.
     """
     values = np.asarray(x, dtype=np.float64).reshape(-1)
     native_gravity_exact = native_fn("gravity_exact")
-    if native_gravity_exact is not None and _native_gravity_is_exact(values):
+    if native_gravity_exact is not None:
         return float(native_gravity_exact(np.ascontiguousarray(values)))
     return _gravity_python(values)
 
 
 def _gravity_python(x: NDArray[np.float64]) -> float:
+    """NumPy port of NNS-core ``nns::gravity`` (R ``NNS_gravity_cpp``), non-discrete.
+
+    Like R, the mean and the weighted bin average are long-double sequential
+    sums. The histogram stores only the occupied bins: gravity reads at most the
+    neighbours of the fullest bin, so the empty ones never matter (CORE-08).
+    """
     values = np.sort(x[np.isfinite(x)])
     n = values.size
     if n == 0:
@@ -433,42 +437,33 @@ def _gravity_python(x: NDArray[np.float64]) -> float:
     if np.all(values == values[0]):
         return float(values[0])
 
-    value_range = float(np.ptp(values))
-    if abs(value_range) == 0.0:
+    value_range = abs(float(values[-1]) - float(values[0]))
+    if value_range == 0.0:
         return float(values[0])
 
     q1, q2, q3 = _quartiles_like_r_code(values)
     width = (q3 - q1) * n**-0.5
-    if width <= 0.0 or not np.isfinite(width):
+    if not (width > 0.0 and math.isfinite(width)):
         width = value_range / 128.0
 
     origin = float(values[0])
-    bin_count, occupied, counts = _sparse_bin_counts(values, width, origin)
+    bin_count, width, occupied, counts = _sparse_bin_counts(values, width, origin)
     max_count = int(np.max(counts))
     max_positions = np.flatnonzero(counts == max_count)
     if max_positions.size == 1:
         center = int(occupied[max_positions[0]])
-        lo = max(0, center - 1)
-        hi = min(bin_count - 1, center + 1)
-        selected_bins = np.arange(lo, hi + 1, dtype=np.int64)
-        selected_names = origin + selected_bins.astype(np.float64) * width
-        selected_counts = _counts_at(selected_bins, occupied, counts)
-        denominator = float(np.sum(selected_counts))
-        mode_gravity = float(np.sum(selected_names * selected_counts) / denominator)
-    elif bin_count <= _MAX_DENSE_BINS:
-        # All bins are averaged; keep the dense layout so the pairwise sum (and
-        # hence the result) is bit-identical to the native kernel.
-        dense_counts = np.zeros(bin_count, dtype=np.int64)
-        dense_counts[occupied] = counts
-        bin_names = origin + np.arange(bin_count, dtype=np.float64) * width
-        mode_gravity = float(np.sum(bin_names * dense_counts) / float(np.sum(dense_counts)))
+        bins = np.arange(max(0, center - 1), min(bin_count - 1, center + 1) + 1, dtype=np.int64)
+        selected_counts = _counts_at(bins, occupied, counts)
     else:
-        # Beyond the dense range use R's own long-double sequential sum; empty
-        # bins add exact zeros there, so only the occupied ones are needed.
-        names = origin + occupied.astype(np.longdouble) * np.longdouble(width)
-        weighted = np.cumsum(names * counts.astype(np.longdouble))[-1]
-        mode_gravity = float(weighted / np.longdouble(n))
-    return float(0.25 * (q2 + mode_gravity + float(np.mean(values)) + 0.5 * (q1 + q3)))
+        # Every bin is averaged; empty ones add exact zeros to R's sums.
+        bins = occupied
+        selected_counts = counts
+    names = (origin + bins.astype(np.float64) * width).astype(np.longdouble)
+    weighted = np.cumsum(names * selected_counts.astype(np.longdouble))[-1]
+    mode_gravity = float(weighted / np.longdouble(int(np.sum(selected_counts))))
+    mean = float(np.cumsum(values.astype(np.longdouble))[-1] / np.longdouble(n))
+    out = 0.25 * (q2 + mode_gravity + mean + 0.5 * (q1 + q3))
+    return float(out) if math.isfinite(out) else float(q2)
 
 
 def _quartiles_like_r_code(values: NDArray[np.float64]) -> tuple[float, float, float]:
@@ -528,38 +523,38 @@ def _simple_bin_counts(
     return bin_names, counts
 
 
-def _bin_count(value_range: float, width: float) -> int:
-    """Dense histogram size used by R's simple_bin_counts (including its int overflow)."""
-    int_max = np.iinfo(np.int32).max
-    if width <= 0.0 or not math.isfinite(width):
-        return 1
-    bin_ratio = value_range / width + 1e-12
-    if not math.isfinite(bin_ratio) or bin_ratio > int_max:
-        # R's (int) cast overflows and the histogram collapses to one bin.
-        return 1
-    return max(1, math.floor(bin_ratio) + 1)
+# NNS-core simple_bin_counts widens bins whose index would exceed 2**52 (R's
+# int cast overflowed beyond INT_MAX instead and collapsed the histogram).
+_MAX_BIN_INDEX = 4503599627370496.0
 
 
 def _sparse_bin_counts(
     values: NDArray[np.float64],
     width: float,
     origin: float,
-) -> tuple[int, NDArray[np.int64], NDArray[np.int64]]:
+) -> tuple[int, float, NDArray[np.int64], NDArray[np.int64]]:
     """Occupied bins of R's fixed-width gravity histogram, without allocating it.
 
-    ``values`` must be sorted. Returns the dense bin count R would allocate and
-    the indices and counts of the occupied bins (ascending), so any number of
+    ``values`` must be sorted. Bins are ``[origin + k * width, origin + (k + 1) *
+    width)`` for ``k < floor((max - origin) / width + 1e-12) + 1``, as NNS-core's
+    ``simple_bin_counts``. Returns that bin count, the (possibly widened) width,
+    and the indices and counts of the occupied bins (ascending), so any number of
     empty bins costs nothing.
     """
-    bin_count = _bin_count(float(values[-1]) - origin, width)
-    if bin_count == 1:
-        return 1, np.zeros(1, dtype=np.int64), np.array([values.size], dtype=np.int64)
-    indices = np.floor((values - origin) / width).astype(np.int64)
-    indices = np.clip(indices, 0, bin_count - 1)
+    span = float(values[-1]) - origin
+    with np.errstate(over="ignore", divide="ignore"):
+        last = float(np.floor(np.float64(span) / width + 1e-12))
+        if not last < _MAX_BIN_INDEX:
+            width = span / _MAX_BIN_INDEX
+            last = min(float(np.floor(np.float64(span) / width + 1e-12)), _MAX_BIN_INDEX)
+    bin_count = int(last) + 1 if last >= 0.0 else 1
+    with np.errstate(over="ignore", divide="ignore"):
+        position = np.floor((values - origin) / width)
+    indices = np.clip(position, 0.0, float(bin_count - 1)).astype(np.int64)
     # Sorted values give non-decreasing bin indices, so the bins are runs.
     starts = np.flatnonzero(np.r_[True, indices[1:] != indices[:-1]])
     counts = np.diff(np.r_[starts, indices.size]).astype(np.int64)
-    return bin_count, indices[starts], counts
+    return bin_count, width, indices[starts], counts
 
 
 def _counts_at(
@@ -570,261 +565,6 @@ def _counts_at(
     position = np.clip(np.searchsorted(occupied, bins), 0, occupied.size - 1)
     found = occupied[position] == bins
     return np.where(found, counts[position], 0).astype(np.int64)
-
-
-# The native gravity_exact kernel clips its dense histogram at this many bins.
-_NATIVE_GRAVITY_BIN_CAP = 1_000_000
-# Ratios this close to the cap (or to R's int overflow) are treated as unsafe;
-# misclassifying a safe call only costs the slower exact path.
-_CAP_MARGIN = 64.0
-
-
-def _ratio_exceeds_native_cap(bin_ratio: NDArray[np.float64]) -> bool:
-    int_max = float(np.iinfo(np.int32).max)
-    with np.errstate(invalid="ignore"):
-        unsafe = (bin_ratio >= _NATIVE_GRAVITY_BIN_CAP - 1 - _CAP_MARGIN) & (
-            bin_ratio <= int_max + _CAP_MARGIN
-        )
-    return bool(np.any(unsafe))
-
-
-def _group_bin_ratios(
-    sorted_values: NDArray[np.float64],
-    starts: NDArray[np.intp],
-    sizes: NDArray[np.intp],
-) -> NDArray[np.float64]:
-    """``range / width + 1e-12`` of the gravity histogram of each sorted, finite group.
-
-    Mirrors ``_quartiles_like_r_code`` and the width rule of ``_gravity``: for even
-    m the quartiles are the order statistics at m // 4 and 3m // 4 (1-based); for
-    odd m they interpolate with weights (m % 4) / 4 and (3m % 4) / 4. Groups
-    without a histogram (m <= 3 or zero range) get NaN.
-    """
-    last = starts + sizes - 1
-    value_range = sorted_values[last] - sorted_values[starts]
-    odd = (sizes % 2).astype(bool)
-    f1 = np.minimum(starts + np.maximum(sizes // 4, 1) - 1, last)
-    f3 = np.minimum(starts + np.maximum((3 * sizes) // 4, 1) - 1, last)
-    c1 = np.minimum(f1 + odd, last)
-    c3 = np.minimum(f3 + odd, last)
-    w1 = np.where(odd, (sizes % 4) / 4.0, 0.0)
-    w3 = np.where(odd, ((3 * sizes) % 4) / 4.0, 0.0)
-    lo1 = sorted_values[f1]
-    lo3 = sorted_values[f3]
-    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
-        q1 = lo1 + w1 * (sorted_values[c1] - lo1)
-        q3 = lo3 + w3 * (sorted_values[c3] - lo3)
-        width = (q3 - q1) * sizes.astype(np.float64) ** -0.5
-        width = np.where((width > 0.0) & np.isfinite(width), width, value_range / 128.0)
-        ratio = value_range / width + 1e-12
-    out: NDArray[np.float64] = np.where((sizes > 3) & (value_range > 0.0), ratio, np.nan)
-    return out
-
-
-def _run_starts(change: NDArray[np.bool_]) -> NDArray[np.intp]:
-    """Start offsets of the runs of a sequence given ``change[i] = (s[i + 1] != s[i])``."""
-    return np.concatenate((np.zeros(1, dtype=np.intp), np.flatnonzero(change) + 1))
-
-
-def _native_gravity_is_exact(values: NDArray[np.float64]) -> bool:
-    """Whether the native gravity_exact kernel stays below its histogram cap."""
-    finite = values if np.isfinite(values).all() else values[np.isfinite(values)]
-    m = finite.size
-    if m <= 3:
-        return True
-    if m % 2 == 0:
-        i1 = max(1, m // 4) - 1
-        i3 = max(1, (3 * m) // 4) - 1
-        kth = [0, i1, i3, m - 1]
-    else:
-        p25 = m * 0.25
-        p75 = m * 0.75
-        f25, c25 = min(max(1, math.floor(p25)), m) - 1, min(max(1, math.ceil(p25)), m) - 1
-        f75, c75 = min(max(1, math.floor(p75)), m) - 1, min(max(1, math.ceil(p75)), m) - 1
-        kth = [0, f25, c25, f75, c75, m - 1]
-    # After the partition every needed order statistic sits at its sorted position.
-    picked = np.partition(finite, sorted(set(kth)))
-    part = dict(zip(kth, picked[kth].tolist(), strict=True))
-    value_range = part[m - 1] - part[0]
-    if value_range == 0.0:
-        return True
-    if m % 2 == 0:
-        q1, q3 = part[i1], part[i3]
-    else:
-        q1 = part[f25] + (p25 - math.floor(p25)) * (part[c25] - part[f25])
-        q3 = part[f75] + (p75 - math.floor(p75)) * (part[c75] - part[f75])
-    width = (q3 - q1) * m**-0.5
-    if not (width > 0.0 and math.isfinite(width)):
-        width = value_range / 128.0
-    if not width > 0.0:
-        return True  # range / 128 underflowed: one bin, as in _bin_count
-    ratio = value_range / width + 1e-12
-    int_max = float(np.iinfo(np.int32).max)
-    return not (_NATIVE_GRAVITY_BIN_CAP - 1 - _CAP_MARGIN <= ratio <= int_max + _CAP_MARGIN)
-
-
-def _grouped_gravity_is_exact(values: NDArray[np.float64], group: NDArray[np.intp]) -> bool:
-    """Whether native gravity on every group ``values[group == g]`` stays below the cap."""
-    finite = np.isfinite(values)
-    if not np.all(finite):
-        values = values[finite]
-        group = group[finite]
-    if values.size == 0:
-        return True
-    order = np.lexsort((values, group))
-    sorted_group = group[order]
-    starts = _run_starts(sorted_group[1:] != sorted_group[:-1])
-    sizes = np.diff(np.append(starts, sorted_group.size))
-    return not _ratio_exceeds_native_cap(_group_bin_ratios(values[order], starts, sizes))
-
-
-def _native_partition_is_exact(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-    quadrant: NDArray[np.str_],
-    xonly: bool,
-    regression_points: bool = True,
-) -> bool:
-    """Check every gravity centre a native "off" partition computed against the cap.
-
-    The groups split at depth ``d`` are the points sharing the first ``d + 1``
-    characters of their final quadrant label (each split appends one digit). The
-    regression points are the prior.quadrant groups: a label without its last
-    digit, i.e. a group split at the previous depth (or every point, "pq", when
-    nothing was split). The native result is exact up to the first gravity call
-    that hits the cap, so that call is always among the groups checked here.
-    """
-    n = quadrant.size
-    labels = np.ascontiguousarray(quadrant)
-    width = labels.dtype.itemsize // 4
-    chars = labels.view(np.uint32).reshape(n, width)
-    n_splits = np.count_nonzero(chars, axis=1) - 1
-    max_depth = int(np.max(n_splits)) if n else 0
-    if max_depth == 0:
-        # No split: the only gravity calls are the single "pq" regression point.
-        if not regression_points:
-            return True
-        return _native_gravity_is_exact(x) and _native_gravity_is_exact(y)
-
-    if xonly and np.all(np.isfinite(x)):
-        # X-only groups are x-intervals, i.e. contiguous runs once x is sorted
-        # (tied x values always share a group).
-        perm = np.argsort(x, kind="stable")
-        chars_sorted = chars[perm]
-        splits_sorted = n_splits[perm]
-        same = chars_sorted[1:] == chars_sorted[:-1]
-        lcp = np.where(np.all(same, axis=1), width, np.argmin(same, axis=1))
-        starts_list = []
-        sizes_list = []
-        for depth in range(max_depth):
-            starts = _run_starts(lcp < depth + 1)
-            sizes = np.diff(np.append(starts, n))
-            keep = splits_sorted[starts] > depth
-            starts_list.append(starts[keep])
-            sizes_list.append(sizes[keep])
-        ratios = _group_bin_ratios(
-            x[perm], np.concatenate(starts_list), np.concatenate(sizes_list)
-        )
-        if _ratio_exceeds_native_cap(ratios):
-            return False
-        if not regression_points:
-            return True
-        # prior.quadrant groups: same split count k and the same first k characters;
-        # their x centres are the depth-(k - 1) groups above, only y is new.
-        prior_change = (splits_sorted[1:] != splits_sorted[:-1]) | (lcp < splits_sorted[1:])
-        prior_group = np.cumsum(np.concatenate(([0], prior_change)))
-        return _grouped_gravity_is_exact(y[perm], prior_group)
-
-    # General case (two-axis partition or non-finite x): sort each split group per
-    # depth via (group id, rank) keys. Every prior.quadrant group is one of them.
-    variables = [x] if xonly else [x, y]
-    ranks = []
-    for values in variables:
-        rank = np.empty(n, dtype=np.int64)
-        rank[np.argsort(values, kind="stable")] = np.arange(n, dtype=np.int64)
-        ranks.append(rank)
-    dense = np.zeros(n, dtype=np.int64)
-    for depth in range(max_depth):
-        split = n_splits > depth
-        for values, rank in zip(variables, ranks, strict=True):
-            idx = np.flatnonzero(split & np.isfinite(values))
-            if idx.size == 0:
-                continue
-            order = idx[np.argsort(dense[idx] * n + rank[idx])]
-            sorted_group = dense[order]
-            starts = _run_starts(sorted_group[1:] != sorted_group[:-1])
-            sizes = np.diff(np.append(starts, order.size))
-            if _ratio_exceeds_native_cap(_group_bin_ratios(values[order], starts, sizes)):
-                return False
-        digit = np.where(split, chars[:, depth + 1].astype(np.int64) - 48, 0)
-        _, inverse = np.unique(dense * 5 + digit, return_inverse=True)
-        dense = inverse.reshape(-1).astype(np.int64)
-    if regression_points and xonly:
-        # X-only partitions with non-finite x: y centres of the prior groups.
-        prior_chars = chars.copy()
-        prior_chars[np.arange(n), n_splits] = 0
-        _, prior_group = np.unique(prior_chars, axis=0, return_inverse=True)
-        return _grouped_gravity_is_exact(y, prior_group.reshape(-1))
-    return True
-
-
-def _dep_native_is_exact(x: NDArray[np.float64], y: NDArray[np.float64]) -> bool:
-    """Whether nns_dep_pair's X-only partitions stay below the native gravity cap."""
-    n = x.size
-    obs_req = max(8, n // 8)
-    if _gravity_subsets_are_safe(x, obs_req + 1) and _gravity_subsets_are_safe(y, obs_req + 1):
-        return True
-    native_part = native_fn("nns_part_off")
-    if native_part is None:
-        return False
-    order = max(math.ceil(math.log2(max(1, n))), 1)
-    for values in (x, y):
-        res = native_part(
-            np.ascontiguousarray(values), np.ascontiguousarray(values), True, order, obs_req, False
-        )
-        quadrant = np.asarray(res["dt"]["quadrant"], dtype=str)
-        if not _native_partition_is_exact(values, values, quadrant, True, False):
-            return False
-    return True
-
-
-def _gravity_subsets_are_safe(values: NDArray[np.float64], min_size: int) -> bool:
-    """Cheap sufficient condition that native gravity on any subset stays below the cap.
-
-    Covers every subset of ``values`` with at least ``min_size`` finite members. For
-    a subset of m >= 4 sorted values, q1 <= s[c1] and q3 >= s[f3] for subset
-    positions k(m) = 3m // 4 - m // 4 - (m % 2) apart; those two values are at least
-    k(m) positions apart in the full sorted sample too, so q3 - q1 >= g_k =
-    min_j (s[j + k] - s[j]). With range <= R the bin ratio is at most
-    sqrt(m) * R / g_k (q3 == q1 uses the range / 128 width instead), bounded on
-    each block m in [M, 2M) with the smallest k of the block.
-    """
-    finite = values[np.isfinite(values)]
-    if finite.size < values.size:
-        min_size = 4  # a group's finite count can be below its size
-    n = finite.size
-    lo = max(4, min_size)
-    if lo > n:
-        return True
-    sorted_values = np.sort(finite)
-    value_range = float(sorted_values[-1] - sorted_values[0])
-    if value_range == 0.0:
-        return True
-    limit = _NATIVE_GRAVITY_BIN_CAP - 1 - _CAP_MARGIN
-    block = lo
-    while block <= n:
-        hi = min(2 * block - 1, n)
-        exact = [(3 * m) // 4 - m // 4 - (m % 2) for m in range(block, min(hi, block + 3) + 1)]
-        # (m - 3) // 2 <= k(m) is non-decreasing, so it bounds the rest of the block.
-        k = min([*exact, (block + 1) // 2]) if hi > block + 3 else min(exact)
-        if k < 1:
-            return False
-        if k < n:
-            gap = float(np.min(sorted_values[k:] - sorted_values[:-k]))
-            if not gap > 0.0 or math.sqrt(hi) * value_range / gap + 1.0 >= limit:
-                return False
-        block *= 2
-    return True
 
 
 def _is_discrete_case(x: NDArray[np.float64], y: NDArray[np.float64]) -> bool:
