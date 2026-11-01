@@ -257,8 +257,12 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
         return 0.0
 
     d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
-    if d0_co == 1.0 or d0_co == 0.0:
+    # Every point concordant: perfect positive dependence; every point discordant:
+    # perfect negative dependence (R fix 1f1490e; this used to return +1 too).
+    if d0_co == 1.0:
         return 1.0
+    if d0_co == 0.0:
+        return -1.0
 
     product = dx * dy
     upper = (dx >= 0.0) & (dy >= 0.0)
