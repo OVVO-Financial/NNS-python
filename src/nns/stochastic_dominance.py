@@ -53,19 +53,31 @@ class _SDOrderStatPrecomputed:
     identical: NDArray[np.bool_]
 
 
-def fsd(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") -> int:
+def fsd(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    type: str = "discrete",
+    *,
+    plot: bool = False,
+) -> int:
     """First-order stochastic dominance; ``x`` and ``y`` may differ in length.
 
     ``type="discrete"`` compares empirical CDFs; ``type="continuous"`` compares the
     degree-1 ratio ``LPM1 / (LPM1 + UPM1)``, as R's ``NNS.FSD(type=)`` does. Like R,
     an unrecognised ``type`` warns and runs the continuous test; where both
     partial moments vanish the ratio is the degree-0 ratio (the CDF value), as
-    in ``lpm_ratio`` and the patched R.
+    in ``lpm_ratio`` and the patched R. ``plot=True`` also draws R's FSD figure
+    (``nns.plotting.plot_fsd``); R's default is ``plot = TRUE``.
     """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
     discrete = _checked_fsd_type(type) == "discrete"
-    return _sd_result(x_values, y_values, 1, discrete=discrete)
+    result = _sd_result(x_values, y_values, 1, discrete=discrete)
+    if plot:
+        from nns.plotting.dominance import plot_fsd
+
+        plot_fsd(x_values, y_values, type="discrete" if discrete else "continuous")
+    return result
 
 
 def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") -> int:
@@ -79,11 +91,20 @@ def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discret
     return int(_dominates_uni(x_values, y_values, 1, discrete=discrete))
 
 
-def ssd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """Second-order stochastic dominance; ``x`` and ``y`` may differ in length."""
+def ssd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -> int:
+    """Second-order stochastic dominance; ``x`` and ``y`` may differ in length.
+
+    ``plot=True`` also draws R's SSD figure (``nns.plotting.plot_ssd``); R's
+    default is ``plot = TRUE``.
+    """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
-    return _sd_result(x_values, y_values, 2)
+    result = _sd_result(x_values, y_values, 2)
+    if plot:
+        from nns.plotting.dominance import plot_ssd
+
+        plot_ssd(x_values, y_values)
+    return result
 
 
 def ssd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
@@ -93,11 +114,20 @@ def ssd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
     return int(_dominates_uni(x_values, y_values, 2, discrete=True))
 
 
-def tsd(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
-    """Third-order stochastic dominance; ``x`` and ``y`` may differ in length."""
+def tsd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -> int:
+    """Third-order stochastic dominance; ``x`` and ``y`` may differ in length.
+
+    ``plot=True`` also draws R's TSD figure (``nns.plotting.plot_tsd``); R's
+    default is ``plot = TRUE``.
+    """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
-    return _sd_result(x_values, y_values, 3)
+    result = _sd_result(x_values, y_values, 3)
+    if plot:
+        from nns.plotting.dominance import plot_tsd
+
+        plot_tsd(x_values, y_values)
+    return result
 
 
 def tsd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
@@ -119,6 +149,9 @@ def nns_sd_cluster(
 
     Cluster members are named by ``names``, else by the columns of a DataFrame-like
     ``data`` (R's ``colnames``), else ``X_1``, ``X_2``, ...
+    ``dendrogram=True`` returns R's ``hclust`` fields under ``"Dendrogram"`` and, as
+    R does, draws the dendrogram; with fewer than two clustered variables it warns
+    and returns the clusters only.
     """
     column_labels = getattr(data, "columns", None)
     values = np.asarray(data, dtype=np.float64)
@@ -200,10 +233,15 @@ def nns_sd_cluster(
     if dendrogram:
         all_vars = [name for cluster in clusters.values() for name in cluster]
         if len(all_vars) < 2:
+            warnings.warn(
+                "Not enough variables for hierarchical clustering. Returning clusters only.",
+                UserWarning,
+                stacklevel=2,
+            )
             return {"Clusters": clusters, "Order": None}
         return {
             "Clusters": clusters,
-            "Dendrogram": _sd_cluster_hclust(clusters, all_names),
+            "Dendrogram": _sd_cluster_hclust(clusters, all_names, draw_degree=degree_int),
         }
 
     return {"Clusters": clusters}
@@ -212,6 +250,8 @@ def nns_sd_cluster(
 def _sd_cluster_hclust(
     clusters: dict[str, list[str]],
     original_names: Sequence[str],
+    *,
+    draw_degree: int | None = None,
 ) -> dict[str, object]:
     all_vars = [name for cluster in clusters.values() for name in cluster]
     cluster_labels = np.asarray(
@@ -232,6 +272,8 @@ def _sd_cluster_hclust(
     condensed = squareform(distances, checks=False)
     linked = linkage(condensed, method="complete")
     merge = _r_hclust_merge(linked, len(all_vars))
+    if draw_degree is not None:
+        _draw_sd_dendrogram(linked, all_vars, draw_degree)
     original_positions = {name: index + 1 for index, name in enumerate(original_names)}
     order = np.asarray([original_positions[name] for name in all_vars], dtype=np.int64)
     return {
@@ -243,6 +285,21 @@ def _sd_cluster_hclust(
         "call": 'hclust(d = dist_matrix, method = "complete")',
         "dist.method": None,
     }
+
+
+def _draw_sd_dendrogram(linked: NDArray[np.float64], labels: list[str], degree: int) -> None:
+    """Draw the cluster dendrogram, as R's ``NNS.SD.cluster(dendrogram = TRUE)`` does."""
+    from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
+
+    from nns.plotting._mpl import resolve_ax
+
+    ax = resolve_ax(None)
+    scipy_dendrogram(
+        linked, labels=labels, ax=ax, link_color_func=lambda _: "black", leaf_rotation=90
+    )
+    ax.set_title(f"Hierarchical Clustering of Stochastic Dominance Sets\nSD Degree: {degree}")
+    ax.set_xlabel("Variables")
+    ax.set_ylabel("SD Distance")
 
 
 def _r_hclust_merge(linked: NDArray[np.float64], n_obs: int) -> NDArray[np.int64]:

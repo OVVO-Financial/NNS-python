@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Sequence
 
 import numpy as np
@@ -20,6 +21,7 @@ def nns_copula(
     *,
     continuous: bool = True,
     target: NDArray[np.float64] | Sequence[float] | None = None,
+    plot: bool = False,
 ) -> float:
     """Return R's ``NNS.copula`` higher-dimension dependence value in ``[0, 1]``.
 
@@ -40,9 +42,26 @@ def nns_copula(
 
     Inputs and targets must be non-empty and finite (R stops on missing or
     non-finite data); a ``ValueError`` is raised otherwise.
+
+    ``plot=True`` also scatters the data with R's orthant colouring
+    (``nns.plotting.plot_nns_copula``): a 2-D scatter for two variables and a
+    3-D one for three. More than three variables cannot be drawn; a warning
+    says so.
     """
     values, targets = _prepare(x, y, target_x, target_y, target)
-    return _copula(values, targets, continuous)
+    result = _copula(values, targets, continuous)
+    if plot:
+        if values.shape[1] > 3:
+            warnings.warn(
+                "plot=True draws two or three variables only; nothing is drawn.",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            from nns.plotting.copula import plot_nns_copula
+
+            plot_nns_copula(values)
+    return result
 
 
 def _copula(

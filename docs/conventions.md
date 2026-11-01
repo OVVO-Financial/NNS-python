@@ -28,6 +28,23 @@ Python thread. R also uses `ncores` for its parallel `NNS.ARMA.optim` workers;
 NNS Python has no process-level parallelism. The heavy kernels release the GIL,
 so Python threads can run them concurrently.
 
+## Plotting
+
+Compute functions never draw unless asked. Where R's default is `plot = TRUE`
+(`NNS.reg`, `NNS.FSD`/`SSD`/`TSD`, `NNS.ANOVA`, ...), NNS Python defaults to
+`plot=False` and returns the same values either way; `plot=True` additionally
+draws the figure through the matching `nns.plotting.plot_*` function and never
+calls `plt.show()`. The flag exists on `nns_reg`, `nns_m_reg`, `nns_cdf`,
+`nns_seas`, `nns_arma`, `nns_arma_optim`, `nns_part` (R's `Voronoi`),
+`fsd`, `ssd`, `tsd`, `nns_anova`, `nns_norm` (R's `chart.type = "l"`),
+`nns_diff` and `nns_copula`. `nns_sd_cluster(dendrogram=True)` draws the
+dendrogram, as R does, because the flag is also what returns the `hclust` data.
+A requested figure that cannot be drawn raises a `UserWarning` instead of being
+skipped silently: multivariate `nns_reg(plot=True)` with more than two
+regressors (R draws its 3-D scatter for exactly two; `residual_plot=True` draws
+the fitted-values plot for any number), `nns_copula(plot=True)` with more than
+three variables, and `nns_norm(plot=True)` on unequal-length lists.
+
 ## Degree-Zero Boundary
 
 At degree zero, `LPM` uses `x <= T` and `UPM` uses `x > T`.
@@ -101,7 +118,8 @@ unrecognised `type` warns (and `fsd` then runs its continuous branch, while
 `fsd_uni` and the efficient-set routines run the discrete one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
-NNS Python does not plot the dendrogram; it only returns the object data.
+With fewer than two clustered variables it warns, as R does, and returns the
+clusters only. The dendrogram is drawn as well (see Plotting).
 
 The stochastic-dominance implementation is deliberately pure NumPy. It mirrors
 R's C++ SD core mathematically by sorting each column once, storing prefix sums,
@@ -421,8 +439,8 @@ example.
 
 ## Seasonality
 
-`nns_seas` maps to installed R's non-plotting `NNS.seas` path and ignores
-`plot`, consistent with other NNS Python ports. Inputs shorter than five observations
+`nns_seas` maps to installed R's `NNS.seas`; `plot=True` draws the figure as a
+side effect (see Plotting). Inputs shorter than five observations
 return R's sentinel period `0`. For mean-zero data, R falls back from coefficient
 of variation to `abs(acf1) ** -1`; NNS Python follows the same fallback and
 non-finite handling. Installed R can report harmonics rather than the visually
@@ -529,8 +547,8 @@ are covered as smoke tests, but installed R behavior remains the parity source.
 
 ## Normalization
 
-`nns_norm(x, linear=False)` maps to R's numeric matrix `NNS.norm` path with
-plotting disabled. NNS Python accepts finite 2D arrays. `linear=True` uses R's
+`nns_norm(x, linear=False)` maps to R's numeric matrix `NNS.norm` path
+(`plot=True` draws R's `chart.type = "l"` panels). NNS Python accepts finite 2D arrays. `linear=True` uses R's
 mean-ratio scaling, while `linear=False` additionally weights scaling by
 absolute correlation for fewer than 10 columns and NNS dependence for 10 or
 more columns.
@@ -573,8 +591,8 @@ intervals are supported in `nns_reg` and `nns_m_reg`; stack/boost class
 
 ## Differentiation
 
-`nns_diff` maps to R's scalar callable `NNS.diff` path with plotting and trace
-output disabled. It returns a dictionary keyed by R's matrix row names and
+`nns_diff` maps to R's scalar callable `NNS.diff` path with trace
+output disabled (`plot=True` draws the function and secant panel). It returns a dictionary keyed by R's matrix row names and
 rounds results to `digits`, matching R's default output convention.
 `dy_dx(..., eval_point="overall")` maps to R's `dy.dx(..., eval.point =
 "overall")` path and returns the mean fitted gradient from unsmoothed
@@ -623,7 +641,7 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 
 ## ANOVA
 
-`nns_anova` maps to R's non-plotting `NNS.ANOVA` paths. Binary comparisons
+`nns_anova` maps to R's `NNS.ANOVA` paths (`plot=False` by default; see Plotting). Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
 symmetric certainty matrix. `NaN` values are dropped from every group (R drops
