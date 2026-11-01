@@ -105,8 +105,8 @@ def test_nns_anova_robust_matches_seeded_r(
     confidence_interval: float | None,
     medians: bool,
 ) -> None:
-    # Same resample indices and the same control/treatment pairing as R, so the
-    # robust estimate and its bounds match set.seed(seed) in R exactly.
+    # Same resample indices as R (each group bootstrapped from its own full sample,
+    # R fix 546f765), so the robust estimate and its bounds match set.seed(seed).
     control, treatment = _groups(30)
     treatment = np.sin(3.0 * treatment[:26]) + 0.1
 
@@ -142,6 +142,24 @@ def test_nns_anova_robust_matches_seeded_r(
         assert {f"Lower {level}% CI", f"Upper {level}% CI"} <= set(actual)
     for key, value in renamed.items():
         np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parity
+def test_nns_anova_robust_resamples_all_of_the_longer_group() -> None:
+    # R fix 546f765: control = 50 x N(0,1)-like values then 150 shifted by 5; the
+    # treatment matches only the first 50. Resampling just the first min(n1, n2)
+    # control observations made the robust certainty look high.
+    idx = np.arange(200, dtype=np.float64)
+    control = np.where(idx < 50, np.sin(idx), 5.0 + np.sin(idx))
+    treatment = np.sin(np.arange(50, dtype=np.float64) + 0.5)
+
+    expected = _r_anova_seeded(control, treatment, seed=1, ci=0.95, robust=True)
+    actual = nns_anova(control, treatment, robust=True, random_seed=1)
+
+    assert isinstance(actual, dict)
+    for key in ("Robust Certainty Estimate", "Lower 95% CI", "Upper 95% CI", "Certainty"):
+        np.testing.assert_allclose(actual[key], np.asarray(expected[key]), atol=1e-12)
+    assert actual["Robust Certainty Estimate"] < 0.05
 
 
 @pytest.mark.parity
