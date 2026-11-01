@@ -589,9 +589,10 @@ one-sided slope and the second derivative is NaN. As in R, bandwidths that
 repeat in `h_s` (n < 49) are skipped; below n = 16, where every bandwidth
 repeats and R's `dy.dx` fails, the port uses the distinct bandwidths.
 `eval_point` must be given (a number, a vector, or `"overall"`).
-`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")`
-(tolerance `.Machine$double.eps^0.25`), so iterations and convergence flags
-match R.
+`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")` with
+`tol = tol / 10`, and declares convergence when the bisection bracket on the
+intercept `B` is narrower than `tol * max(1, |B|)` (as in the patched R), so
+iterations and convergence flags match R.
 
 NNS Python derivative parity is defined at the public input/output level, while
 preserving R's cumulative finite-difference perturbation pattern for `dy_d`.

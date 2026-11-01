@@ -100,7 +100,9 @@ def nns_diff(
                 return math.nan
             return -f_x + ((f_x - _eval_real(f, point - x, "f(point - x)")) / x) * point + intercept
 
-        inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value)
+        # Solve for h to the convergence tolerance (R fix d8f70b8; uniroot's default
+        # tol of about 1.2e-4 made |inferred_h| < tol a test of its stopping point).
+        inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value, tol=tol / 10.0)
         if not np.isfinite(inferred_h):
             termination_code = 2
             break
@@ -123,6 +125,12 @@ def nns_diff(
             else:
                 lower_b = new_b
         new_b = float(np.mean([lower_b, upper_b]))
+        # Converged once the bisection bracket on B is tight: inferred_h cannot reach
+        # |h| < tol in double precision once it is accurate (R fix d8f70b8).
+        if abs(upper_b - lower_b) <= tol * max(1.0, abs(new_b)):
+            converged = True
+            termination_code = 0
+            break
         iteration += 1
 
     final_b = float(np.mean([upper_b, lower_b]))
@@ -845,15 +853,16 @@ _DBL_EPS = float(np.finfo(float).eps)
 _DBL_MAX = float(np.finfo(float).max)
 
 
-def _uniroot_extend(fn: Callable[[float], float], lower: float, upper: float) -> float:
-    """Root of ``fn`` like R's ``uniroot(fn, c(lower, upper), extendInt = "yes")``.
+def _uniroot_extend(
+    fn: Callable[[float], float], lower: float, upper: float, *, tol: float = _DBL_EPS**0.25
+) -> float:
+    """Root of ``fn`` like R's ``uniroot(fn, c(lower, upper), extendInt = "yes", tol)``.
 
-    Uses R's default ``tol = .Machine$double.eps^0.25`` and ``maxiter = 1000``:
+    ``tol`` defaults to R's ``.Machine$double.eps^0.25``; ``maxiter = 1000``:
     the interval is widened additively on both sides until the end values
     bracket a root, then refined with Brent's method as in R's ``zeroin2``.
     Returns NaN where R's ``uniroot`` stops with an error.
     """
-    tol = _DBL_EPS**0.25
     maxiter = 1000
     try:
         f_lower = float(fn(lower))
