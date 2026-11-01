@@ -41,8 +41,12 @@ def test_r_nns_13_copula_smoke_values() -> None:
 
     np.testing.assert_allclose(nns_copula(a2, continuous=True), 1.0, atol=EXACT)
     np.testing.assert_allclose(nns_copula(a2, continuous=False), 1.0, atol=EXACT)
-    np.testing.assert_allclose(nns_copula(a3, continuous=True), 0.9660918, atol=COMPOUND)
-    np.testing.assert_allclose(nns_copula(a3, continuous=False), 0.9309493, atol=COMPOUND)
+    # R 13.3 + patches (CORE-10, "NNS.copula: dimension-generic perfect-dependence
+    # early return"): every pair of a3 is fully concordant about the column means
+    # (pair sum 3 = choose(3, 2)), so the copula is 1; R 13.3 compared the sum with
+    # 1 and gave 0.9660918 / 0.9309493.
+    np.testing.assert_allclose(nns_copula(a3, continuous=True), 1.0, atol=EXACT)
+    np.testing.assert_allclose(nns_copula(a3, continuous=False), 1.0, atol=EXACT)
 
 
 @pytest.mark.parity
