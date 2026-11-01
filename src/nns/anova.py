@@ -7,9 +7,9 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rmean import r_mean
 from nns._rrng import RRNG
 from nns.core import lpm_ratio, upm_ratio
-from nns.dependence import _gravity
 from nns.var import lpm_var, upm_var
 
 AnovaResult = dict[str, float]
@@ -105,11 +105,8 @@ def _nns_anova(
     if len(groups) < 2:
         raise ValueError("supply both control and treatment or at least two control groups.")
 
-    grand = (
-        float(np.mean([np.median(group) for group in groups]))
-        if medians
-        else float(np.mean([np.mean(group) for group in groups]))
-    )
+    pooled = np.concatenate(groups)
+    grand = float(np.median(pooled)) if medians else r_mean(pooled)
 
     if pairwise:
         out = np.full((len(groups), len(groups)), np.nan, dtype=np.float64)
@@ -172,9 +169,12 @@ def _anova_bin(
     if mean_of_means is None:
         control_stat = float(np.median(control) if medians else np.mean(control))
         treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
-        mean_of_means = (control.size * control_stat + treatment.size * treatment_stat) / (
-            control.size + treatment.size
-        )
+        if medians:
+            mean_of_means = float(np.median(np.concatenate((control, treatment))))
+        else:
+            mean_of_means = (control.size * control_stat + treatment.size * treatment_stat) / (
+                control.size + treatment.size
+            )
     else:
         control_stat = float(np.median(control) if medians else np.mean(control))
         treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
@@ -308,7 +308,8 @@ def _anova_robust(
         n_boot=n_boot,
         rng=rng,
     )
-    base["Robust Certainty Estimate"] = _gravity(certainties)
+    finite = certainties[~np.isnan(certainties)]
+    base["Robust Certainty Estimate"] = float(np.median(finite)) if finite.size else math.nan
     if confidence_interval is None:
         return base
 

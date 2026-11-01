@@ -650,9 +650,9 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 `nns_anova` maps to R's `NNS.ANOVA` paths (`plot=False` by default; see Plotting). Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
-symmetric certainty matrix. `NaN` values are dropped from every group (R drops
-them with `na.omit` in the multi-group path but propagates `NaN` in the binary
-path); `±Inf` raises a `ValueError` (R's binary path fails on it in
+symmetric certainty matrix. The grand statistic is the mean (or, with
+`medians=True`, the median) of all observations pooled, as in the patched R.
+`NaN` values are dropped from every group, as R does with `na.omit`; `±Inf` raises a `ValueError` (R's binary path fails on it in
 `LPM.VaR`). Confidence-interval bootstrapping draws from a
 reproduction of R's Mersenne-Twister `sample()` stream, so
 `random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
@@ -660,8 +660,8 @@ the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
 entropy. `robust=True` follows R's resampling exactly: 100 independent bootstrap
 resamples of each group, each from its own full sample and size (as in the patched
 R; 13.3 resampled only the first `min(n_control, n_treatment)` positions of both
-groups). It returns `Robust Certainty Estimate`
-plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
+groups). It returns `Robust Certainty Estimate`, the median of the finite
+resampled certainties (R's `median(na.rm = TRUE)`), plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
 `confidence_interval=None`. R names the effect-size keys of the robust output
 `Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
 `Effect_Size_LB`/`Effect_Size_UB`. One-sided effect-size intervals follow the
