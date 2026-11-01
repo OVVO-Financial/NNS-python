@@ -120,7 +120,7 @@ jobs:
           set -euo pipefail
           python -m pip install -U pip
           python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy
-          python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install hypothesis pytest-benchmark pytest-xdist pandas
           python -m pip install -e .
           python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
 
