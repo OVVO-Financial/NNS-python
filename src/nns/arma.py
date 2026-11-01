@@ -533,7 +533,8 @@ def nns_arma(
         elif method_l == "nonlin":
             estimate = float(np.sum(nonlin_estimate * lag_weights))
         else:
-            estimate = 0.0
+            # method="means": the weighted seasonal means (R fix b33e9f3; was 0).
+            estimate = lin_estimate
 
         estimates[index] = estimate
         buffer[current_len] = estimate
