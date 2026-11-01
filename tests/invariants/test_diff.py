@@ -206,7 +206,7 @@ def test_dy_d_is_deterministic() -> None:
 
 def test_dy_d_matches_pinned_values() -> None:
     # Golden values guard the finite-difference design against regressions (the
-    # multivariate nns_reg fit of R fix cebf750; the true slopes are 1, 2, -1).
+    # multivariate nns_reg fit of the patched R; the true slopes are 1, 2, -1).
     from nns import dy_d
 
     x = np.random.RandomState(0).randn(60, 3)

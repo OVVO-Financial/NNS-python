@@ -1003,7 +1003,7 @@ def nns_stack(
                         count_list[str(k)][rows] += 1
 
                 # Mandatory all-points candidate, scored with the estimator deployed
-                # when ALL wins (R fix 70224e6; it was a constant training mean): the
+                # when ALL wins (it was a constant training mean): the
                 # univariate NNS.reg fit, or NNS.reg(n.best = "all").
                 if train_design.shape[1] == 1:
                     all_raw = fit_univariate_raw(

@@ -44,7 +44,7 @@ def test_nns_boost_numeric_matches_r(depth: int | None) -> None:
 @pytest.mark.parity
 @pytest.mark.parametrize("values", [(0.0, 1.0), (-5.0, 5.0)])
 def test_nns_boost_two_valued_numeric_response_returns_values(values: tuple[float, float]) -> None:
-    # R fix 9219a12: the final NNS.stack auto-classifies a two-valued numeric
+    # Patched R: the final NNS.stack auto-classifies a two-valued numeric
     # response and returns class codes 1/2, which boost passed through as
     # regression estimates; they are now mapped back to the response values.
     x = np.linspace(-2.0, 2.0, 40)

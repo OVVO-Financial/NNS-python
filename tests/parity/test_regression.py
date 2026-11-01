@@ -233,7 +233,7 @@ def test_nns_reg_mode_noise_reduction_matches_r(
 
 @pytest.mark.parity
 def test_nns_reg_multivariate_mode_noise_reduction_matches_r() -> None:
-    # R fix e50a3c9: R's native multivariate setup reduced noise_reduction="mode"
+    # R's native multivariate setup reduced noise_reduction="mode"
     # cells with the exact most-frequent value, while the pure-R reference uses
     # NNS.mode(discrete = FALSE); NNS Python follows the reference, which the
     # patched R's default path now matches.

@@ -720,7 +720,7 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
 @pytest.mark.parity
 @pytest.mark.parametrize("columns", [1, 2])
 def test_nns_stack_all_candidate_is_scored_with_the_deployed_estimator(columns: int) -> None:
-    # R fix 70224e6: the Method 1 "ALL" candidate was scored out of fold as the
+    # The Method 1 "ALL" candidate was scored out of fold as the
     # constant training mean, but the deployed model is the univariate NNS.reg fit
     # or NNS.reg(n.best = "all"). On pure noise ALL used to win with the SSE of a
     # constant (the same OBJfn.reg for one and two columns).
@@ -763,7 +763,7 @@ def test_nns_stack_all_candidate_is_scored_with_the_deployed_estimator(columns: 
 @pytest.mark.parity
 @pytest.mark.stochastic
 def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
-    # R fix 7e170c9: sample(g, k) on a one-member class g sampled from 1:g and
+    # sample(g, k) on a one-member class g sampled from 1:g and
     # dropped the rare class; R now indexes g[sample.int(length(g), k)], which is
     # what NNS Python's R-sample emulation already did. Seeds now reach R's
     # NNS.stack(seed =) (it re-seeded with its default 123, X-10).

@@ -573,7 +573,7 @@ def nns_boost(
     if not is_class and stack_levels is not None:
         # nns_stack auto-classifies a two-valued numeric response even when boost
         # treats it as a regression; map its class codes back to the response
-        # values (R fix 9219a12; the codes 1/2 used to be returned as estimates).
+        # values (the codes 1/2 used to be returned as estimates).
         results_raw = _decode_stack_codes(results_raw, stack_levels)
         if pred_int_output is not None:
             pred_int_output = {

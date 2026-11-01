@@ -101,7 +101,7 @@ def nns_diff(
                 return math.nan
             return -f_x + ((f_x - _eval_real(f, point - x, "f(point - x)")) / x) * point + intercept
 
-        # Solve for h to the convergence tolerance (R fix d8f70b8; uniroot's default
+        # Solve for h to the convergence tolerance (uniroot's default
         # tol of about 1.2e-4 made |inferred_h| < tol a test of its stopping point).
         inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value, tol=tol / 10.0)
         if not np.isfinite(inferred_h):
@@ -127,7 +127,7 @@ def nns_diff(
                 lower_b = new_b
         new_b = float(np.mean([lower_b, upper_b]))
         # Converged once the bisection bracket on B is tight: inferred_h cannot reach
-        # |h| < tol in double precision once it is accurate (R fix d8f70b8).
+        # |h| < tol in double precision once it is accurate.
         if abs(upper_b - lower_b) <= tol * max(1.0, abs(new_b)):
             converged = True
             termination_code = 0
@@ -232,7 +232,7 @@ def dy_d(
     extended by ``10 * H`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First
     and second derivatives use the central-difference forms
     ``(upper - lower) / (2 h)`` and ``(upper - 2 f(x) + lower) / h ** 2``, averaged
-    over the bandwidths. This follows the patched R (fix cebf750): NNS 13.3
+    over the bandwidths. This follows the patched R: NNS 13.3
     estimated ``f`` from ``NNS.stack`` on the equal-weight index ``rowMeans(x)``,
     so every regressor received about the index slope / p whatever its true effect.
 
@@ -364,7 +364,7 @@ def _dy_d_best_reg_estimates(
 ) -> NDArray[np.float64]:
     """f(x +/- h e_wrt) from the multivariate nns_reg fit on the actual regressors.
 
-    R fix cebf750: ``NNS.reg(x, y, point.est = pts, order = NULL)``. The previous
+    Patched R: ``NNS.reg(x, y, point.est = pts, order = NULL)``. The previous
     ``NNS.stack`` fit on the equal-weight index ``rowMeans(x)`` made every estimate
     depend on ``mean(x)`` only (y = 2*x1 gave dy/dx2 of about 1).
     """
@@ -689,7 +689,7 @@ def _dy_dx_numeric(
     bandwidths = h_s[np.isin(h_s, values[counts == 1])]
     if bandwidths.size == 0:
         bandwidths = values
-    # Typical spacing between neighbouring x values (R fix 4afe296): diff() of x
+    # Typical spacing between neighbouring x values: diff() of x
     # in row order measured the gap between consecutive rows, so unsorted input
     # gave steps spanning the whole range and depended on row order.
     spacing = float(_gravity(np.diff(np.unique(x))))

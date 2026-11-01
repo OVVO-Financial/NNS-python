@@ -37,7 +37,7 @@ DY_D_PARITY = 5e-2
 )
 def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
     # The root finder mirrors R's uniroot (extendInt = "yes", tol = tol / 10 and the
-    # bracket-on-B convergence test of R fix d8f70b8), so every reported field,
+    # bracket-on-B convergence test of the patched R), so every reported field,
     # including iterations and the convergence flags, matches R's 12-digit output.
     expected = _r_nns_diff(name, point)
     actual = nns_diff(func, point)
@@ -58,7 +58,7 @@ def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
     ],
 )
 def test_nns_diff_converged_derivative_is_accurate(func: Any, point: float, truth: float) -> None:
-    # R fix d8f70b8: "converged" used to be reported with errors of 4e-7 to 6e-4.
+    # Patched R: "converged" used to be reported with errors of 4e-7 to 6e-4.
     result = nns_diff(func, point)
     assert result["converged"] == 1.0
     assert abs(result["DERIVATIVE"] - truth) < 1e-7
@@ -106,7 +106,7 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
 @pytest.mark.parametrize("size", [30, 60, 250])
 def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
     # R steps by gravity(diff(sort(unique(x)))) * h_s (the bandwidth value, not its
-    # index; R fix 4afe296 sorts x first); for n < 49 R keeps only the bandwidths
+    # index; the patched R sorts x first); for n < 49 R keeps only the bandwidths
     # that occur once in h_s.
     # x on a 1/1024 grid makes x * x * x exact, so the cache key matches on every numpy build.
     rng = np.random.default_rng(size)
@@ -122,7 +122,7 @@ def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
 
 @pytest.mark.parity
 def test_dy_dx_numeric_does_not_depend_on_row_order() -> None:
-    # R fix 4afe296: with diff() of x in row order, 500 unsorted U(-2, 2) points
+    # R 13.3 took diff() of x in row order: 500 unsorted U(-2, 2) points
     # gave dy/dx of x^3 of about 3.7 everywhere (truth 6.75 0 0.75 6.75).
     rng = np.random.default_rng(1)
     x = np.round(rng.uniform(-2.0, 2.0, 500), 8)
@@ -171,7 +171,7 @@ def test_dy_d_mean_wrt_matches_r(wrt: int) -> None:
 @pytest.mark.parametrize("wrt", [1, 2])
 @pytest.mark.parametrize("eval_points", ["mean", "median"])
 def test_dy_d_irrelevant_regressor_gets_no_slope_like_r(wrt: int, eval_points: str) -> None:
-    # R fix cebf750: f(x +/- h e_wrt) comes from the multivariate NNS.reg fit on
+    # Patched R: f(x +/- h e_wrt) comes from the multivariate NNS.reg fit on
     # the actual regressors. The old NNS.stack fit on rowMeans(x) gave every
     # regressor about the index slope / p (y = 2*x1: dy/dx2 about 1).
     rng = np.random.default_rng(2)
