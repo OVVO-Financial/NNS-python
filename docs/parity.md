@@ -113,16 +113,8 @@ The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus a
 local series of R bug fixes (the local branch `fix/combined`; the patch files
 are to be submitted upstream), not from the unpatched 13.3 release. Every shard
 was rebuilt from that R build with the full test suite; shards for functions the
-patches do not touch came out unchanged. Exceptions:
-
-- seven `NNS.dep` entries (the quadratic/noise cases and the matrix form in
-  `tests/parity/test_dependence.py`) keep their 13.3 values: they contain fully
-  discordant partition cells, whose sign the patched R fixes,
-  and the default native `nns_dep_pair` kernel still has the old early return
-  until it is rebuilt (the NumPy path is already fixed);
-- the C++ kernel fixes of the same series (prefix-backend LPM/UPM for more than
-  32 targets at degree >= 3, discrete `NNS.mode` outside the int range, histogram
-  bounds) are not mirrored in Python's native kernels yet.
+patches do not touch came out unchanged. Where Python has not mirrored one of
+those fixes yet, the parity tests that depend on it are marked xfail until it is.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
