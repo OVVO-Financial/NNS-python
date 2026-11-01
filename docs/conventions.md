@@ -109,9 +109,12 @@ and evaluating dominance on each pair's merged threshold grid rather than on one
 global all-column grid. Pairwise tests (`fsd`, `ssd`, `tsd`, and the `*_uni`
 wrappers) accept samples of unequal length: each sample's curve is evaluated on
 the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
-`LPM(degree, sort(c(x, y)), sample)` per sample. R's C++ `.uni` walkers assume
-equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
-intentional extension carrying the same merged-grid semantics. The
+`LPM(degree, sort(c(x, y)), sample)` per sample, and as the patched R `.uni`
+walkers do (each sample walked with its own length). Every pairwise verdict
+comes from one port of R's native pairwise test: for TSD and continuous FSD it
+also checks the closed-form extremum of the curve difference strictly between
+merged sample points (LPM2 is piecewise quadratic and the continuous ratio
+linear-fractional, so the difference can peak there), as the patched R does. The
 matrix-based efficient-set and cluster routines operate on data columns and
 therefore remain equal-length by construction. Every efficient-set and cluster
 call, whatever the column count, tests each pair on that pair's own grid, so a
@@ -124,7 +127,7 @@ kept-only prefix scan.
 Columns are visited in R's LPM-at-global-maximum order with original-index tie
 breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating
-curves, then exits as soon as dominance is disproved.
+curves.
 
 These choices preserve exact R-style dominance semantics: no tolerances,
 approximate equality, output reordering, or diagonal/identical-column behavior
