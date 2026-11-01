@@ -29,7 +29,7 @@
         [
           1.0,
           -0.0133832114561754,
-          0.338216789190274,
+          0.218216789190274,
           0.196417058071333
         ],
         [
@@ -83,8 +83,8 @@
       "Dependence": 1.0
     },
     "35f62932bcd1ac7eb5c1a38957326a83e9bc19515476c5b12d9ae1414b18bcd3": {
-      "Correlation": -0.989831989749504,
-      "Dependence": 0.989831989749504
+      "Correlation": -0.979303105769251,
+      "Dependence": 0.979303105769251
     },
     "38611d39f1eb62529861e725364e4ead4131d7cd939acf8e2b8fd04302f4b0ae": {
       "Correlation": 0.215232866845951,
@@ -107,28 +107,28 @@
       "Dependence": 1.0
     },
     "55433f545c0220cbbb74784913f1c077a5bd1ce65457542e60f9924ac7206116": {
-      "Correlation": -0.989831989749504,
-      "Dependence": 0.989831989749504
+      "Correlation": -0.979303105769251,
+      "Dependence": 0.979303105769251
     },
     "5b0e61c67fc1b4a1ed17daa9aa25f54ff3a04733af69302ec634948cca361926": {
       "Correlation": 0.316399535402824,
       "Dependence": 0.339523946870805
     },
     "5bea2b461a70e3833258b12211bfeccda4eac337740ac0fca98b2a8fcd407609": {
-      "Correlation": 0.416901016086743,
-      "Dependence": 0.980695570825862
+      "Correlation": -0.0295347436919437,
+      "Dependence": 0.979370136574698
     },
     "61425bd0cf29f26764aa55e48845a15f29e1b5b7f4e7f232c7ac00a42dcefbe0": {
-      "Correlation": 0.0869676690728519,
-      "Dependence": 0.488261691508153
+      "Correlation": 0.10138874808901,
+      "Dependence": 0.473840612491995
     },
     "63c67307195ce6e512465ea1994e746e7e96488d6c71fc5e826d53338069d80f": {
       "Correlation": -1.0,
       "Dependence": 1.0
     },
     "79019ed53b65d276d15081e211b024fb1f39ec965e64f7db6172e39b6a96c54b": {
-      "Correlation": 0.416901016086743,
-      "Dependence": 0.980695570825862
+      "Correlation": -0.0295347436919437,
+      "Dependence": 0.979370136574698
     },
     "7a4ef6ef1118a258b1953895bbab6ac71120f3e94492adaf34bad98d21865d1a": {
       "Correlation": 0.316399535402824,
@@ -155,20 +155,20 @@
       "Dependence": 0.543506327777043
     },
     "8de8f55d05bd421f39db4ceb2e182f97bd3ef5a8caea2dcc35b33addd5428046": {
-      "Correlation": 0.227167898933558,
+      "Correlation": -0.0189017727024855,
       "Dependence": 0.924658372780148
     },
     "8e1b5384bb943863a57f13aa3dba7094b82ebf4427d3ee171b67182a5e2d64fd": {
-      "Correlation": 0.394149567629753,
+      "Correlation": 0.234149567629753,
       "Dependence": 0.757875550354019
     },
     "8e9e7a651cbd1b8ebb796b73d25b776e590191a6faa727168cd3345e45d74abc": {
-      "Correlation": 0.25,
+      "Correlation": 0.138888888888889,
       "Dependence": 0.25
     },
     "90535a64379705e2a58ed4bf6b95cbfaa64cefe5eeaf9f77b9603ed69e0d036e": {
-      "Correlation": 0.0869676690728519,
-      "Dependence": 0.488261691508153
+      "Correlation": 0.10138874808901,
+      "Dependence": 0.473840612491995
     },
     "90935ed7b26578067dd41346473a121e63d7b80b3a4fe187acf1161129b4e0d5": {
       "Correlation": -0.026679176780182,
@@ -179,7 +179,7 @@
       "Dependence": 0.653061936830541
     },
     "baf1b185964239b242d8b530f8ce01832e2465d2a2f841bec477823012e63baf": {
-      "Correlation": 0.1414218377427,
+      "Correlation": 0.0240873530762986,
       "Dependence": 0.759143462417859
     },
     "bc7d93bb53d2e3b711b928cccccc4b0fe32546e762441efa967ceab860ffb42a": {
@@ -215,7 +215,7 @@
       "Dependence": 0.267473992635121
     },
     "d3bcccff0fe3726bd8708f7dc40332d6f212d2a710e766711d86fa4f6ed60488": {
-      "Correlation": 0.1414218377427,
+      "Correlation": -0.00857816225730049,
       "Dependence": 0.759143462417859
     },
     "d3d3953b9a1d7e93e517f04f5705684e5b44deb0b937cd7b097ded186fb599bd": {
@@ -223,7 +223,7 @@
       "Dependence": 0.357154419259892
     },
     "db9085ea34cb45c44db7350af58bf76bff0c4306307e282eda66abb81350f097": {
-      "Correlation": 0.24106311446094,
+      "Correlation": 0.0410631144609404,
       "Dependence": 0.591996055167169
     },
     "e15c1245d6b13b1405390b6401cb512757c5db31eab588b5c7b7592fcc21f2ba": {
@@ -231,7 +231,7 @@
         [
           1.0,
           0.070353514068384,
-          0.338216789190274,
+          0.218216789190274,
           0.196417058071333
         ],
         [
@@ -241,7 +241,7 @@
           0.135362563421899
         ],
         [
-          0.338216789190274,
+          0.218216789190274,
           0.245786318031368,
           1.0,
           0.267884054667627
@@ -297,11 +297,11 @@
       "Dependence": 0.489388830409705
     },
     "eff39d7d3d567fe67622910dfd5dbdc747765442393a3ce544e4ed62fc8d2f14": {
-      "Correlation": 0.394149567629753,
+      "Correlation": 0.234149567629753,
       "Dependence": 0.757875550354019
     },
     "f46e27c426aa1048c6aeb3aa71aabf7e252468f64daf2cc57f3033293f7ba2e9": {
-      "Correlation": 0.227167898933558,
+      "Correlation": -0.11198422076719,
       "Dependence": 0.924658372780148
     },
     "f5c58db90c3e64e6e462c069b1f93c5eb2e3ca95a824845ef6ce59174ce2568c": {
@@ -309,7 +309,7 @@
       "Dependence": 0.25366978250695
     },
     "f7a25f3997877a3b4ac7e7d0226555a2a0959c73aa53e8bcde6ca46eed8b137e": {
-      "Correlation": 0.25,
+      "Correlation": 0.138888888888889,
       "Dependence": 0.25
     },
     "fbe5d60ed5d50aabf8a2db438c95151b24ec3da340d7ce6de3de1b3d364a952b": {
