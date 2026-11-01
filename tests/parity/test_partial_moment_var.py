@@ -30,7 +30,7 @@ def test_partial_moment_var_vector_percentile_matches_r(
 
 @pytest.mark.parametrize("degree", [0.5, 1.5, 2.5])
 def test_fractional_degree_var_inverts_the_ratio(degree: float) -> None:
-    # R fix 3b6ed41: the fractional-degree VaR solves ratio(t) = p with uniroot at
+    # Patched R: the fractional-degree VaR solves ratio(t) = p with uniroot at
     # tol = sqrt(eps) * range(x); 13.3's optimize() missed by up to 4e-4 in ratio.
     rng = np.random.default_rng(3)
     values = 0.02 * rng.standard_t(3, size=2000)

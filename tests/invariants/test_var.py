@@ -140,7 +140,7 @@ def _two_driver_variables(n: int = 80, seed: int = 2) -> np.ndarray:
 
 
 def test_nns_var_multivariate_depends_on_the_univariate_forecasts() -> None:
-    # R fix 692ac6f: the multivariate stage used to replay the last h observed rows,
+    # Patched R: the multivariate stage used to replay the last h observed rows,
     # so shifting every univariate forecast left it bit-identical.
     from nns.var import _var_multivariate_stack_stage
 
@@ -193,7 +193,7 @@ def test_nns_var_multivariate_is_nns_stack_on_exactly_the_relevant_variables(
         # Only the relevant regressors enter the stack, so the estimate cannot
         # depend on anything outside relevant_variables. It is evaluated on the h
         # forecast-period rows (built from the univariate forecasts), not on the last
-        # h observed rows (R fix 692ac6f).
+        # h observed rows.
         forecast_iv = np.delete(lagged, i, axis=1)[-h:, columns]
         args: dict[str, Any] = {"ivs_test": forecast_iv, "ts_test": ts_test, "folds": 1,
                                 "method": 1, "order": None, "stack": False, "dist": None}

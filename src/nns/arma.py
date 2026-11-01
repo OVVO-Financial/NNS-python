@@ -134,7 +134,7 @@ def nns_arma_optim(
                 )
                 estimates = np.asarray([float(objective_fn(predicted, actual))], dtype=np.float64)
             elif method == "both" and linear_approximation:
-                # Score the model that is returned (R fix 5202d54): NNS.ARMA(method="both")
+                # Score the model that is returned: NNS.ARMA(method="both")
                 # averages lin and nonlin inside the recursion, which differs from the
                 # average of the separately forecast lin and nonlin paths.
                 predicted = _arma_optim_prediction(
@@ -230,7 +230,7 @@ def nns_arma_optim(
     bias_score = float(objective_fn(predicted_shifted, actual))
 
     if nns_periods.size > 1:
-        # Candidate: equal weights across the selected periods (R fix ce818bd; the
+        # Candidate: equal weights across the selected periods (the
         # score used to come from the weights=None forecast, so equal weights could
         # never be chosen).
         equal_weights = np.full(nns_periods.size, 1.0 / float(nns_periods.size))
@@ -300,7 +300,7 @@ def nns_arma_optim(
         final_predicted = smooth_predicted
     del final_predicted
 
-    # Apply the nns.regress decision (R fix dc5e399): it was tested on the smoothed
+    # Apply the nns.regress decision: it was tested on the smoothed
     # series with shrink=True, so the returned forecast uses the same inputs.
     final_values = regressed_values if nns_regress else original_values
     if nns_regress:
@@ -508,7 +508,7 @@ def nns_arma(
                 dtype=np.float64,
             )
             if not negative_values:
-                # R fix 8db15ae: honour negative_values like the linear branch.
+                # Honour negative_values like the linear branch.
                 regression_estimates = np.maximum(0.0, regression_estimates)
             nonlin_estimate = float(np.sum(regression_estimates * lag_weights))
 
@@ -533,7 +533,7 @@ def nns_arma(
             lin_regression_estimates = linear_estimates
 
         # lin_estimate / nonlin_estimate are already weighted sums over the lags
-        # (R fix 06ec89a: the weights used to be applied a second time here).
+        # (the weights used to be applied a second time here).
         if method_l == "lin":
             estimate = lin_estimate
         elif method_l == "both":
@@ -541,7 +541,7 @@ def nns_arma(
         elif method_l == "nonlin":
             estimate = nonlin_estimate
         else:
-            # method="means": the weighted seasonal means (R fix b33e9f3; was 0).
+            # method="means": the weighted seasonal means (was 0).
             estimate = lin_estimate
 
         estimates[index] = estimate
@@ -766,7 +766,7 @@ def _format_r_percent(value: float) -> str:
 
 
 def _arma_horizon(h: object) -> int:
-    """R's ``[h] must be a positive integer.`` check (R fix 8aeddb8).
+    """R's ``[h] must be a positive integer.`` check.
 
     ``h`` must be one finite whole number >= 1: 13.3 ran ``for (j in 1:h)``, so
     ``h = 0`` returned one forecast and a fractional ``h`` was silently truncated
@@ -895,7 +895,7 @@ def _numeric_seasonal_weights(
         weights = (seasonal_weighting * observation_weighting) / denom
     if not np.all(np.isfinite(weights)):
         # A constant series has CV 0/0 for every lag: weight the lags equally instead
-        # of propagating NaN into the forecast (R fix 3b6a6cf).
+        # of propagating NaN into the forecast, as the patched R does.
         weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
     return weights
 
@@ -921,8 +921,8 @@ def _arma_seas_weighting(
         lag_weights = weights_product / denom
     if lag_weights.size and (np.all(lag_weights == 0.0) or not np.all(np.isfinite(lag_weights))):
         # Every selected row has CV == VarCV (no-seasonality sentinel, modulo-added
-        # periods, a constant series): the weights are 0/0. R fix ed0a68c uses equal
-        # weights instead of zeros, which forced a forecast of 0.
+        # periods, a constant series): the weights are 0/0. The patched R uses
+        # equal weights instead of zeros, which forced a forecast of 0.
         lag_weights = np.full(m, 1.0 / float(m), dtype=np.float64)
     return lags[:m], lag_weights
 

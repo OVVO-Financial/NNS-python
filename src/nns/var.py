@@ -542,7 +542,7 @@ def _var_multivariate_stack_stage(
         # Multivariate estimate: nns_stack (Method 1, nns_reg) on exactly the
         # relevant variables, each its own dimension.
         # Forecast-period regressors: the last h rows of the lag matrix built on the
-        # series extended with the univariate forecasts (rows n+1..n+h). R fix 692ac6f:
+        # series extended with the univariate forecasts (rows n+1..n+h).
         # tail(IV, h) of the training rows was an in-sample refit of the last h
         # observed periods.
         forecast_iv = np.delete(lagged, i, axis=1)[-h:, :]
@@ -874,8 +874,8 @@ def _var_uniroot(
 
     The ratio is monotone in the target, so a bracketing root finder at a tolerance
     relative to the range of ``x`` replaces R 13.3's optimize() on ``|ratio - p|``,
-    which stopped at its default absolute tolerance (about 1.2e-4 in x units; R fix
-    3b6ed41). A root at or beyond an end of the support returns that end.
+    which stopped at its default absolute tolerance (about 1.2e-4 in x units).
+    A root at or beyond an end of the support returns that end.
     """
     xmin = float(np.min(values))
     xmax = float(np.max(values))

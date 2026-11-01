@@ -364,7 +364,7 @@ def test_arma_degenerate_objective_returns_nan_without_warning() -> None:
 
 
 def test_arma_constant_numeric_seasonal_weights_are_equal_without_warning() -> None:
-    # R fix 3b6a6cf: a constant series (CV 0/0 for every lag) gets equal weights.
+    # Patched R: a constant series (CV 0/0 for every lag) gets equal weights.
     values = np.full(20, 5.0, dtype=np.float64)
 
     with warnings.catch_warnings(record=True) as caught:

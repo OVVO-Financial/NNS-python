@@ -139,7 +139,7 @@ def test_nns_arma_matches_r(
 def test_nns_arma_weights_are_relative_and_applied_once_like_r(
     method: str, seasonal_factor: Any, weights: Any
 ) -> None:
-    # R fix 06ec89a: weights are applied once, rescaled to sum to 1, and "equal" is
+    # Patched R: weights are applied once, rescaled to sum to 1, and "equal" is
     # accepted with numeric seasonal factors (c(1, 1) used to give 4x the forecast).
     variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0) + 0.05 * np.arange(1, 73)
     expected = nns(
@@ -173,7 +173,7 @@ def test_nns_arma_weights_are_relative_and_applied_once_like_r(
 
 @pytest.mark.parametrize("h", [0, -1, 2.5, float("nan"), float("inf"), True, "3", [2, 3]])
 def test_nns_arma_requires_a_positive_integer_h(h: object) -> None:
-    # R fix 8aeddb8: h = 0 returned one forecast, h = 2.5 was truncated to 2 and
+    # Patched R: h = 0 returned one forecast, h = 2.5 was truncated to 2 and
     # h = -1 failed with "invalid 'length' argument"; R now stops with this message.
     variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
     with pytest.raises(ValueError, match=r"^\[h\] must be a positive integer\.$"):
@@ -229,10 +229,10 @@ def test_nns_arma_degenerate_weights_match_r(
     method: str,
     dynamic: bool,
 ) -> None:
-    # R fixes ed0a68c / 3b6a6cf: all-zero seasonal weights (no-seasonality sentinel,
+    # Patched R: all-zero seasonal weights (no-seasonality sentinel,
     # modulo-added periods, constant series) and the NaN weights of a constant series
     # with a numeric seasonal_factor fall back to equal weights instead of forecasting
-    # 0 or NaN; 7f941b4 / 5b82067: best period for best_periods=None and best_periods /
+    # 0 or NaN; also the best period for best_periods=None and best_periods /
     # modulo when dynamic=True (Python already did both).
     expected = nns(
         "NNS.ARMA",
@@ -488,13 +488,13 @@ _AIR_PASSENGERS_132 = np.array(
 @pytest.mark.parametrize(
     ("name", "variable", "h", "training_set", "seasonal_factor", "objective", "approximation"),
     [
-        # 5202d54: "both" is scored with NNS.ARMA(method="both").
+        # "both" is scored with NNS.ARMA(method="both").
         ("both-scored", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", True),
-        # ce818bd: the equal-weights candidate is evaluated (and chosen here).
+        # The equal-weights candidate is evaluated (and chosen here).
         ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True),
-        # dc5e399: the nns.regress decision is applied to the results (shrink TRUE).
+        # The nns.regress decision is applied to the results (shrink TRUE).
         ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True),
-        # 5aae7c7: R now evaluates nonlin/both without the linear approximation.
+        # R now evaluates nonlin/both without the linear approximation.
         ("exhaustive", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", False),
     ],
 )
