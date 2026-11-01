@@ -1,0 +1,11 @@
+{
+  "entries": {
+    "3ca4077433abb71eac3cd818fb282b86ab652e457a4839e060ae28016333010d": 0.0,
+    "5b4d8ad095100651e2a52f726a40790771b1aec193b8485bec78a488d20abbde": 0.0,
+    "740bf17c17772a774e7e6c9e0d2411e7885961ed8022543c05294f4ae0f8a7a1": 1.0,
+    "92aa617ffdc5696c0535cfece15a93397d4101a4c0312270e1104047c8e11bc7": 0.0
+  },
+  "label": "NNS.SSD.uni",
+  "nns_version": "13.3",
+  "schema_version": 2
+}
