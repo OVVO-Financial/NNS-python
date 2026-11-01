@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from nns._native import native_fn
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
-from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
+from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 
 NoiseReduction: TypeAlias = Literal["off", "mean", "median", "mode", "mode_class"]
