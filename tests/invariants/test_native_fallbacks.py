@@ -84,6 +84,60 @@ def test_gravity_fallback_keeps_signed_zeros_like_native() -> None:
         assert np.signbit(got) == np.signbit(expected)
 
 
+def _dep_pairs() -> list[tuple[np.ndarray, np.ndarray]]:
+    rng = np.random.default_rng(31)
+    x = rng.normal(size=100)
+    binary = np.r_[np.zeros(51), np.ones(49)]
+    ternary = np.repeat([-1.0, 0.0, 1.0], 100)
+    pairs = [
+        (x, -x),  # every cell fully discordant (DEP-01)
+        (binary, binary),  # 49 * (1 / 49) != 1 (DEP-08)
+        (rng.permutation(ternary), rng.permutation(ternary)),  # ties at the mean (CORE-09)
+    ]
+    for trial in range(60):
+        n = int(rng.integers(10, 200))
+        a = rng.integers(-2, 3, n).astype(float)
+        b = a * (trial % 3 - 1) + rng.integers(-1, 2, n) * (trial % 2)
+        pairs.append((a, b.astype(float)))
+    return pairs
+
+
+@pytest.mark.parametrize("asym", [False, True])
+def test_dep_fallback_matches_native_on_ties(
+    asym: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    native = native_fn("nns_dep_pair")
+    if native is None:
+        pytest.skip("native extension not available")
+    import nns.dependence as dependence
+
+    pairs = _dep_pairs()
+    expected = [native(np.ascontiguousarray(a), np.ascontiguousarray(b), asym) for a, b in pairs]
+    monkeypatch.setattr(dependence, "native_fn", lambda name: None)
+    for (a, b), want in zip(pairs, expected, strict=True):
+        got = dependence.nns_dep(a, b, asym=asym)
+        # The fallback adds the cell terms in first-seen order, R in hash order.
+        assert got["Correlation"] == pytest.approx(want["Correlation"], abs=1e-12)
+        assert got["Dependence"] == pytest.approx(want["Dependence"], abs=1e-12)
+
+
+def test_nd_degree0_fallback_matches_native_and_partitions_the_sample() -> None:
+    from nns.dependence import co_lpm_nd, co_upm_nd, dpm_nd
+
+    natives = [native_fn(name) for name in ("clpm_nd", "cupm_nd", "dpm_nd")]
+    rng = np.random.default_rng(7)
+    for trial in range(40):
+        n, d = int(rng.integers(1, 80)), int(rng.integers(2, 5))
+        data = rng.integers(-1, 2, (n, d)).astype(float)
+        target = data[int(rng.integers(0, n))] if trial % 2 else np.zeros(d)
+        got = [f(data, target, 0.0) for f in (co_lpm_nd, co_upm_nd, dpm_nd)]
+        assert sum(got) == pytest.approx(1.0, abs=1e-12)
+        if all(f is not None for f in natives):
+            flat = np.ascontiguousarray(data.T).ravel()
+            want = [f(flat, n, d, target, 0.0, False) for f in natives]
+            assert got == want
+
+
 def test_continuous_mode_averages_equally_high_peaks() -> None:
     x = np.repeat(np.arange(20, dtype=np.float64), 400)
 
