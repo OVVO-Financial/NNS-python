@@ -3,7 +3,8 @@
 // Pure C++ port of R NNS 13.3 src/NNS_mreg_setup.cpp
 // (NNS_duplicate_column_map_cpp, NNS_mreg_setup_cpp). Decoupled from Rcpp.
 // The reducers, findInterval ids and lexicographic RPM row order are
-// preserved verbatim, including the exact-frequency "mode" reducer.
+// preserved verbatim, except that the "mode" reducer is NNS.mode for numeric
+// responses; class responses keep the exact-frequency mode.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 #include "nns/mreg.hpp"
@@ -29,11 +30,7 @@ double reduce_numeric(std::vector<double>& v, int reducer, bool is_class) {
           v.end());
   if (v.empty()) return kNaN;
   std::sort(v.begin(), v.end());
-  // noise.reduction = "mode" is the same estimator as R's pure-R reference
-  // (.nns_reg_reduce_value: NNS.mode(z, discrete = FALSE, multi = FALSE)), not
-  // the most frequent exact value; the exact-frequency mode is kept for class
-  // responses only (R fix "NNS.reg (multivariate): native mode reducer =
-  // NNS.mode", REG-11 / CORE-03).
+  // Same estimator as the pure-R reducer (.nns_reg_reduce_value), CORE-03.
   if (!is_class && reducer == kMregMode) {
     const std::vector<double> m = nns::mode(v.data(), v.size(), false, false);
     return m.empty() ? kNaN : m.front();

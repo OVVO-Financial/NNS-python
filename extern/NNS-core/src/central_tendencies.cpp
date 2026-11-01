@@ -74,22 +74,14 @@ void quartiles_like_R_code(const std::vector<double>& xs, double& q1, double& q2
   }
 }
 
-// Minimal replacement for NNS_bin used by mode/gravity.
+// Minimal replacement for NNS_bin used by mode/gravity. Bins are
+// [origin + k*width, origin + (k+1)*width), k = 0 .. nbins-1, with
+// nbins = floor((max - origin) / width + 1e-12) + 1, as in NNS 13.3.
 //
-// Bins are [origin + k*width, origin + (k+1)*width), k = 0 .. nbins-1, with
-// nbins = floor((max - origin) / width + 1e-12) + 1 and each value assigned to
-// floor((v - origin) / width) clipped to the last bin, exactly as NNS 13.3.
-//
-// The bin count is not bounded by n: a tight IQR plus one outlier gives
-// hundreds of millions of bins (seconds and GBs for n = 1001), and beyond
-// INT_MAX the old `int` cast was undefined behaviour. Every consumer (gravity
-// and the continuous mode) only looks at counts within 6 bins of a non-empty
-// bin, so runs of more than kMaxEmptyRun empty bins are shortened to
-// kMaxEmptyRun bins (the first and last kMaxEmptyRun / 2 of the run, with their
-// true names). Gravity and mode are then bit-identical to the full histogram
-// while memory and time are O(n). Indices are computed in double / int64, and
-// only a width so small that the true bin count exceeds 2^52 (previously UB or
-// an allocation failure) is widened to (max - origin) / 2^52.
+// Gravity and mode only read counts within 6 bins of a non-empty bin, so runs
+// of more than kMaxEmptyRun empty bins keep only their first and last
+// kMaxEmptyRun / 2 bins: results are bit-identical and memory is O(n). A width
+// so small that the bin count exceeds 2^52 is widened to (max - origin) / 2^52.
 constexpr std::int64_t kMaxEmptyRun = 16;
 constexpr double kMaxBinIndex = 4503599627370496.0;  // 2^52
 
@@ -115,7 +107,6 @@ void simple_bin_counts(const std::vector<double>& xs, double width, double origi
     bin_names.push_back(origin + static_cast<double>(k) * width);
     counts.push_back(c);
   };
-  // Emit the empty bins first .. last (inclusive), shortening long runs.
   auto push_empty_run = [&](std::int64_t first, std::int64_t last_bin) {
     const std::int64_t len = last_bin - first + 1;
     if (len <= 0) return;
@@ -153,11 +144,8 @@ void smooth_counts_tri7(const std::vector<int>& counts, std::vector<double>& smo
   smooth.assign(n, 0.0);
   if (n == 0) return;
   
-  // Mirror at the edges. The reflected index is clamped to [0, n - 1]: for
-  // n >= 4 the clamp never binds (identical to the upstream mirror), and for
-  // n <= 3 bins the unclamped mirror read past the end of `counts` (heap
-  // over-read). Those smoothed values are never consumed (the peak scan needs
-  // n >= 7), so results are unchanged.
+  // Mirror at the edges. The clamp only binds for n <= 3 bins, whose smoothed
+  // values are unused (the peak scan needs n >= 7).
   auto at = [&](int idx) -> int {
     if (idx < 0) idx = -idx;
     if (idx >= n) idx = 2 * n - 2 - idx;
@@ -342,10 +330,8 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
       return {nearest_int_half_up(med)};
     }
     
-    // Key on the rounded value itself. NNS 13.0-13.3 keyed an
-    // unordered_map<int, int> on static_cast<int>(rounded), which is undefined
-    // behaviour beyond the int range and returned -2147483648 for 3e9.
-    // "+ 0.0" folds -0.0 into 0.0 so ceil(-0.3) and 0 share one key.
+    // Key on the rounded value itself: NNS 13.3's int key overflowed beyond the
+    // int range. "+ 0.0" folds -0.0 into the 0 key.
     std::unordered_map<double, int> freq;
     freq.reserve(l * 2u);
     for (double v : xnum) ++freq[nearest_int_half_up(v) + 0.0];

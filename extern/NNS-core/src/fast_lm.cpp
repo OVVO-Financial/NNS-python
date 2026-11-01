@@ -35,10 +35,8 @@ inline double design_value(const double* x, std::size_t n, std::size_t row,
   return (col_with_intercept == 0) ? 1.0 : at(x, n, row, col_with_intercept - 1U);
 }
 
-// Port of Rcpp sugar mean() for numeric vectors, which the R kernels call:
-// long-double accumulation followed by one correction pass (as in R's
-// summary.c). A plain double running sum differs from it in the last bits,
-// and by much more for data with a large offset.
+// Port of Rcpp sugar mean(), which the R kernels call: long-double sum plus one
+// correction pass, as in R's summary.c.
 inline double mean_vec(const double* x, std::size_t n) {
   if (n == 0U) return kNaN;
   const long double nd = static_cast<long double>(n);

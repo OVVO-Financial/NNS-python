@@ -10,25 +10,36 @@
 namespace nns {
 
 // --- Univariate Dominance Tests ---
-// Faithful ports of NNS_FSD_uni_cpp / NNS_SSD_uni_cpp / NNS_TSD_uni_cpp.
-// Return 1 if x dominates y, otherwise 0.  Identical samples never dominate.
+// Ports of NNS_FSD_uni_cpp / NNS_SSD_uni_cpp / NNS_TSD_uni_cpp.
+// Return 1 if x dominates y, otherwise 0.  Identical samples, and samples
+// whose curves coincide, never dominate.  x and y may differ in length.
 // NaN (missing) values raise std::invalid_argument, matching the upstream
 // "You have some missing values, please address." stop; +/-Inf is permitted.
+// An empty sample also raises std::invalid_argument.
 
 /// First-degree Stochastic Dominance (Univariate)
 /// @param x Pointer to the first array.
+/// @param n_x Length of x.
 /// @param y Pointer to the second array.
-/// @param n Length of the arrays.
+/// @param n_y Length of y.
 /// @param discrete Treat data as discrete (ECDF compare) or continuous
 ///        (degree-1 LPM-ratio compare), matching upstream type =
 ///        "discrete"/"continuous".
-int fsd_uni(const double* x, const double* y, std::size_t n, bool discrete);
+int fsd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y,
+            bool discrete);
 
 /// Second-degree Stochastic Dominance (Univariate)
-int ssd_uni(const double* x, const double* y, std::size_t n);
+int ssd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y);
 
 /// Third-degree Stochastic Dominance (Univariate)
-int tsd_uni(const double* x, const double* y, std::size_t n);
+int tsd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y);
+
+/// Equal-length forms, x and y both of length n.
+inline int fsd_uni(const double* x, const double* y, std::size_t n, bool discrete) {
+  return fsd_uni(x, n, y, n, discrete);
+}
+inline int ssd_uni(const double* x, const double* y, std::size_t n) { return ssd_uni(x, n, y, n); }
+inline int tsd_uni(const double* x, const double* y, std::size_t n) { return tsd_uni(x, n, y, n); }
 
 // --- Pairwise Dominance Matrix ---
 

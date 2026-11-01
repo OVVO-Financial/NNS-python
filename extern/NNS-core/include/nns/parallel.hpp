@@ -37,9 +37,7 @@ inline int automatic_thread_count() {
 
 /// Total estimated work (items x work_per_item, roughly in inner-loop
 /// iterations) below which parallel_for runs serially. Spawning and joining a
-/// thread costs tens of microseconds, which dominated small calls (CORE-06:
-/// pm_matrix + clpm_nd at n = 200, d = 3 took 372 us with threads vs 19 us
-/// serially).
+/// thread costs tens of microseconds, which dominated small calls.
 constexpr std::size_t kMinParallelWork = 200000;
 
 /// Set the default number of worker threads used when a kernel is called with

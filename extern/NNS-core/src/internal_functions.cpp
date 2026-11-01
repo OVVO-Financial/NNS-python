@@ -200,15 +200,13 @@ TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* la
   res.series.resize(num_lags);
   res.index.resize(num_lags);
   
-  // Signed 64-bit arithmetic throughout: with size_t n, `n - start`
-  // underflowed for lag > n and requested a near-SIZE_MAX allocation.
+  // Signed arithmetic: with size_t n, `n - start` underflows for lag > n.
   const long long nn = static_cast<long long>(n);
   for (std::size_t t = 0; t < num_lags; ++t) {
     const long long lag = lags[t];
     if (lag <= 0) continue;
     
-    // Positions start, start + lag, ... <= n (1-based). For lag > n the
-    // component is empty (start = n + 1).
+    // For lag > n, start = n + 1 and the component is empty.
     const long long start = (nn % lag) + 1;
     const long long m = (start > nn) ? 0 : ((nn - start) / lag) + 1;
     
@@ -227,8 +225,7 @@ TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* la
 }
 
 ForecastVectors generate_lin_vectors(const double* x, std::size_t n, int l, int h) {
-  // l is a modulus below (l = 0 is SIGFPE in R 13.3); a negative h used to
-  // resize the result vectors to a huge size_t.
+  // l is a modulus below (l = 0 is SIGFPE in R 13.3); h sizes the result.
   if (l < 1) throw std::invalid_argument("generate_lin_vectors: `l` must be a positive integer");
   if (h < 0) throw std::invalid_argument("generate_lin_vectors: `h` must be non-negative");
   const long long nn = static_cast<long long>(n);
@@ -290,7 +287,8 @@ ARMAWeights arma_seas_weighting(const double* periods, const double* covar, cons
   ARMAWeights res;
   res.lags.assign(periods, periods + m);
   if (denom == 0.0) {
-    res.weights.assign(m, 0.0);
+    // All-zero weights forced a forecast of 0; NNS.ARMA uses equal weights.
+    res.weights.assign(m, 1.0 / static_cast<double>(m));
   } else {
     res.weights.resize(m);
     for (std::size_t i = 0; i < m; ++i) res.weights[i] = wprod[i] / denom;
