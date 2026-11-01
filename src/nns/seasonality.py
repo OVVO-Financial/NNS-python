@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import math
 from collections import OrderedDict
 from typing import SupportsInt, TypedDict, cast
@@ -30,6 +29,7 @@ SeasonalityResult = TypedDict(
 _CacheKey = tuple[bytes, tuple[int, ...], bool]
 _CACHE_MAX_SIZE = 32
 _CACHE: OrderedDict[_CacheKey, SeasonalityResult] = OrderedDict()
+_SD_TOL = math.sqrt(np.finfo(np.float64).eps)
 
 
 def nns_seas(
@@ -71,24 +71,16 @@ def _nns_seas_compute(
         return _clone_result(result)
 
     mean_var = _seq_mean(values)
-    use_cv = mean_var != 0.0
-    if use_cv:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            var_cov = abs(_seq_sd(values, mean_var) / mean_var)
-    else:
-        var_cov = _inverse_abs(_acf1(values))
-    if not np.isfinite(var_cov):
-        var_cov = math.inf
+    sd_var = _seq_sd(values, mean_var)
+    # CV is meaningless for a mean that is zero up to rounding; compare sds instead.
+    use_cv = abs(mean_var) > _SD_TOL * sd_var
+    var_cov = abs(sd_var / mean_var) if use_cv else sd_var
 
-    # R evaluates each period on the reverse-stride subsample of the series and of
-    # the series without its last one and two observations.
     candidates = np.arange(1, n // 2 + 1, dtype=np.int64)
-    t0 = _subsample_stats(values, candidates, use_cv, var_cov)
-    t1 = _subsample_stats(values[:-1], candidates, use_cv, var_cov)
-    t2 = _subsample_stats(values[:-2], candidates, use_cv, var_cov)
-    passing = (t0 <= var_cov) & (t1 <= var_cov) & (t2 <= var_cov)
+    scores = np.array([_component_score(values, int(m), use_cv) for m in candidates])
+    passing = scores < var_cov
     periods = candidates[passing]
-    covs = (t0[passing] + t1[passing] + t2[passing]) / 3.0
+    covs = scores[passing]
 
     if periods.size:
         period_arr = periods
@@ -145,63 +137,36 @@ def _seq_sd(values: NDArray[np.float64], mean: float) -> float:
     return math.sqrt(float(np.cumsum(delta * delta)[-1]) / float(values.size - 1))
 
 
-def _acf1(values: NDArray[np.float64]) -> float:
-    # R NNS_seas.cpp::acf1 (lag-1 autocorrelation, sequential sums); NaN if undefined.
-    if values.size < 2:
-        return math.nan
-    delta = values - _seq_mean(values)
-    numerator = float(np.cumsum(delta[1:] * delta[:-1])[-1])
-    denominator = float(np.cumsum(delta * delta)[-1])
-    if denominator == 0.0:
-        return math.nan
-    return numerator / denominator
+def _component_score(values: NDArray[np.float64], m: int, use_cv: bool) -> float:
+    """Length-weighted mean CV (or sd) of the m component series ``values[j::m]``.
 
-
-def _inverse_abs(value: float) -> float:
-    # R's std::pow(fabs(a), -1.0): Inf for a == 0 (Python's 0.0 ** -1.0 raises) and
-    # NaN for NaN. libm pow is kept on purpose: 1/x differs from it in the last bit
-    # for about 0.1% of inputs.
-    if math.isnan(value):
-        return math.nan
-    return math.inf if value == 0.0 else math.pow(abs(value), -1.0)
-
-
-def _subsample_stats(
-    series: NDArray[np.float64],
-    periods: NDArray[np.int64],
-    use_cv: bool,
-    var_cov: float,
-) -> NDArray[np.float64]:
-    """R's cv_or_fallback on series[::-p] for every period p.
-
-    Periods whose subsamples have the same length are evaluated together as rows of
-    one gathered matrix. Row sums use np.cumsum, which accumulates sequentially like
-    the C++ loops, so the statistics are bit-identical to R's.
+    As R's NNS_seas_cpp: a constant component scores 0 and a near-zero component
+    mean caps its CV at ``1 / _SD_TOL``. Column j of the padded matrix is component
+    j; adding the rows one at a time keeps each column's sums in the C++ order, so
+    the scores are bit-identical to R's. Only the last row has padding.
     """
-    m = series.size
-    out = np.full(periods.size, var_cov, dtype=np.float64)
-    if periods.size == 0 or m < 2:
-        return out
-    lengths = (m - 1) // periods + 1
-    bounds = np.concatenate(([0], np.flatnonzero(np.diff(lengths)) + 1, [periods.size]))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        for lo, hi in itertools.pairwise(bounds.tolist()):
-            length = int(lengths[lo])
-            if length < 2:
-                continue
-            steps = np.arange(length, dtype=np.int64)
-            block = series[(m - 1) - periods[lo:hi, np.newaxis] * steps]
-            mean = np.cumsum(block, axis=1)[:, -1] / float(length)
-            delta = block - mean[:, np.newaxis]
-            sum_sq = np.cumsum(delta * delta, axis=1)[:, -1]
-            if use_cv:
-                stat = np.abs(np.sqrt(sum_sq / float(length - 1)) / mean)
-            else:
-                cross = np.cumsum(delta[:, 1:] * delta[:, :-1], axis=1)[:, -1]
-                acf = np.where(sum_sq == 0.0, math.nan, cross / sum_sq)
-                stat = np.asarray([_inverse_abs(float(a)) for a in acf], dtype=np.float64)
-            out[lo:hi] = np.where(np.isfinite(stat), stat, var_cov)
-    return out
+    n = values.size
+    width = -(-n // m)
+    padded = np.zeros(m * width, dtype=np.float64)
+    padded[:n] = values
+    block = padded.reshape(width, m)
+    lengths = ((n - 1 - np.arange(m)) // m + 1).astype(np.float64)
+    total = np.zeros(m, dtype=np.float64)
+    for row in block:
+        total += row
+    mean = total / lengths
+    sum_sq = np.zeros(m, dtype=np.float64)
+    for row in block[:-1]:
+        sum_sq += (row - mean) ** 2
+    tail = lengths == width
+    sum_sq[tail] += (block[-1, tail] - mean[tail]) ** 2
+    sd = np.sqrt(sum_sq / (lengths - 1.0))
+    if use_cv:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            score = np.where(sd == 0.0, 0.0, sd / np.maximum(np.abs(mean), _SD_TOL * sd))
+    else:
+        score = sd
+    return float(np.cumsum(lengths * score)[-1]) / float(n)
 
 
 def _sort_periods(

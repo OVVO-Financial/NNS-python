@@ -97,12 +97,8 @@ def test_r_nns_13_arma_airline_smoke_values() -> None:
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
 
     np.testing.assert_allclose(seasonal, np.array([118, 134, 150, 141, 129, 163]), atol=EXACT)
-    # NNS.ARMA nonseasonal forecast from R 13.3 + patches.
-    np.testing.assert_allclose(
-        nonseasonal,
-        np.array([122.0, 102.0, 162.0, 213.66666666666666]),
-        atol=COMPOUND,
-    )
+    # NNS.ARMA nonseasonal forecast from patched R (NNS.seas scores every phase).
+    np.testing.assert_allclose(nonseasonal, np.array([120.0, 153.0, 149.0, 115.0]), atol=COMPOUND)
 
 
 @pytest.mark.parity
