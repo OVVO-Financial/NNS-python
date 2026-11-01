@@ -387,9 +387,8 @@ and two-valued numeric responses) returns numeric class codes `1..K`, with
 `class.levels` as the label map. Codes follow declared order for a pandas
 categorical or `class_levels=` (unused levels dropped, as R's `droplevels`),
 sorted order for strings, `False < True` for bool, and sorted values for a
-numeric response. Divergence: R codes a character response (and character
-predictors) by first appearance, so its result depends on the row order; the
-sorted order is R's factor order and what `NNS.boost` uses.
+numeric response. The sorted order is R's factor order, which R's `NNS.stack`
+and `NNS.boost` use for character responses and predictors.
 
 `NNS.dim.red.variables` lists the names of the predictors carried by the
 final dimension reduction, ranked by absolute coefficient, and

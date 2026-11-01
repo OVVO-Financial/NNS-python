@@ -96,8 +96,8 @@ examples include:
   by the longer length.
 - R factor levels become numeric codes with `class.levels` as the label map.
   pandas categoricals keep their declared order; plain string labels are
-  coded in sorted order (R's `factor()` order; R's `NNS.stack` and `NNS.reg`
-  character predictors use first appearance, which depends on row order);
+  coded in sorted order (R's `factor()` order; R's `NNS.reg` character
+  predictors use first appearance, which depends on row order);
   `class_levels=` / `factor_levels=` declare an order explicitly.
 - Public outputs use NumPy arrays and plain dictionaries instead of R
   `data.table` objects.

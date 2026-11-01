@@ -15,8 +15,7 @@ Inputs follow R's data-frame rules: pandas column names are kept and test
 columns are matched by name; categorical columns (and ``factor_levels``)
 give factors in declared level order, other label columns sorted levels;
 the response is coded in declared order (categorical, ``class_levels``) or
-sorted order. R codes character columns by first appearance instead, which
-makes its result depend on the row order.
+sorted order (R's factor order), as R does.
 """
 
 from __future__ import annotations
@@ -1441,9 +1440,8 @@ def _prepare_inputs(
 
     Response: a pandas categorical, or ``class_levels``, is coded in declared
     order with unused levels dropped (R ``droplevels``); strings are coded in
-    sorted order; bool as ``False < True``; anything else is numeric. R codes
-    a character response by first appearance, so its results depend on the
-    row order; the sorted order is R's factor order and NNS.boost's.
+    sorted order (R's factor order, as R's NNS.stack and NNS.boost use); bool as
+    ``False < True``; anything else is numeric.
     """
     cols = split_columns(ivs_train)
     if np.ndim(ivs_train) > 2 or not cols.values:
