@@ -173,16 +173,7 @@ def nns_part(
             int(obs_req),
             bool(min_obs_stop),
         )
-        native_result = _part_result_from_native(res, x_values, y_values)
-        if _is_discrete_like_r(x_values):
-            # The native kernel still rounds x half-up for integer-valued x, which
-            # R removed (R fix 9328583); restore the cells' x centroids.
-            native_result["regression.points"]["x"] = _prior_group_gravity(
-                x_values,
-                native_result["dt"]["prior.quadrant"],
-                native_result["regression.points"]["quadrant"],
-            )
-        return native_result
+        return _part_result_from_native(res, x_values, y_values)
 
     # Groups are tracked as dense integer ids whose numeric order equals the
     # lexicographic order of their quadrant labels: the current labels are the
@@ -446,29 +437,6 @@ def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
 def _mode(values: NDArray[np.float64]) -> float:
     """Private compatibility wrapper for NNS_part's discrete mode path."""
     return float(nns_mode(values, discrete=True, multi=False))
-
-
-def _prior_group_gravity(
-    x: NDArray[np.float64],
-    prior_quadrant: NDArray[np.str_],
-    labels: NDArray[np.str_],
-) -> NDArray[np.float64]:
-    """Gravity of ``x`` within each ``prior_quadrant`` group, in ``labels`` order."""
-    unique, inverse = np.unique(prior_quadrant, return_inverse=True)
-    position = {str(label): index for index, label in enumerate(unique.tolist())}
-    order = np.argsort(inverse, kind="stable")
-    counts = np.bincount(inverse, minlength=unique.size)
-    starts = np.concatenate(([0], np.cumsum(counts)[:-1]))
-    out = np.empty(labels.size, dtype=np.float64)
-    for index, label in enumerate(labels.tolist()):
-        group = position[str(label)]
-        out[index] = _aggregate_x(x[order[starts[group] : starts[group] + counts[group]]], "off")
-    return out
-
-
-def _is_discrete_like_r(values: NDArray[np.float64]) -> bool:
-    finite = values[np.isfinite(values)]
-    return bool(finite.size > 0 and np.all(finite == np.floor(finite)))
 
 
 def _validate_noise_reduction(value: str) -> NoiseReduction:

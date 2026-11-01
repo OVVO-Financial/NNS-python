@@ -78,6 +78,34 @@ def test_nns_part_installed_r_rejects_non_xonly_type() -> None:
     _assert_part_matches(actual, expected)
 
 
+@pytest.mark.parity
+@pytest.mark.parametrize("native", [True, False])
+@pytest.mark.parametrize(("part_type", "order", "obs_req"), [(None, 2, 8), ("XONLY", None, 8)])
+def test_nns_part_integer_x_keeps_the_cell_centroid_like_r(
+    monkeypatch: pytest.MonkeyPatch,
+    native: bool,
+    part_type: str | None,
+    order: int | None,
+    obs_req: int,
+) -> None:
+    # REG-08, R fix "NNS.part: do not round regression-point x for integer-valued
+    # x": the native nns_part_off kernel and the NumPy path both keep the x
+    # centroid (1:20, (1:20)^2, order 2: x = 14.593, 4.625, not 15, 5).
+    x = np.arange(1.0, 21.0)
+    y = x * x
+    expected = nns(
+        "NNS.part", x.tolist(), y.tolist(), False, part_type, order, obs_req, True, "off"
+    )
+    if not native:
+        import nns.part as part
+
+        monkeypatch.setattr(part, "native_fn", lambda name: None)
+    actual = nns_part(x, y, type=part_type, order=order, obs_req=obs_req)
+    _assert_part_matches(actual, expected)
+    points_x = actual["regression.points"]["x"]
+    assert not np.all(points_x == np.round(points_x))
+
+
 def _assert_part_matches(actual: Mapping[str, object], expected: object) -> None:
     assert isinstance(expected, dict)
     assert actual["order"] == int(_array(expected["order"]).item())
