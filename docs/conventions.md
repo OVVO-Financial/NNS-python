@@ -185,14 +185,45 @@ kept, as in R. All five `noise_reduction` modes are supported: `"off"`, `"mean"`
 
 ## Regression
 
-`nns_reg` maps to R's univariate numeric `NNS.reg` path with
-`factor.2.dummy = FALSE` and plotting disabled. Return keys match R's list names, but data.table outputs are plain
-dictionaries of NumPy arrays. `multivariate_call=True` returns R's internal
-two-column regression-point structure as `{"x": ..., "y": ...}` for
-`nns_m_reg`, including after dimension-reduction projection. Matrix `x` without
-dimension reduction dispatches to `nns_m_reg`.
+`nns_reg` maps to R's `NNS.reg` (plotting is a separate side effect). Return
+keys match R's list names; data.table outputs are plain dictionaries of NumPy
+arrays. `multivariate_call=True` returns R's internal two-column
+regression-point structure as `{"x": ..., "y": ...}`. More than one encoded
+predictor without dimension reduction runs the `NNS.M.reg` branch.
+
+Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
+
+- pandas column names are kept (as `make.names` keys in `RPM`, `Fitted.xy`
+  and `equation`), and `point_est` columns are matched to the training
+  columns by name: the same set of names is reordered into training order,
+  names disjoint from the training names (or an unnamed array) are taken
+  positionally, and a partial overlap raises `ValueError`. A named row such as
+  `df.iloc[0]` is matched the same way. A single predictor is positional.
+- A column is a factor when it is a pandas categorical, when `factor_levels=`
+  declares its levels, or when it holds labels: strings (including
+  numeric-looking strings such as `"1"`, `"10"`, as in R) or an object column
+  with any non-number. An object column of numbers (`df.to_numpy()` of a mixed
+  frame) is numeric. `bool` columns stay numeric 0/1 (R treats logicals as
+  factors).
+- Factor levels are the declared levels in their order (pandas categories, or
+  `factor_levels=`: a mapping from column name to levels, one entry per column
+  with `None` for numeric columns, or a flat level list for a single
+  predictor). Undeclared label columns use sorted levels. Divergence: R uses
+  first-appearance order for character predictors, which makes its fit depend
+  on the row order; sorted is R's `factor()` order. With the default
+  `factor_2_dummy=True` the order only permutes the one-hot columns (one per
+  level); with `factor_2_dummy=False` the level order is the integer code.
+- Missing values in a factor column (training or `point_est`) raise
+  `ValueError`, as in R; `point_est` levels unseen in training raise too.
+- The response is a factor when it is a pandas categorical or `class_levels=`
+  is given (codes `1..K` in that order, `class.levels` lists them, and
+  classification is implied), a set of labels when it holds strings (sorted
+  levels, R's `factor(y)`), and numeric otherwise; an object array of numbers
+  is a numeric response, not classification. Missing labels raise.
+  Classification returns numeric class codes with `class.levels` as the label
+  map.
+
 `dist=None` is the default for `nns_reg`, `nns_m_reg`, `nns_stack`, and `nns_boost` and selects the native blended NNS distance, with `dist="NNS"` as the explicit alias. Continuous predictors use range-normalized coordinate differences and sum `abs(z) + z**2` across non-zero-range columns; explicit `dist="L1"`, `dist="L2"`, and `dist="FACTOR"` keep their legacy behavior.
-Classification is supported for numeric/logical/factor-like class-code targets.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R
 does not call `smooth.spline` there. Spline-eligible inputs use a private
@@ -201,12 +232,11 @@ subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R's
 `1e-6 * IQR(x)` tie grouping, `.nknots.smspl` knot thinning above 49 unique x,
 the Fortran `sgram` penalty (with its `.3330` constant), R's interior-band
 trace ratio for lambda, and a banded Cholesky solve.
-Factor predictor expansion is supported through the public `nns_reg` path.
-When combined with dimension reduction, factor predictors are expanded with
-R's full-rank dummy convention before synthetic `x.star` coefficients are
-computed. For callers that want direct multivariate regression, use
-`prepare_factor_predictors(...)` first and pass the returned numeric design
-matrix into `nns_m_reg(...)`:
+With dimension reduction, factor predictors are encoded first (one dummy column
+per level with `factor_2_dummy=True`) and the synthetic `x.star` coefficients
+are computed on the encoded columns, as in R. For callers that want an explicit
+numeric design matrix, `prepare_factor_predictors(...)` returns the same
+full-rank dummy expansion:
 
 ```python
 from nns import nns_m_reg, prepare_factor_predictors
@@ -220,9 +250,8 @@ design = prepare_factor_predictors(
 fit = nns_m_reg(design.x, y, point_est=design.point_est)
 ```
 
-`prepare_factor_predictors(...)` uses the same full-rank dummy expansion as
-`nns_reg(..., factor_2_dummy=True)`, combines training `x` and `point_est`
-before expansion, and returns deterministic feature names.
+`prepare_factor_predictors(...)` combines training `x` and `point_est` before
+expansion and returns deterministic feature names.
 
 Numeric dimension reduction is supported for `"cor"`, `"NNS.dep"`,
 `"NNS.caus"`, `"all"`, `"equal"`, and numeric coefficient vectors. The
@@ -239,47 +268,35 @@ observed `y` values and `regression.points` is the sorted observed `(x, y)` map.
 The derivative table still comes from R's pre-reset regression-point construction,
 which NNS Python matches rather than recomputing adjacent slopes from all observations.
 
-The `"mode"` and `"mode_class"` noise-reduction modes are accepted in the
-univariate path and use the shared `nns_part`/`nns_mode` implementation. The
-`"mode_class"` default-order path can produce segment `standard.errors` values
-that differ from R at floating grouping granularity: installed R groups the
-`gradient` column through data.table's numeric radix grouping, while NumPy keeps
-near-identical binary floating values as separate groups. Regression points,
-coefficients, fitted values, and point estimates still match R on that path.
+`noise_reduction` accepts R's `"mean"`, `"median"`, `"mode"` and `"off"`;
+classification always reduces by the class mode.
 
-Regression confidence intervals are deterministic and use R's `LPM.VaR` /
-`UPM.VaR` logic, not `nns_mc` / `nns_meboot`. In the univariate fitted table,
-both `conf.int.pos` and `conf.int.neg` use `UPM.VaR(..., degree = 1)` on
-segment residuals, matching installed R even though the lower side might look
-like an `LPM` candidate. Univariate `point_est` prediction intervals use
-`UPM.VaR(..., degree = 0)` for the upper column and `LPM.VaR(..., degree = 0)`
-for the lower column. Below-range univariate point estimates follow R's
-`findInterval`/data.table behavior: index `0` rows are dropped, so `pred.int`
-can have fewer rows than `Point.est`. For class mode, fitted confidence columns
-remain raw numeric values, while univariate `pred.int` columns are rounded with
-R's `x %% 1 < 0.5` rule. Spline-eligible `smooth=True` interval tables use the
-same deterministic residual VaR logic after smoothing, matching installed R.
+Regression confidence intervals are deterministic residual bands: the
+`alpha/2` and `1 - alpha/2` type-8 quantiles of the training residuals are
+added to the fitted values (`conf.int.neg` / `conf.int.pos` in `Fitted.xy`)
+and to each point estimate (`pred.int.neg` / `pred.int.pos`, one row per
+`point_est` row, including points outside the training range). In class mode
+`pred.int` bounds are snapped to the observed class codes; the fitted
+confidence columns stay raw.
 
 ## Multivariate Regression
 
-`nns_m_reg` maps to installed R's numeric `NNS.M.reg` path with
-`factor.2.dummy = FALSE` and plotting disabled.
-Outputs use R's keys (`R2`, `rhs.partitions`, `RPM`, `Point.est`, `pred.int`,
-and `Fitted.xy`) with data.table objects represented as dictionaries of NumPy
-arrays. Numeric and class confidence intervals are deterministic and use the
-global residual `UPM.VaR(..., degree = 1)` offset from installed R. In class
-mode, fitted predictions and point estimates are rounded/clamped to class codes,
-but `pred.int` lower/upper bounds and fitted confidence columns remain raw
-numeric values. Classification mode (`type="class"`) is supported for
-numeric/logical/factor-like targets and returns numeric class codes. Direct
-`nns_m_reg(..., factor_2_dummy=True)` remains rejected for raw factor
-predictors because installed R errors on that path. This is an intentional API
-boundary rather than a mathematical gap: `nns_m_reg` is the numeric
-multivariate engine, while `prepare_factor_predictors(...)` performs the
-R-compatible categorical design-matrix preparation. Public `nns_reg` factor
-predictor expansion is also supported with `factor_2_dummy=True` and explicit
-`factor_levels=` metadata; it combines training `x` and `point_est` before
-full-rank dummy expansion, matching installed R's `factor_2_dummy_FR` path.
+`nns_m_reg` maps to R 13.3's `NNS.M.reg`, including its defaults
+(`factor_2_dummy=True`). Predictors and the response are prepared exactly as in
+`nns_reg` (see Regression): raw string and categorical columns are encoded by
+the function itself (one-hot dummies, or integer codes with
+`factor_2_dummy=False`), pandas column names are kept as the `RPM`,
+`rhs.partitions` and `Fitted.xy` keys (`V1..Vp` for an unnamed matrix), and
+`point_est` columns are matched by name. A string, bool or categorical
+response, or one given `class_levels=`, is a classification target with
+`class.levels` set; `type="class"` forces classification of a numeric
+response. At least two encoded predictor columns are required. Outputs use
+R's keys (`R2`, `rhs.partitions`, `RPM`, `Point.est`, `pred.int`,
+`Fitted.xy`, `n.best`, `dist`, `class.levels`) with data.table objects as
+dictionaries of NumPy arrays; intervals are the residual-quantile bands
+described under Regression. `prepare_factor_predictors(...)` is a separate
+legacy helper that builds a full-rank dummy design; it is not needed for
+either function.
 
 Point estimates match installed R, including the one-row outsider behavior in
 the multi-point path where R drops matrix dimensions before extrapolating.
@@ -288,28 +305,50 @@ the regression-point matrix and defaulting `n.best` to 1.
 
 ## Stack
 
-`nns_stack` maps to R's numeric and deterministic classification `NNS.stack`
-paths using the real `nns_reg` dimension-reduction and multivariate-regression
-internals. `type="class"` is supported for numeric/logical/factor-like targets
-and returns numeric class codes, not labels. Use `class_levels=` to reproduce R
-factor level ordering. Raw string labels remain rejected unless explicit levels
-are supplied. `balance=True` is supported for classification and follows R's
-`downSample` + `upSample` structure: each non-empty class is downsampled to the
-minority count without replacement, each class is upsampled to the majority
-count with replacement, and the downsampled rows are concatenated before the
-upsampled rows. Exact sampled-row parity with R is not expected because NNS Python
-uses NumPy's RNG; `random_seed` is a NNS Python-only reproducibility convenience.
-Numeric and class prediction intervals are supported and are combined by
-installed R's weighted data.table arithmetic. For class stacks, single-method
-`method=1` and `method=2` return the delegated interval table unchanged; when
-`method=(1,2)`, the weighted final interval table is rounded with R's
-`x %% 1 < 0.5` rule.
-`ts_test` is supported and follows installed R's split exactly: CV training uses
-the tail `ts_test` rows, while CV testing uses the earlier rows
-`1:(n - ts_test)`. This is intentionally not changed even though it is
-counterintuitive. R's `CV.size = NULL` samples a random value between 0.2 and
-1/3; NNS Python uses a deterministic default of `0.25`. Pass `cv_size` explicitly for
-exact R parity.
+`nns_stack` ports R 13.3's `NNS.stack`: out-of-fold selection of `n.best`
+(Method 1) and of the dimension-reduction count (Method 2), classification
+thresholds and ensemble weights, using the real `nns_reg` internals.
+
+Randomness: every split and balancing draw reproduces R's Mersenne-Twister
+`sample()` stream (`set.seed(seed)`, default `seed=123`), so a seeded run
+matches R bit for bit. `seed=None` draws a seed from OS entropy (R continues
+its global stream). `random_seed=` is an alias for `seed`.
+
+Splits follow R: `cv_size=None` (R's `CV.size = NULL`) with the default
+`folds=5` is stratified (classification) or plain k-fold cross-validation;
+`folds=1` with `cv_size=None` draws one holdout size from `runif(0.2, 1/3)`;
+an explicit `cv_size` gives `folds` repeated holdouts of that size. `ts_test`
+uses rolling chronological folds: each validation block of `ts_test` rows is
+predicted from all earlier rows. `balance=True` (classification) down- and
+up-samples each fitting split as R's `.balance_indices` does.
+
+Inputs follow R's data-frame rules. pandas column names are kept (an unnamed
+matrix is `V1..Vp`, a vector `X1`), and `ivs_test` columns are matched to the
+training columns by name (same set reordered, disjoint names positional,
+partial overlap an error). Factor predictors are pandas categoricals (all
+declared levels, as `levels()`), columns given `factor_levels=` (same forms as
+`nns_reg`), or label columns (strings, including numeric-looking strings),
+which use sorted levels; each becomes one dummy per level, fitted on the full
+training levels, named `<column>__<make.names(level)>`.
+
+Classification (`type="class"`, or automatic for string, bool, categorical
+and two-valued numeric responses) returns numeric class codes `1..K`, with
+`class.levels` as the label map. Codes follow declared order for a pandas
+categorical or `class_levels=` (unused levels dropped, as R's `droplevels`),
+sorted order for strings, `False < True` for bool, and sorted values for a
+numeric response. Divergence: R codes a character response (and character
+predictors) by first appearance, so its result depends on the row order; the
+sorted order is R's factor order and what `NNS.boost` uses.
+
+`NNS.dim.red.variables` lists the names of the predictors carried by the
+final dimension reduction, ranked by absolute coefficient, and
+`NNS.dim.red.coefficients` is a dict from encoded column name to coefficient
+(R's named vector). `NNS.reg.n.best` is `NaN` when the all-points candidate
+wins with a single (encoded) predictor, as R's `NA`, and the RPM row count in
+the multivariate case.
+
+`nns_stack_fit` / `nns_stack_predict` run the cross-validated selection once and
+reuse it for new test sets.
 
 The installed-R 13.0 Iris classification vignette with `folds=1` is a documented
 stack disparity rather than a NNS Python correctness target. On the `141:150` holdout,
@@ -322,65 +361,35 @@ threshold rounding differs. Since R default `folds=5` also returns class code
 `3`, NNS Python keeps the behavior that matches the practical classification result
 instead of forcing installed-R-13.0 `folds=1` parity.
 
-Factor predictor expansion is supported for `nns_stack(method=1)` and
-`nns_stack(method=2)` with explicit `factor_levels=` metadata. NNS Python expands
-training and test predictors together using the same full-rank dummy convention
-as installed R's aligned train/test builder. Pure factor-predictor `method=2`
-and `method=(1,2)` match installed R's fallback to method 1. Mixed
-factor/numeric `method=2` uses the expanded numeric design directly. Mixed
-factor/numeric `method=(1,2)` is supported for parity-covered cases that use
-explicit `factor_levels` expansion.
-
 ## Boost
 
-`nns_boost` maps to R's numeric and deterministic classification `NNS.boost`
-paths and uses the real `nns_reg` and `nns_stack` implementations. The
-small-feature path (`n_features <= 10`, where R evaluates all feature
-combinations) is supported. For `n_features > 10`, NNS Python follows R's stochastic
-epoch structure: it samples learner-trial feature sets, builds a weighted
-survivor feature pool, then samples epoch feature counts and survivor features
-from that pool. Exact sampled-feature parity with R is not expected because
-NNS Python uses NumPy's RNG, and `random_seed` is NNS Python-only. Installed R errors for
-`threshold=` on this path because the threshold short-circuit leaves
-`test.features` undefined, so NNS Python keeps that guard. `ts_test` is supported on
-the stochastic path and follows R's separate epoch holdout split: initial
-learner trials test rows `1:(n - ts_test)`, while epochs test the final
-`2 * ts_test + 1` rows. `type="class"` returns numeric class codes, not labels; use
-`class_levels=` to reproduce R factor level ordering. Raw string labels remain
-rejected unless explicit levels are supplied. `balance=True` is supported for
-classification and uses the same R-style `downSample` + `upSample` structure as
-`nns_stack`; exact sampled-row parity with R is not expected.
-Explicit-level factor predictors are supported through `factor_levels=`. NNS Python
-integer-codes those columns before deterministic feature selection, matching
-installed R's `data.matrix` conversion under NNS Python' positional-column
-convention. Pass `None` for numeric columns in mixed predictor matrices, for
-example `factor_levels=(["low", "mid", "high"], None)`. Multiple explicit-level
-factor predictor columns use positional `X1`, `X2`, ... semantics; installed R
-data frames with semantic column names sort columns alphabetically before
-fitting, so callers should order NNS Python columns explicitly when reproducing those
-named-data-frame cases. Numeric `pred_int` is supported and
-delegates to `nns_stack(pred_int=...)`, matching installed R; it is deterministic
-and does not use MC/meboot. `features_only=True` returns before the final stack
-fit and ignores `pred_int`, matching R. Classification `pred_int` is supported
-and delegates to final stack `method=1`, so interval bounds remain raw numeric
-values. `ts_test` is supported for deterministic and stochastic boost paths. R
-requires usable column names for matrix inputs; NNS Python uses positional numeric columns. As with `nns_stack`, R
-samples a random CV size when `CV.size = NULL`; NNS Python uses deterministic
-`cv_size=0.25` unless specified. For classification boost, final predictions,
-feature weights, and feature frequencies are parity-tested against installed R
-when balance is disabled and structurally tested when balance sampling is
-enabled. The public `n.best` value is structural-only because R's final internal
-`NNS.stack` call samples its own `CV.size = NULL` split, while NNS Python keeps the
-deterministic stack default.
+`nns_boost` ports R 13.3's `NNS.boost`. Learner trials fit multivariate
+`nns_reg` models on feature subsets (all `2^p - 1` subsets when that is at most
+`learner_trials`, otherwise distinct random subsets) against fresh holdouts;
+`threshold` is the probability passed to `LPM.VaR` over the learner-trial
+objective distribution (`0.8` / `0.2` by default, `extreme=True` uses the best
+trial); `epochs` (default `2 * n`) re-test the surviving subsets; the final
+estimate replicates the keeper features by their relative frequencies into one
+`nns_stack(method=1, stack=False)`. `depth` is passed as `order`. All random
+draws reproduce R's Mersenne-Twister stream (default `seed=123`), so seeded
+runs match R; `cv_size=None` draws the holdout size from `runif(0.2, 1/3)` as R
+does.
+
+Inputs are prepared as in `nns_stack`: pandas column names are kept and name
+`feature.weights` / `feature.frequency` (`V1..Vp` for an unnamed matrix), test
+columns are matched by name, and factor predictors (categoricals,
+`factor_levels=`, or label columns with sorted levels) stay factors in every
+learner fit; declared levels absent from the training data are dropped
+(R's `droplevels`). A string, bool or categorical response is classified and
+returns class codes with `class.levels` (declared order, `class_levels=`, or
+sorted labels); a numeric response with `type="class"` returns its original
+class values.
 
 The installed-R 13.0 Iris boost vignette remains a true parity gap, but not a
 quality target for exact output matching. On the same all-class-`3` holdout,
 installed R 13.0 balanced boost returns class code `1` for every row, while NNS Python
 balanced boost returns class code `2` for every row; both are wrong for that
-example. Installed R 13.0 also does not accept the `folds` argument shown in the
-rendered upstream overview for `NNS.boost`, so this example is tracked as
-R-version/upstream-example drift plus a boost parity gap rather than evidence
-that NNS Python should copy the installed-R balanced output.
+example.
 
 ## Seasonality
 
@@ -519,22 +528,17 @@ binary rather than the higher-level classification intent.
 
 ## Classification
 
-R classification paths work with numeric class codes. R factors become
-1-indexed numeric codes in factor-level order and predictions are returned as
-codes rather than decoded labels. NNS Python provides `factor_2_dummy`,
-`factor_2_dummy_fr`, `encode_factor_codes`, and `prepare_factor_predictors`;
-pass explicit `levels=` / `factor_levels=` to reproduce R factor level order
-because NumPy arrays do not carry factor metadata.
-
-`nns_reg(..., type="class")`, `nns_m_reg(..., type="class")`, and
-`nns_stack(..., type="class")` are supported for numeric, logical, and
-factor-like targets. Use `class_levels=` when passing string/object labels so
-NNS Python can reproduce R factor codes explicitly. Raw string classification remains
-rejected where installed R errors or produces unusable `NA` conversions.
-Predictions and point estimates are numeric class codes, not original labels,
-matching installed R. Class confidence intervals are supported in `nns_reg` and
-`nns_m_reg`; stack/boost class `pred_int` is supported through those regression
-interval tables.
+R classification paths work with numeric class codes: factor levels become
+1-indexed codes in level order and predictions are returned as codes rather
+than labels, with `class.levels` as the label map. NNS Python follows that
+contract. pandas categoricals carry their level order; `class_levels=` (for
+the response) and `factor_levels=` (for predictors) declare it explicitly for
+plain arrays; undeclared string labels are coded in sorted order. String
+labels are accepted directly by `nns_reg`, `nns_m_reg`, `nns_stack` and
+`nns_boost`. The standalone helpers `factor_2_dummy`, `factor_2_dummy_fr` and
+`encode_factor_codes` take `levels=` for the same purpose. Class confidence
+intervals are supported in `nns_reg` and `nns_m_reg`; stack/boost class
+`pred_int` is supported through those regression interval tables.
 
 ## Differentiation
 

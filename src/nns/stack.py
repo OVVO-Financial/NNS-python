@@ -7,12 +7,16 @@ balancing; training-only X* scaling; strict argument validation; and the
 historical classification contract (numeric codes 1..K with
 ``class.levels`` carrying the label map).
 
-Deviation from R, by design: random fold assignment and balancing use a
-local ``numpy.random.Generator`` seeded from ``seed`` rather than R's
-Mersenne ``sample()`` stream, so randomized-fold outputs match R
-distributionally, not bit-for-bit. The chronological ``ts_test`` mode is
-fully deterministic and matches R exactly. The caller's global NumPy RNG
-state is never touched.
+Random fold assignment and balancing replicate R's Mersenne-Twister
+``sample()`` stream (``RRNG`` seeded from ``seed``), so seeded runs match R
+bit-for-bit; the caller's global NumPy RNG state is never touched.
+
+Inputs follow R's data-frame rules: pandas column names are kept and test
+columns are matched by name; categorical columns (and ``factor_levels``)
+give factors in declared level order, other label columns sorted levels;
+the response is coded in declared order (categorical, ``class_levels``) or
+sorted order. R codes character columns by first appearance instead, which
+makes its result depend on the row order.
 """
 
 from __future__ import annotations
