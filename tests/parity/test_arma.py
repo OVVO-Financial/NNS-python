@@ -369,6 +369,31 @@ def test_nns_arma_pred_int_statistical_summary_is_close_to_r() -> None:
 
 @pytest.mark.parity
 @pytest.mark.stochastic
+def test_nns_arma_negative_series_lower_pred_int_is_below_the_forecast_like_r() -> None:
+    # Patched R uses LPM.VaR without abs(): a negative lower quantile used to turn
+    # positive, so the lower band collapsed onto the forecast.
+    t = np.arange(1, 201, dtype=np.float64)
+    variable = np.sin(t / 2.0) * 5.0 - 10.0 + 0.5 * np.cos(3.0 * t)
+
+    expected = _dict(
+        nns_arma_pred_int(
+            variable.tolist(), h=6, seasonal_factor=13, method="nonlin", pred_int=0.95, seed=123
+        )
+    )
+    actual = nns_arma(
+        variable, h=6, seasonal_factor=13, method="nonlin", pred_int=0.95, random_seed=123
+    )
+    assert isinstance(actual, dict)
+
+    gap = actual["Estimates"] - actual["Lower 95% pred.int"]
+    expected_gap = expected["Estimates"] - expected["Lower 95% pred.int"]
+    assert np.all(gap > 0.0)
+    assert np.all(expected_gap > 0.0)
+    np.testing.assert_allclose(np.mean(gap), np.mean(expected_gap), rtol=0.6)
+
+
+@pytest.mark.parity
+@pytest.mark.stochastic
 def test_nns_arma_single_lag_lin_pred_int_matches_r() -> None:
     # R's vectorised single-lag "lin" branch returns intervals (it used to raise in Python).
     t = np.arange(1, 97, dtype=np.float64)
