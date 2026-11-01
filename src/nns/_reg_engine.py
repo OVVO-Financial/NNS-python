@@ -1244,7 +1244,7 @@ def _mreg_predict(
     n = rpm_x.shape[0]
     k = min(int(k), n)
     native = native_fn("mreg_predict")
-    if native is not None and k >= 1 and _native_mreg_is_exact(xtest, mins, maxs, k, dist):
+    if native is not None and k >= 1:
         # R's NNS_mreg_predict_v2_cpp, ported to NNS-core; equal to the NumPy
         # code below to floating-point rounding.
         return np.asarray(
@@ -1293,7 +1293,7 @@ def _mreg_predict_path(
     kmax = min(int(kmax), n)
     m = xtest.shape[0]
     native = native_fn("mreg_predict_path")
-    if native is not None and kmax >= 1 and _native_mreg_is_exact(xtest, mins, maxs, kmax, dist):
+    if native is not None and kmax >= 1:
         # R's NNS_mreg_predict_path_v2_cpp, ported to NNS-core.
         return np.asarray(
             native(*_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs), kmax,
@@ -1321,45 +1321,6 @@ def _mreg_predict_path(
             w = _mreg_ensemble_weights(d_sorted[:, :k])
             out[rows, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
     return out
-
-
-def _native_mreg_is_exact(
-    xtest: NDArray[np.float64],
-    mins: NDArray[np.float64],
-    maxs: NDArray[np.float64],
-    kmax: int,
-    dist: str,
-) -> bool:
-    """Whether NNS-core's M.reg kernels reproduce R's to floating-point rounding.
-
-    The kernels evaluate the Student-t ensemble weight as the closed form
-    (1 + d^2/k)^(-(k+1)/2), while R (and the NumPy path, through SciPy) uses
-    Rmath's dt. The two differ only where the density underflows, i.e. for
-    distances far outside the training ranges. Bound every distance from the
-    per-column normalised deviations of the queries and keep the exponent well
-    away from the double underflow (about 745); otherwise use the NumPy path.
-    """
-    if dist == "FACTOR" or xtest.size == 0:
-        return True
-    ranges = maxs - mins
-    active = np.isfinite(ranges) & (ranges > 0)
-    if not np.any(active):
-        return True
-    test = xtest[:, active]
-    with np.errstate(over="ignore", invalid="ignore"):
-        dev = np.maximum(np.abs(test - mins[active]), np.abs(test - maxs[active])) / ranges[active]
-    z = float(np.max(dev))
-    count = int(np.count_nonzero(active))
-    if dist == "NNS":
-        bound = count * (z + z * z)
-    elif dist == "L1":
-        bound = count * z
-    else:
-        bound = math.sqrt(count) * z
-    if not math.isfinite(bound):
-        return False
-    k = max(int(kmax), 2)
-    return 0.5 * (k + 1) * math.log1p(bound * bound / k) < 500.0
 
 
 def _native_mreg_args(

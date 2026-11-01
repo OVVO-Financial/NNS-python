@@ -427,3 +427,31 @@ def _assert_levels_equal(actual: object, expected: object) -> None:
 
 def _array(value: object) -> np.ndarray:
     return np.asarray(value, dtype=np.float64)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("dist", ["NNS", "L1", "L2"])
+def test_native_mreg_kernels_match_r_far_outside_the_ranges(dist: str) -> None:
+    # Far outside the training ranges the Student-t ensemble weights underflow;
+    # NNS-core factors dt as Rmath does, so the native kernels follow R there too.
+    from nns._native import native_fn
+    from nns._reg_engine import _MREG_DIST_CODES, _mreg_predict, _mreg_predict_path
+
+    if native_fn("mreg_predict") is None:
+        pytest.skip("native extension not available")
+    rng = np.random.default_rng(5)
+    rpm = rng.random((300, 3))
+    yhat = rng.normal(size=300)
+    mins, maxs = rpm.min(axis=0), rpm.max(axis=0)
+    far = np.array([[0.2, 0.5, 300.0], [5.0, -40.0, 0.3], [1e3, 0.5, 0.5]])
+    args = (rpm.tolist(), yhat.tolist(), far.tolist())
+    ranges = (mins.tolist(), maxs.tolist(), False, 1)
+    code = _MREG_DIST_CODES[dist]
+
+    for k in (50, 300):
+        expected = nns("NNS_mreg_predict_v2_cpp", *args, k, code, *ranges)
+        actual = _mreg_predict(far, rpm, yhat, k, dist, mins, maxs, False)
+        np.testing.assert_allclose(actual, np.asarray(expected).reshape(-1), rtol=1e-12)
+    expected_path = nns("NNS_mreg_predict_path_v2_cpp", *args, 200, code, *ranges)
+    actual_path = _mreg_predict_path(far, rpm, yhat, 200, dist, mins, maxs)
+    np.testing.assert_allclose(actual_path, np.asarray(expected_path), rtol=1e-12)
