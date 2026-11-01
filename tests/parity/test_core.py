@@ -98,6 +98,33 @@ def test_lpm_ratio_matches_r_vector_target(rng: np.random.Generator, degree: flo
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("degree", [0.0, 1.0, 1.5, 2.0])
+@pytest.mark.parametrize(
+    "target",
+    [2.0, [2.0, 1.0, 5.0, 0.5, 4.0]],
+)
+def test_excess_ret_moments_match_r(degree: float, target: float | list[float]) -> None:
+    # R LPM/UPM(excess_ret = TRUE): element-wise targets; degree-0 LPM counts ties
+    # (R fix c5a8bed), so LPM0 + UPM0 = 1.
+    x = [1.0, 2.0, 3.0, 0.5, 4.0]
+    for label, function in (("LPM", lpm), ("UPM", upm)):
+        expected = nns(label, degree, target, x, True)
+        assert isinstance(expected, np.ndarray)
+        actual = function(degree, np.asarray(target), np.asarray(x), excess_ret=True)
+        assert actual == pytest.approx(expected.item(), abs=EXACT)
+    if degree == 0.0:
+        total = lpm(0, np.asarray(target), np.asarray(x), excess_ret=True) + upm(
+            0, np.asarray(target), np.asarray(x), excess_ret=True
+        )
+        assert total == pytest.approx(1.0, abs=EXACT)
+
+
+def test_excess_ret_rejects_mismatched_target_length() -> None:
+    with pytest.raises(ValueError, match="length 1 or same length"):
+        lpm(1, np.array([1.0, 2.0]), np.array([1.0, 2.0, 3.0]), excess_ret=True)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("degree", [0.0, 0.5, 1.0, 2.0])
 @pytest.mark.parametrize(
     "target, x",

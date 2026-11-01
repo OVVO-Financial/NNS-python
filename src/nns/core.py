@@ -14,13 +14,20 @@ def lpm(
     degree: float,
     target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
+    excess_ret: bool = False,
 ) -> float | NDArray[np.float64]:
     """Lower partial moment ``mean(max(target - x, 0) ** degree)`` (R ``LPM``).
 
     ``degree=0`` gives the share of observations ``<= target`` (ties count as lower).
     ``target`` may be a scalar (returns a float) or a 1D array (returns an array);
     ``None`` uses ``mean(x)``.  ``x`` must be finite.
+
+    With ``excess_ret=True`` (R ``excess_ret = TRUE``) the target is element-wise:
+    ``target`` has length 1 or ``len(x)`` and the result is the single value
+    ``mean(max(target_i - x_i, 0) ** degree)`` (degree 0 counts ``x_i <= target_i``).
     """
+    if excess_ret:
+        return _excess_moment(degree, target, x, lower=True)
     return _moment(degree, target, x, lower=True)
 
 
@@ -28,13 +35,46 @@ def upm(
     degree: float,
     target: float | NDArray[np.float64] | None,
     x: NDArray[np.float64],
+    excess_ret: bool = False,
 ) -> float | NDArray[np.float64]:
     """Upper partial moment ``mean(max(x - target, 0) ** degree)`` (R ``UPM``).
 
     ``degree=0`` gives the share of observations ``> target``.  ``target`` may be a
     scalar or a 1D array; ``None`` uses ``mean(x)``.  ``x`` must be finite.
+
+    With ``excess_ret=True`` the target is element-wise (length 1 or ``len(x)``) and
+    the result is ``mean(max(x_i - target_i, 0) ** degree)``.
     """
+    if excess_ret:
+        return _excess_moment(degree, target, x, lower=False)
     return _moment(degree, target, x, lower=False)
+
+
+def _excess_moment(
+    degree: float,
+    target: float | NDArray[np.float64] | None,
+    x: NDArray[np.float64],
+    *,
+    lower: bool,
+) -> float:
+    """R ``LPM``/``UPM`` with ``excess_ret = TRUE``: element-wise targets, one mean.
+
+    At degree 0 the lower moment counts ties (``x_i <= target_i``) as the non-excess
+    path does (R fix c5a8bed), so ``LPM0 + UPM0 = 1``.
+    """
+    values = _as_1d_values(x)
+    targets = _as_targets(target, values)
+    degree = _as_degree(degree)
+    _require_finite(targets, "target")
+    if targets.size not in (1, values.size):
+        raise ValueError(
+            "When excess_ret=True, target must be length 1 or same length as x."
+        )
+    diff = targets - values if lower else values - targets
+    if degree == 0:
+        hits = diff >= 0.0 if lower else diff > 0.0
+        return float(np.mean(hits))
+    return float(np.mean(np.maximum(diff, 0.0) ** degree))
 
 
 def lpm_ratio(

@@ -85,6 +85,8 @@ def test_default_target_is_r_mean_for_a_constant_decimal_sample() -> None:
     assert upm_ratio(0.0, None, x) == 0.0
     assert co_lpm(0.0, x, x, None, None) == 1.0
     assert co_upm(0.0, x, x, None, None) == 0.0
+    assert lpm(0.0, None, x, excess_ret=True) == 1.0
+    assert upm(0.0, None, x, excess_ret=True) == 0.0
 
 
 def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
