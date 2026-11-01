@@ -122,11 +122,11 @@ def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
 
 @pytest.mark.parity
 def test_dy_dx_numeric_does_not_depend_on_row_order() -> None:
-    # R 13.3 took diff() of x in row order: 500 unsorted U(-2, 2) points
-    # gave dy/dx of x^3 of about 3.7 everywhere (truth 6.75 0 0.75 6.75).
+    # R 13.3 took diff() of x in row order: 500 unsorted grid points in [-2, 2]
+    # gave dy/dx of x^3 of 3.7 to 3.9 everywhere (truth 6.75 0 0.75 6.75).
     rng = np.random.default_rng(1)
-    x = np.round(rng.uniform(-2.0, 2.0, 500), 8)
-    y = x**3
+    x = rng.integers(-2048, 2049, 500) / 1024.0
+    y = x * x * x
     eval_point = [-1.5, 0.0, 0.5, 1.5]
     expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
     actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
