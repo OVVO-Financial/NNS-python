@@ -38,12 +38,12 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Partial moments | `pm_matrix` | `PM.matrix` | implemented | Partial moment matrix helper. |
 | Co-moments | `co_lpm` | `Co.LPM` | implemented | Pairwise co-lower partial moment. |
 | Co-moments | `co_upm` | `Co.UPM` | implemented | Pairwise co-upper partial moment. |
-| Co-moments | `d_lpm` | `D.LPM` | implemented | Pairwise distance lower partial moment. |
-| Co-moments | `d_upm` | `D.UPM` | implemented | Pairwise distance upper partial moment. |
+| Co-moments | `d_lpm` | `D.LPM` | implemented | Divergent lower partial moment (x above, y below target). |
+| Co-moments | `d_upm` | `D.UPM` | implemented | Divergent upper partial moment (x below, y above target). |
 | Co-moments | `co_lpm_nd` | `Co.LPM_nD` | implemented | N-dimensional co-lower partial moment wrapper. |
 | Co-moments | `co_upm_nd` | `Co.UPM_nD` | implemented | N-dimensional co-upper partial moment wrapper. |
-| Co-moments | `dpm_nd` | `DPM_nD` | implemented | N-dimensional directional partial moment wrapper. |
-| Classical moments | `ecdf_pm` | ECDF partial-moment helper | implemented | Empirical distribution helper used by moment routines. |
+| Co-moments | `dpm_nd` | `DPM_nD` | implemented | N-dimensional divergent partial moment wrapper. |
+| Classical moments | `ecdf_pm` | ECDF partial-moment helper | implemented | Empirical CDF `lpm(0, points, x)` (standalone helper). |
 | Classical moments | `mean_pm` | `Mean` partial-moment helper | implemented | Mean via partial-moment conventions. |
 | Classical moments | `var_pm` | `Variance` partial-moment helper | implemented | Variance via partial-moment conventions. |
 | Classical moments | `skew_pm` | `Skewness` partial-moment helper | implemented | Skewness via partial-moment conventions. |
@@ -67,14 +67,14 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Forecasting | `nns_arma` | `NNS.ARMA` | partial | Univariate ARMA-style forecast surface. |
 | Forecasting | `nns_arma_optim` | `NNS.ARMA.optim` | partial | ARMA optimizer surface. |
 | Forecasting | `nns_var` | `NNS.VAR` | partial | Multivariate VAR-style forecast surface. |
-| Distribution and ANOVA | `nns_cdf` | `NNS.cdf` | implemented | NNS empirical CDF path. |
+| Distribution and ANOVA | `nns_cdf` | `NNS.CDF` | implemented | NNS empirical CDF path. |
 | Distribution and ANOVA | `nns_anova` | `NNS.ANOVA` | implemented | Binary, multi-group, and pairwise ANOVA-style comparisons. |
 | Distribution and ANOVA | `nns_norm` | `NNS.norm` | implemented | NNS normalization helper. |
 | Distance and partitioning | `nns_distance` | `NNS.distance` | implemented | Single distance computation. |
 | Distance and partitioning | `nns_distance_bulk` | `NNS.distance.bulk` | implemented | Bulk distance computation. |
 | Distance and partitioning | `nns_part` | `NNS.part` | implemented | Partitioning helper returning Python-native structures. |
 | Central tendencies | `nns_gravity` | `NNS.gravity` | implemented | NNS gravity center helper. |
-| Central tendencies | `nns_mode` | `NNS.mode` | implemented | NNS mode helper. |
+| Central tendencies | `nns_mode` | `NNS.mode` | implemented | NNS mode helper. Default `multi=False` (R: `multi = TRUE`). |
 | Central tendencies | `nns_rescale` | `NNS.rescale` | implemented | Rescaling helper. |
 | Stochastic dominance | `fsd` | `NNS.FSD` | implemented | First-order stochastic dominance. |
 | Stochastic dominance | `ssd` | `NNS.SSD` | implemented | Second-order stochastic dominance. |
@@ -90,8 +90,8 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Differentiation | `nns_diff` | `NNS.diff` | implemented | Numerical differentiation. |
 | Differentiation | `dy_dx` | `dy.dx` | implemented | Scalar derivative helper. |
 | Differentiation | `dy_d` | `dy.d_` | partial | Multivariate derivative helper. |
-| VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR helper. |
-| VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR helper. |
+| VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR; scalar or vector `percentile`. |
+| VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR; scalar or vector `percentile`. |
 
 ## Reference by API area
 
@@ -133,6 +133,8 @@ Closest R API: `PM.matrix`.
 
 Builds a partial-moment matrix surface used by dependence and co-moment routines.
 
+The package attribute `nns.pm_matrix` is this function, so it shadows the `nns.pm_matrix` submodule: `import nns.pm_matrix as m` binds the function. Use `from nns.pm_matrix import ...` to reach module-level names.
+
 ### Co-moments and n-dimensional partial moments
 
 #### `co_lpm`
@@ -151,23 +153,23 @@ Computes pairwise co-upper partial moments.
 
 Closest R API: `D.LPM`.
 
-Computes pairwise lower directional partial moments.
+Divergent lower partial moment: `mean(max(x - target_x, 0)^degree_upm * max(target_y - y, 0)^degree_lpm)`, the quadrant where `x` is above and `y` at or below its target.
 
 #### `d_upm`
 
 Closest R API: `D.UPM`.
 
-Computes pairwise upper directional partial moments.
+Divergent upper partial moment: `mean(max(target_x - x, 0)^degree_lpm * max(y - target_y, 0)^degree_upm)`, the quadrant where `x` is at or below and `y` above its target.
 
 #### `co_lpm_nd`, `co_upm_nd`, `dpm_nd`
 
-N-dimensional wrappers around the public co-moment and directional partial-moment concepts.
+N-dimensional co-lower, co-upper and divergent partial moments (R `Co.LPM_nD`, `Co.UPM_nD`, `DPM_nD`).
 
 ### Classical moment helpers
 
 #### `ecdf_pm`
 
-Empirical CDF helper used by partial-moment-based moment routines.
+Empirical CDF `lpm(0, points, x)` (the share of `x` at or below each point; sorted `x` when `points` is omitted). No other routine uses it.
 
 #### `mean_pm`
 
@@ -301,7 +303,7 @@ Nonparametric vector autoregression: univariate `nns_arma_optim` forecasts plus,
 
 #### `nns_cdf`
 
-Closest R API: `NNS.cdf`.
+Closest R API: `NNS.CDF`.
 
 NNS empirical CDF path. Deterministic non-plotting behavior is implemented.
 
@@ -351,7 +353,7 @@ Computes the NNS gravity center helper.
 
 Closest R API: `NNS.mode`.
 
-Computes the NNS mode helper.
+Computes the NNS mode. The default is `multi=False` (a single float), whereas R's `NNS.mode` defaults to `multi = TRUE` and returns every detected mode; pass `multi=True` for R's default. Explicit `multi` values match R.
 
 #### `nns_rescale`
 
@@ -433,13 +435,13 @@ Multivariate derivative helper. Scalar and vectorized point and distribution mod
 
 Closest R API: `LPM.VaR`.
 
-Lower partial-moment VaR helper used by deterministic interval paths.
+Returns the target `t` with `LPM.ratio(degree, t, x) = percentile`. `percentile` may be a scalar (returns a float) or array-like (returns an array of the same shape, like R's vectorised call); values are clamped to `[0, 1]`. Degree 0 is the type-7 sample quantile.
 
 #### `upm_var`
 
 Closest R API: `UPM.VaR`.
 
-Upper partial-moment VaR helper used by deterministic interval paths.
+Returns the target `t` with `UPM.ratio(degree, t, x) = percentile`; scalar or array-like `percentile` as for `lpm_var`.
 
 ## Documentation maintenance checklist
 
