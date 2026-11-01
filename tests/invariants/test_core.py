@@ -77,14 +77,18 @@ def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
     assert lpm_ratio(2, 0.0, x) + upm_ratio(2, 0.0, x) == pytest.approx(1.0, rel=EXACT)
 
 
-def test_partial_moment_ratios_degenerate_denominator_returns_nan_without_warning() -> None:
+def test_partial_moment_ratios_degenerate_denominator_use_degree0_ratio() -> None:
+    # R fix 2cf9cbc: the 0/0 ratio (every observation equals the target) is the
+    # degree-0 ratio, i.e. the ECDF value: LPM.ratio 1, UPM.ratio 0.
     x = np.array([2.0, 2.0])
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
         lower = lpm_ratio(2, 2.0, x)
         upper = upm_ratio(2, 2.0, x)
+        lower_vector = lpm_ratio(1, np.array([2.0, 2.0]), x)
 
-    assert np.isnan(lower)
-    assert np.isnan(upper)
+    assert lower == 1.0
+    assert upper == 0.0
+    np.testing.assert_array_equal(lower_vector, [1.0, 1.0])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []

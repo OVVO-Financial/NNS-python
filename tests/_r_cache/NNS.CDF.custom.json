@@ -1034,11 +1034,11 @@
     "aa1e9ca9711bfd80ad6efd48dfaf8ba105d0320ce1ef7f67fba32f5894c32f1e": {
       "Function": {
         "CDF": [
-          "NaN",
-          "NaN",
-          "NaN",
-          "NaN",
-          "NaN"
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
         "x": [
           5.0,

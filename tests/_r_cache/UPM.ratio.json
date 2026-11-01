@@ -1,0 +1,35 @@
+{
+  "entries": {
+    "04f98e865920679d25c7ee80082ace59972607b834a8acc73e198baf7bf91eb2": 0.0,
+    "3bd0939eec621282252f6fec2d6e03490a4cf2e2578d885205e90fcf0ac7a08a": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "4a466f536a6e200a179a49010833805fad9824b897774949430f5f9478e488e1": 0.0,
+    "51c91b5df870f953e7e206b50729a1c903df0351a9ae8562695770630fadb32a": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "6a3a79ad60a11fff8a984ecab8d0cb82b8cccd25d6366a7cac669ab628020253": 0.0,
+    "714ec29a41a16d8096a558dd9ae3843daabb6fa028d7b31aa02df7dc84b9e031": 0.0,
+    "749f92fdf48a94b2e5820eceb5857b842abd35a52961eec64646e32994330c6b": 0.0,
+    "c1a0d13a910e47a92a1561d6a3502c57219086a90562a72d39e423258d270e46": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "c3b6c2a85fa7d30a39aca3a0aa2179bc206b114a26a3a81ce9babf268af5aa39": 0.0,
+    "d43c9ac3e5d92ce8b70b3df82ebd4abe2346c46f9154ce3d20d05d8e6561b800": 0.0,
+    "e28b2a90a28bbbfb1b30613028a036da52f843f76e845b4112b61eca4ba93c8a": 0.0,
+    "e4153278951780e02fb8f2f58e69224511c0febf6e36f13822d969cee6045731": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  "label": "UPM.ratio",
+  "nns_version": "13.3",
+  "schema_version": 2
+}
