@@ -483,7 +483,7 @@ def _var_multivariate_stack_stage(
     Per variable, the relevant variables are the regressors the cross-validated
     dimension reduction threshold keeps, and the estimate is ``nns_stack`` on
     exactly those regressors, trained on the observed lagged rows and evaluated
-    on the last ``h`` of them (R's ``tail(IV, h)``).
+    on the ``h`` forecast-period rows (built from the univariate forecasts).
     """
     interpolated_matrix = np.asarray(interpolated, dtype=np.float64)
     univariate_matrix = np.asarray(univariate, dtype=np.float64)
@@ -541,10 +541,15 @@ def _var_multivariate_stack_stage(
 
         # Multivariate estimate: nns_stack (Method 1, nns_reg) on exactly the
         # relevant variables, each its own dimension.
+        # Forecast-period regressors: the last h rows of the lag matrix built on the
+        # series extended with the univariate forecasts (rows n+1..n+h). R fix 692ac6f:
+        # tail(IV, h) of the training rows was an in-sample refit of the last h
+        # observed periods.
+        forecast_iv = np.delete(lagged, i, axis=1)[-h:, :]
         result = _var_fit_stack(
             lagged_iv[:, relevant],
             lagged_dv,
-            lagged_iv[-h:, relevant],
+            forecast_iv[:, relevant],
             ts_test=ts_test,
             obj_fn=stack_obj_fn,
             objective=objective_value,

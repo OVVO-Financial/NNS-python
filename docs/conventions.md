@@ -476,8 +476,10 @@ variables are found as in NNS 11.6: the dimension reduction threshold is
 cross-validated on the last `max(2h, ceil(0.2 n))` lagged training rows, and
 the regressors whose coefficient meets it are kept. The multivariate estimate is
 `nns_stack(method=1, stack=False)` on exactly those regressors (`nns_reg` with
-each its own dimension and a cross-validated `n_best`), evaluated on the last
-`h` lagged training rows (R's `tail(IV, h)`). `relevant_variables` is that
+each its own dimension and a cross-validated `n_best`), trained on the observed
+lagged rows and evaluated on the `h` forecast-period rows of the lag matrix built
+from the series extended with the univariate forecasts (as in the patched R; 13.3
+evaluated on the last `h` observed rows, an in-sample refit). `relevant_variables` is that
 selection, so it lists exactly the regressors each multivariate estimate is
 built from. `obj_fn` (a `(predicted, actual) -> float` callable) and
 `objective` apply to both stages; without `obj_fn` the default MSE /
