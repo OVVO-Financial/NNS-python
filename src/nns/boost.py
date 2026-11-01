@@ -30,7 +30,7 @@ from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
-from nns.stack import _prepare_inputs, nns_stack
+from nns.stack import _prepare_inputs, _scalar_integer, _scalar_logical, nns_stack
 from nns.var import lpm_var
 
 Objective = Literal["min", "max"]
@@ -40,25 +40,6 @@ BoostResult = dict[str, Any]
 feature.frequency, class.levels). ``feature.weights`` / ``feature.frequency``
 are keyed by predictor name: the frame's column names, ``V1..Vp`` for an
 unnamed matrix, as in R."""
-
-
-def _scalar_logical(value: Any, name: str) -> bool:
-    if not isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"[{name}] must be TRUE or FALSE.")
-    return bool(value)
-
-
-def _scalar_integer(
-    value: Any, name: str, minimum: int = 0, allow_null: bool = False
-) -> int | None:
-    if allow_null and value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer, float, np.floating)):
-        raise ValueError(f"[{name}] must be an integer >= {minimum}.")
-    v = float(value)
-    if not math.isfinite(v) or v < minimum or v != math.floor(v):
-        raise ValueError(f"[{name}] must be an integer >= {minimum}.")
-    return int(v)
 
 
 @honours_ncores

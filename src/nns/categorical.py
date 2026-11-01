@@ -77,53 +77,6 @@ def factor_2_dummy_fr(
     }
 
 
-def _down_sample_rows(
-    x: NDArray[np.float64],
-    y_codes: NDArray[np.float64],
-    *,
-    classes: NDArray[np.float64],
-    rng: np.random.Generator,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """R ``downSample`` row selection: class groups down to minority count."""
-    x_values, y_values, observed = _sampling_inputs(x, y_codes, classes)
-    per_class = [np.flatnonzero(y_values == class_code) for class_code in observed]
-    target = min(indices.size for indices in per_class)
-    picked = [
-        indices[rng.choice(indices.size, size=target, replace=False)] for indices in per_class
-    ]
-    rows = np.concatenate(picked) if picked else np.empty(0, dtype=np.int64)
-    return x_values[rows].copy(), y_values[rows].copy()
-
-
-def _up_sample_rows(
-    x: NDArray[np.float64],
-    y_codes: NDArray[np.float64],
-    *,
-    classes: NDArray[np.float64],
-    rng: np.random.Generator,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """R ``upSample`` row selection: class groups up to majority count."""
-    x_values, y_values, observed = _sampling_inputs(x, y_codes, classes)
-    per_class = [np.flatnonzero(y_values == class_code) for class_code in observed]
-    target = max(indices.size for indices in per_class)
-    picked = [indices[rng.choice(indices.size, size=target, replace=True)] for indices in per_class]
-    rows = np.concatenate(picked) if picked else np.empty(0, dtype=np.int64)
-    return x_values[rows].copy(), y_values[rows].copy()
-
-
-def _balance_class_training(
-    x: NDArray[np.float64],
-    y_codes: NDArray[np.float64],
-    *,
-    classes: NDArray[np.float64],
-    rng: np.random.Generator,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """R stack/boost balance layout: ``rbind(downSample(...), upSample(...))``."""
-    down_x, down_y = _down_sample_rows(x, y_codes, classes=classes, rng=rng)
-    up_x, up_y = _up_sample_rows(x, y_codes, classes=classes, rng=rng)
-    return np.vstack((down_x, up_x)), np.concatenate((down_y, up_y))
-
-
 def _resolve_levels(arr: NDArray[Any], levels: Sequence[Any] | None) -> list[Any]:
     if levels is not None:
         resolved = [_normalize_bool(level) for level in levels]
@@ -155,26 +108,3 @@ def _normalize_bool(value: Any) -> Any:
     if isinstance(value, bool | np.bool_):
         return bool(value)
     return value
-
-
-def _sampling_inputs(
-    x: NDArray[np.float64],
-    y_codes: NDArray[np.float64],
-    classes: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    x_values = np.asarray(x, dtype=np.float64)
-    if x_values.ndim != 2:
-        raise ValueError("x must be a 2D matrix.")
-    y_values = np.asarray(y_codes, dtype=np.float64).reshape(-1)
-    if x_values.shape[0] != y_values.size:
-        raise ValueError("x and y_codes must have the same row count.")
-    class_values = np.asarray(classes, dtype=np.float64).reshape(-1)
-    if class_values.size == 0:
-        raise ValueError("classes must be non-empty.")
-    observed = np.asarray(
-        [class_code for class_code in class_values if np.any(y_values == class_code)],
-        dtype=np.float64,
-    )
-    if observed.size == 0:
-        raise ValueError("no non-empty classes.")
-    return x_values, y_values, observed
