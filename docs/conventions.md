@@ -129,9 +129,12 @@ breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating
 curves.
 
-These choices preserve exact R-style dominance semantics: no tolerances,
-approximate equality, output reordering, or diagonal/identical-column behavior
-changes are introduced. Polars is intentionally not used in this SD kernel
+Curve differences up to `64 * eps * S^d` (`S` the largest absolute value of
+the two samples; `d` = 1 for SSD and the mean condition, 2 for TSD, a ratio
+analogue for continuous FSD) are treated as ties, as in the patched R, so
+rounding noise does not decide dominance; discrete FSD compares exact
+empirical CDF fractions. No output reordering or diagonal/identical-column
+behavior changes are introduced. Polars is intentionally not used in this SD kernel
 because the hot path is dense pairwise threshold evaluation rather than
 data-frame grouping or filtering. R remains faster on some large finance
 fixtures because its C++ path walks merged sorted thresholds in tight parallel

@@ -5,8 +5,11 @@ efficient set and SD clustering) comes from one test, a port of R's native
 ``sd_dom_pair``: the curves are compared on the merged sample points and, for
 TSD and continuous FSD, also at their closed-form extrema between those points
 (LPM2 is piecewise quadratic and the continuous ratio linear-fractional, so the
-difference can peak between knots). Comparisons are strict, with no tolerance;
-equal curves are non-dominance (R's curve equality guard). Efficient-set output
+difference can peak between knots). Differences up to ``64 * eps * S**d``
+(``S`` the largest absolute value of the two samples; ``d`` = 1 for SSD and the
+mean gate, 2 for TSD, a ratio analogue for continuous FSD) are ties, so rounding
+noise does not decide dominance; discrete FSD compares exact ECDF fractions.
+Equal curves are non-dominance (R's curve equality guard). Efficient-set output
 follows the R C++ routine's LPM-at-global-maximum ordering and original-index
 tie break.
 
@@ -552,32 +555,41 @@ def _dominates_sorted(
     sample's own count ``k`` of observations ``<= t``. For TSD and continuous FSD
     the closed-form extremum of the curve difference inside each interval between
     thresholds is checked too (R fix d4fc624).
+
+    Curve values from prefix sums that are equal in exact arithmetic can differ by
+    rounding noise of order ``eps * S**degree`` (``S`` the largest absolute value of
+    the two samples), so differences up to ``64 * eps * S**d`` are ties: ``d`` = 1 for
+    SSD and the mean gate, 2 for TSD, and a ratio analogue for continuous FSD (R fix
+    2ca5aca). Discrete FSD compares exact ECDF fractions with no tolerance.
     """
     x_count = x_sorted.size
     y_count = y_sorted.size
+    scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
     if not x_sorted[0] >= y_sorted[0]:
         return False
-    if degree > 1 and y_prefix1[-1] / y_count > x_prefix1[-1] / x_count:
+    if degree > 1 and y_prefix1[-1] / y_count - x_prefix1[-1] / x_count > _SD_EPS64 * scale:
         return False
     if x_count == y_count and np.array_equal(x_sorted, y_sorted):
         return False
 
-    # Scale of the data: interior candidates whose excess is at rounding level
-    # (e.g. a vertex that coincides with a knot) are ignored.
-    scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
     thresholds = np.union1d(x_sorted, y_sorted)
     x_counts = np.searchsorted(x_sorted, thresholds, side="right")
     y_counts = np.searchsorted(y_sorted, thresholds, side="right")
 
     interior_excess = False
+    tol: float | NDArray[np.float64]
     if degree == 1 and discrete:
         # L0/(L0+U0) == ECDF.
         x_curve = x_counts / x_count
         y_curve = y_counts / y_count
+        tol = 0.0
     elif degree == 1:
-        x_curve = _ratio_deg1(x_prefix1, x_counts, thresholds, x_count)
-        y_curve = _ratio_deg1(y_prefix1, y_counts, thresholds, y_count)
-        if not np.any(x_curve > y_curve):
+        x_curve, x_total = _ratio_deg1(x_prefix1, x_counts, thresholds, x_count)
+        y_curve, y_total = _ratio_deg1(y_prefix1, y_counts, thresholds, y_count)
+        total_min = np.minimum(x_total, y_total)
+        with np.errstate(divide="ignore"):
+            tol = _SD_EPS64 * np.where(total_min > 0.0, np.maximum(1.0, scale / total_min), 1.0)
+        if not np.any(x_curve - y_curve > tol):
             interior_excess = _ratio_deg1_interior_excess(
                 x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale
             )
@@ -585,12 +597,14 @@ def _dominates_sorted(
         # LPM1 is piecewise linear with knots at the data: checking the knots is exact.
         x_curve = (x_counts * thresholds - x_prefix1[x_counts]) / x_count
         y_curve = (y_counts * thresholds - y_prefix1[y_counts]) / y_count
+        tol = _SD_EPS64 * scale
     else:
         if x_prefix2 is None or y_prefix2 is None:
             raise ValueError("degree 3 prefix evaluation requires second-moment prefixes.")
         x_curve = _lpm_deg2(x_prefix1, x_prefix2, x_counts, thresholds, x_count)
         y_curve = _lpm_deg2(y_prefix1, y_prefix2, y_counts, thresholds, y_count)
-        if not np.any(x_curve > y_curve):
+        tol = _SD_EPS64 * scale * scale
+        if not np.any(x_curve - y_curve > tol):
             interior_excess = _lpm_deg2_interior_excess(
                 x_prefix1,
                 x_prefix2,
@@ -604,10 +618,12 @@ def _dominates_sorted(
                 scale,
             )
 
-    if interior_excess or np.any(x_curve > y_curve):
+    excess = x_curve - y_curve
+    if interior_excess or np.any(excess > tol):
         return False
-    # Curves equal at every threshold -> no dominance (R's curve equality guard).
-    return bool(np.any(x_curve != y_curve))
+    # Curves equal (within the tolerance) at every threshold -> no dominance (R's
+    # curve equality guard).
+    return bool(np.any(np.abs(excess) > tol))
 
 
 def _ratio_deg1(
@@ -615,8 +631,8 @@ def _ratio_deg1(
     counts: NDArray[np.intp],
     thresholds: NDArray[np.float64],
     observations: int,
-) -> NDArray[np.float64]:
-    """Continuous FSD ratio LPM1 / (LPM1 + UPM1) at the thresholds."""
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Continuous FSD ratio LPM1 / (LPM1 + UPM1) at the thresholds, and LPM1 + UPM1."""
     sums1 = prefix1[counts]
     lower = (counts * thresholds - sums1) / observations
     upper = ((prefix1[-1] - sums1) - (observations - counts) * thresholds) / observations
@@ -629,7 +645,7 @@ def _ratio_deg1(
         out=np.asarray(counts / observations, dtype=np.float64),
         where=total > 0.0,
     )
-    return ratio
+    return ratio, total
 
 
 def _ratio_deg1_interior_excess(
