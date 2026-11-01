@@ -57,7 +57,9 @@ def test_nns_boost_factor_predictor_encodes_natively() -> None:
     # Factor predictors are one-hot encoded natively (no explicit levels needed).
     x = np.linspace(-2.0, 2.0, 20)
     labels = np.where(x > 0.0, "B", "A")
-    variable = np.column_stack((labels, x))
+    # Object columns keep x numeric (a '<U' array would make every column a
+    # factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
     y = x + np.where(labels == "B", 1.0, 0.0)
 
     result = nns_boost(variable, y, variable[:3], cv_size=0.25, feature_importance=False)
@@ -70,7 +72,7 @@ def test_nns_boost_multiple_factor_predictors_are_positional(features_only: bool
     x = np.linspace(-2.0, 2.0, 24)
     first = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     second = np.where(np.sin(x) > 0.0, "up", "down")
-    variable = np.column_stack((first, x, second))
+    variable = np.column_stack((first.astype(object), x.astype(object), second.astype(object)))
     y = x + np.where(first == "low", 1.0, np.where(first == "mid", 2.0, 3.0)) * 0.25
 
     result = nns_boost(
