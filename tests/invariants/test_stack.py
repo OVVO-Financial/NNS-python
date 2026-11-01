@@ -36,7 +36,9 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert result["stack"].shape == (7,)
     assert result["probability.threshold"] == pytest.approx(0.5)
     assert np.all(np.isfinite(result["stack"]))
-    assert result["NNS.dim.red.coefficients"].shape == (3,)
+    # R names: V1..Vp for an unnamed matrix, encoded column names for coefficients.
+    assert list(result["NNS.dim.red.coefficients"]) == ["V1", "V2", "V3"]
+    assert set(result["NNS.dim.red.variables"]) <= {"V1", "V2", "V3"}
 
 
 def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
@@ -51,8 +53,11 @@ def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
         return nns_stack(train, y[:70], test_rows, ts_test=14, folds=1, method=(1, 2))
 
     base = fit(test)
-    selected = np.asarray(base["NNS.dim.red.variables"])
-    coefficients = np.asarray(base["NNS.dim.red.coefficients"])
+    names = ["V1", "V2", "V3"]
+    selected = np.asarray(
+        [names.index(v) for v in base["NNS.dim.red.variables"]], dtype=np.int64
+    )
+    coefficients = np.asarray(list(base["NNS.dim.red.coefficients"].values()))
     assert selected.size >= 1
     assert sorted(selected.tolist()) == np.flatnonzero(coefficients != 0).tolist()
     assert 0 in selected.tolist()

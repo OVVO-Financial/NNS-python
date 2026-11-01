@@ -897,22 +897,21 @@ def _assert_selection_matches(
         assert expected is None or expected == {} or np.asarray(expected).size == 0
         return
     if key == "NNS.dim.red.coefficients":
-        actual_coef = np.asarray(actual, dtype=np.float64)
-        expected_coef = _numeric(expected)
-        if predictor_names is not None:
-            # Factor designs: the port orders a factor's level columns by first
-            # appearance, R by its declared levels, so compare the values only.
-            actual_coef, expected_coef = np.sort(actual_coef), np.sort(expected_coef)
-        np.testing.assert_allclose(actual_coef, expected_coef, atol=COMPOUND)
+        # A dict keyed by the encoded column names (R's named vector; the R
+        # reference serializes only the values, in the same order).
+        assert isinstance(actual, dict)
+        actual_coef = np.asarray(list(actual.values()), dtype=np.float64)
+        np.testing.assert_allclose(actual_coef, _numeric(expected), atol=COMPOUND)
         return
-    # The port reports 0-based predictor indices; R reports predictor names
-    # (V1..Vp for an unnamed matrix, otherwise the data.frame column names).
+    # Predictor names, as R reports them: V1..Vp for an unnamed matrix. Where
+    # the R reference used a named data.frame, map the port's positional
+    # V<i> names to those R names.
     expected_names = [str(v) for v in np.atleast_1d(np.asarray(expected, dtype=object))]
-    indices = [int(i) for i in np.asarray(actual).tolist()]
+    assert all(isinstance(v, str) for v in actual)
     if predictor_names is None:
-        assert [f"V{i + 1}" for i in indices] == expected_names
+        assert list(actual) == expected_names
     else:
-        assert [predictor_names[i] for i in indices] == expected_names
+        assert [predictor_names[int(v[1:]) - 1] for v in actual] == expected_names
 
 
 def _assert_stack_matches(

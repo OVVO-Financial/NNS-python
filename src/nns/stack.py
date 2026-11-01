@@ -26,6 +26,22 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._indices import ordered_complement
+from nns._labels import (
+    Columns,
+    as_float,
+    codes_for,
+    declared_codes,
+    declared_levels,
+    is_text,
+    level_keys,
+    match_columns,
+    point_codes,
+    r_make_names,
+    r_make_unique,
+    resolve_factor_levels,
+    response_values,
+    split_columns,
+)
 from nns._reg_engine import (
     _mreg_predict_path,
     _mreg_prepare,
@@ -47,11 +63,13 @@ probability.threshold, OBJfn.dim.red, NNS.dim.red.threshold,
 NNS.dim.red.variables, NNS.dim.red.coefficients, reg, reg.pred.int, dim.red,
 dim.red.pred.int, stack, pred.int, weights, class.levels).
 
-``NNS.dim.red.variables`` holds the 0-based indices of the predictors carried
-by the final dimension reduction, ranked by absolute coefficient (with
-``stack=True`` these are the only predictors behind ``stack``);
-``NNS.dim.red.coefficients`` holds the final encoded coefficients. Both are
-``None`` when ``method`` excludes 2."""
+``NNS.dim.red.variables`` holds the names of the predictors carried by the
+final dimension reduction, ranked by absolute coefficient (with ``stack=True``
+these are the only predictors behind ``stack``); names are the frame's column
+names, ``V1..Vp`` for an unnamed matrix and ``X1`` for a vector, as in R.
+``NNS.dim.red.coefficients`` is a dict from encoded column name (factor
+dummies are ``<name>__<level>``) to its final coefficient. Both are ``None``
+when ``method`` excludes 2."""
 
 
 # --------------------------------------------------------------------------
@@ -214,12 +232,11 @@ def nns_stack(
     seed: int | None = 123,
     fitted: dict[str, Any] | None = None,
     return_fit: bool = False,
-    # Legacy compatibility (ignored):
     class_levels: Any = None,
     factor_levels: Any = None,
     random_seed: int | None = None,
 ) -> StackResult:
-    del class_levels, factor_levels, ncores
+    del ncores
     if random_seed is not None and seed == 123:
         seed = random_seed
 
@@ -276,33 +293,16 @@ def nns_stack(
     # ----------------------------------------------------------------------
     # Input data and response coding
     # ----------------------------------------------------------------------
-    x = np.asarray(ivs_train)
-    if x.ndim == 1:
-        x = x.reshape(-1, 1)
-    if x.ndim != 2 or x.shape[1] < 1:
-        raise ValueError("[IVs.train] must contain at least one predictor.")
+    prepared = _prepare_inputs(ivs_train, dv_train, ivs_test, class_levels, factor_levels)
+    x = prepared["x"]
+    z = prepared["z"]
+    dv = prepared["dv"]
+    response_kind = prepared["response_kind"]
+    predictor_names: list[str] = prepared["names"]
+    predictor_levels: list[list[str] | None] = prepared["levels"]
+    response_categorical = response_kind in {"factor", "character", "logical"}
 
-    dv = np.asarray(dv_train)
-    if dv.ndim == 2 and dv.shape[1] == 1:
-        dv = dv[:, 0]
-    if dv.ndim != 1:
-        raise ValueError("[DV.train] must contain exactly one response column.")
-    if dv.size != x.shape[0]:
-        raise ValueError("nrow(IVs.train) must equal length(DV.train).")
-    if dv.size < 4:
-        raise ValueError("NNS.stack requires at least four training observations.")
-
-    response_categorical = dv.dtype.kind in {"U", "S", "O", "b"}
-    if not response_categorical:
-        dv_num = dv.astype(np.float64)
-        if np.any(np.isnan(dv_num)):
-            raise ValueError("[DV.train] contains missing values.")
-        if np.any(~np.isfinite(dv_num)):
-            raise ValueError("[DV.train] contains non-finite values.")
-
-    auto_class = response_categorical or (
-        not response_categorical and np.unique(dv).size == 2
-    )
+    auto_class = response_categorical or np.unique(dv).size == 2
     if auto_class and type is None:
         type = "class"
     if balance and type is None:
@@ -312,27 +312,13 @@ def nns_stack(
 
     class_values: list[Any] | None = None
     if is_class:
-        if dv.dtype.kind == "b":
-            class_values = sorted(set(dv.tolist()))
-        elif response_categorical:
-            seen: list[Any] = []
-            for v in dv.tolist():
-                if v not in seen:
-                    seen.append(v)
-            class_values = seen
+        if response_categorical:
+            class_values = list(prepared["class_values"])
+            y = np.asarray(dv, dtype=np.float64)
         else:
-            class_values = sorted(set(dv.astype(np.float64).tolist()))
-        y = np.asarray(
-            [
-                class_values.index(v) + 1
-                for v in (
-                    dv.tolist()
-                    if response_categorical
-                    else dv.astype(np.float64).tolist()
-                )
-            ],
-            dtype=np.float64,
-        )
+            class_values = sorted(set(dv.tolist()))
+            position = {v: i + 1.0 for i, v in enumerate(class_values)}
+            y = np.asarray([position[v] for v in dv.tolist()], dtype=np.float64)
         if np.unique(y).size < 2:
             raise ValueError("Classification requires at least two response classes.")
         _, counts = np.unique(y, return_counts=True)
@@ -346,33 +332,12 @@ def nns_stack(
     else:
         if response_categorical:
             raise ValueError("A nonnumeric response requires type = 'CLASS'.")
-        y = dv.astype(np.float64)
+        y = np.asarray(dv, dtype=np.float64)
         if obj_fn is None:
             obj_fn = lambda predicted, actual: float(np.sum((predicted - actual) ** 2))  # noqa: E731
 
     if balance and not is_class:
         raise ValueError("[balance = TRUE] requires classification.")
-
-    if ivs_test is None:
-        z = x.copy()
-    else:
-        z = np.asarray(ivs_test)
-        if z.ndim == 0:
-            z = z.reshape(1, 1)
-        if z.ndim == 1:
-            if x.shape[1] == 1:
-                z = z.reshape(-1, 1)
-            elif z.size == x.shape[1]:
-                z = z.reshape(1, -1)
-            else:
-                raise ValueError(
-                    "A vector [IVs.test] must contain one complete test row, "
-                    "unless [IVs.train] has one predictor."
-                )
-        if z.shape[1] != x.shape[1]:
-            raise ValueError(
-                "[IVs.test] must have the same number of predictors as [IVs.train]."
-            )
 
     n_obs = x.shape[0]
     original_p = x.shape[1]
@@ -507,52 +472,53 @@ def nns_stack(
         return rng.sample(combined).astype(np.int64)
 
     def numeric_design(
-        train: NDArray[Any], test: NDArray[Any]
-    ) -> dict[str, NDArray[np.float64]]:
+        train: NDArray[np.float64], test: NDArray[np.float64]
+    ) -> dict[str, Any]:
+        # Factor columns hold 1..K codes of the full-training levels (R keeps a
+        # factor's levels when the rows are subset), so every split gets one
+        # dummy column per level, in level order.
         train_blocks: list[NDArray[np.float64]] = []
         test_blocks: list[NDArray[np.float64]] = []
+        block_names: list[str] = []
         # Original predictor behind each encoded column (factors expand to one
         # column per level), so encoded selections map back to predictors.
         source_blocks: list[NDArray[np.int64]] = []
         for j in range(train.shape[1]):
             tr = train[:, j]
             te = test[:, j]
-            if tr.dtype.kind in {"U", "S", "O", "b"} and not _numeric_column(tr):
-                tr_chr = np.asarray([str(v) for v in tr.tolist()])
-                te_chr = np.asarray([str(v) for v in te.tolist()])
-                levels: list[str] = []
-                for v in tr_chr.tolist():
-                    if v not in levels:
-                        levels.append(v)
-                unseen = sorted(set(te_chr.tolist()) - set(levels))
-                if unseen:
-                    raise ValueError(
-                        f"Test predictor [{j + 1}] contains unseen level(s): "
-                        + ", ".join(unseen)
-                    )
+            levels = predictor_levels[j]
+            if levels is not None:
                 train_blocks.append(
-                    np.column_stack([(tr_chr == lv).astype(np.float64) for lv in levels])
+                    np.column_stack(
+                        [(tr == k + 1).astype(np.float64) for k in range(len(levels))]
+                    )
                 )
                 test_blocks.append(
-                    np.column_stack([(te_chr == lv).astype(np.float64) for lv in levels])
+                    np.column_stack(
+                        [(te == k + 1).astype(np.float64) for k in range(len(levels))]
+                    )
+                )
+                block_names.extend(
+                    f"{predictor_names[j]}__{level}" for level in r_make_names(levels)
                 )
             else:
-                trn = np.asarray(tr, dtype=np.float64)
-                ten = np.asarray(te, dtype=np.float64)
-                if np.any(np.isnan(trn)):
+                if np.any(np.isnan(tr)):
                     raise ValueError("[IVs.train] contains missing values.")
-                if np.any(~np.isfinite(trn)):
+                if np.any(~np.isfinite(tr)):
                     raise ValueError(
-                        f"[IVs.train] predictor [{j + 1}] contains non-finite values."
+                        f"[IVs.train] predictor [{predictor_names[j]}] contains non-finite "
+                        "values."
                     )
-                if np.any(np.isnan(ten)):
+                if np.any(np.isnan(te)):
                     raise ValueError("[IVs.test] contains missing values.")
-                if np.any(~np.isfinite(ten)):
+                if np.any(~np.isfinite(te)):
                     raise ValueError(
-                        f"[IVs.test] predictor [{j + 1}] contains non-finite values."
+                        f"[IVs.test] predictor [{predictor_names[j]}] contains non-finite "
+                        "values."
                     )
-                train_blocks.append(trn.reshape(-1, 1))
-                test_blocks.append(ten.reshape(-1, 1))
+                train_blocks.append(tr.reshape(-1, 1))
+                test_blocks.append(te.reshape(-1, 1))
+                block_names.append(predictor_names[j])
             source_blocks.append(np.full(train_blocks[-1].shape[1], j, dtype=np.int64))
         train_matrix = np.hstack(train_blocks)
         test_matrix = np.hstack(test_blocks)
@@ -566,6 +532,7 @@ def nns_stack(
             "minimum": tmin,
             "range": trange,
             "source": np.concatenate(source_blocks),
+            "names": r_make_unique(block_names, "_"),
         }
 
     def make_splits() -> list[dict[str, NDArray[np.int64]]]:
@@ -844,8 +811,8 @@ def nns_stack(
     dim_component_threshold = 0.5
     dim_oof_raw = np.full(n_obs, np.nan)
     dim_threshold_report = float("nan")
-    dim_active_variables: NDArray[np.int64] | None = None
-    dim_coefficients_report: NDArray[np.float64] | None = None
+    dim_active_variables: list[str] | None = None
+    dim_coefficients_report: dict[str, float] | None = None
     dim_full_xstar_train: NDArray[np.float64] | None = None
     dim_full_xstar_test: NDArray[np.float64] | None = None
 
@@ -928,12 +895,16 @@ def nns_stack(
         # The exact predictors carried by the final X* projection (and by
         # Method 1 too when stack=True), ranked by |coefficient|. A threshold
         # comparison cannot reproduce this: boundary ties break by column order.
-        dim_coefficients_report = dim_full_coef.copy()
+        dim_coefficients_report = {
+            name: float(c)
+            for name, c in zip(full_design["names"], dim_full_coef.tolist(), strict=True)
+        }
         active_order = np.argsort(-np.abs(dim_full_coef), kind="stable")
         active_order = active_order[np.abs(dim_full_coef[active_order]) > 0]
-        dim_active_variables = np.asarray(
-            list(dict.fromkeys(full_design["source"][active_order].tolist())), dtype=np.int64
-        )
+        dim_active_variables = [
+            predictor_names[j]
+            for j in dict.fromkeys(full_design["source"][active_order].tolist())
+        ]
 
     # ----------------------------------------------------------------------
     # Method 1: production RPM + production distance path for every k
@@ -1356,12 +1327,198 @@ def nns_stack(
     return result
 
 
-def _numeric_column(z: NDArray[Any]) -> bool:
-    try:
-        np.asarray(z, dtype=np.float64)
-    except (TypeError, ValueError):
-        return False
-    return True
+def _train_names(cols: Columns) -> list[str]:
+    """R ``.as_train_frame`` names: a vector is ``X1``, an unnamed matrix
+    ``V1..Vp``; any blank name renames every column ``X1..Xp``."""
+    p = len(cols.values)
+    if cols.labels is not None:
+        names = list(cols.labels)
+        if any(nm == "" for nm in names):
+            names = [f"X{j + 1}" for j in range(p)]
+    elif cols.vector:
+        names = ["X1"]
+    else:
+        names = [f"V{j + 1}" for j in range(p)]
+    return r_make_unique(names, ".")
+
+
+def _test_columns(ivs_test: Any, train_names: list[str]) -> list[NDArray[Any]]:
+    """R ``.as_test_frame``: test columns in training order.
+
+    Labelled test columns are matched to the training predictors by name
+    (reordered when the names are the same set, positional when they share
+    none, an error on a partial overlap).
+    """
+    p = len(train_names)
+    cols = split_columns(ivs_test)
+    if cols.vector:
+        values = cols.values[0]
+        if p == 1:
+            return [values]
+        if values.size != p:
+            raise ValueError(
+                "A vector [IVs.test] must contain one complete test row, "
+                "unless [IVs.train] has one predictor."
+            )
+        row = [values[j : j + 1] for j in range(p)]
+        supplied = cols.row_labels
+        if supplied is not None and all(nm != "" for nm in supplied):
+            ordering = match_columns(r_make_unique(supplied, "."), train_names, "IVs.test")
+            if ordering is not None:
+                row = [row[j] for j in ordering]
+        return row
+    if len(cols.values) != p:
+        raise ValueError("[IVs.test] must have the same number of predictors as [IVs.train].")
+    out = list(cols.values)
+    supplied = cols.labels
+    if supplied is not None and all(nm != "" for nm in supplied):
+        ordering = match_columns(r_make_unique(supplied, "."), train_names, "IVs.test")
+        if ordering is not None:
+            out = [out[j] for j in ordering]
+    return out
+
+
+def _prepare_inputs(
+    ivs_train: Any,
+    dv_train: Any,
+    ivs_test: Any,
+    class_levels: Any,
+    factor_levels: Any,
+    caller: str = "NNS.stack",
+    drop_unused_levels: bool = False,
+) -> dict[str, Any]:
+    """Split, name and code the stack inputs (R's input section of NNS.stack).
+
+    Predictors: a pandas categorical column, or one given ``factor_levels``,
+    is a factor with those levels in that order (all declared levels, as R's
+    ``levels()``); any other label column (strings, including numeric-looking
+    ones) is a factor with sorted levels. Factor columns are returned as
+    ``1..K`` codes with their levels; numeric columns as floats. NNS.boost
+    drops unused declared levels (``drop_unused_levels``, R ``droplevels``).
+
+    Response: a pandas categorical, or ``class_levels``, is coded in declared
+    order with unused levels dropped (R ``droplevels``); strings are coded in
+    sorted order; bool as ``False < True``; anything else is numeric. R codes
+    a character response by first appearance, so its results depend on the
+    row order; the sorted order is R's factor order and NNS.boost's.
+    """
+    cols = split_columns(ivs_train)
+    if np.ndim(ivs_train) > 2 or not cols.values:
+        raise ValueError("[IVs.train] must contain at least one predictor.")
+    names = _train_names(cols)
+    p = len(names)
+    n_obs = cols.values[0].shape[0]
+
+    dv, dv_categories = response_values(
+        dv_train, "[DV.train] must contain exactly one response column."
+    )
+    if dv.size != n_obs:
+        raise ValueError("nrow(IVs.train) must equal length(DV.train).")
+    if dv.size < 4:
+        raise ValueError(f"{caller} requires at least four training observations.")
+
+    declared_y = class_levels if class_levels is not None else dv_categories
+    class_values: list[Any] | None = None
+    if declared_y is not None:
+        what = "class_levels" if class_levels is not None else "DV.train categories"
+        levels = declared_levels(declared_y, what)
+        full_codes, _, absent = declared_codes(dv, levels, "[DV.train] contains missing values.")
+        if absent:
+            raise ValueError(f"[DV.train] contains levels absent from {what}: " + ", ".join(absent))
+        # Drop unused levels (R droplevels) and renumber the codes.
+        kept = sorted({int(c) - 1 for c in full_codes.tolist()})
+        originals = list(declared_y)
+        class_values = [originals[i] for i in kept]
+        renumber = {i + 1.0: k + 1.0 for k, i in enumerate(kept)}
+        dv_coded = np.asarray([renumber[c] for c in full_codes.tolist()], dtype=np.float64)
+        response_kind = "factor"
+    elif dv.dtype.kind == "b":
+        class_values = sorted(set(dv.tolist()))
+        dv_coded = np.asarray([class_values.index(v) + 1 for v in dv.tolist()], dtype=np.float64)
+        response_kind = "logical"
+    elif is_text(dv):
+        keys = level_keys(dv, "[DV.train] contains missing values.")
+        class_values = sorted(set(keys))
+        dv_coded = codes_for(keys, class_values)
+        response_kind = "character"
+    else:
+        dv_coded = as_float(dv)
+        if np.any(np.isnan(dv_coded)):
+            raise ValueError("[DV.train] contains missing values.")
+        if np.any(~np.isfinite(dv_coded)):
+            raise ValueError("[DV.train] contains non-finite values.")
+        response_kind = "numeric"
+
+    declared_x = resolve_factor_levels(factor_levels, names, cols.labels)
+    test_cols = None if ivs_test is None else _test_columns(ivs_test, names)
+    n_test = n_obs if test_cols is None else test_cols[0].shape[0]
+    x = np.empty((n_obs, p), dtype=np.float64)
+    z = np.empty((n_test, p), dtype=np.float64)
+    predictor_levels: list[list[str] | None] = []
+    for j in range(p):
+        values = cols.values[j]
+        decl = declared_x[j] if declared_x[j] is not None else cols.categories[j]
+        if decl is not None or is_text(values):
+            missing = "[IVs.train] contains missing values."
+            by_code = False
+            if decl is None:
+                keys = level_keys(values, missing)
+                levels = sorted(set(keys))
+                codes = codes_for(keys, levels)
+            else:
+                levels = declared_levels(decl, f"factor_levels for '{names[j]}'")
+                codes, by_code, absent = declared_codes(values, levels, missing)
+                if absent:
+                    raise ValueError(
+                        f"Predictor [{names[j]}] contains values absent from its levels: "
+                        + ", ".join(absent)
+                    )
+            test_codes = None
+            if test_cols is not None:
+                test_codes, unseen = point_codes(
+                    test_cols[j], levels, by_code, "[IVs.test] contains missing values."
+                )
+                if unseen:
+                    raise ValueError(
+                        f"Test predictor [{names[j]}] contains unseen level(s): "
+                        + ", ".join(unseen)
+                        + "."
+                    )
+            if drop_unused_levels and decl is not None:
+                # R droplevels: keep the levels present in training, renumbered.
+                kept = sorted({int(c) - 1 for c in codes.tolist()})
+                renumber = {i + 1.0: k + 1.0 for k, i in enumerate(kept)}
+                levels = [levels[i] for i in kept]
+                codes = np.asarray([renumber[c] for c in codes.tolist()], dtype=np.float64)
+                if test_codes is not None:
+                    test_codes = np.asarray(
+                        [renumber.get(c, np.nan) for c in test_codes.tolist()], dtype=np.float64
+                    )
+                    if np.any(np.isnan(test_codes)):
+                        raise ValueError(
+                            f"Test predictor [{names[j]}] contains levels absent from the "
+                            "training data."
+                        )
+            x[:, j] = codes
+            if test_codes is not None:
+                z[:, j] = test_codes
+            predictor_levels.append(levels)
+        else:
+            x[:, j] = as_float(values)
+            if test_cols is not None:
+                z[:, j] = as_float(test_cols[j])
+            predictor_levels.append(None)
+    if test_cols is None:
+        z = x.copy()
+    return {
+        "x": x,
+        "z": z,
+        "dv": dv_coded,
+        "response_kind": response_kind,
+        "class_values": class_values,
+        "names": names,
+        "levels": predictor_levels,
+    }
 
 
 def nns_stack_fit(
@@ -1382,9 +1539,11 @@ def nns_stack_fit(
     kwargs.pop("fitted", None)
     kwargs.pop("return_fit", None)
     result = nns_stack(ivs_train, dv_train, ivs_test=None, return_fit=True, **kwargs)
+    # Keep the inputs as given (not np.asarray) so frame column names and
+    # categorical levels still apply when the fit is reused for prediction.
     return {
-        "ivs_train": np.asarray(ivs_train),
-        "dv_train": np.asarray(dv_train),
+        "ivs_train": ivs_train,
+        "dv_train": dv_train,
         "kwargs": kwargs,
         "fit": result["_fit"],
     }

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nns import nns_m_reg, nns_reg
+from nns import nns_m_reg, nns_reg, nns_stack
 from tests._r import nns_frame_call, r_column
 from tests._tolerances import COMPOUND
 
@@ -220,6 +220,8 @@ def test_missing_values_in_categorical_columns_raise() -> None:
         nns_reg(good, cars.mpg, point_est=pd.DataFrame({"g": [None], "wt": [3.0]}))
     with pytest.raises(ValueError, match=r"\[y\] contains missing values"):
         nns_reg(cars.wt, g)
+    with pytest.raises(ValueError, match="contains missing values"):
+        nns_stack(pd.DataFrame({"g": g, "wt": cars.wt}), cars.mpg, method=1)
 
 
 # --------------------------------------------------------------------------
@@ -263,3 +265,92 @@ def test_nns_m_reg_class_levels_stay_classification() -> None:
     np.testing.assert_allclose(actual["Point.est"], _num(expected["pe"]), atol=COMPOUND)
     np.testing.assert_allclose(actual["R2"], _num(expected["r2"]), atol=COMPOUND)
     assert set(np.unique(actual["Fitted.xy"]["y.hat"])) <= {1.0, 2.0, 3.0}
+
+
+# --------------------------------------------------------------------------
+# STK-08 / STK-04 / STK-07: nns_stack
+# --------------------------------------------------------------------------
+
+def test_nns_stack_test_columns_matched_by_name_and_named_outputs() -> None:
+    cars = _cars()
+    x = cars[["wt", "hp", "disp"]]
+    test = x.iloc[:5][["disp", "hp", "wt"]]
+    expected = nns_frame_call(
+        "labels.stack.names",
+        "r <- NNS.stack(x, y, IVs.test = te, folds = 2, status = FALSE, ncores = 1); "
+        "list(stack = r$stack, vars = r$NNS.dim.red.variables, "
+        "coef = r$NNS.dim.red.coefficients)",
+        {"x": _spec(x), "y": _vec(cars.mpg), "te": _spec(test)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_stack(x, cars.mpg, test, folds=2)
+    np.testing.assert_allclose(actual["stack"], _num(expected["stack"]), atol=COMPOUND)
+    unpermuted = nns_stack(x, cars.mpg, x.iloc[:5], folds=2)
+    np.testing.assert_allclose(actual["stack"], unpermuted["stack"])
+    assert actual["NNS.dim.red.variables"] == list(np.atleast_1d(expected["vars"]))
+    coef = expected["coef"]
+    assert isinstance(coef, dict)
+    assert list(actual["NNS.dim.red.coefficients"]) == list(coef["names"])
+    np.testing.assert_allclose(
+        list(actual["NNS.dim.red.coefficients"].values()), _num(coef["values"]),
+        atol=COMPOUND,
+    )
+
+
+def test_nns_stack_categorical_response_uses_declared_levels() -> None:
+    flowers = _flowers()
+    levels = ["setosa", "versicolor", "virginica"]
+    x = flowers[["a", "b", "c"]]
+    y = pd.Series(pd.Categorical(flowers.species, categories=levels))
+    expected = nns_frame_call(
+        "labels.stack.factor_y",
+        "r <- NNS.stack(x[1:50, ], y[1:50], IVs.test = x[51:60, ], folds = 3, "
+        "status = FALSE, ncores = 1); "
+        "list(stack = r$stack, reg = r$reg, levels = r$class.levels, w = r$weights)",
+        {"x": _spec(x), "y": _vec(y)},
+    )
+    assert isinstance(expected, dict)
+    assert flowers.species.iloc[0] == "virginica"
+    actual = nns_stack(x.iloc[:50], y.iloc[:50], x.iloc[50:60], folds=3)
+    assert actual["class.levels"] == levels == expected["levels"]
+    np.testing.assert_allclose(actual["reg"], _num(expected["reg"]), atol=COMPOUND)
+    np.testing.assert_allclose(actual["stack"], _num(expected["stack"]), atol=COMPOUND)
+    # Plain strings are coded in sorted order (R's factor order), and
+    # class_levels= declares an order explicitly.
+    plain = nns_stack(x.iloc[:50], flowers.species.iloc[:50], x.iloc[50:60], folds=3)
+    np.testing.assert_allclose(plain["stack"], actual["stack"])
+    reverse = nns_stack(
+        x.iloc[:50], flowers.species.iloc[:50], x.iloc[50:60], folds=3,
+        class_levels=levels[::-1],
+    )
+    assert reverse["class.levels"] == levels[::-1]
+    # Integer codes with class_levels naming them.
+    codes = np.asarray([levels.index(v) + 1.0 for v in flowers.species.iloc[:50]])
+    by_code = nns_stack(x.iloc[:50], codes, x.iloc[50:60], folds=3, class_levels=levels)
+    assert by_code["class.levels"] == levels
+    np.testing.assert_allclose(by_code["stack"], actual["stack"])
+
+
+def test_nns_stack_factor_predictor_levels_and_names() -> None:
+    cars = _cars()
+    flag = np.where(cars.disp > cars.disp.median(), "1", "0")
+    x = pd.DataFrame({"wt": cars.wt, "flag": flag, "hp": cars.hp})
+    declared = x.assign(flag=pd.Categorical(flag, categories=["1", "0"]))
+    expected = nns_frame_call(
+        "labels.stack.factor_x",
+        "r <- NNS.stack(x, y, IVs.test = x[1:5, ], folds = 2, status = FALSE, ncores = 1); "
+        "list(stack = r$stack, coef = r$NNS.dim.red.coefficients)",
+        {"x": _spec(declared), "y": _vec(cars.mpg)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_stack(declared, cars.mpg, declared.iloc[:5], folds=2)
+    coef = expected["coef"]
+    assert isinstance(coef, dict)
+    # The "0"/"1" strings are a factor (one dummy per level), not a number.
+    assert list(actual["NNS.dim.red.coefficients"]) == list(coef["names"])
+    assert list(coef["names"]) == ["wt", "flag__X1", "flag__X0", "hp"]
+    np.testing.assert_allclose(actual["stack"], _num(expected["stack"]), atol=COMPOUND)
+    by_levels = nns_stack(
+        x, cars.mpg, x.iloc[:5], folds=2, factor_levels={"flag": ["1", "0"]}
+    )
+    np.testing.assert_allclose(by_levels["stack"], actual["stack"])
