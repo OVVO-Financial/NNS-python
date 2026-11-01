@@ -1,0 +1,527 @@
+From 13b5f1f2d019ccd672457fa655eca764f632450c Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 00:02:52 +0000
+Subject: [PATCH 46/61] docs: correct partial-moment and central-tendency man
+ pages
+
+Roxygen sources (R/*.R, src/partial_moments_rcpp.cpp + R/RcppExports.R)
+and the committed Rd files are edited together:
+- NNS.mode / NNS.gravity: discrete = FALSE is for continuous
+  distributions (the text said discrete); NNS.mode returns a vector of
+  modes with the default multi = TRUE.
+- LPM.ratio, UPM.ratio, Co.LPM, Co.UPM, D.LPM, D.UPM, PM.matrix: the
+  targets have no default; NULL selects the mean(s).
+- PM.matrix: pop_adj is the n/(n-1) adjustment and is ignored when
+  either degree is 0 (verified: identical output).
+- NNS.moments: population = TRUE is the unadjusted statistic, FALSE the
+  sample-adjusted one.
+- NNS.CDF: $Function is an NNS.data.frame, not a data.table.
+- UPM.ratio: replace the invalid \dontrun plot3d example.
+- Co.LPM_nD / Co.UPM_nD / DPM_nD: norm divides by CLPM + CUPM + DPM at
+  the same degree/target (verified 0.0567/(0.0567+0.0253+0.3355) =
+  0.1358 = norm output) and has no effect at degree 0.
+- LPM.VaR / UPM.VaR: degree 0 is the type-7 interpolated quantile.
+Documentation only; no results change.
+---
+ R/Central_tendencies.R       |  6 +++---
+ R/LPM_UPM_VaR.R              |  4 ++--
+ R/Partial_Moments.R          | 22 +++++++++++-----------
+ R/RcppExports.R              | 14 +++++++-------
+ man/Co.LPM.Rd                |  4 ++--
+ man/Co.LPM_nD.Rd             |  2 +-
+ man/Co.UPM.Rd                |  4 ++--
+ man/Co.UPM_nD.Rd             |  2 +-
+ man/D.LPM.Rd                 |  4 ++--
+ man/D.UPM.Rd                 |  4 ++--
+ man/DPM_nD.Rd                |  2 +-
+ man/LPM.VaR.Rd               |  2 +-
+ man/LPM.ratio.Rd             |  2 +-
+ man/NNS.CDF.Rd               |  2 +-
+ man/NNS.gravity.Rd           |  2 +-
+ man/NNS.mode.Rd              |  4 ++--
+ man/NNS.moments.Rd           |  2 +-
+ man/PM.matrix.Rd             |  4 ++--
+ man/UPM.VaR.Rd               |  2 +-
+ man/UPM.ratio.Rd             |  4 ++--
+ src/partial_moments_rcpp.cpp | 14 +++++++-------
+ 21 files changed, 53 insertions(+), 53 deletions(-)
+
+diff --git a/R/Central_tendencies.R b/R/Central_tendencies.R
+index 0558225..a118677 100644
+--- a/R/Central_tendencies.R
++++ b/R/Central_tendencies.R
+@@ -3,9 +3,9 @@
+ #' Mode of a distribution, either continuous or discrete.
+ #'
+ #' @param x vector of data.
+-#' @param discrete logical; \code{FALSE} (default) for discrete distributions.
++#' @param discrete logical; \code{FALSE} (default) for continuous distributions, \code{TRUE} for discrete distributions.
+ #' @param multi logical; \code{TRUE} (default) returns multiple mode values.
+-#' @return Returns a numeric value representing the mode of the distribution.
++#' @return Returns the mode of the distribution: a numeric vector of all modes when \code{multi = TRUE} (default), otherwise a single numeric value.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @examples
+ #' \dontrun{
+@@ -31,7 +31,7 @@ mode_class <- function(x) NNS.mode(x, discrete = TRUE, multi = FALSE)
+ #' Alternative central tendency measure more robust to outliers.
+ #'
+ #' @param x vector of data.
+-#' @param discrete logical; \code{FALSE} (default) for discrete distributions.
++#' @param discrete logical; \code{FALSE} (default) for continuous distributions, \code{TRUE} for discrete distributions.
+ #' @return Returns a numeric value representing the central tendency of the distribution.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @examples
+diff --git a/R/LPM_UPM_VaR.R b/R/LPM_UPM_VaR.R
+index b0bbe42..4125338 100644
+--- a/R/LPM_UPM_VaR.R
++++ b/R/LPM_UPM_VaR.R
+@@ -3,7 +3,7 @@
+ #' Generates a value at risk (VaR) quantile based on the Lower Partial Moment ratio.
+ #'
+ #' @param percentile numeric [0, 1]; The percentile for left-tail VaR.
+-#' @param degree integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions.
++#' @param degree integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions. With \code{degree = 0} the result is the interpolated empirical quantile (\code{quantile(x, percentile, type = 7)}), which on tied data need not be an exact inverse of \code{LPM.ratio(0, ., x)}.
+ #' @param x a numeric vector.
+ #' @return Returns a numeric value representing the point at which \code{"percentile"} of the area of \code{x} is below.
+ #' @author Fred Viole, OVVO Financial Systems
+@@ -40,7 +40,7 @@ LPM.VaR <- function(percentile, degree, x) {
+ #' Generates an upside value at risk (VaR) quantile based on the Upper Partial Moment ratio.
+ #'
+ #' @param percentile numeric [0, 1]; The percentile for right-tail VaR.
+-#' @param degree integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions.
++#' @param degree integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions. With \code{degree = 0} the result is the interpolated empirical quantile (\code{quantile(x, percentile, type = 7)}), which on tied data need not be an exact inverse of \code{LPM.ratio(0, ., x)}.
+ #' @param x a numeric vector.
+ #' @return Returns a numeric value representing the point at which \code{"percentile"} of the area of \code{x} is above.
+ #' @author Fred Viole, OVVO Financial Systems
+diff --git a/R/Partial_Moments.R b/R/Partial_Moments.R
+index 46fb3ff..63b3392 100644
+--- a/R/Partial_Moments.R
++++ b/R/Partial_Moments.R
+@@ -81,7 +81,7 @@ UPM <- function(degree, target, variable, excess_ret = FALSE) {
+ #' @param data   A numeric matrix with observations in rows and variables in columns.
+ #' @param target A numeric vector, length equal to ncol(data).
+ #' @param degree numeric; degree for lower deviations (0 = frequency, 1 = area).
+-#' @param norm   logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.
++#' @param norm   logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.
+ #' @return Numeric; the n‑dimensional co‑lower partial moment.
+ #' @examples
+ #' \dontrun{
+@@ -133,7 +133,7 @@ Co.LPM_nD.batch <- function(data, targets, degree = 0.0, norm = TRUE) {
+ #' @param data   A numeric matrix with observations in rows and variables in columns.
+ #' @param target A numeric vector, length equal to ncol(data).
+ #' @param degree numeric; degree for upper deviations (0 = frequency, 1 = area).
+-#' @param norm   logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.
++#' @param norm   logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.
+ #' @return Numeric; the n‑dimensional co‑upper partial moment.
+ #' @examples
+ #' \dontrun{
+@@ -161,7 +161,7 @@ Co.UPM_nD <- function(data, target, degree = 0.0, norm = TRUE) {
+ #' @param data   A numeric matrix with observations in rows and variables in columns.
+ #' @param target A numeric vector, length equal to ncol(data).
+ #' @param degree numeric; degree for upper deviations (0 = frequency, 1 = area).
+-#' @param norm   logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.
++#' @param norm   logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.
+ #' @return Numeric; the n-dimensional divergent partial moment.
+ #' @examples
+ #' \dontrun{
+@@ -194,7 +194,7 @@ DPM_nD <- function(data, target, degree = 0.0, norm = TRUE) {
+ #' @param plot logical; plots CDF.
+ #' @return Returns:
+ #' \itemize{
+-#'  \item{\code{"Function"}} a data.table containing the observations and resulting CDF of the variable.
++#'  \item{\code{"Function"}} a data.frame (class \code{NNS.data.frame}) containing the observations and the resulting function of the variable.
+ #'  \item{\code{"target.value"}} value from the \code{target} argument.
+ #' }
+ #' @author Fred Viole, OVVO Financial Systems
+@@ -448,7 +448,7 @@ NNS.CDF <- function(variable,
+ #' This function returns the first 4 moments of the distribution.
+ #'
+ #' @param x a numeric vector.
+-#' @param population logical; \code{TRUE} (default) Performs the population adjustment. Otherwise returns the sample statistic.
++#' @param population logical; \code{TRUE} (default) returns the population (unadjusted) statistics. \code{FALSE} returns the sample-adjusted statistics (variance with \code{n - 1}, adjusted Fisher-Pearson skewness and sample excess kurtosis).
+ #' @return Returns:
+ #' \itemize{
+ #'  \item{\code{"$mean"}} mean of the distribution.
+@@ -513,9 +513,9 @@ NNS.moments <- function(x, population = TRUE) {
+ #' @description Builds a list containing CUPM, DUPM, DLPM, CLPM and the overall covariance matrix.
+ #' @param LPM_degree numeric; lower partial moment degree (0 = freq, 1 = area).
+ #' @param UPM_degree numeric; upper partial moment degree (0 = freq, 1 = area).
+-#' @param target numeric vector; thresholds for each column (defaults to colMeans).
++#' @param target numeric vector; thresholds for each column. There is no default: pass \code{NULL} to use \code{colMeans(variable)}.
+ #' @param variable numeric matrix or data.frame.
+-#' @param pop_adj logical; TRUE adjusts population vs. sample moments.
++#' @param pop_adj logical; \code{TRUE} applies the sample adjustment \code{n / (n - 1)} to the co-/divergent moments (the covariance matrix then equals \code{cov()}). It is ignored when either degree is 0.
+ #' @param norm logical; default FALSE. If TRUE, each quadrant matrix is cell-wise normalized so their sum is 1 at each (i,j).  
+ #' @return A list: $cupm, $dupm, $dlpm, $clpm, $cov.matrix.
+ #' @note When \code{norm = TRUE}, each cell (i,j) of the four quadrant matrices
+@@ -554,8 +554,8 @@ PM.matrix <- function(LPM_degree, UPM_degree, target, variable, pop_adj, norm =
+ #' @param degree_lpm numeric; degree for x ("degree_x"). degree = 0 gives frequency, degree = 1 gives area.
+ #' @param x numeric vector of observations.
+ #' @param y numeric vector of the same length as x.
+-#' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-#' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++#' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++#' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ #' @param degree_y numeric; optional degree for y. If omitted, `degree_lpm` is
+ #'   used for both x and y.
+ #' @return Numeric vector of co‑LPM values.
+@@ -583,8 +583,8 @@ Co.LPM <- function(degree_lpm, x, y, target_x, target_y, degree_y = NULL) {
+ #' @param degree_upm numeric; degree for x ("degree_x"). degree = 0 gives frequency, degree = 1 gives area.
+ #' @param x numeric vector of observations.
+ #' @param y numeric vector of the same length as x.
+-#' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-#' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++#' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++#' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ #' @param degree_y numeric; optional degree for y. If omitted, `degree_upm` is
+ #'   used for both x and y.
+ #' @return Numeric vector of co‑UPM values.
+diff --git a/R/RcppExports.R b/R/RcppExports.R
+index 9c48e04..c601b70 100644
+--- a/R/RcppExports.R
++++ b/R/RcppExports.R
+@@ -199,7 +199,7 @@ UPM_RCPP <- function(degree, target, variable, excess_ret) {
+ #'   This function generates a standardized univariate lower partial moment
+ #'   of any non‑negative degree for a given target.
+ #' @param degree numeric; degree = 0 gives frequency (CDF), degree = 1 gives area.
+-#' @param target numeric vector; threshold(s). Defaults to mean(variable).
++#' @param target numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.
+ #' @param variable numeric vector or data‑frame column to evaluate.
+ #' @return Numeric vector of standardized lower partial moments. For
+ #'   \code{degree > 0}, a target at which every observation equals the target
+@@ -228,7 +228,7 @@ LPM.ratio <- function(degree, target, variable) {
+ #'   This function generates a standardized univariate upper partial moment
+ #'   of any non‑negative degree for a given target.
+ #' @param degree numeric; degree = 0 gives frequency, degree = 1 gives area.
+-#' @param target numeric vector; threshold(s). Defaults to mean(variable).
++#' @param target numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.
+ #' @param variable numeric vector or data‑frame column to evaluate.
+ #' @return Numeric vector of standardized upper partial moments. For
+ #'   \code{degree > 0}, a target at which every observation equals the target
+@@ -241,7 +241,7 @@ LPM.ratio <- function(degree, target, variable) {
+ #'   x <- rnorm(100)
+ #'   UPM.ratio(0, mean(x), x)
+ #' \dontrun{
+-#'   plot3d(x, y, Co.UPM(0, sort(x), sort(y), x, y), …)
++#'   plot(sort(x), UPM.ratio(0, sort(x), x))
+ #' }
+ #' @export
+ UPM.ratio <- function(degree, target, variable) {
+@@ -265,8 +265,8 @@ CoUPM_RCPP <- function(degree_upm, x, y, target_x, target_y, degree_y) {
+ #' @param degree_upm numeric; UPM degree = 0 gives frequency, = 1 gives area.
+ #' @param x numeric vector of observations.
+ #' @param y numeric vector of the same length as x.
+-#' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-#' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++#' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++#' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ #' @return Numeric vector of divergent LPM values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references
+@@ -289,8 +289,8 @@ D.LPM <- function(degree_lpm, degree_upm, x, y, target_x, target_y) {
+ #' @param degree_upm numeric; UPM degree = 0 gives frequency, = 1 gives area.
+ #' @param x numeric vector of observations.
+ #' @param y numeric vector of the same length as x.
+-#' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-#' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++#' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++#' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ #' @return Numeric vector of divergent UPM values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references
+diff --git a/man/Co.LPM.Rd b/man/Co.LPM.Rd
+index 39c10e4..9adf482 100644
+--- a/man/Co.LPM.Rd
++++ b/man/Co.LPM.Rd
+@@ -13,9 +13,9 @@ Co.LPM(degree_lpm, x, y, target_x, target_y, degree_y = NULL)
+ 
+ \item{y}{numeric vector of the same length as x.}
+ 
+-\item{target_x}{numeric vector; thresholds for x (defaults to mean(x)).}
++\item{target_x}{numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.}
+ 
+-\item{target_y}{numeric vector; thresholds for y (defaults to mean(y)).}
++\item{target_y}{numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.}
+ 
+ \item{degree_y}{numeric; optional degree for y. If omitted, `degree_lpm` is
+ used for both x and y.}
+diff --git a/man/Co.LPM_nD.Rd b/man/Co.LPM_nD.Rd
+index 5d97772..1cccc6a 100644
+--- a/man/Co.LPM_nD.Rd
++++ b/man/Co.LPM_nD.Rd
+@@ -13,7 +13,7 @@ Co.LPM_nD(data, target, degree = 0, norm = TRUE)
+ 
+ \item{degree}{numeric; degree for lower deviations (0 = frequency, 1 = area).}
+ 
+-\item{norm}{logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.}
++\item{norm}{logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.}
+ }
+ \value{
+ Numeric; the n‑dimensional co‑lower partial moment.
+diff --git a/man/Co.UPM.Rd b/man/Co.UPM.Rd
+index 7859d29..d976ae1 100644
+--- a/man/Co.UPM.Rd
++++ b/man/Co.UPM.Rd
+@@ -13,9 +13,9 @@ Co.UPM(degree_upm, x, y, target_x, target_y, degree_y = NULL)
+ 
+ \item{y}{numeric vector of the same length as x.}
+ 
+-\item{target_x}{numeric vector; thresholds for x (defaults to mean(x)).}
++\item{target_x}{numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.}
+ 
+-\item{target_y}{numeric vector; thresholds for y (defaults to mean(y)).}
++\item{target_y}{numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.}
+ 
+ \item{degree_y}{numeric; optional degree for y. If omitted, `degree_upm` is
+ used for both x and y.}
+diff --git a/man/Co.UPM_nD.Rd b/man/Co.UPM_nD.Rd
+index 575f4bd..baafb4a 100644
+--- a/man/Co.UPM_nD.Rd
++++ b/man/Co.UPM_nD.Rd
+@@ -13,7 +13,7 @@ Co.UPM_nD(data, target, degree = 0, norm = TRUE)
+ 
+ \item{degree}{numeric; degree for upper deviations (0 = frequency, 1 = area).}
+ 
+-\item{norm}{logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.}
++\item{norm}{logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.}
+ }
+ \value{
+ Numeric; the n‑dimensional co‑upper partial moment.
+diff --git a/man/D.LPM.Rd b/man/D.LPM.Rd
+index 7f048eb..448ce7c 100644
+--- a/man/D.LPM.Rd
++++ b/man/D.LPM.Rd
+@@ -15,9 +15,9 @@ D.LPM(degree_lpm, degree_upm, x, y, target_x, target_y)
+ 
+ \item{y}{numeric vector of the same length as x.}
+ 
+-\item{target_x}{numeric vector; thresholds for x (defaults to mean(x)).}
++\item{target_x}{numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.}
+ 
+-\item{target_y}{numeric vector; thresholds for y (defaults to mean(y)).}
++\item{target_y}{numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.}
+ }
+ \value{
+ Numeric vector of divergent LPM values.
+diff --git a/man/D.UPM.Rd b/man/D.UPM.Rd
+index cb61a73..cefa3b6 100644
+--- a/man/D.UPM.Rd
++++ b/man/D.UPM.Rd
+@@ -15,9 +15,9 @@ D.UPM(degree_lpm, degree_upm, x, y, target_x, target_y)
+ 
+ \item{y}{numeric vector of the same length as x.}
+ 
+-\item{target_x}{numeric vector; thresholds for x (defaults to mean(x)).}
++\item{target_x}{numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.}
+ 
+-\item{target_y}{numeric vector; thresholds for y (defaults to mean(y)).}
++\item{target_y}{numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.}
+ }
+ \value{
+ Numeric vector of divergent UPM values.
+diff --git a/man/DPM_nD.Rd b/man/DPM_nD.Rd
+index 99567d1..48dd905 100644
+--- a/man/DPM_nD.Rd
++++ b/man/DPM_nD.Rd
+@@ -13,7 +13,7 @@ DPM_nD(data, target, degree = 0, norm = TRUE)
+ 
+ \item{degree}{numeric; degree for upper deviations (0 = frequency, 1 = area).}
+ 
+-\item{norm}{logical; if \code{TRUE} (default) normalize to the maximum observed value (→ [0,1]), otherwise return the raw moment.}
++\item{norm}{logical; if \code{TRUE} (default) divide by the sum of the co-lower, co-upper and divergent nD partial moments at the same degree and target (→ [0,1]), otherwise return the raw moment. At \code{degree = 0} the three already sum to 1, so \code{norm} has no effect.}
+ }
+ \value{
+ Numeric; the n-dimensional divergent partial moment.
+diff --git a/man/LPM.VaR.Rd b/man/LPM.VaR.Rd
+index d36431a..6969fca 100644
+--- a/man/LPM.VaR.Rd
++++ b/man/LPM.VaR.Rd
+@@ -9,7 +9,7 @@ LPM.VaR(percentile, degree, x)
+ \arguments{
+ \item{percentile}{numeric [0, 1]; The percentile for left-tail VaR.}
+ 
+-\item{degree}{integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions.}
++\item{degree}{integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions. With \code{degree = 0} the result is the interpolated empirical quantile (\code{quantile(x, percentile, type = 7)}), which on tied data need not be an exact inverse of \code{LPM.ratio(0, ., x)}.}
+ 
+ \item{x}{a numeric vector.}
+ }
+diff --git a/man/LPM.ratio.Rd b/man/LPM.ratio.Rd
+index 035c753..8661abb 100644
+--- a/man/LPM.ratio.Rd
++++ b/man/LPM.ratio.Rd
+@@ -9,7 +9,7 @@ LPM.ratio(degree, target, variable)
+ \arguments{
+ \item{degree}{numeric; degree = 0 gives frequency (CDF), degree = 1 gives area.}
+ 
+-\item{target}{numeric vector; threshold(s). Defaults to mean(variable).}
++\item{target}{numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.}
+ 
+ \item{variable}{numeric vector or data‑frame column to evaluate.}
+ }
+diff --git a/man/NNS.CDF.Rd b/man/NNS.CDF.Rd
+index a48e9a9..d042af2 100644
+--- a/man/NNS.CDF.Rd
++++ b/man/NNS.CDF.Rd
+@@ -20,7 +20,7 @@ NNS.CDF(variable, degree = 0, target = NULL, type = "CDF", plot = TRUE)
+ \value{
+ Returns:
+ \itemize{
+- \item{\code{"Function"}} a data.table containing the observations and resulting CDF of the variable.
++ \item{\code{"Function"}} a data.frame (class \code{NNS.data.frame}) containing the observations and the resulting function of the variable.
+  \item{\code{"target.value"}} value from the \code{target} argument.
+ }
+ }
+diff --git a/man/NNS.gravity.Rd b/man/NNS.gravity.Rd
+index 38f10f5..58039a8 100644
+--- a/man/NNS.gravity.Rd
++++ b/man/NNS.gravity.Rd
+@@ -9,7 +9,7 @@ NNS.gravity(x, discrete = FALSE)
+ \arguments{
+ \item{x}{vector of data.}
+ 
+-\item{discrete}{logical; \code{FALSE} (default) for discrete distributions.}
++\item{discrete}{logical; \code{FALSE} (default) for continuous distributions, \code{TRUE} for discrete distributions.}
+ }
+ \value{
+ Returns a numeric value representing the central tendency of the distribution.
+diff --git a/man/NNS.mode.Rd b/man/NNS.mode.Rd
+index 2cf9f33..abd837d 100644
+--- a/man/NNS.mode.Rd
++++ b/man/NNS.mode.Rd
+@@ -9,12 +9,12 @@ NNS.mode(x, discrete = FALSE, multi = TRUE)
+ \arguments{
+ \item{x}{vector of data.}
+ 
+-\item{discrete}{logical; \code{FALSE} (default) for discrete distributions.}
++\item{discrete}{logical; \code{FALSE} (default) for continuous distributions, \code{TRUE} for discrete distributions.}
+ 
+ \item{multi}{logical; \code{TRUE} (default) returns multiple mode values.}
+ }
+ \value{
+-Returns a numeric value representing the mode of the distribution.
++Returns the mode of the distribution: a numeric vector of all modes when \code{multi = TRUE} (default), otherwise a single numeric value.
+ }
+ \description{
+ Mode of a distribution, either continuous or discrete.
+diff --git a/man/NNS.moments.Rd b/man/NNS.moments.Rd
+index 82c5883..238a770 100644
+--- a/man/NNS.moments.Rd
++++ b/man/NNS.moments.Rd
+@@ -9,7 +9,7 @@ NNS.moments(x, population = TRUE)
+ \arguments{
+ \item{x}{a numeric vector.}
+ 
+-\item{population}{logical; \code{TRUE} (default) Performs the population adjustment. Otherwise returns the sample statistic.}
++\item{population}{logical; \code{TRUE} (default) returns the population (unadjusted) statistics. \code{FALSE} returns the sample-adjusted statistics (variance with \code{n - 1}, adjusted Fisher-Pearson skewness and sample excess kurtosis).}
+ }
+ \value{
+ Returns:
+diff --git a/man/PM.matrix.Rd b/man/PM.matrix.Rd
+index 0d4dd4d..f415a15 100644
+--- a/man/PM.matrix.Rd
++++ b/man/PM.matrix.Rd
+@@ -11,11 +11,11 @@ PM.matrix(LPM_degree, UPM_degree, target, variable, pop_adj, norm = FALSE)
+ 
+ \item{UPM_degree}{numeric; upper partial moment degree (0 = freq, 1 = area).}
+ 
+-\item{target}{numeric vector; thresholds for each column (defaults to colMeans).}
++\item{target}{numeric vector; thresholds for each column. There is no default: pass \code{NULL} to use \code{colMeans(variable)}.}
+ 
+ \item{variable}{numeric matrix or data.frame.}
+ 
+-\item{pop_adj}{logical; TRUE adjusts population vs. sample moments.}
++\item{pop_adj}{logical; \code{TRUE} applies the sample adjustment \code{n / (n - 1)} to the co-/divergent moments (the covariance matrix then equals \code{cov()}). It is ignored when either degree is 0.}
+ 
+ \item{norm}{logical; default FALSE. If TRUE, each quadrant matrix is cell-wise normalized so their sum is 1 at each (i,j).}
+ }
+diff --git a/man/UPM.VaR.Rd b/man/UPM.VaR.Rd
+index ab02010..4ad32e7 100644
+--- a/man/UPM.VaR.Rd
++++ b/man/UPM.VaR.Rd
+@@ -9,7 +9,7 @@ UPM.VaR(percentile, degree, x)
+ \arguments{
+ \item{percentile}{numeric [0, 1]; The percentile for right-tail VaR.}
+ 
+-\item{degree}{integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions.}
++\item{degree}{integer; \code{(degree = 0)} for discrete distributions, \code{(degree = 1)} for continuous distributions. With \code{degree = 0} the result is the interpolated empirical quantile (\code{quantile(x, percentile, type = 7)}), which on tied data need not be an exact inverse of \code{LPM.ratio(0, ., x)}.}
+ 
+ \item{x}{a numeric vector.}
+ }
+diff --git a/man/UPM.ratio.Rd b/man/UPM.ratio.Rd
+index 3c24bdc..712168a 100644
+--- a/man/UPM.ratio.Rd
++++ b/man/UPM.ratio.Rd
+@@ -9,7 +9,7 @@ UPM.ratio(degree, target, variable)
+ \arguments{
+ \item{degree}{numeric; degree = 0 gives frequency, degree = 1 gives area.}
+ 
+-\item{target}{numeric vector; threshold(s). Defaults to mean(variable).}
++\item{target}{numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.}
+ 
+ \item{variable}{numeric vector or data‑frame column to evaluate.}
+ }
+@@ -27,7 +27,7 @@ This function generates a standardized univariate upper partial moment
+   x <- rnorm(100)
+   UPM.ratio(0, mean(x), x)
+ \dontrun{
+-  plot3d(x, y, Co.UPM(0, sort(x), sort(y), x, y), …)
++  plot(sort(x), UPM.ratio(0, sort(x), x))
+ }
+ }
+ \references{
+diff --git a/src/partial_moments_rcpp.cpp b/src/partial_moments_rcpp.cpp
+index d73cdf4..8b58804 100644
+--- a/src/partial_moments_rcpp.cpp
++++ b/src/partial_moments_rcpp.cpp
+@@ -166,7 +166,7 @@ NumericVector UPM_RCPP(const double &degree,
+ //'   This function generates a standardized univariate lower partial moment
+ //'   of any non‑negative degree for a given target.
+ //' @param degree numeric; degree = 0 gives frequency (CDF), degree = 1 gives area.
+-//' @param target numeric vector; threshold(s). Defaults to mean(variable).
++//' @param target numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.
+ //' @param variable numeric vector or data‑frame column to evaluate.
+ //' @return Numeric vector of standardized lower partial moments. For
+ //'   \code{degree > 0}, a target at which every observation equals the target
+@@ -215,7 +215,7 @@ NumericVector UPM_RCPP(const double &degree,
+ //'   This function generates a standardized univariate upper partial moment
+ //'   of any non‑negative degree for a given target.
+ //' @param degree numeric; degree = 0 gives frequency, degree = 1 gives area.
+-//' @param target numeric vector; threshold(s). Defaults to mean(variable).
++//' @param target numeric vector; threshold(s). There is no default: pass \code{NULL} to use \code{mean(variable)}.
+ //' @param variable numeric vector or data‑frame column to evaluate.
+ //' @return Numeric vector of standardized upper partial moments. For
+ //'   \code{degree > 0}, a target at which every observation equals the target
+@@ -228,7 +228,7 @@ NumericVector UPM_RCPP(const double &degree,
+ //'   x <- rnorm(100)
+ //'   UPM.ratio(0, mean(x), x)
+ //' \dontrun{
+-//'   plot3d(x, y, Co.UPM(0, sort(x), sort(y), x, y), …)
++//'   plot(sort(x), UPM.ratio(0, sort(x), x))
+ //' }
+ //' @export
+ // [[Rcpp::export("UPM.ratio", rng = false)]]
+@@ -342,8 +342,8 @@ NumericVector CoUPM_RCPP(
+ //' @param degree_upm numeric; UPM degree = 0 gives frequency, = 1 gives area.
+ //' @param x numeric vector of observations.
+ //' @param y numeric vector of the same length as x.
+-//' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-//' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++//' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++//' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ //' @return Numeric vector of divergent LPM values.
+ //' @author Fred Viole, OVVO Financial Systems
+ //' @references
+@@ -399,8 +399,8 @@ NumericVector CoUPM_RCPP(
+ //' @param degree_upm numeric; UPM degree = 0 gives frequency, = 1 gives area.
+ //' @param x numeric vector of observations.
+ //' @param y numeric vector of the same length as x.
+-//' @param target_x numeric vector; thresholds for x (defaults to mean(x)).
+-//' @param target_y numeric vector; thresholds for y (defaults to mean(y)).
++//' @param target_x numeric vector; thresholds for x. There is no default: pass \code{NULL} to use \code{mean(x)}.
++//' @param target_y numeric vector; thresholds for y. There is no default: pass \code{NULL} to use \code{mean(y)}.
+ //' @return Numeric vector of divergent UPM values.
+ //' @author Fred Viole, OVVO Financial Systems
+ //' @references
+-- 
+2.43.0
+

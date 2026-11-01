@@ -1,0 +1,38 @@
+From c5a8bedbb31a504e79c96da56e723e13972ce388 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:25:58 +0000
+Subject: [PATCH 05/61] LPM: count ties at degree 0 when excess_ret = TRUE
+
+The element-wise excess branch of LPM used a strict diff > 0 test, so at
+degree 0 an observation equal to its target was counted neither in LPM
+nor in UPM. The non-excess path, Co.LPM and PM.matrix all use x <= target
+for the lower tail, so LPM0 + UPM0 = 1 everywhere else.
+
+Before -> after, x = c(1,2,3):
+  LPM(0, 2, x, excess_ret = TRUE)  0.3333 -> 0.6667 (= LPM(0, 2, x))
+  LPM0 + UPM0 (excess_ret = TRUE)  0.6667 -> 1
+
+Only degree-0 LPM with excess_ret = TRUE and exact ties changes; degree
+> 0 is unaffected because a zero deviation contributes 0.
+---
+ src/partial_moments_rcpp.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/partial_moments_rcpp.cpp b/src/partial_moments_rcpp.cpp
+index 253968e..f7dcbaf 100644
+--- a/src/partial_moments_rcpp.cpp
++++ b/src/partial_moments_rcpp.cpp
+@@ -92,7 +92,9 @@ NumericVector LPM_RCPP(const double &degree,
+     for (int i = 0; i < n; ++i) {
+       double t    = (tlen == 1 ? target_vec[0] : target_vec[i]);
+       double diff = t - variable_vec[i];
+-      if (diff > 0) {
++      // LPM degree 0 counts ties (x <= target), as in the non-excess path,
++      // so that LPM0 + UPM0 = 1.
++      if (diff > 0 || (degree == 0 && diff == 0)) {
+         if      (degree == 0)       out[i] = 1;
+         else if (degree == 1)       out[i] = diff;
+         else if (isInteger(degree)) out[i] = repeatMultiplication(diff, (int)degree);
+-- 
+2.43.0
+

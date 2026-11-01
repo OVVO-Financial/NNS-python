@@ -1,0 +1,368 @@
+From 2ca5aca838bb24772a8cf45b86872d44db063d36 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 54/61] SD tests: tiny relative tolerance; bidirectional tests
+ share the pairwise verdict
+
+Dominance verdicts compared curve values exactly, so rounding noise of
+order 1e-16 decided them. The textbook mean-preserving spread
+x = qnorm(ppoints(100)), y = 2x gave 'NO SSD EXISTS' from NNS.SSD
+(LPM1 difference +8.9e-16, mean difference -3.7e-18) but 1 from
+NNS.SSD.uni on the same data; shifting both by 0.37 flipped .uni to 0;
+x = (0.1, 0.7) vs y = (0, 0.8) gave 'NO SSD' because 0.1 + 0.7 =
+0.7999999999999999, while the same data times 10 gave 'X SSD Y'.
+
+The native pairwise test now treats differences up to
+64 * DBL_EPSILON * S^d as ties (S = largest |value| of the two samples;
+d = 1 for SSD curves and the mean gate, 2 for TSD, a ratio analogue for
+continuous FSD); discrete FSD still compares exact ECDF fractions. The
+bidirectional NNS.SSD and NNS.FSD (discrete) now take their verdict from
+the pairwise test in both directions, as NNS.TSD and continuous NNS.FSD
+already do, so the bidirectional and .uni results always agree. The
+tolerance is documented in a @note of every SD test (roxygen + Rd).
+
+Before -> after:
+  x vs 2x:            NNS.SSD 'NO SSD EXISTS' -> 'X SSD Y' (.uni 1, unchanged)
+  x+0.37 vs 2x+0.37:  SSD.uni 0 -> 1; NNS.SSD 'NO SSD' -> 'X SSD Y'
+  (0.1,0.7) vs (0,0.8): 'NO SSD EXISTS' -> 'X SSD Y' (= the x10 case)
+  300 rounded-normal pairs: NNS.SSD agrees with .uni in 296 -> 300
+The 11-asset daily-return efficient sets (degrees 1-3, continuous), the
+0/15/15 FSD/SSD/TSD pair counts and the 8 TSD counterexamples (still all
+rejected) are unchanged.
+---
+ R/FSD.R                     | 28 ++++++++++++----------------
+ R/SD_Efficient_Set.R        |  1 +
+ R/SSD.R                     | 14 ++++++++------
+ R/TSD.R                     |  1 +
+ R/Uni_SD_Routines.R         |  3 +++
+ man/NNS.FSD.Rd              |  3 +++
+ man/NNS.FSD.uni.Rd          |  3 +++
+ man/NNS.SD.efficient.set.Rd |  3 +++
+ man/NNS.SSD.Rd              |  3 +++
+ man/NNS.SSD.uni.Rd          |  3 +++
+ man/NNS.TSD.Rd              |  3 +++
+ man/NNS.TSD.uni.Rd          |  3 +++
+ src/SD.cpp                  | 27 +++++++++++++++++----------
+ 13 files changed, 63 insertions(+), 32 deletions(-)
+
+diff --git a/R/FSD.R b/R/FSD.R
+index 9a0a182..88a755a 100644
+--- a/R/FSD.R
++++ b/R/FSD.R
+@@ -7,6 +7,7 @@
+ #' @param type options: ("discrete", "continuous"); \code{"discrete"} (default) selects the type of CDF.
+ #' @param plot logical; \code{TRUE} (default) plots the FSD test.
+ #' @return Returns one of the following FSD results: \code{"X FSD Y"}, \code{"Y FSD X"}, or \code{"NO FSD EXISTS"}.
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #'
+@@ -56,10 +57,6 @@ NNS.FSD <- function(x, y, type = "discrete", plot = TRUE){
+   LPM_y_sort <- LPM.ratio(degree, Combined_sort, y)
+ 
+ 
+-  x.fsd.y <- any(LPM_x_sort > LPM_y_sort)
+-
+-  y.fsd.x <- any(LPM_y_sort > LPM_x_sort)
+-
+ 
+   if(plot){
+     plot(Combined_sort, LPM_x_sort, type = "l", lwd = 3,col = "red", main = "FSD", ylab = "Probability of Cumulative Distribution", ylim = c(0, 1))
+@@ -68,19 +65,18 @@ NNS.FSD <- function(x, y, type = "discrete", plot = TRUE){
+   }
+   
+   ## Verification of ***0 instances*** of CDFx > CDFy, and conversely of CDFy > CDFx
+-  if (type == "continuous") {
+-    # The continuous ratio curves are linear-fractional between sample
+-    # points, so their difference can peak between them: use the exact
+-    # pairwise test (NNS.FSD.uni in both directions), which also checks the
+-    # interior extrema.
+-    x.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, x, y, "continuous") == 1L
+-    y.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, y, x, "continuous") == 1L
+-    return(ifelse(x.dom, "X FSD Y", ifelse(y.dom, "Y FSD X", "NO FSD EXISTS")))
+-  }
+-  
+-  ifelse (!x.fsd.y && min(x) >= min(y) && !identical(LPM_x_sort, LPM_y_sort),
++  # Verdict from the pairwise test (NNS.FSD.uni in both directions). For
++  # type = "continuous" the ratio curves are linear-fractional between
++  # sample points, so their difference can peak between them; the pairwise
++  # test also checks those interior extrema and compares the continuous
++  # curves with a small relative floating tolerance. The grid curves above
++  # are kept for the plot.
++  type.c <- if (degree == 0) "discrete" else "continuous"
++  x.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, x, y, type.c) == 1L
++  y.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, y, x, type.c) == 1L
++  ifelse (x.dom,
+           "X FSD Y",
+-          ifelse (!y.fsd.x && min(y) >= min(x) && !identical(LPM_x_sort, LPM_y_sort),
++          ifelse (y.dom,
+                   "Y FSD X",
+                   "NO FSD EXISTS"))
+ 
+diff --git a/R/SD_Efficient_Set.R b/R/SD_Efficient_Set.R
+index b25b9a8..0a75c03 100644
+--- a/R/SD_Efficient_Set.R
++++ b/R/SD_Efficient_Set.R
+@@ -7,6 +7,7 @@
+ #' @param type options: ("discrete", "continuous"); \code{"discrete"} (default) selects the type of CDF.
+ #' @param status logical; \code{TRUE} (default) Prints status update message in console.
+ #' @return Returns set of stochastic dominant variable names.
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #'
+diff --git a/R/SSD.R b/R/SSD.R
+index 343f645..e543e71 100644
+--- a/R/SSD.R
++++ b/R/SSD.R
+@@ -6,6 +6,7 @@
+ #' @param y a numeric vector.
+ #' @param plot logical; \code{TRUE} (default) plots the SSD test.
+ #' @return Returns one of the following SSD results: \code{"X SSD Y"}, \code{"Y SSD X"}, or \code{"NO SSD EXISTS"}.
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #' @examples
+@@ -40,10 +41,6 @@ NNS.SSD <- function(x, y, plot = TRUE){
+   LPM_x_sort <- LPM(1, Combined_sort,x)
+   LPM_y_sort <- LPM(1, Combined_sort,y)
+ 
+-  x.ssd.y <- any(LPM_x_sort > LPM_y_sort)
+-
+-  y.ssd.x <- any(LPM_y_sort > LPM_x_sort)
+-
+ 
+   if(plot){
+     plot(Combined_sort, LPM_x_sort, type = "l", lwd = 3,col = "red", main = "SSD", ylab = "Area of Cumulative Distribution",
+@@ -53,9 +50,14 @@ NNS.SSD <- function(x, y, plot = TRUE){
+     legend("topleft", c("X", "Y"), lwd = 10, col = c("red", "steelblue"))
+   }
+ 
+-  ifelse(!x.ssd.y && min(x) >= min(y) && mean(x) >= mean(y) && !identical(LPM_x_sort, LPM_y_sort),
++  # Verdict from the pairwise test (NNS.SSD.uni in both directions), which
++  # compares the curves with a small relative floating tolerance; the grid
++  # curves above are kept for the plot.
++  x.dom <- .Call(`_NNS_NNS_SSD_uni_cpp`, x, y) == 1L
++  y.dom <- .Call(`_NNS_NNS_SSD_uni_cpp`, y, x) == 1L
++  ifelse(x.dom,
+          "X SSD Y",
+-          ifelse (!y.ssd.x && min(y) >= min(x) && mean(y) >= mean(x) && !identical(LPM_x_sort, LPM_y_sort),
++          ifelse (y.dom,
+                   "Y SSD X",
+                    "NO SSD EXISTS"))
+ 
+diff --git a/R/TSD.R b/R/TSD.R
+index 655e2d8..b9b2741 100644
+--- a/R/TSD.R
++++ b/R/TSD.R
+@@ -6,6 +6,7 @@
+ #' @param y a numeric vector.
+ #' @param plot logical; \code{TRUE} (default) plots the TSD test.
+ #' @return Returns one of the following TSD results: \code{"X TSD Y"}, \code{"Y TSD X"}, or \code{"NO TSD EXISTS"}.
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #' @examples
+diff --git a/R/Uni_SD_Routines.R b/R/Uni_SD_Routines.R
+index 3594f9a..4f2d4ce 100644
+--- a/R/Uni_SD_Routines.R
++++ b/R/Uni_SD_Routines.R
+@@ -6,6 +6,7 @@
+ #' @param y a numeric vector.
+ #' @param type options: ("discrete", "continuous"); \code{"discrete"} (default) selects the type of CDF.
+ #' @return Returns (1) if \code{"X FSD Y"}, else (0).
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}
+ #'
+@@ -51,6 +52,7 @@ NNS.FSD.uni <- function(x, y, type = "discrete"){
+ #' @param x a numeric vector.
+ #' @param y a numeric vector.
+ #' @return Returns (1) if \code{"X SSD Y"}, else (0).
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #' @examples
+@@ -90,6 +92,7 @@ NNS.SSD.uni <- function(x, y){
+ #' @param x a numeric vector.
+ #' @param y a numeric vector.
+ #' @return Returns (1) if \code{"X TSD Y"}, else (0).
++#' @note The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
+ #' @author Fred Viole, OVVO Financial Systems
+ #' @references Viole, F. and Nawrocki, D. (2016) "LPM Density Functions for the Computation of the SD Efficient Set." Journal of Mathematical Finance, 6, 105-126.  \doi{10.4236/jmf.2016.61012}.
+ #' @examples
+diff --git a/man/NNS.FSD.Rd b/man/NNS.FSD.Rd
+index 027e187..28c0bc1 100644
+--- a/man/NNS.FSD.Rd
++++ b/man/NNS.FSD.Rd
+@@ -21,6 +21,9 @@ Returns one of the following FSD results: \code{"X FSD Y"}, \code{"Y FSD X"}, or
+ \description{
+ Bi-directional test of first degree stochastic dominance using lower partial moments.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.FSD.uni.Rd b/man/NNS.FSD.uni.Rd
+index 598ae34..da9a07d 100644
+--- a/man/NNS.FSD.uni.Rd
++++ b/man/NNS.FSD.uni.Rd
+@@ -19,6 +19,9 @@ Returns (1) if \code{"X FSD Y"}, else (0).
+ \description{
+ Uni-directional test of first degree stochastic dominance using lower partial moments used in SD Efficient Set routine.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.SD.efficient.set.Rd b/man/NNS.SD.efficient.set.Rd
+index fadbdbd..dcc24cf 100644
+--- a/man/NNS.SD.efficient.set.Rd
++++ b/man/NNS.SD.efficient.set.Rd
+@@ -21,6 +21,9 @@ Returns set of stochastic dominant variable names.
+ \description{
+ Determines the set of stochastic dominant variables for various degrees.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.SSD.Rd b/man/NNS.SSD.Rd
+index 003398a..7e570b3 100644
+--- a/man/NNS.SSD.Rd
++++ b/man/NNS.SSD.Rd
+@@ -19,6 +19,9 @@ Returns one of the following SSD results: \code{"X SSD Y"}, \code{"Y SSD X"}, or
+ \description{
+ Bi-directional test of second degree stochastic dominance using lower partial moments.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.SSD.uni.Rd b/man/NNS.SSD.uni.Rd
+index 855f0c3..a12a463 100644
+--- a/man/NNS.SSD.uni.Rd
++++ b/man/NNS.SSD.uni.Rd
+@@ -17,6 +17,9 @@ Returns (1) if \code{"X SSD Y"}, else (0).
+ \description{
+ Uni-directional test of second degree stochastic dominance using lower partial moments used in SD Efficient Set routine.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.TSD.Rd b/man/NNS.TSD.Rd
+index 4a012c7..4822696 100644
+--- a/man/NNS.TSD.Rd
++++ b/man/NNS.TSD.Rd
+@@ -19,6 +19,9 @@ Returns one of the following TSD results: \code{"X TSD Y"}, \code{"Y TSD X"}, or
+ \description{
+ Bi-directional test of third degree stochastic dominance using lower partial moments.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/man/NNS.TSD.uni.Rd b/man/NNS.TSD.uni.Rd
+index 9af8d16..3f4f7a4 100644
+--- a/man/NNS.TSD.uni.Rd
++++ b/man/NNS.TSD.uni.Rd
+@@ -17,6 +17,9 @@ Returns (1) if \code{"X TSD Y"}, else (0).
+ \description{
+ Uni-directional test of third degree stochastic dominance using lower partial moments used in SD Efficient Set routine.
+ }
++\note{
++The curves are compared on the merged sample points and, for TSD and continuous FSD, also at their closed-form extrema between those points. Differences smaller than \code{64 * .Machine$double.eps * S^d} (\code{S} = largest absolute value in \code{x} and \code{y}, \code{d} = 1 for SSD and the mean condition, 2 for TSD; a ratio analogue for continuous FSD) are treated as ties, so that rounding noise does not decide dominance. Discrete FSD compares exact empirical CDF values.
++}
+ \examples{
+ \dontrun{
+ set.seed(123)
+diff --git a/src/SD.cpp b/src/SD.cpp
+index 3b3256a..78f88f9 100644
+--- a/src/SD.cpp
++++ b/src/SD.cpp
+@@ -121,8 +121,13 @@ inline void ratio_deg1_coefs(const ColPre& c, int k, double& alpha, double& beta
+ // Returns 1 iff X dominates Y, else 0.
+ // =====================================================================
+ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discrete){
+-  // Scale of the data, used to ignore rounding-level excesses at the
+-  // interior candidates below (e.g. a vertex that coincides with a knot).
++  // Floating tolerance. Curve values are computed from prefix sums, so two
++  // curves that are equal in exact arithmetic can differ by rounding noise
++  // of order eps * S^degree (S = largest |value|). Differences up to
++  // 64 * DBL_EPSILON * S^degree (the ratio analogue for continuous FSD, S
++  // for the mean gate) are treated as ties, so that verdicts such as the
++  // textbook equal-mean SSD case do not flip on 1e-16 noise. Discrete FSD
++  // compares exact ECDF fractions and uses no tolerance.
+   const double S = std::max(std::max(std::fabs(X.vals.front()), std::fabs(X.vals.back())),
+                             std::max(std::fabs(Y.vals.front()), std::fabs(Y.vals.back())));
+   const double eps64 = 64.0 * DBL_EPSILON;
+@@ -133,7 +138,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+     bool x_gt_y = false, curves_differ = false;
+     int deg = (discrete ? 0 : 1); // discrete->0, continuous->1
+     for_each_threshold(X, Y, [&](double t, int kx, int ky, double t_next){
+-      double Rx, Ry;
++      double Rx, Ry, tol = 0.0;
+       if (deg==0){
+         // L0/(L0+U0) == ECDF
+         Rx = double(kx)/double(X.m);
+@@ -147,9 +152,11 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+         // LPM.ratio does, i.e. the right-continuous CDF value k/m (= 1).
+         Rx = (Ax>0.0 ? Lx/Ax : double(kx)/double(X.m));
+         Ry = (Ay>0.0 ? Ly/Ay : double(ky)/double(Y.m));
++        double Amin = std::min(Ax, Ay);
++        tol = eps64 * ((Amin > 0.0) ? std::max(1.0, S / Amin) : 1.0);
+       }
+-      if (Rx > Ry) x_gt_y = true;
+-      if (Rx != Ry) curves_differ = true;
++      if (Rx - Ry > tol) x_gt_y = true;
++      if (std::fabs(Rx - Ry) > tol) curves_differ = true;
+       
+       // Continuous ratios are linear-fractional between knots, so their
+       // difference can peak strictly inside (t, t_next). Its stationary
+@@ -185,7 +192,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+   }
+   
+   // SSD/TSD gates
+-  if (!(X.mn >= Y.mn) || (Y.mean > X.mean)) return 0;
++  if (!(X.mn >= Y.mn) || (Y.mean - X.mean > eps64 * S)) return 0;
+   if (identical_samples(X, Y)) return 0;           // identical series -> 0
+   
+   if (degree==2){ // SSD: compare LPM degree 1
+@@ -195,8 +202,8 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+       double Lx, Ux, Ly, Uy; (void)Ux; (void)Uy;   // not used beyond calc
+       lpm_upm_deg1(X, kx, t, Lx, Ux);
+       lpm_upm_deg1(Y, ky, t, Ly, Uy);
+-      if (Lx > Ly) x_gt_y = true;
+-      if (Lx != Ly) curves_differ = true;
++      if (Lx - Ly > eps64 * S) x_gt_y = true;
++      if (std::fabs(Lx - Ly) > eps64 * S) curves_differ = true;
+     });
+     if (!curves_differ) return 0;                  // equal curves -> no SSD
+     return x_gt_y ? 0 : 1;                         // 1 iff "X SSD Y"
+@@ -207,8 +214,8 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+   for_each_threshold(X, Y, [&](double t, int kx, int ky, double t_next){
+     double Lx2 = lpm_deg2(X, kx, t);
+     double Ly2 = lpm_deg2(Y, ky, t);
+-    if (Lx2 > Ly2) x_gt_y = true;
+-    if (Lx2 != Ly2) curves_differ = true;
++    if (Lx2 - Ly2 > eps64 * S * S) x_gt_y = true;
++    if (std::fabs(Lx2 - Ly2) > eps64 * S * S) curves_differ = true;
+     // LPM2 is piecewise quadratic: on (t, t_next) the difference is
+     // a*s^2 - 2*b*s + c with a = kx/mx - ky/my, b = P1x/mx - P1y/my. When
+     // a < 0 it has an interior maximum at s* = b / a, which the knots miss.
+-- 
+2.43.0
+

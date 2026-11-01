@@ -1,0 +1,10 @@
+suppressMessages(library(NNS))
+cat("mode discrete large ints:", NNS.mode(c(3e9, 3e9, 3e9, 1, 2), discrete=TRUE), " (expected 3e9)\n")
+cat("mode discrete negative large:", NNS.mode(c(-5e9, -5e9, -5e9, 1, 2), discrete=TRUE), "\n")
+for (i in 1:5) cat("mode(c(0,0,1,1)) run", i, ":", NNS.mode(c(0,0,1,1)), "\n")
+cat("mode(c(0,1,1,2)):", NNS.mode(c(0,1,1,2)), "\n")
+set.seed(1); x <- c(5 + 1e-7*rnorm(1000), 6)
+g <- gc(reset=TRUE); t <- system.time(v <- NNS.gravity(x))[["elapsed"]]; g2 <- gc()
+cat(sprintf("gravity tight-IQR+outlier: %.6f  time %.2fs  max mem MB %.0f\n", v, t, g2[2,6]))
+t <- system.time(v2 <- NNS.mode(x))[["elapsed"]]
+cat(sprintf("mode tight-IQR+outlier: %.6f time %.2fs\n", v2, t))

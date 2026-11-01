@@ -1,0 +1,91 @@
+From 3b6ed41bdd38e1124cb870aa23f1de25e3a5c932 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:22 +0000
+Subject: [PATCH 52/61] LPM.VaR/UPM.VaR: invert fractional-degree ratios with
+ uniroot
+
+For degrees without the exact prefix-polynomial inversion (fractional
+degrees) the VaR was found with optimize() on |ratio(b) - p| at its
+default absolute tolerance (about 1.2e-4 in x units), so the inverse was
+off by up to 0.8% relative at 5% on daily returns, and p = 0 / 1 did not
+return the sample min / max. The ratio is monotone in b, so solve
+ratio(b) - p = 0 with uniroot() on [min(x), max(x)] at
+tol = sqrt(eps) * diff(range(x)), returning an endpoint where the root is
+at (or beyond) the end of the support.
+
+Before -> after (NVDA daily returns, n = 4231):
+  degree 1.5: LPM.VaR(.05) -0.0283979 (LPM.ratio there 0.0500779)
+              -> -0.0284168 (ratio 0.0500000)
+              max |LPM.ratio(VaR(p)) - p| over 8 levels 4.2e-4 -> 3.3e-8
+  degree 0.5: max error 5.7e-5 -> 2.1e-8
+  LPM.VaR(c(0, 1), 1.5, x): -0.18748 0.29799 -> -0.18756 0.29807 (= range)
+Integer degrees use the exact path and are unchanged.
+---
+ R/LPM_UPM_VaR.R | 36 ++++++++++++++++++++++++------------
+ 1 file changed, 24 insertions(+), 12 deletions(-)
+
+diff --git a/R/LPM_UPM_VaR.R b/R/LPM_UPM_VaR.R
+index 4125338..8ae71cf 100644
+--- a/R/LPM_UPM_VaR.R
++++ b/R/LPM_UPM_VaR.R
+@@ -392,16 +392,22 @@ UPM.VaR <- function(percentile, degree, x) {
+     return(rep(x_min, length(p)))
+   }
+   
++  # The ratio is monotone in the target, so solve ratio(b) = p with a
++  # bracketing root finder to a tolerance relative to the range of x.
++  # (optimize() on |ratio - p| stopped at its default absolute tolerance,
++  # about 1.2e-4 in x units.)
++  tol <- .Machine$double.eps^0.5 * (x_max - x_min)
+   vapply(
+     p,
+     function(pp) {
+-      func <- function(b) {
+-        abs(
+-          as.numeric(.Call("_NNS_LPM_ratio_RCPP", degree, b, x)) - pp
+-        )
++      g <- function(b) as.numeric(.Call("_NNS_LPM_ratio_RCPP", degree, b, x)) - pp
++      g_lo <- g(x_min); g_hi <- g(x_max)
++      if (g_lo == 0) return(x_min)
++      if (g_hi == 0) return(x_max)
++      if (sign(g_lo) == sign(g_hi)) {
++        return(if (abs(g_lo) <= abs(g_hi)) x_min else x_max)
+       }
+-      
+-      stats::optimize(func, c(x_min, x_max))$minimum
++      stats::uniroot(g, c(x_min, x_max), f.lower = g_lo, f.upper = g_hi, tol = tol)$root
+     },
+     numeric(1)
+   )
+@@ -419,16 +425,22 @@ UPM.VaR <- function(percentile, degree, x) {
+     return(rep(x_min, length(p)))
+   }
+   
++  # The ratio is monotone in the target, so solve ratio(b) = p with a
++  # bracketing root finder to a tolerance relative to the range of x.
++  # (optimize() on |ratio - p| stopped at its default absolute tolerance,
++  # about 1.2e-4 in x units.)
++  tol <- .Machine$double.eps^0.5 * (x_max - x_min)
+   vapply(
+     p,
+     function(pp) {
+-      func <- function(b) {
+-        abs(
+-          as.numeric(.Call("_NNS_UPM_ratio_RCPP", degree, b, x)) - pp
+-        )
++      g <- function(b) as.numeric(.Call("_NNS_UPM_ratio_RCPP", degree, b, x)) - pp
++      g_lo <- g(x_min); g_hi <- g(x_max)
++      if (g_lo == 0) return(x_min)
++      if (g_hi == 0) return(x_max)
++      if (sign(g_lo) == sign(g_hi)) {
++        return(if (abs(g_lo) <= abs(g_hi)) x_min else x_max)
+       }
+-      
+-      stats::optimize(func, c(x_min, x_max))$minimum
++      stats::uniroot(g, c(x_min, x_max), f.lower = g_lo, f.upper = g_hi, tol = tol)$root
+     },
+     numeric(1)
+   )
+-- 
+2.43.0
+

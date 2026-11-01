@@ -1,0 +1,35 @@
+From 6f9008cddb36c919fbc4c0ce548f6c2a33c1a35a Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:33:13 +0000
+Subject: [PATCH 13/61] NNS.dep: honour asym on the p.value path
+
+With p.value = TRUE the observed and permuted statistics were computed
+with NNS.dep(x[, 1], g), dropping the user's asym argument, so
+NNS.dep(x, y, p.value = TRUE, asym = TRUE) returned (and tested) the
+symmetric measure.
+
+Before -> after (x ~ N(0,1), n = 200, y = x^2 + noise; NNS.dep(y, x, ...)):
+  p.value = TRUE, asym = TRUE: Dependence 0.8169 (= symmetric) -> 0.4555
+  (= NNS.dep(y, x, asym = TRUE))
+
+Only calls with p.value = TRUE and asym = TRUE change.
+---
+ R/Dependence.R | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/R/Dependence.R b/R/Dependence.R
+index 4935e7f..41e96b3 100644
+--- a/R/Dependence.R
++++ b/R/Dependence.R
+@@ -82,7 +82,7 @@ NNS.dep <- function(x,
+   # ---- matrix / p.value path ------------------------------------------------
+   if (is.null(y)) {
+     if (p.value) {
+-      nns.mc <- apply(x, 2L, function(g) NNS.dep(x[, 1L], g))
++      nns.mc <- apply(x, 2L, function(g) NNS.dep(x[, 1L], g, asym = asym))
+       cors   <- unlist(lapply(nns.mc, `[[`, "Correlation"))
+       deps   <- unlist(lapply(nns.mc, `[[`, "Dependence"))
+       
+-- 
+2.43.0
+

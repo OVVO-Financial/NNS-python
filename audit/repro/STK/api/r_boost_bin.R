@@ -1,0 +1,7 @@
+suppressPackageStartupMessages(library(NNS))
+y <- as.numeric(iris$Species[1:140]=="setosa")
+b <- NNS.boost(iris[1:140,1:4], y, iris[141:150,1:4], epochs=5, learner.trials=5, status=FALSE, feature.importance=FALSE)
+cat("R boost binary 0/1 numeric target, truth all 0, results:", b$results, "\n")
+y2 <- ifelse(iris$Species[1:140]=="setosa", 5, -5)
+b2 <- NNS.boost(iris[1:140,1:4], y2, iris[141:150,1:4], epochs=5, learner.trials=5, status=FALSE, feature.importance=FALSE)
+cat("R boost binary {-5,5}, truth all -5, results:", b2$results, "\n")

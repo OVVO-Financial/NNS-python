@@ -1,0 +1,49 @@
+From a7f7646693c30fa29bc50b5efff6065e95c6a1e5 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:42:14 +0000
+Subject: [PATCH 25/61] NNS.ARMA.optim: pass negative.values to the linear
+ search
+
+The two NNS.ARMA calls of the lin stage (parallel and sequential) did not
+pass negative.values, so the linear candidates were scored with
+forecasts clipped at 0 even when the user (or auto-detection) allowed
+negative values. The nonlin, both and final stages do pass it, so the
+search scored a different model from the one it fitted.
+
+Before -> after (work/TS/data/down.csv, a positive series trending below
+0, h = 12, seasonal.factor = c(3,6,12,24), negative.values = TRUE):
+  method lin,  periods 12, obj.fn 0.1574, results -2.425 -2.429 -1.199 1.342
+  method both, periods 12, obj.fn 0.1994, results -1.183 -2.350 -0.921 0.918
+Series without negative values are unchanged (AirPassengers configs
+identical).
+---
+ R/ARMA_optim.R | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/R/ARMA_optim.R b/R/ARMA_optim.R
+index 5565450..a086f27 100644
+--- a/R/ARMA_optim.R
++++ b/R/ARMA_optim.R
+@@ -210,7 +210,8 @@ NNS.ARMA.optim <- function(variable,
+               h = h_eval,
+               seasonal.factor = seasonal.combs[[i]][, k],
+               method = "lin",
+-              plot = FALSE
++              plot = FALSE,
++              negative.values = negative.values
+             )
+             eval(obj.fn)
+           })
+@@ -223,7 +224,8 @@ NNS.ARMA.optim <- function(variable,
+               h = h_eval,
+               seasonal.factor = seasonal.combs[[i]][, k],
+               method = "lin",
+-              plot = FALSE
++              plot = FALSE,
++              negative.values = negative.values
+             )
+             eval(obj.fn)
+           })
+-- 
+2.43.0
+

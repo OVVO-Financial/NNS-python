@@ -1,0 +1,54 @@
+From 019fc1a471318df9e9aa0758daabea0adb65897d Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:52:38 +0000
+Subject: [PATCH 36/61] SD .uni routines: walk each sample with its own length
+
+for_each_threshold() walked both sorted samples with the first sample's
+length ("assume same m"), so for samples of unequal length it read past
+the end of the shorter sample or ignored the tail of the longer one.
+NNS.FSD.uni, NNS.SSD.uni, NNS.TSD.uni (and the SD efficient-set/cluster
+matrix when columns differ in length) silently returned wrong answers.
+Walk each sample with its own length.
+
+Evidence (200 random integer pairs of lengths 3..8 in 0..6, seed 1;
+disagreements of the .uni results with R's own bidirectional
+NNS.FSD/SSD/TSD):
+  FSD 33 -> 0, SSD 6 -> 0, TSD 2 -> 0
+Equal-length samples are unaffected (11-asset efficient sets for degrees
+1-3 unchanged). The remaining mutual-dominance case for equal curves
+(x = c(1,2) vs y = c(1,1,2,2)) is handled in the next commit.
+---
+ src/SD.cpp | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/src/SD.cpp b/src/SD.cpp
+index 1ae7529..2cfc263 100644
+--- a/src/SD.cpp
++++ b/src/SD.cpp
+@@ -83,15 +83,17 @@ inline double lpm_deg2(const ColPre& c, int k, double t){
+ }
+ 
+ // Walk merged grid and apply a functor at each threshold t
++// Each sample is walked with its own length (the samples may differ in size;
++// walking b with a's length read past b's end or ignored b's tail).
+ template <class F>
+ inline void for_each_threshold(const ColPre& a, const ColPre& b, F f){
+-  int ia=0, ib=0, m=a.m; // assume same m
+-  while(ia<m || ib<m){
+-    double next_a = (ia<m ? a.vals[ia] : R_PosInf);
+-    double next_b = (ib<m ? b.vals[ib] : R_PosInf);
++  int ia=0, ib=0, ma=a.m, mb=b.m;
++  while(ia<ma || ib<mb){
++    double next_a = (ia<ma ? a.vals[ia] : R_PosInf);
++    double next_b = (ib<mb ? b.vals[ib] : R_PosInf);
+     double t = (next_a < next_b ? next_a : next_b);
+-    while(ia<m && a.vals[ia] <= t) ++ia; // k_a = ia
+-    while(ib<m && b.vals[ib] <= t) ++ib; // k_b = ib
++    while(ia<ma && a.vals[ia] <= t) ++ia; // k_a = ia
++    while(ib<mb && b.vals[ib] <= t) ++ib; // k_b = ib
+     f(t, ia, ib);
+   }
+ }
+-- 
+2.43.0
+

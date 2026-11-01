@@ -1,0 +1,47 @@
+From a1249508e00e0b4b0b0130d8492df5f7796b1d9f Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:32:09 +0000
+Subject: [PATCH 11/61] NNS.dep: do not open a graphics device for p.value =
+ TRUE without print.map
+
+The p.value path called par(no.readonly = TRUE) and restored it on exit
+even with print.map = FALSE. Querying par() opens a device, so under
+Rscript every call wrote Rplots.pdf and warned 'calling par(new=TRUE)
+with no plot'. Save and restore par only inside the print.map branch.
+
+Before -> after (Rscript, NNS.dep(x, y, p.value = TRUE)):
+  Rplots.pdf created + par warning -> no file, no warning
+Returned values are unchanged (same seed: Correlation 0.1356, p 0.39,
+Dependence 0.5979, p 0.49).
+---
+ R/Dependence.R | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/R/Dependence.R b/R/Dependence.R
+index da5c591..d3c6915 100644
+--- a/R/Dependence.R
++++ b/R/Dependence.R
+@@ -82,9 +82,6 @@ NNS.dep <- function(x,
+   # ---- matrix / p.value path ------------------------------------------------
+   if (is.null(y)) {
+     if (p.value) {
+-      original.par <- par(no.readonly = TRUE)
+-      on.exit(par(original.par), add = TRUE)
+-      
+       nns.mc <- apply(x, 2L, function(g) NNS.dep(x[, 1L], g))
+       cors   <- unlist(lapply(nns.mc, `[[`, "Correlation"))
+       deps   <- unlist(lapply(nns.mc, `[[`, "Dependence"))
+@@ -95,6 +92,10 @@ NNS.dep <- function(x,
+       dep_upper_CI <- UPM.VaR(.025, 0, deps[-c(1L, 2L)])
+       
+       if (print.map) {
++        # Only touch the graphics state when plotting: par(no.readonly = TRUE)
++        # opens a device (Rplots.pdf under Rscript) even when nothing is drawn.
++        original.par <- par(no.readonly = TRUE)
++        on.exit(par(original.par), add = TRUE)
+         par(mfrow = c(1L, 2L))
+         hist(cors[-c(1L, 2L)], main = "NNS Correlation", xlab = NULL,
+              xlim = c(min(cors), max(cors[-1L])))
+-- 
+2.43.0
+

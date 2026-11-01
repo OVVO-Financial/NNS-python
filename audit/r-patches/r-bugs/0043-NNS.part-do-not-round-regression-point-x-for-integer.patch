@@ -1,0 +1,56 @@
+From 9328583809c99885497f5e1b03e6c3dd68ad06a1 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:58:24 +0000
+Subject: [PATCH 43/61] NNS.part: do not round regression-point x for
+ integer-valued x
+
+When x was integer-valued (is.discrete(x)) NNS.part rounded the x
+coordinate of every regression point half-up to an integer but kept the
+cell's y centroid. The point therefore no longer lay on the cell's
+centroid, which biases every NNS.reg with integer predictors (counts,
+years, ages, Boston rad/tax/zn). Keep the computed centroid.
+
+Before -> after:
+  NNS.reg(1:1000, 2*(1:1000)): max |y.hat - y| 1 -> 0; first regression
+    points (1,2), (2,3), (4,8.5) -> (1,2), (1.5,3), (4.25,8.5)
+    (shifting x by 0.5 was already exact: unchanged)
+  NNS.reg(1:10, 3*(1:10) + 1) R2 0.99375 -> 1
+  Boston medv ~ rad R2 0.14325 -> 0.14552
+  NNS.part(1:20, (1:20)^2, order = 2) points x 15, 5 -> 14.593, 4.625
+Continuous x is unchanged (sin(2x) on rnorm(300): R2 0.9999031).
+
+NNS.ARMA's nonlinear method regresses each component series on its
+integer time index, so nonlin/both forecasts change too, e.g.
+AirPassengers, h = 3, defaults: 317.5 392.25 422.25 -> 333 421 458;
+seasonal.factor = 12, nonlin: 450.25 421.52 446.10 -> 450.05 421.33 445.93.
+The linear method is unaffected.
+---
+ R/Partition_Map.R | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/R/Partition_Map.R b/R/Partition_Map.R
+index ca99fd9..c7d6318 100644
+--- a/R/Partition_Map.R
++++ b/R/Partition_Map.R
+@@ -217,14 +217,10 @@ NNS.part <- function(x, y, Voronoi = FALSE, type = NULL,
+   RP <- RP[order(RP$quadrant, method = "radix"), , drop = FALSE]
+   rownames(RP) <- NULL
+   
+-  if (is.discrete(x)) {
+-    finite <- is.finite(RP$x)
+-    RP$x[finite] <- ifelse(
+-      RP$x[finite] %% 1 < 0.5,
+-      floor(RP$x[finite]),
+-      ceiling(RP$x[finite])
+-    )
+-  }
++  # Regression points are the (x, y) centroids of each cell. They used to
++  # round x (only) to an integer when x was integer-valued, which paired the
++  # cell's y-centroid with a shifted x and biased NNS.reg on counts, years,
++  # ages and similar predictors.
+   
+   if (Voronoi) {
+     graphics::plot(
+-- 
+2.43.0
+

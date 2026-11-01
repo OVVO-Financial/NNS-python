@@ -1,0 +1,5 @@
+suppressMessages(library(NNS))
+x <- c(0.15, 1.55, -0.86, -0.8, 0.25, 0.33); y <- c(-0.15, 1.17, 0.26, -0.04, -2.44, 1.19)
+cat(NNS.FSD(x,y,type="continuous",plot=FALSE), NNS.FSD.uni(x,y,"continuous"), "\n")
+tt <- seq(min(c(x,y)), max(c(x,y)), length.out=20001); d <- LPM.ratio(1,tt,x)-LPM.ratio(1,tt,y)
+cat(sprintf("max ratio_x - ratio_y on dense grid %.5f at t=%.4f; at knots %.3g\n", max(d), tt[which.max(d)], max(LPM.ratio(1,sort(c(x,y)),x)-LPM.ratio(1,sort(c(x,y)),y))))

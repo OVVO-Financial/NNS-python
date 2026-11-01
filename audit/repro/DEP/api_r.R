@@ -1,0 +1,11 @@
+suppressMessages(library(NNS)); set.seed(0); x<-rnorm(100); y<-x+rnorm(100)
+t <- function(label, expr) { v <- tryCatch(capture.output(print(expr)), error=function(e) paste("ERR", conditionMessage(e))); cat(label, "->", paste(v, collapse=" | "), "\n") }
+t("dep len1", NNS.dep(1,2)); t("dep len2", NNS.dep(c(1,2),c(2,1))); t("dep len3", NNS.dep(c(1,2,3),c(3,1,2)))
+t("copula len1", NNS.copula(cbind(1,2))); t("copula empty", NNS.copula(matrix(numeric(0),0,2)))
+t("copula inf", NNS.copula(cbind(c(x[-100],Inf),y)))
+t("caus len3", NNS.caus(c(1,2,3),c(3,1,2))); t("caus tau 1.5", NNS.caus(x,y,tau=1.5)); t("caus tau huge", NNS.caus(x,y,tau=200))
+t("caus tau foo", NNS.caus(x,y,tau="foo")); t("caus tau -1", NNS.caus(x,y,tau=-1))
+t("part order 3.0", NNS.part(x,y,order=3.0)$order); t("part order 0", NNS.part(x,y,order=0)$order)
+t("part obs.req 2.5", NNS.part(x,y,obs.req=2.5)$order)
+t("dep x,-x", NNS.dep(x,-x)); t("dep 2pts", NNS.dep(c(1,2),c(2,1)))
+M <- cbind(a=x,b=y,c=rnorm(100)); t("caus matrix", NNS.caus(M))

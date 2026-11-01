@@ -1,0 +1,52 @@
+From dc5e399405560aca349e09dd264a2a1fd88030d7 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:46:01 +0000
+Subject: [PATCH 29/61] NNS.ARMA.optim: apply the nns.regress decision to the
+ returned results
+
+When forecasting the NNS.reg-smoothed series (with shrink = TRUE) beat
+the validation objective, the optimizer set nns.regress = TRUE and
+variable <- regressed_variable, but $results was still computed from the
+raw series OV with shrink = nns.shrink. The reported choice was never
+applied.
+
+Use the smoothed series and shrink = TRUE (the configuration that was
+tested) for the final forecast when nns.regress is TRUE, and report
+shrink = TRUE in that case.
+
+Before -> after (AirPassengers[1:132], h = 12, seasonal.factor =
+c(6,12,24), objective = "max"): nonlin, periods 6, nns.regress TRUE
+  shrink FALSE, results 579.75 593.37 483.19 422.87 (= raw-series NNS.ARMA)
+  shrink TRUE,  results 440.48 444.14 447.28 450.01 (smoothed-series forecast)
+Calls with nns.regress = FALSE are unchanged.
+---
+ R/ARMA_optim.R | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/R/ARMA_optim.R b/R/ARMA_optim.R
+index 64b4b0f..9ff6b79 100644
+--- a/R/ARMA_optim.R
++++ b/R/ARMA_optim.R
+@@ -498,12 +498,17 @@ NNS.ARMA.optim <- function(variable,
+   options(warn = oldw)
+   
+   
++  # Apply the nns.regress decision: it was tested on the smoothed series
++  # with shrink = TRUE, so the final model uses the same inputs.
++  final.variable <- if(nns.regress) regressed_variable else OV
++  if(nns.regress) nns.shrink <- TRUE
++  
+   if(is.null(h_oos)){
+     if(is.null(h)) h <- h_eval
+-    model.results <- NNS.ARMA(OV, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = nns.weights, shrink = nns.shrink) - bias
++    model.results <- NNS.ARMA(final.variable, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = nns.weights, shrink = nns.shrink) - bias
+   } else {
+     if(is.null(h)) h <- h_oos
+-    model.results <- NNS.ARMA(OV, h = h_oos, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = nns.weights, shrink = nns.shrink) - bias
++    model.results <- NNS.ARMA(final.variable, h = h_oos, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = nns.weights, shrink = nns.shrink) - bias
+   }
+   
+   
+-- 
+2.43.0
+

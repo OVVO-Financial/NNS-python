@@ -1,0 +1,7 @@
+suppressMessages(library(NNS)); set.seed(1)
+x <- rnorm(1000)
+cat("DEP-01 NNS.dep(x,-x):", unlist(NNS.dep(x,-x)), "  NNS.dep(1:100,-(1:100)):", unlist(NNS.dep(1:100,-(1:100))), "  2 points:", unlist(NNS.dep(c(1,2),c(2,1))), "\n")
+b51 <- c(rep(0,51),rep(1,49)); b50 <- c(rep(0,50),rep(1,50))
+cat("DEP-FP NNS.dep(b,b) 51/49:", unlist(NNS.dep(b51,b51)), " 50/50:", unlist(NNS.dep(b50,b50)), "  49*(1/49)==1:", 49*(1/49)==1, "\n")
+u <- runif(1000,-3,3); th <- runif(1000,0,2*pi)
+cat("step y=1{u>0}:", unlist(NNS.dep(u, as.numeric(u>0))), " floor:", unlist(NNS.dep(u, floor(u))), " circle:", unlist(NNS.dep(cos(th),sin(th))), " indep:", unlist(NNS.dep(rnorm(1000),rnorm(1000))), "\n")

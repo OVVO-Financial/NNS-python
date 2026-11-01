@@ -1,0 +1,13 @@
+suppressMessages(library(NNS)); options(warn=1)
+x <- c(0,0,3,3); y <- c(1,1,3,0)
+cat("uni c xy", NNS.FSD.uni(x,y,"continuous"), " yx", NNS.FSD.uni(y,x,"continuous"), " bi:", NNS.FSD(x,y,"continuous",plot=FALSE), "\n")
+g <- sort(c(x,y)); print(rbind(LPM.ratio(1,g,x), LPM.ratio(1,g,y)))
+print(NNS.SD.efficient.set(cbind(x=x,y=y),1,type="continuous",status=FALSE))
+print(NNS.SD.efficient.set(cbind(y=y,x=x),1,type="continuous",status=FALSE))
+x <- c(0,0); y <- c(0,3)
+cat("const x: bi continuous ->", NNS.FSD(x,y,"continuous",plot=FALSE), "; discrete ->", NNS.FSD(x,y,plot=FALSE), "\n")
+cat("uni c", NNS.FSD.uni(x,y,"continuous"), NNS.FSD.uni(y,x,"continuous"),"\n")
+print(NNS.SD.efficient.set(cbind(x=x,y=y),1,type="continuous",status=FALSE))
+print(NNS.SD.efficient.set(cbind(x=x,y=y),1,type="discrete",status=FALSE))
+# typo type
+cat("typo:", NNS.FSD(c(1,2,3),c(0,1,2),type="contnuous",plot=FALSE), "\n")

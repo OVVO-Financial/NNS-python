@@ -1,0 +1,54 @@
+From 7f941b4f0860e1a1913b9fb4b3f2b439cae336ae Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:38:34 +0000
+Subject: [PATCH 20/61] NNS.ARMA: use the best period for seasonal.factor =
+ TRUE, best.periods = NULL
+
+With best.periods = NULL, seasonal.factor = TRUE is kept as TRUE and the
+NNS.seas period table (M$all.periods, a data.frame) was passed to
+ARMA.seas.weighting(TRUE, .). The native helper looks for an element
+named all.periods, finds none and falls back to lag = 1, so the
+documented 'Automatically selects the best seasonal lag' used lag 1.
+Select the first (best) period directly.
+
+Before -> after, NNS.ARMA(AirPassengers, h = 3, seasonal.factor = TRUE,
+best.periods = NULL) (NNS.seas best period = 50):
+  433.657 435.429 437.263 (= seasonal.factor = 1)
+  -> 317.5 392.25 422.25 (= seasonal.factor = 50)
+Only seasonal.factor = TRUE with best.periods = NULL changes.
+---
+ R/ARMA.R | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index c811c90..c9fa147 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -144,7 +144,7 @@ NNS.ARMA <- function(variable,
+       }
+     }
+     
+-    ASW <- ARMA.seas.weighting(seasonal.factor, M)
++    ASW <- .arma_lag_weights(seasonal.factor, M)
+     lag <- ASW$lag
+     
+     if(is.null(weights)) Weights <- ASW$Weights else Weights <- weights
+@@ -379,3 +379,15 @@ NNS.ARMA <- function(variable,
+     return(Estimates)
+   }
+ }
++
++
++# Lags and weights from an NNS.seas period table.
++# seasonal.factor = TRUE selects the single best period (first row); the
++# native ARMA.seas.weighting(TRUE, .) expects a list holding $all.periods and
++# fell back to lag 1 when given the period table itself.
++.arma_lag_weights <- function(sf, M){
++  if (isTRUE(sf) && is.data.frame(M) && "Period" %in% names(M)) {
++    return(list(lag = M$Period[1], Weights = 1))
++  }
++  ARMA.seas.weighting(sf, M)
++}
+-- 
+2.43.0
+

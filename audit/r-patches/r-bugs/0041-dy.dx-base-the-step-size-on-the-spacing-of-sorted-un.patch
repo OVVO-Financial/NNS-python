@@ -1,0 +1,52 @@
+From 4afe296b45016a0fd3d1b71568fcda1ea49a9a27 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:57:10 +0000
+Subject: [PATCH 41/61] dy.dx: base the step size on the spacing of sorted
+ unique x
+
+The finite-difference step was gravity(abs(diff(x))) * h, with diff()
+taken on x in the order supplied. For unsorted x that is the typical gap
+between consecutive *rows* (about sd(x)), so the 2..sqrt(n) step
+multiples spanned the whole range and the derivative depended on row
+order. Use the spacing of the sorted unique values.
+
+Before -> after (first derivative):
+  y = x^3, 500 unsorted U(-2,2) x, at (-1.5, 0, 0.5, 1.5) (truth 6.75 0 0.75 6.75):
+    3.731 3.881 3.748 3.726 -> 6.892 0.004 0.754 6.900 (= sorted input)
+  SPY ~ QQQ daily returns at (-0.02, 0, 0.02):
+    unsorted 0.907 0.871 0.889, sorted 0.726 0.580 0.805
+    -> 0.724 0.584 0.805 for both orders
+  documented example sin(seq(0, 2*pi, pi/100)) at 1.75: -0.18268 (unchanged)
+Sorted inputs without ties are unchanged.
+---
+ R/dy_dx.R | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/R/dy_dx.R b/R/dy_dx.R
+index 10d6429..696e1a9 100644
+--- a/R/dy_dx.R
++++ b/R/dy_dx.R
+@@ -57,6 +57,11 @@ dy.dx <- function(x, y, eval.point = NULL){
+     n <- length(x)
+     root_n <- floor(sqrt(n))
+     h_s <- round(exp(seq(log(2), log(root_n), length.out = 5)))
++    # Typical spacing between neighbouring x values. diff() of x as supplied
++    # measured the gap between consecutive rows, so unsorted input (roughly
++    # sd(x) per step) gave steps spanning the whole range and the result
++    # depended on row order.
++    x.spacing <- gravity(diff(sort(unique(x))))
+ 
+     results <- vector(mode = "list", length(h_s))
+     first.deriv <- vector(mode = "list", length(h_s))
+@@ -67,7 +72,7 @@ dy.dx <- function(x, y, eval.point = NULL){
+     for(h in h_s){
+       index <- which(h == h_s)
+ 
+-      h_step <- gravity(abs(diff(x))) * h_s[index]
++      h_step <- x.spacing * h_s[index]
+ 
+       eval.point.min <- pmax(min(x), original.eval.point.min - h_step)
+       eval.point.max <- pmin(max(x), h_step + original.eval.point.max)
+-- 
+2.43.0
+

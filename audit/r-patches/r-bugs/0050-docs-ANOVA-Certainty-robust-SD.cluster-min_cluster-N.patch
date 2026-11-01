@@ -1,0 +1,308 @@
+From 1155c38d8882bd3a18d16060872aee4b97c0af0f Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 00:11:04 +0000
+Subject: [PATCH 50/61] docs: ANOVA Certainty/robust, SD.cluster min_cluster,
+ NNS.norm, meboot/MC rho
+
+Roxygen and Rd, documentation only:
+- NNS.ANOVA: Certainty is a descriptive similarity index, not a
+  calibrated probability or the inverse of a p-value (same-distribution
+  samples give medians of 0.73 at n = 30 and 0.96 at n = 1000, and the
+  population adjustment shrinks small samples); robust draws independent
+  bootstrap resamples (not permutations) and applies only to the
+  two-sample path, not to pairwise / multi-group analysis.
+- NNS.SD.cluster: describe what min_cluster actually controls (stop
+  peeling once <= min_cluster variables remain; merge an undersized
+  final cluster); peeled sets are not size-checked.
+- NNS.norm: linear = FALSE is the dependence-weighted (nonlinear)
+  scaling, TRUE the linear equal-means scaling (the text was inverted);
+  note the positive-mean assumption and the 1e-10 zero-mean replacement.
+- NNS.meboot / NNS.MC: rho targets the dependence of the detrended
+  residuals (trend added back), so trending series stay correlated at
+  rho = -1; NNS.MC lower_rho / upper_rho defaults are -1 / 1, not .01.
+---
+ R/ANOVA.R             | 33 ++++++++++++++++++++-------------
+ R/NNS_MC.R            |  6 +++---
+ R/NNS_meboot.R        |  2 +-
+ R/Normalization.R     |  2 +-
+ R/SD_Cluster.R        |  8 ++++----
+ man/NNS.ANOVA.Rd      | 33 ++++++++++++++++++++-------------
+ man/NNS.MC.Rd         |  6 +++---
+ man/NNS.SD.cluster.Rd |  8 ++++----
+ man/NNS.meboot.Rd     |  2 +-
+ man/NNS.norm.Rd       |  2 +-
+ 10 files changed, 58 insertions(+), 44 deletions(-)
+
+diff --git a/R/ANOVA.R b/R/ANOVA.R
+index dd933c8..a3ee62f 100644
+--- a/R/ANOVA.R
++++ b/R/ANOVA.R
+@@ -5,19 +5,25 @@
+ #' \code{means.only}, the procedure tests either differences in central tendency
+ #' (means or medians) or differences across the full empirical distributions.
+ #'
+-#' The key output is the \code{Certainty} metric, a calibrated probability in
+-#' \eqn{[0, 1]} representing the likelihood that the groups being compared are
+-#' the *same* with respect to the chosen comparison mode:
++#' The key output is the \code{Certainty} metric, a descriptive similarity index
++#' in \eqn{[0, 1]} (1 = the groups are the same) with respect to the chosen
++#' comparison mode:
+ #' \itemize{
+-#'   \item If \code{means.only = TRUE}: \code{Certainty} is the probability that
+-#'         the group \emph{means} (or medians, if \code{medians = TRUE}) are the same.
+-#'   \item If \code{means.only = FALSE}: \code{Certainty} is the probability that
+-#'         the two \emph{entire distributions} are the same.
++#'   \item If \code{means.only = TRUE}: similarity of the group \emph{means}
++#'         (or medians, if \code{medians = TRUE}), measured by how far each
++#'         group's partial-moment CDF at the grand statistic is from 0.5.
++#'   \item If \code{means.only = FALSE}: similarity of the two \emph{entire
++#'         distributions}, adding the same comparison at the 12.5\% and 25\% tail
++#'         quantiles.
+ #' }
+ #'
+-#' This makes \code{Certainty} the conceptual inverse of a classical p-value.
+-#' A *low* Certainty (e.g., < 0.10) indicates strong evidence of difference,
+-#' while a *high* Certainty (e.g., > 0.90) indicates strong evidence of similarity.
++#' \code{Certainty} is \emph{not} a calibrated probability and not the inverse of
++#' a p-value: for two samples from the same distribution it is not uniform on
++#' \eqn{[0, 1]} (its median is about 0.7-0.96 depending on \code{n}), it is shrunk by
++#' the population adjustment \eqn{((n_1 + n_2 - 2) / (n_1 + n_2))^2} for small
++#' samples, and it should not be compared with p-value thresholds such as 0.05.
++#' Use a permutation or bootstrap reference (e.g. \code{robust = TRUE}) to judge
++#' how unusual a value is.
+ #'  
+ #' @param control Numeric vector of control group observations
+ #' @param treatment Numeric vector of treatment group observations
+@@ -26,7 +32,7 @@
+ #' @param confidence.interval Numeric [0,1]; confidence level for effect size bounds (e.g., 0.95)
+ #' @param tails Character; specifies CI tail(s): "both", "left", or "right"
+ #' @param pairwise logical; \code{FALSE} (default) Returns pairwise certainty tests when set to \code{pairwise = TRUE}.
+-#' @param robust logical; \code{FALSE} (default) Generates 100 independent random permutations to test results, and returns / plots 95 percent confidence intervals along with robust central tendency of all results for pairwise analysis only.
++#' @param robust logical; \code{FALSE} (default) Two-sample (\code{control}, \code{treatment}) path only: draws 100 independent bootstrap resamples of each group (with replacement, from its own full sample), and returns / plots the robust central tendency (\link{NNS.gravity}) and the \code{confidence.interval} bounds of the resampled \code{Certainty} values.  It is ignored for the multi-group and \code{pairwise = TRUE} paths.
+ #' @param plot Logical; \code{TRUE} (default) generates distribution plot
+ #' 
+ #' @return Returns a list containing:
+@@ -36,8 +42,9 @@
+ #'   \item \code{Grand_Statistic}: Grand mean/median
+ #'   \item \code{Control_CDF}: CDF value at grand statistic (control)
+ #'   \item \code{Treatment_CDF}: CDF value at grand statistic (treatment)
+-#'   \item \code{Certainty}: Probability that the groups are the \emph{same}
+-#'         (means-only or full distribution depending on \code{means.only}).
++#'   \item \code{Certainty}: Similarity index in [0, 1] (1 = the groups are the
++#'         \emph{same}; means-only or full distribution depending on
++#'         \code{means.only}); not a calibrated probability.
+ #'   \item \code{Effect_Size_LB}: Lower bound of treatment effect (if confidence.interval requested)
+ #'   \item \code{Effect_Size_UB}: Upper bound of treatment effect (if confidence.interval requested)
+ #'   \item \code{Confidence_Level}: Confidence level used (if confidence.interval requested)
+diff --git a/R/NNS_MC.R b/R/NNS_MC.R
+index a9259c2..e80f1d3 100644
+--- a/R/NNS_MC.R
++++ b/R/NNS_MC.R
+@@ -1,11 +1,11 @@
+ #' NNS Monte Carlo Sampling
+ #'
+-#' Monte Carlo sampling from the maximum entropy bootstrap routine \link{NNS.meboot}, ensuring the replicates are sampled from the full [-1,1] correlation space.
++#' Monte Carlo sampling from the maximum entropy bootstrap routine \link{NNS.meboot}, ensuring the replicates are sampled across the full [-1,1] range of \code{rho} (the target dependence of the detrended residuals, see \link{NNS.meboot}).
+ #'
+ #' @param x vector of data.
+ #' @param reps numeric; number of replicates to generate, \code{30} default.
+-#' @param lower_rho numeric \code{[-1,1]}; \code{.01} default will set the \code{from} argument in \code{seq(from, to, by)}.
+-#' @param upper_rho numeric \code{[-1,1]}; \code{.01} default will set the \code{to} argument in \code{seq(from, to, by)}.
++#' @param lower_rho numeric \code{[-1,1]}; \code{-1} default will set the \code{from} argument in \code{seq(from, to, by)}.
++#' @param upper_rho numeric \code{[-1,1]}; \code{1} default will set the \code{to} argument in \code{seq(from, to, by)}.
+ #' @param by numeric; \code{.01} default will set the \code{by} argument in \code{seq(-1, 1, step)}.
+ #' @param exp numeric; \code{1} default will exponentially weight maximum rho value if \code{exp > 1}.  Shrinks values towards \code{upper_rho}.
+ #' @param type options("spearman", "pearson", "NNScor", "NNSdep"); \code{type = "spearman"}(default) dependence metric desired.
+diff --git a/R/NNS_meboot.R b/R/NNS_meboot.R
+index 1e68523..3665af6 100644
+--- a/R/NNS_meboot.R
++++ b/R/NNS_meboot.R
+@@ -45,7 +45,7 @@
+ #' 
+ #' @note Vectorized \code{rho} and \code{drift} parameters will not vectorize both simultaneously.  Also, do not specify \code{target_drift = NULL}.
+ #'
+-#' @note The \code{rho} dependence alignment is calibrated on each individual \code{replicate}: every replicate is mixed so that its dependence on the original series matches \code{rho}, in the metric implied by \code{type}.  Assess a result in that \strong{same} metric -- a \code{"NNSdep"} target with \link{NNS.dep}\code{$Dependence} (unsigned) and a \code{"spearman"}/\code{"pearson"} target with rank/linear correlation -- because a signed correlation taken on an unsigned \code{"NNSdep"} target is not comparable to \code{rho} (it can even read negative while the dependence target is met).  Separately, the \code{ensemble} is the per-observation mean of the replicates -- a central summary, not a single series carrying the target dependence -- so a rank or linear correlation computed directly on the \code{ensemble} tends to read higher than the per-replicate \code{rho} (averaging amplifies the shared order).  Verify \code{rho} on the \code{replicates}, in the metric implied by \code{type}, rather than on the \code{ensemble}.
++#' @note The \code{rho} dependence alignment is calibrated on each individual \code{replicate}: every replicate's \emph{detrended residuals} are mixed so that their dependence on the original series' detrended residuals matches \code{rho}, in the metric implied by \code{type}; the trend is added back afterwards.  For a trending series the replicate levels therefore stay strongly correlated with the original even at \code{rho = -1} (e.g. AirPassengers: mean Spearman 0.81 at \code{rho = -1}).  Assess a result in that \strong{same} metric -- a \code{"NNSdep"} target with \link{NNS.dep}\code{$Dependence} (unsigned) and a \code{"spearman"}/\code{"pearson"} target with rank/linear correlation -- because a signed correlation taken on an unsigned \code{"NNSdep"} target is not comparable to \code{rho} (it can even read negative while the dependence target is met).  Separately, the \code{ensemble} is the per-observation mean of the replicates -- a central summary, not a single series carrying the target dependence -- so a rank or linear correlation computed directly on the \code{ensemble} tends to read higher than the per-replicate \code{rho} (averaging amplifies the shared order).  Verify \code{rho} on the \code{replicates}, in the metric implied by \code{type}, rather than on the \code{ensemble}.
+ #'
+ #' @references
+ #' \itemize{
+diff --git a/R/Normalization.R b/R/Normalization.R
+index d600af0..d91bcd4 100644
+--- a/R/Normalization.R
++++ b/R/Normalization.R
+@@ -3,7 +3,7 @@
+ #' Normalizes a matrix of variables based on nonlinear scaling normalization method.
+ #'
+ #' @param X a numeric matrix or data frame, or a list.
+-#' @param linear logical; \code{FALSE} (default) Performs a linear scaling normalization, resulting in equal means for all variables.
++#' @param linear logical; \code{FALSE} (default) performs the nonlinear scaling normalization (each variable's mean-ratio scale is weighted by its correlation / \link{NNS.dep} dependence with the other variables).  \code{TRUE} performs a linear scaling normalization, resulting in equal means for all variables.  Both scale by ratios of means, so they assume variables with positive means; a zero mean is replaced by 1e-10 (giving extreme scale factors).
+ #' @param chart.type  options: ("l", "b"); \code{NULL} (default).  Set \code{(chart.type = "l")} for line,
+ #' \code{(chart.type = "b")} for boxplot.
+ #' @param location Sets the legend location within the plot, per the \code{x} and \code{y} co-ordinates used in base graphics \link{legend}.
+diff --git a/R/SD_Cluster.R b/R/SD_Cluster.R
+index 89ab2e1..a8c7616 100644
+--- a/R/SD_Cluster.R
++++ b/R/SD_Cluster.R
+@@ -6,7 +6,7 @@
+ #' @param data A numeric matrix or data frame of variables to be clustered.
+ #' @param degree Numeric options: (1, 2, 3). Degree of stochastic dominance test.
+ #' @param type Character, either  \code{"discrete"} (default) or \code{"continuous"}; specifies the type of CDF.
+-#' @param min_cluster Integer. The minimum number of elements required for a valid cluster.
++#' @param min_cluster Integer. Peeling stops once at most \code{min_cluster} variables remain; those form the final cluster, and a final cluster smaller than \code{min_cluster} is merged into the previous one.  SD-efficient sets peeled before that are kept whatever their size.
+ #' @param dendrogram Logical; \code{FALSE} (default). If \code{TRUE}, a dendrogram is produced based on a simple "distance" measure between clusters.
+ #'
+ #' @return
+@@ -18,9 +18,9 @@
+ #'
+ #' @details
+ #' The function applies \code{\link{NNS.SD.efficient.set}} iteratively, peeling off the SD-efficient set at each step
+-#' if it meets or exceeds \code{min_cluster} in size, until no more subsets can be extracted or all variables are exhausted.
+-#' Variables in each SD-efficient set form a cluster, with any remaining variables aggregated into the final cluster if it meets
+-#' the \code{min_cluster} threshold.
++#' (whatever its size) while more than \code{min_cluster} variables remain, or until no more subsets can be extracted.
++#' Variables in each SD-efficient set form a cluster. The remaining variables form the final cluster, which is merged
++#' into the previous cluster if it has fewer than \code{min_cluster} members.
+ #'
+ #' @author Fred Viole, OVVO Financial Systems
+ #'
+diff --git a/man/NNS.ANOVA.Rd b/man/NNS.ANOVA.Rd
+index 82aa97e..433580b 100644
+--- a/man/NNS.ANOVA.Rd
++++ b/man/NNS.ANOVA.Rd
+@@ -33,7 +33,7 @@ NNS.ANOVA(
+ 
+ \item{plot}{Logical; \code{TRUE} (default) generates distribution plot}
+ 
+-\item{robust}{logical; \code{FALSE} (default) Generates 100 independent random permutations to test results, and returns / plots 95 percent confidence intervals along with robust central tendency of all results for pairwise analysis only.}
++\item{robust}{logical; \code{FALSE} (default) Two-sample (\code{control}, \code{treatment}) path only: draws 100 independent bootstrap resamples of each group (with replacement, from its own full sample), and returns / plots the robust central tendency (\link{NNS.gravity}) and the \code{confidence.interval} bounds of the resampled \code{Certainty} values.  It is ignored for the multi-group and \code{pairwise = TRUE} paths.}
+ }
+ \value{
+ Returns a list containing:
+@@ -43,8 +43,9 @@ Returns a list containing:
+   \item \code{Grand_Statistic}: Grand mean/median
+   \item \code{Control_CDF}: CDF value at grand statistic (control)
+   \item \code{Treatment_CDF}: CDF value at grand statistic (treatment)
+-  \item \code{Certainty}: Probability that the groups are the \emph{same}
+-        (means-only or full distribution depending on \code{means.only}).
++  \item \code{Certainty}: Similarity index in [0, 1] (1 = the groups are the
++        \emph{same}; means-only or full distribution depending on
++        \code{means.only}); not a calibrated probability.
+   \item \code{Effect_Size_LB}: Lower bound of treatment effect (if confidence.interval requested)
+   \item \code{Effect_Size_UB}: Upper bound of treatment effect (if confidence.interval requested)
+   \item \code{Confidence_Level}: Confidence level used (if confidence.interval requested)
+@@ -57,19 +58,25 @@ differences between control and treatment groups. Depending on the setting of
+ (means or medians) or differences across the full empirical distributions.
+ }
+ \details{
+-The key output is the \code{Certainty} metric, a calibrated probability in
+-\eqn{[0, 1]} representing the likelihood that the groups being compared are
+-the *same* with respect to the chosen comparison mode:
++The key output is the \code{Certainty} metric, a descriptive similarity index
++in \eqn{[0, 1]} (1 = the groups are the same) with respect to the chosen
++comparison mode:
+ \itemize{
+-  \item If \code{means.only = TRUE}: \code{Certainty} is the probability that
+-        the group \emph{means} (or medians, if \code{medians = TRUE}) are the same.
+-  \item If \code{means.only = FALSE}: \code{Certainty} is the probability that
+-        the two \emph{entire distributions} are the same.
++  \item If \code{means.only = TRUE}: similarity of the group \emph{means}
++        (or medians, if \code{medians = TRUE}), measured by how far each
++        group's partial-moment CDF at the grand statistic is from 0.5.
++  \item If \code{means.only = FALSE}: similarity of the two \emph{entire
++        distributions}, adding the same comparison at the 12.5\% and 25\% tail
++        quantiles.
+ }
+ 
+-This makes \code{Certainty} the conceptual inverse of a classical p-value.
+-A *low* Certainty (e.g., < 0.10) indicates strong evidence of difference,
+-while a *high* Certainty (e.g., > 0.90) indicates strong evidence of similarity.
++\code{Certainty} is \emph{not} a calibrated probability and not the inverse of
++a p-value: for two samples from the same distribution it is not uniform on
++\eqn{[0, 1]} (its median is about 0.7-0.96 depending on \code{n}), it is shrunk by
++the population adjustment \eqn{((n_1 + n_2 - 2) / (n_1 + n_2))^2} for small
++samples, and it should not be compared with p-value thresholds such as 0.05.
++Use a permutation or bootstrap reference (e.g. \code{robust = TRUE}) to judge
++how unusual a value is.
+ }
+ \examples{
+  \dontrun{
+diff --git a/man/NNS.MC.Rd b/man/NNS.MC.Rd
+index 9dd9f7f..73341e3 100644
+--- a/man/NNS.MC.Rd
++++ b/man/NNS.MC.Rd
+@@ -25,9 +25,9 @@ NNS.MC(
+ 
+ \item{reps}{numeric; number of replicates to generate, \code{30} default.}
+ 
+-\item{lower_rho}{numeric \code{[-1,1]}; \code{.01} default will set the \code{from} argument in \code{seq(from, to, by)}.}
++\item{lower_rho}{numeric \code{[-1,1]}; \code{-1} default will set the \code{from} argument in \code{seq(from, to, by)}.}
+ 
+-\item{upper_rho}{numeric \code{[-1,1]}; \code{.01} default will set the \code{to} argument in \code{seq(from, to, by)}.}
++\item{upper_rho}{numeric \code{[-1,1]}; \code{1} default will set the \code{to} argument in \code{seq(from, to, by)}.}
+ 
+ \item{by}{numeric; \code{.01} default will set the \code{by} argument in \code{seq(-1, 1, step)}.}
+ 
+@@ -54,7 +54,7 @@ NNS.MC(
+ }
+ }
+ \description{
+-Monte Carlo sampling from the maximum entropy bootstrap routine \link{NNS.meboot}, ensuring the replicates are sampled from the full [-1,1] correlation space.
++Monte Carlo sampling from the maximum entropy bootstrap routine \link{NNS.meboot}, ensuring the replicates are sampled across the full [-1,1] range of \code{rho} (the target dependence of the detrended residuals, see \link{NNS.meboot}).
+ }
+ \examples{
+ \dontrun{
+diff --git a/man/NNS.SD.cluster.Rd b/man/NNS.SD.cluster.Rd
+index ab21843..6fcab52 100644
+--- a/man/NNS.SD.cluster.Rd
++++ b/man/NNS.SD.cluster.Rd
+@@ -19,7 +19,7 @@ NNS.SD.cluster(
+ 
+ \item{type}{Character, either  \code{"discrete"} (default) or \code{"continuous"}; specifies the type of CDF.}
+ 
+-\item{min_cluster}{Integer. The minimum number of elements required for a valid cluster.}
++\item{min_cluster}{Integer. Peeling stops once at most \code{min_cluster} variables remain; those form the final cluster, and a final cluster smaller than \code{min_cluster} is merged into the previous one.  SD-efficient sets peeled before that are kept whatever their size.}
+ 
+ \item{dendrogram}{Logical; \code{FALSE} (default). If \code{TRUE}, a dendrogram is produced based on a simple "distance" measure between clusters.}
+ }
+@@ -36,9 +36,9 @@ subject to a minimum cluster size.
+ }
+ \details{
+ The function applies \code{\link{NNS.SD.efficient.set}} iteratively, peeling off the SD-efficient set at each step
+-if it meets or exceeds \code{min_cluster} in size, until no more subsets can be extracted or all variables are exhausted.
+-Variables in each SD-efficient set form a cluster, with any remaining variables aggregated into the final cluster if it meets
+-the \code{min_cluster} threshold.
++(whatever its size) while more than \code{min_cluster} variables remain, or until no more subsets can be extracted.
++Variables in each SD-efficient set form a cluster. The remaining variables form the final cluster, which is merged
++into the previous cluster if it has fewer than \code{min_cluster} members.
+ }
+ \examples{
+ \dontrun{
+diff --git a/man/NNS.meboot.Rd b/man/NNS.meboot.Rd
+index 97dad40..373b8c7 100644
+--- a/man/NNS.meboot.Rd
++++ b/man/NNS.meboot.Rd
+@@ -97,7 +97,7 @@ Adapted maximum entropy bootstrap routine from \code{meboot} \url{https://cran.r
+ \note{
+ Vectorized \code{rho} and \code{drift} parameters will not vectorize both simultaneously.  Also, do not specify \code{target_drift = NULL}.
+ 
+-The \code{rho} dependence alignment is calibrated on each individual \code{replicate}: every replicate is mixed so that its dependence on the original series matches \code{rho}, in the metric implied by \code{type}.  Assess a result in that \strong{same} metric -- a \code{"NNSdep"} target with \link{NNS.dep}\code{$Dependence} (unsigned) and a \code{"spearman"}/\code{"pearson"} target with rank/linear correlation -- because a signed correlation taken on an unsigned \code{"NNSdep"} target is not comparable to \code{rho} (it can even read negative while the dependence target is met).  Separately, the \code{ensemble} is the per-observation mean of the replicates -- a central summary, not a single series carrying the target dependence -- so a rank or linear correlation computed directly on the \code{ensemble} tends to read higher than the per-replicate \code{rho} (averaging amplifies the shared order).  Verify \code{rho} on the \code{replicates}, in the metric implied by \code{type}, rather than on the \code{ensemble}.
++The \code{rho} dependence alignment is calibrated on each individual \code{replicate}: every replicate's \emph{detrended residuals} are mixed so that their dependence on the original series' detrended residuals matches \code{rho}, in the metric implied by \code{type}; the trend is added back afterwards.  For a trending series the replicate levels therefore stay strongly correlated with the original even at \code{rho = -1} (e.g. AirPassengers: mean Spearman 0.81 at \code{rho = -1}).  Assess a result in that \strong{same} metric -- a \code{"NNSdep"} target with \link{NNS.dep}\code{$Dependence} (unsigned) and a \code{"spearman"}/\code{"pearson"} target with rank/linear correlation -- because a signed correlation taken on an unsigned \code{"NNSdep"} target is not comparable to \code{rho} (it can even read negative while the dependence target is met).  Separately, the \code{ensemble} is the per-observation mean of the replicates -- a central summary, not a single series carrying the target dependence -- so a rank or linear correlation computed directly on the \code{ensemble} tends to read higher than the per-replicate \code{rho} (averaging amplifies the shared order).  Verify \code{rho} on the \code{replicates}, in the metric implied by \code{type}, rather than on the \code{ensemble}.
+ }
+ \examples{
+ \dontrun{
+diff --git a/man/NNS.norm.Rd b/man/NNS.norm.Rd
+index 457eb95..ce61d65 100644
+--- a/man/NNS.norm.Rd
++++ b/man/NNS.norm.Rd
+@@ -9,7 +9,7 @@ NNS.norm(X, linear = FALSE, chart.type = NULL, location = "topleft")
+ \arguments{
+ \item{X}{a numeric matrix or data frame, or a list.}
+ 
+-\item{linear}{logical; \code{FALSE} (default) Performs a linear scaling normalization, resulting in equal means for all variables.}
++\item{linear}{logical; \code{FALSE} (default) performs the nonlinear scaling normalization (each variable's mean-ratio scale is weighted by its correlation / \link{NNS.dep} dependence with the other variables).  \code{TRUE} performs a linear scaling normalization, resulting in equal means for all variables.  Both scale by ratios of means, so they assume variables with positive means; a zero mean is replaced by 1e-10 (giving extreme scale factors).}
+ 
+ \item{chart.type}{options: ("l", "b"); \code{NULL} (default).  Set \code{(chart.type = "l")} for line,
+ \code{(chart.type = "b")} for boxplot.}
+-- 
+2.43.0
+

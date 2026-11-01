@@ -1,0 +1,225 @@
+From d4fc62428c4842817392d4bc7feb5d10c4c9a7aa Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:22 +0000
+Subject: [PATCH 53/61] TSD / continuous FSD: also check the curves between
+ sample points
+
+Dominance was checked only at the merged sample points. That is exact
+for discrete FSD (step functions) and SSD (LPM1 is piecewise linear),
+but LPM2 is piecewise quadratic and the continuous FSD ratio
+L1/(L1+U1) is linear-fractional between points, so the difference of
+the two curves can peak strictly between knots. Both tests reported
+false dominance, e.g. x = (-0.85,-1.52,0.68), y = (-0.21,-0.33,-1.67):
+'X TSD Y' although LPM2_x - LPM2_y = +0.0389 at t = 0.16.
+
+On each interval between knots the native pairwise test (used by the
+.uni functions, the efficient set and SD.cluster) now also evaluates the
+closed-form interior extremum: the vertex b/a of the quadratic when
+a < 0 (TSD), and the stationary point of the difference of the two
+linear-fractional ratios (continuous FSD). Candidates whose excess is at
+rounding level (64 eps relative to the data scale) are ignored, so a
+vertex that coincides with a knot does not reject a true dominance.
+NNS.TSD and NNS.FSD(type = "continuous") take their verdict from the
+same pairwise test in both directions (the grid curves are still used
+for the plot).
+
+Before -> after:
+  8 TSD counterexamples (work/SDA/tsd_knots_counterex.json, exact
+    interior excess 0.0013 .. 0.056): X TSD Y in 8 -> 0 (uni and NNS.TSD)
+  continuous FSD x = (0.15,1.55,-0.86,-0.8,0.25,0.33),
+    y = (-0.15,1.17,0.26,-0.04,-2.44,1.19): 'X FSD Y' -> 'NO FSD EXISTS'
+  1500 random small normal pairs (seed 7): TSD positives 873 -> 873,
+    continuous FSD positives 447 -> 446 (the one removed fails a dense
+    grid check; none of the remaining positives does)
+11-asset daily-return efficient sets (degrees 1-3, continuous) and the
+0 / 15 / 15 FSD/SSD/TSD pair counts are unchanged.
+---
+ R/FSD.R    | 10 ++++++++
+ R/TSD.R    | 12 ++++++---
+ src/SD.cpp | 71 +++++++++++++++++++++++++++++++++++++++++++++++++++---
+ 3 files changed, 85 insertions(+), 8 deletions(-)
+
+diff --git a/R/FSD.R b/R/FSD.R
+index 1897e60..9a0a182 100644
+--- a/R/FSD.R
++++ b/R/FSD.R
+@@ -68,6 +68,16 @@ NNS.FSD <- function(x, y, type = "discrete", plot = TRUE){
+   }
+   
+   ## Verification of ***0 instances*** of CDFx > CDFy, and conversely of CDFy > CDFx
++  if (type == "continuous") {
++    # The continuous ratio curves are linear-fractional between sample
++    # points, so their difference can peak between them: use the exact
++    # pairwise test (NNS.FSD.uni in both directions), which also checks the
++    # interior extrema.
++    x.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, x, y, "continuous") == 1L
++    y.dom <- .Call(`_NNS_NNS_FSD_uni_cpp`, y, x, "continuous") == 1L
++    return(ifelse(x.dom, "X FSD Y", ifelse(y.dom, "Y FSD X", "NO FSD EXISTS")))
++  }
++  
+   ifelse (!x.fsd.y && min(x) >= min(y) && !identical(LPM_x_sort, LPM_y_sort),
+           "X FSD Y",
+           ifelse (!y.fsd.x && min(y) >= min(x) && !identical(LPM_x_sort, LPM_y_sort),
+diff --git a/R/TSD.R b/R/TSD.R
+index 331c6ed..655e2d8 100644
+--- a/R/TSD.R
++++ b/R/TSD.R
+@@ -39,8 +39,6 @@ NNS.TSD <- function(x, y, plot = TRUE){
+   LPM_x_sort <- LPM(2, Combined_sort, x)
+   LPM_y_sort <- LPM(2, Combined_sort, y)
+     
+-  x.tsd.y <- any(LPM_x_sort > LPM_y_sort)
+-  y.tsd.x <- any(LPM_y_sort > LPM_x_sort)
+ 
+ 
+   if(plot){
+@@ -51,9 +49,15 @@ NNS.TSD <- function(x, y, plot = TRUE){
+     legend("topleft", c("X","Y"), lwd = 10, col=c("red","steelblue"))
+   }
+     
+-  ifelse (!x.tsd.y && min(x) >= min(y) && mean(x) >= mean(y) && !identical(LPM_x_sort, LPM_y_sort),
++  # Verdict from the exact pairwise test (NNS.TSD.uni in both directions):
++  # LPM2 is piecewise quadratic, so the difference can peak between the
++  # sample points; the test also checks those interior maxima, which the
++  # grid comparison above (kept for the plot) misses.
++  x.dom <- .Call(`_NNS_NNS_TSD_uni_cpp`, x, y) == 1L
++  y.dom <- .Call(`_NNS_NNS_TSD_uni_cpp`, y, x) == 1L
++  ifelse (x.dom,
+           "X TSD Y",
+-          ifelse (!y.tsd.x && min(y) >= min(x) && mean(y) >= mean(x) && !identical(LPM_x_sort, LPM_y_sort),
++          ifelse (y.dom,
+                   "Y TSD X",
+                   "NO TSD EXISTS"))
+ 
+diff --git a/src/SD.cpp b/src/SD.cpp
+index f31475a..3b3256a 100644
+--- a/src/SD.cpp
++++ b/src/SD.cpp
+@@ -8,6 +8,8 @@
+ #include <algorithm>
+ #include <vector>
+ #include <string>
++#include <cfloat>
++#include <cmath>
+ using namespace Rcpp;
+ using namespace RcppParallel;
+ 
+@@ -94,23 +96,43 @@ inline void for_each_threshold(const ColPre& a, const ColPre& b, F f){
+     double t = (next_a < next_b ? next_a : next_b);
+     while(ia<ma && a.vals[ia] <= t) ++ia; // k_a = ia
+     while(ib<mb && b.vals[ib] <= t) ++ib; // k_b = ib
+-    f(t, ia, ib);
++    // Next knot: the counts (ia, ib) are constant on the open interval
++    // (t, t_next), where the curves are smooth closed-form functions of t.
++    double t_next = std::min(ia<ma ? a.vals[ia] : R_PosInf,
++                             ib<mb ? b.vals[ib] : R_PosInf);
++    f(t, ia, ib, t_next);
+   }
+ }
+ 
++// Continuous FSD ratio L1/(L1+U1) on an interval with fixed count k:
++// L1 = alpha*t + beta, L1+U1 = gamma*t + delta (both linear in t).
++inline void ratio_deg1_coefs(const ColPre& c, int k, double& alpha, double& beta,
++                             double& gamma, double& delta){
++  double m = double(c.m);
++  alpha = k / m;
++  beta  = -c.P1[k] / m;
++  gamma = (2.0*k - c.m) / m;
++  delta = (c.S1 - 2.0*c.P1[k]) / m;
++}
++
+ // =====================================================================
+ // Pairwise dominance via prefix sums (O(m) per pair)
+ // degree: 1=FSD, 2=SSD, 3=TSD. 'discrete' only matters for FSD.
+ // Returns 1 iff X dominates Y, else 0.
+ // =====================================================================
+ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discrete){
++  // Scale of the data, used to ignore rounding-level excesses at the
++  // interior candidates below (e.g. a vertex that coincides with a knot).
++  const double S = std::max(std::max(std::fabs(X.vals.front()), std::fabs(X.vals.back())),
++                            std::max(std::fabs(Y.vals.front()), std::fabs(Y.vals.back())));
++  const double eps64 = 64.0 * DBL_EPSILON;
+   if (degree==1){ // FSD
+     if (!(X.mn >= Y.mn)) return 0;                 // FSD gate
+     if (identical_samples(X, Y)) return 0;         // identical series -> 0 (matches R's identical(LPM_x, LPM_y))
+     
+     bool x_gt_y = false, curves_differ = false;
+     int deg = (discrete ? 0 : 1); // discrete->0, continuous->1
+-    for_each_threshold(X, Y, [&](double t, int kx, int ky){
++    for_each_threshold(X, Y, [&](double t, int kx, int ky, double t_next){
+       double Rx, Ry;
+       if (deg==0){
+         // L0/(L0+U0) == ECDF
+@@ -128,6 +150,32 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+       }
+       if (Rx > Ry) x_gt_y = true;
+       if (Rx != Ry) curves_differ = true;
++      
++      // Continuous ratios are linear-fractional between knots, so their
++      // difference can peak strictly inside (t, t_next). Its stationary
++      // points solve Ax / Dx(t)^2 = Ay / Dy(t)^2 with Dx, Dy > 0, i.e.
++      // Dy(t) = sqrt(Ay / Ax) * Dx(t) (only when Ax, Ay have the same sign).
++      if (deg==1 && R_FINITE(t_next) && !x_gt_y){
++        double ax, bx, gx, dx, ay, by, gy, dy;
++        ratio_deg1_coefs(X, kx, ax, bx, gx, dx);
++        ratio_deg1_coefs(Y, ky, ay, by, gy, dy);
++        double Ax = ax*dx - bx*gx, Ay = ay*dy - by*gy;
++        if (Ax != 0.0 && Ay != 0.0 && ((Ax > 0.0) == (Ay > 0.0))){
++          double r = std::sqrt(Ay / Ax);
++          double den = gy - r*gx;
++          if (den != 0.0){
++            double ts = (r*dx - dy) / den;
++            if (ts > t && ts < t_next){
++              double Dx = gx*ts + dx, Dy = gy*ts + dy;
++              if (Dx > 0.0 && Dy > 0.0){
++                double Rxs = (ax*ts + bx) / Dx, Rys = (ay*ts + by) / Dy;
++                double tol_r = eps64 * std::max(1.0, S / std::min(Dx, Dy));
++                if (Rxs - Rys > tol_r) { x_gt_y = true; curves_differ = true; }
++              }
++            }
++          }
++        }
++      }
+     });
+     // Curves equal at every threshold -> no dominance, as in R's NNS.FSD
+     // (!identical(LPM_x_sort, LPM_y_sort)); otherwise both directions would
+@@ -142,7 +190,8 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+   
+   if (degree==2){ // SSD: compare LPM degree 1
+     bool x_gt_y = false, curves_differ = false;
+-    for_each_threshold(X, Y, [&](double t, int kx, int ky){
++    // LPM1 is piecewise linear with knots at the data: checking the knots is exact.
++    for_each_threshold(X, Y, [&](double t, int kx, int ky, double){
+       double Lx, Ux, Ly, Uy; (void)Ux; (void)Uy;   // not used beyond calc
+       lpm_upm_deg1(X, kx, t, Lx, Ux);
+       lpm_upm_deg1(Y, ky, t, Ly, Uy);
+@@ -155,11 +204,25 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+   
+   // TSD: compare LPM degree 2
+   bool x_gt_y = false, curves_differ = false;
+-  for_each_threshold(X, Y, [&](double t, int kx, int ky){
++  for_each_threshold(X, Y, [&](double t, int kx, int ky, double t_next){
+     double Lx2 = lpm_deg2(X, kx, t);
+     double Ly2 = lpm_deg2(Y, ky, t);
+     if (Lx2 > Ly2) x_gt_y = true;
+     if (Lx2 != Ly2) curves_differ = true;
++    // LPM2 is piecewise quadratic: on (t, t_next) the difference is
++    // a*s^2 - 2*b*s + c with a = kx/mx - ky/my, b = P1x/mx - P1y/my. When
++    // a < 0 it has an interior maximum at s* = b / a, which the knots miss.
++    if (R_FINITE(t_next) && !x_gt_y){
++      double a = double(kx)/double(X.m) - double(ky)/double(Y.m);
++      if (a < 0.0){
++        double b = X.P1[kx]/double(X.m) - Y.P1[ky]/double(Y.m);
++        double ts = b / a;
++        if (ts > t && ts < t_next){
++          double Dts = lpm_deg2(X, kx, ts) - lpm_deg2(Y, ky, ts);
++          if (Dts > eps64 * S * S) { x_gt_y = true; curves_differ = true; }
++        }
++      }
++    }
+   });
+   if (!curves_differ) return 0;                    // equal curves -> no TSD
+   return x_gt_y ? 0 : 1;                           // 1 iff "X TSD Y"
+-- 
+2.43.0
+

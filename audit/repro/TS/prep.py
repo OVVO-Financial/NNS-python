@@ -1,0 +1,21 @@
+import pandas as pd, numpy as np
+p = pd.read_csv('/home/user/audit/data/prices_daily.csv', parse_dates=['Date'], index_col='Date')
+m = p.resample('ME').last()
+out = '/home/user/audit/work/TS/data/'
+m['^VIX'].dropna().to_csv(out+'vix_monthly.csv', header=['y'], index=False)
+m['SPY'].dropna().to_csv(out+'spy_monthly.csv', header=['y'], index=False)
+r = pd.read_csv('/home/user/audit/data/returns_monthly.csv', parse_dates=['Date'], index_col='Date')
+panel = r[['SPY','TLT','GLD','USO','IWM']].dropna()
+panel.to_csv(out+'panel_monthly.csv', index=False)
+ap = pd.read_csv('/home/user/audit/data/airpassengers.csv')
+ap['y'].to_csv(out+'ap.csv', index=False)
+rng = np.random.default_rng(1)
+t = np.arange(240)
+s12 = 100 + 10*np.sin(2*np.pi*t/12) + rng.normal(0,1,240)
+s7 = 50 + 5*np.sin(2*np.pi*t/7) + rng.normal(0,0.5,240)
+s12_trend = 100 + 0.5*t + 10*np.sin(2*np.pi*t/12) + rng.normal(0,1,240)
+s_neg = 3*np.sin(2*np.pi*t/12) + rng.normal(0,0.5,240)  # mean ~0, negative
+s_rw = 100 + np.cumsum(rng.normal(0,1,240))
+wn = 10 + rng.normal(0,1,240)
+pd.DataFrame({'s12':s12,'s7':s7,'s12_trend':s12_trend,'s_neg':s_neg,'s_rw':s_rw,'wn':wn}).to_csv(out+'synth.csv', index=False)
+print(len(m['^VIX'].dropna()), panel.shape)

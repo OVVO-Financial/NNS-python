@@ -1,0 +1,45 @@
+From 6e99b3c99c02baa6687e7e6de546b3fefe50e666 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:30:05 +0000
+Subject: [PATCH 08/61] NNS.dep: compare concordance counts exactly in
+ copula_signed
+
+copula_signed() tested for an all-concordant cell with
+(d0_cupm + d0_clpm) * (1.0/n) == 1.0. For many n the product is not
+exactly 1 (49 * (1/49) != 1), so the 'perfect concordance' branch was
+skipped depending on the cell size and dep(x, x) on binary data
+depended on the group counts.
+
+Compare the integer count with n instead.
+
+Before -> after:
+  b <- c(rep(0,51), rep(1,49)); NNS.dep(b, b)   0.51 / 0.755 -> 1 / 1
+  NNS.dep(b, b) != 1 for b = (k zeros, k+1 ones), k = 1..300:
+                                               27 of 300 -> 0 of 300
+Continuous inputs (dep(x,x), dep(x,-x^3), dep(x,x+e), circle, step,
+independent noise) are unchanged.
+---
+ src/NNS_dep.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/NNS_dep.cpp b/src/NNS_dep.cpp
+index e45d2bb..66a92b0 100644
+--- a/src/NNS_dep.cpp
++++ b/src/NNS_dep.cpp
+@@ -82,8 +82,11 @@ static double copula_signed(const std::vector<double>& xv,
+   }
+   
+   double inv_n = 1.0 / static_cast<double>(n);
+-  double d0_Co = (d0_cupm + d0_clpm) * inv_n;
+-  if (d0_Co == 1.0 || d0_Co == 0.0) return 1.0;
++  // Compare the integer counts, not count * (1/n), which is not exactly 1
++  // for many n (e.g. 49 * (1/49) != 1).
++  double d0_concordant = d0_cupm + d0_clpm;
++  double d0_Co = d0_concordant * inv_n;
++  if (d0_concordant == static_cast<double>(n) || d0_concordant == 0.0) return 1.0;
+   
+   double c1_total = c1_cupm + c1_clpm + c1_dpm;
+   double co_d1 = c1_total > 0.0 ? (c1_cupm + c1_clpm) / c1_total : 0.0;
+-- 
+2.43.0
+

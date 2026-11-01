@@ -1,0 +1,5 @@
+suppressMessages(library(NNS))
+x <- c(-0.85,-1.52,0.68); y <- c(-0.21,-0.33,-1.67); z <- c(-3,0.16,0.2)
+J <- sapply(0:71, function(i) c(-10-i,-9-i,-8-i))
+X <- cbind(x,y,z,J[,1:71]); colnames(X) <- paste0("X_",1:ncol(X)); print(NNS.SD.efficient.set(X,3,status=FALSE))
+X <- cbind(x,y,z,J); colnames(X) <- paste0("X_",1:ncol(X)); print(NNS.SD.efficient.set(X,3,status=FALSE))

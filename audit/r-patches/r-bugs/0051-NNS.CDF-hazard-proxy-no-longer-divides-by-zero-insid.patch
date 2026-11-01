@@ -1,0 +1,51 @@
+From be024602ac4e16be7a9773bc75496626412b298c Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:22 +0000
+Subject: [PATCH 51/61] NNS.CDF: hazard proxy no longer divides by zero inside
+ tie runs
+
+The univariate hazard uses a finite-difference density proxy
+(F[hi] - F[lo]) / (x[hi] - x[lo]) over a window of sorted x. When the
+window lies inside a run of tied values the denominator is 0, the proxy
+is NaN and NNS.reg stops with "[y] contains missing values." Discrete,
+rounded or return data with zero-return runs hit this easily. Widen such
+windows to the neighbouring distinct values; windows of positive width
+are untouched. A constant variable now stops with a clear message.
+
+Before -> after:
+  NVDA daily returns [1:1000] (12 ties)   error -> finite hazard
+                                          (0.137 0.314 0.622 0.725 0.748 ...)
+  rpois(200, 3)                           error -> finite hazard
+  rep(2, 5)                               "[y] contains missing values."
+                                          -> "requires at least two distinct values"
+Untied data are unchanged (rnorm(300): sum of hazard 1000304, target
+value 1.039864, degree 1 sum 1000442, identical).
+---
+ R/Partial_Moments.R | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/R/Partial_Moments.R b/R/Partial_Moments.R
+index 63b3392..6713f53 100644
+--- a/R/Partial_Moments.R
++++ b/R/Partial_Moments.R
+@@ -290,7 +290,16 @@ NNS.CDF <- function(variable,
+     if (type=="hazard") {
+       n <- length(x); w <- min(10,n-1)
+       F <- pval
+-      proxy <- vapply(seq_along(x),function(i){lo<-max(1,i-w%/%2);hi<-min(n,i+w%/%2);(F[hi]-F[lo])/(x[hi]-x[lo])},numeric(1))
++      if (x[1] == x[n]) stop("type = 'hazard' requires at least two distinct values of variable")
++      proxy <- vapply(seq_along(x),function(i){
++        lo<-max(1,i-w%/%2);hi<-min(n,i+w%/%2)
++        # A window lying inside a run of tied values has zero width (0/0):
++        # widen it to the neighbouring distinct values (x is sorted).
++        if (x[hi] == x[lo]) {
++          lo <- max(1L, findInterval(x[i], x, left.open = TRUE))
++          hi <- min(n, findInterval(x[i], x) + 1L)
++        }
++        (F[hi]-F[lo])/(x[hi]-x[lo])},numeric(1))
+       fit <- NNS.reg(x, pmax(proxy,1e-10), order=NULL, n.best=1, point.est=target, plot=FALSE)
+       DT[[2]] <- pmin(pmax(fit$Fitted$y.hat / pmax(1-F,1e-10),0),1e6)
+     }
+-- 
+2.43.0
+

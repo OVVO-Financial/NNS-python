@@ -1,0 +1,61 @@
+From 5b82067b97cf61068d76900698f89f0ea2ed24c6 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:39:29 +0000
+Subject: [PATCH 22/61] NNS.ARMA: honour best.periods, modulo and mod.only when
+ dynamic = TRUE
+
+The dynamic re-seasoning step read M$all.periods$Period from M, which
+by then is the period table itself, so its length was 0: best.periods
+collapsed to 0 and only the first period was used at every step (or, with
+best.periods = NULL, the count was length(NULL)). It also called
+NNS.seas without modulo / mod.only. Re-select the periods from the fresh
+NNS.seas result exactly as the static path does.
+
+Before -> after, AirPassengers, h = 4, dynamic = TRUE:
+  seasonal.factor = FALSE, best.periods = 2
+     317.5 392.25 378.75 408 (top period only)
+     -> 379.96 405.93 416.77 385.29 (= Python nns_arma, which honours it)
+  same + modulo = 12
+     317.5 392.25 378.75 408 -> 441.71 405.97 455.38 476.27
+  default (best.periods = 1)  317.5 392.25 378.75 408 (unchanged)
+---
+ R/ARMA.R | 17 +++++++----------
+ 1 file changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index 2d67ffa..d1151ef 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -204,22 +204,19 @@ NNS.ARMA <- function(variable,
+     for (j in 1:h) {
+       # Regenerate seasonal.factor if dynamic
+       if (dynamic) {
+-        seas.matrix <- NNS.seas(variable, plot = FALSE)
++        # Same period selection as the static path, re-run on the extended
++        # series (honouring modulo / mod.only and best.periods).
++        seas.matrix <- NNS.seas(variable, plot = FALSE, modulo = modulo, mod.only = mod.only)
+         if (!is.list(seas.matrix)) {
+           M <- t(1)
+         } else {
+-          if (is.null(best.periods)) {
+-            M <- seas.matrix$all.periods
+-            best.periods <- length(M$all.periods$Period)
+-          } else {
+-            if (length(M$all.periods$Period) < best.periods) {
+-              best.periods <- length(M$all.periods$Period)
+-            }
+-            M <- seas.matrix$all.periods[1:best.periods, ]
++          M <- seas.matrix$all.periods
++          if (!is.null(best.periods)) {
++            M <- M[1:min(best.periods, length(M$Period)), ]
+           }
+         }
+         
+-        ASW <- ARMA.seas.weighting(seasonal.factor, M)
++        ASW <- .arma_lag_weights(seasonal.factor, M)
+         lag <- ASW$lag
+         Weights <- ASW$Weights
+       }
+-- 
+2.43.0
+

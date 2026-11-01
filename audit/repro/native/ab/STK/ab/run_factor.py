@@ -1,0 +1,12 @@
+from compare import *
+df = pd.read_csv("../boston/boston_full.csv"); tr = np.loadtxt("../boston/train_idx.txt", dtype=int)
+te = np.setdiff1d(np.arange(len(df)), tr)
+X = df.iloc[:, :13]; y = df["medv"].to_numpy(float)
+R,P = case("boston_factor_chas", X.iloc[tr], y[tr], X.iloc[te], {"CV.size":0.25}, {"cv_size":0.25}, factor_cols=[4], obj="rmse")
+report("factor chas (numeric-looking strings) cv.25", R, P)
+print("R coef names:", list(R["NNS.dim.red.coefficients"].keys()) if isinstance(R["NNS.dim.red.coefficients"],dict) else R["NNS.dim.red.coefficients"])
+print("PY coef:", P["NNS.dim.red.coefficients"])
+X2 = X.copy(); X2["chas"] = np.where(X2["chas"]==1, "river", "inland")
+R,P = case("boston_factor_chas_str", X2.iloc[tr], y[tr], X2.iloc[te], {"CV.size":0.25}, {"cv_size":0.25}, factor_cols=[4], obj="rmse")
+report("factor chas (river/inland) cv.25", R, P)
+print("R coef:", R["NNS.dim.red.coefficients"]); print("PY coef:", P["NNS.dim.red.coefficients"])

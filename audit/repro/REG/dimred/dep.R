@@ -1,0 +1,5 @@
+suppressPackageStartupMessages(library(NNS))
+b <- read.csv("/home/user/audit/data/boston.csv"); y <- b$medv; x <- as.matrix(b[, -14])
+dep <- sapply(1:13, function(j) NNS.dep(x[,j], y, asym=TRUE)$Dependence)
+caus <- sapply(1:13, function(j) NNS:::Uni.caus(y, x[,j], tau="cs", plot=FALSE))
+cat("dep ", sprintf("%.10f", dep), "\n"); cat("caus", sprintf("%.10f", caus), "\n")

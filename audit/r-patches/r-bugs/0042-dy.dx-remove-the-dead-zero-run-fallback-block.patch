@@ -1,0 +1,47 @@
+From b6c39b9c532420c67c3b4398f86a49f1bd7fec32 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:57:41 +0000
+Subject: [PATCH 42/61] dy.dx: remove the dead zero-run fallback block
+
+The block meant to widen windows whose run is 0 at the boundary of the
+support assigned eval.point.max twice with opposite signs, used the
+stale loop variable index (always the last bandwidth), and modified
+run_1/run_2, which are never read: the derivatives are computed from
+run_1c/run_2c recomputed from the unmodified deriv.points. Delete it and
+document the actual behaviour (one-sided slope at the boundary).
+
+Results are unchanged (verified identical output for sin on
+seq(0, 2*pi, pi/100) at 0, 1.75, 2*pi; x^3 on 500 uniform points at
+-2.5, -1.5, 0, 1.5; and eval.point = "overall").
+---
+ R/dy_dx.R | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/R/dy_dx.R b/R/dy_dx.R
+index 696e1a9..f0f5e4b 100644
+--- a/R/dy_dx.R
++++ b/R/dy_dx.R
+@@ -85,17 +85,9 @@ dy.dx <- function(x, y, eval.point = NULL){
+     deriv.points <- deriv.points[order(deriv.points[, "eval.point"], method = "radix"), , drop = FALSE]
+     rownames(deriv.points) <- NULL
+ 
+-      n <- nrow(deriv.points)
+-
+-      run_1 <- deriv.points[,3] - deriv.points[,2]
+-      run_2 <- deriv.points[,2] - deriv.points[,1]
+-
+-      if(any(run_1 == 0)||any(run_2 == 0)) {
+-        z_1 <- which(run_1 == 0); z_2 <- which(run_2 == 0)
+-        eval.point.max[z_1] <- ((abs((max(x) - min(x)) ))/length(x)) * index + eval.point[z_1]; eval.point.max[z_2] <- ((abs((max(x) - min(x)) ))/length(x)) * index + eval.point[z_2]
+-        eval.point.max[z_1] <- eval.point[z_1] - ((abs((max(x) - min(x)) ))/length(x)) * index; eval.point.max[z_2] <- eval.point[z_2] - ((abs((max(x) - min(x)) ))/length(x)) * index
+-        run_1[z_1] <- eval.point.max[z_1] - eval.point[z_1]; run_2[z_2] <- eval.point[z_2] - eval.point.min[z_2]
+-      }
++      # At the boundary of the support one run is 0 (the window is clipped to
++      # [min(x), max(x)]); the first derivative then uses the one-sided slope
++      # (rise_1 + rise_2) / (run_1 + run_2) below.
+ 
+       reg.output <- NNS.reg(x, y, plot = FALSE, point.est = unlist(deriv.points), point.only = TRUE, ncores = 1, smooth = TRUE)
+ 
+-- 
+2.43.0
+

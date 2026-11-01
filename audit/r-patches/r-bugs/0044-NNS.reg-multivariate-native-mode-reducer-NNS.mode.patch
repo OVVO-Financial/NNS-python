@@ -1,0 +1,52 @@
+From e50a3c90fd6b86011de113a10ac65a55a939799a Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:59:31 +0000
+Subject: [PATCH 44/61] NNS.reg (multivariate): native mode reducer = NNS.mode
+
+The native NNS_mreg_setup_cpp reducer for noise.reduction = "mode" took
+the most frequent exact value (smallest on ties), while the pure-R
+reference it is meant to reproduce (.nns_reg_reduce_value, used with
+options(NNS.native.mreg = FALSE) and by the order = "max" path) uses
+mode(z) = NNS.mode(z, discrete = FALSE, multi = FALSE). Results changed
+with the native option. Call the same NNS_mode_cpp for numeric cells;
+the exact-frequency mode is kept for class responses, as in R.
+
+Before -> after (native path; pure-R path unchanged):
+  Boston medv ~ 13 predictors, noise.reduction = "mode":
+    R2 0.83225 -> 0.87796 (= pure-R 0.87796, max |y.hat diff| 4.73 -> 0)
+  rounded 2-D data (n = 300): R2 0.46185 -> 0.57029 (= pure-R), diff 1.12 -> 0
+mean / median / off reducers and the class path are unchanged.
+---
+ src/NNS_mreg_setup.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/NNS_mreg_setup.cpp b/src/NNS_mreg_setup.cpp
+index f529d85..c3244ad 100644
+--- a/src/NNS_mreg_setup.cpp
++++ b/src/NNS_mreg_setup.cpp
+@@ -6,13 +6,21 @@
+ using namespace Rcpp;
+ 
+ double gravity_value(std::vector<double> x, bool discrete);
++SEXP NNS_mode_cpp(SEXP xSEXP, bool discrete, bool multi);
+ 
+ namespace {
+ double reduce_numeric(std::vector<double>& v, int reducer, bool is_class) {
+   v.erase(std::remove_if(v.begin(), v.end(), [](double x){ return !R_finite(x); }), v.end());
+   if (v.empty()) return NA_REAL;
+   std::sort(v.begin(), v.end());
+-  if (is_class || reducer == 2) {
++  // noise.reduction = "mode" must be the same estimator as the pure-R
++  // reference (.nns_reg_reduce_value: mode(z) = NNS.mode(z, discrete = FALSE,
++  // multi = FALSE)), not the most frequent exact value. The exact-frequency
++  // mode is kept only for class responses (table()/which.max in R).
++  if (!is_class && reducer == 2) {
++    return Rcpp::as<double>(NNS_mode_cpp(Rcpp::wrap(v), false, false));
++  }
++  if (is_class) {
+     double best = v[0]; int bestn = 0;
+     for (std::size_t i = 0; i < v.size();) {
+       const double val = v[i]; int n = 0;
+-- 
+2.43.0
+

@@ -1,0 +1,50 @@
+From 933e5bf1ddaf01d288d405bd7a5677ab04934d8e Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 59/61] NNS.copula: dimension-generic perfect-dependence early
+ return
+
+NNS.copula returned 1 whenever the sum of the degree-0 co-partial
+moments over the choose(d, 2) column pairs was exactly 1 (or 0). That
+is the bivariate rule: for d >= 3 'every pair fully concordant' means a
+sum of choose(d, 2), and a sum of 1 is an interior value (the
+independence level is choose(d, 2) / 2). Return 1 only when the sum
+equals choose(d, 2), or 0 for two variables, compared with a 1e-9
+tolerance (far below one observation's 1 / nrow) so float sums of count
+fractions do not decide it.
+
+Before -> after:
+  3000 random 10 x 3 integer matrices (values 1..5, seed 1):
+    NNS.copula == 1 in 165 -> 0; mean 0.437 -> 0.414
+    e.g. matrix 12 (pair sum exactly 1): 1 -> 0.5837
+  cbind(x, x), cbind(x, -x), cbind(x, x, x), cbind(x, 2x, x + 1), binary
+  cbind(b, b) (51/49): 1 (unchanged); 11- and 4-asset daily returns
+  0.4051 / 0.5664 (unchanged)
+Also changes NNS.reg's default multivariate n.best on such data, which
+uses NNS.copula.
+---
+ R/Copula.R | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/R/Copula.R b/R/Copula.R
+index 210ba5c..1c7c6df 100644
+--- a/R/Copula.R
++++ b/R/Copula.R
+@@ -77,7 +77,13 @@ NNS.copula <- function (
+   discrete_pm_cov <- PM.matrix(LPM_degree = 0, UPM_degree = 0, target = target, variable = X, pop_adj = FALSE)
+   utr <- upper.tri(discrete_pm_cov$cupm, diag = FALSE)
+   discrete_Co_pm <- sum(discrete_pm_cov$cupm[utr]) + sum(discrete_pm_cov$clpm[utr]) 
+-  if(discrete_Co_pm==1 || discrete_Co_pm==0) return(1)
++  # Perfect dependence: every pair fully concordant (the sum over the
++  # choose(n, 2) pairs equals choose(n, 2)) or, for two variables, fully
++  # discordant (sum 0). Comparing the sum with 1 was the bivariate rule and
++  # fired for interior values when n >= 3. The sum of count fractions is
++  # compared with a tolerance far below one observation (1 / nrow).
++  n_pairs <- n * (n - 1) / 2
++  if(abs(discrete_Co_pm - n_pairs) < 1e-9 || (n == 2 && abs(discrete_Co_pm) < 1e-9)) return(1)
+   
+   
+   if(continuous){
+-- 
+2.43.0
+

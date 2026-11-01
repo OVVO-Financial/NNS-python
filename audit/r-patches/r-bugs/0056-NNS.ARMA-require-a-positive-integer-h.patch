@@ -1,0 +1,35 @@
+From 8aeddb84a9c2ca6198ddbeee420ffaa5ea066b40 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 56/61] NNS.ARMA: require a positive integer h
+
+for (j in 1:h) with h = 0 ran once and returned one forecast, a
+fractional h was silently truncated, and h = -1 failed with
+"invalid 'length' argument". Validate h up front.
+
+Before -> after (AirPassengers, seasonal.factor = 12):
+  h = 0    450.05            -> error "[h] must be a positive integer."
+  h = 2.5  450.05 421.33     -> same error
+  h = -1   "invalid 'length' argument" -> same error
+  h = 3    450.045 421.326 445.926 (unchanged)
+---
+ R/ARMA.R | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index 5603ce9..5e03c2d 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -74,6 +74,9 @@ NNS.ARMA <- function(variable,
+   
+   if(anyNA(variable)) stop("You have some missing values, please address.")
+   
++  if(!is.numeric(h) || length(h) != 1L || !is.finite(h) || h < 1 || h != round(h))
++    stop("[h] must be a positive integer.")
++  
+   method <- tolower(method)
+   if(method == "means") shrink <- FALSE
+   
+-- 
+2.43.0
+

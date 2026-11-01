@@ -1,0 +1,267 @@
+From 4923a527430543f9ca7e1bf257ffc3d60f7f270f Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 58/61] NNS.stack: remove dead and duplicated code; drop unused
+ NNS_mreg_reduce_cpp
+
+- Univariate "all" final fit: .fit_univariate_raw(...) was fitted and
+  immediately overwritten by a second NNS.reg fit (a wasted full fit).
+- Multivariate "all" final fit: .nns_mreg_prepare_model was re-run on
+  the full data only to count RPM rows; take nrow() of the RPM of the
+  final NNS.reg fit instead (same model, same order, noise.reduction
+  "off").
+- probability.threshold <- if (is_class) 0.5 else 0.5 -> 0.5.
+- src/table_ops.cpp: NNS_mreg_reduce_cpp was exported but never called,
+  and its reducer codes (0 gravity, 1 mean, 2 median, 3 mode)
+  contradict the reducer.code used for NNS_mreg_setup_cpp (mean 0,
+  median 1, mode 2, off 3), so wiring it in would silently swap
+  reducers. The file only held that function and is deleted;
+  RcppExports regenerated with Rcpp::compileAttributes.
+
+Results are unchanged: NNS.stack (univariate and multivariate Method 1
+with ALL selected, n.best 156; default stack with pred.int; iris CLASS),
+NNS.boost on iris and NNS.reg(noise.reduction = "mode") are identical()
+before and after.
+---
+ R/RcppExports.R     |   4 --
+ R/Stack.R           |  34 ++-----------
+ src/RcppExports.cpp |  16 ------
+ src/table_ops.cpp   | 121 --------------------------------------------
+ 4 files changed, 5 insertions(+), 170 deletions(-)
+ delete mode 100644 src/table_ops.cpp
+
+diff --git a/R/RcppExports.R b/R/RcppExports.R
+index 304fa6f..a1c05a2 100644
+--- a/R/RcppExports.R
++++ b/R/RcppExports.R
+@@ -312,7 +312,3 @@ stoch_superiority_cpp <- function(x, y) {
+     .Call(`_NNS_stoch_superiority_cpp`, x, y)
+ }
+ 
+-NNS_mreg_reduce_cpp <- function(X, dv, ids, reducer, class_mode) {
+-    .Call(`_NNS_NNS_mreg_reduce_cpp`, X, dv, ids, reducer, class_mode)
+-}
+-
+diff --git a/R/Stack.R b/R/Stack.R
+index 2d02ce6..e05574e 100644
+--- a/R/Stack.R
++++ b/R/Stack.R
+@@ -1591,7 +1591,7 @@ NNS.stack <- function(IVs.train,
+   # -------------------------------------------------------------------------
+   
+   component_weights <- c(reg = 0, dim.red = 0)
+-  probability.threshold <- if (is_class) 0.5 else 0.5
++  probability.threshold <- 0.5
+   
+   if (identical(method, 1L)) {
+     component_weights["reg"] <- 1
+@@ -1696,18 +1696,6 @@ NNS.stack <- function(IVs.train,
+       # Univariate final fit
+       # Use NNS.reg with n.best = n.best
+       if (is.character(n.best) && n.best == "all") {
+-        # For univariate, "all" means use all training points; we can pass n.best = "all"
+-        # but NNS.reg univariate might not accept "all"? We'll use NNS.reg with n.best = "all"
+-        reg_final_fit <- .fit_univariate_raw(
+-          train_design[[1L]],
+-          train_y_fit,
+-          test_design[[1L]],
+-          confidence.interval = pred.int,
+-          point.only = FALSE
+-        )
+-        # But that uses default n.best? Actually .fit_univariate_raw does not pass n.best.
+-        # We need to handle separately.
+-        # For univariate, we can just use NNS.reg with n.best = "all" explicitly.
+         reg_final_fit <- suppressWarnings(
+           NNS.reg(
+             as.numeric(train_design[[1L]]),
+@@ -1781,22 +1769,10 @@ NNS.stack <- function(IVs.train,
+           y
+         )
+         reg_pred_int_raw <- .translate_interval(reg_final_fit$pred.int)
+-        # Also set reg_best_k to the full RPM row count for return field
+-        # We need to get the RPM row count from the final fit? We can compute from the fit object.
+-        # But we can also compute by calling .nns_mreg_prepare_model on full data.
+-        # We'll compute later if needed.
+-        # For now, we'll set a placeholder.
+-        # Actually we'll compute after the fit.
+-        # We'll store the nRPM in a variable.
+-        # Let's compute RPM row count for full data:
+-        setup_full <- .nns_mreg_prepare_model(train_design, train_y_fit, order = order,
+-                                              noise.reduction = "off", is.class = FALSE,
+-                                              use.native = isTRUE(getOption("NNS.native.mreg", TRUE)))
+-        if (!is.null(setup_full$RPM)) {
+-          reg_best_k <- nrow(setup_full$RPM)
+-        } else {
+-          reg_best_k <- nrow(train_design)  # fallback
+-        }
++        # Report the full RPM row count; the final fit already holds the RPM
++        # (refitting .nns_mreg_prepare_model on the full data only to count
++        # its rows duplicated that work).
++        reg_best_k <- if (!is.null(reg_final_fit$RPM)) nrow(reg_final_fit$RPM) else nrow(train_design)
+       } else {
+         # numeric n.best
+         reg_final_fit <- suppressWarnings(
+diff --git a/src/RcppExports.cpp b/src/RcppExports.cpp
+index 50d3cfc..8f75ed3 100644
+--- a/src/RcppExports.cpp
++++ b/src/RcppExports.cpp
+@@ -791,21 +791,6 @@ BEGIN_RCPP
+     return rcpp_result_gen;
+ END_RCPP
+ }
+-// NNS_mreg_reduce_cpp
+-List NNS_mreg_reduce_cpp(NumericMatrix X, NumericVector dv, CharacterVector ids, int reducer, bool class_mode);
+-RcppExport SEXP _NNS_NNS_mreg_reduce_cpp(SEXP XSEXP, SEXP dvSEXP, SEXP idsSEXP, SEXP reducerSEXP, SEXP class_modeSEXP) {
+-BEGIN_RCPP
+-    Rcpp::RObject rcpp_result_gen;
+-    Rcpp::RNGScope rcpp_rngScope_gen;
+-    Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
+-    Rcpp::traits::input_parameter< NumericVector >::type dv(dvSEXP);
+-    Rcpp::traits::input_parameter< CharacterVector >::type ids(idsSEXP);
+-    Rcpp::traits::input_parameter< int >::type reducer(reducerSEXP);
+-    Rcpp::traits::input_parameter< bool >::type class_mode(class_modeSEXP);
+-    rcpp_result_gen = Rcpp::wrap(NNS_mreg_reduce_cpp(X, dv, ids, reducer, class_mode));
+-    return rcpp_result_gen;
+-END_RCPP
+-}
+ 
+ static const R_CallMethodDef CallEntries[] = {
+     {"_NNS_NNS_dep_pair_cpp", (DL_FUNC) &_NNS_NNS_dep_pair_cpp, 5},
+@@ -864,7 +849,6 @@ static const R_CallMethodDef CallEntries[] = {
+     {"_NNS_PMMatrix_RCPP", (DL_FUNC) &_NNS_PMMatrix_RCPP, 6},
+     {"_NNS_NNS_bin", (DL_FUNC) &_NNS_NNS_bin, 4},
+     {"_NNS_stoch_superiority_cpp", (DL_FUNC) &_NNS_stoch_superiority_cpp, 2},
+-    {"_NNS_NNS_mreg_reduce_cpp", (DL_FUNC) &_NNS_NNS_mreg_reduce_cpp, 5},
+     {NULL, NULL, 0}
+ };
+ 
+diff --git a/src/table_ops.cpp b/src/table_ops.cpp
+deleted file mode 100644
+index 0bf1743..0000000
+--- a/src/table_ops.cpp
++++ /dev/null
+@@ -1,121 +0,0 @@
+-// table_ops.cpp
+-// Rcpp helpers that replace the former data.table grouped operations, so the
+-// R routines stay fully backed by compiled code (no per-call R grouping loops).
+-
+-#include <Rcpp.h>
+-#include <vector>
+-#include <string>
+-#include <algorithm>
+-#include <unordered_map>
+-#include <cmath>
+-#include "central_tendencies.h"
+-
+-using namespace Rcpp;
+-
+-// gravity() of a vector, filtering non-finite values first (matches
+-// NNS_gravity_cpp / NNS.gravity exactly).
+-static inline double grav_finite(const std::vector<double>& v) {
+-  std::vector<double> f;
+-  f.reserve(v.size());
+-  for (double d : v) if (R_finite(d)) f.push_back(d);
+-  return gravity_value(f, false);
+-}
+-
+-// Grouped regression-point reduction for NNS.M.reg.
+-//
+-// Replaces the (former data.table) "group by NNS.ID, reduce each IV column and
+-// the DV by the chosen central tendency" stage plus the residual-bias step.
+-//
+-//   X          : n x m matrix of independent variables (finite numeric)
+-//   dv         : length-n dependent variable
+-//   ids        : length-n group labels (NNS.ID)
+-//   reducer    : 0 gravity (off), 1 mean, 2 median, 3 mode, 4 mode_class,
+-//                5 identity (first row of group; order is non-numeric / "max")
+-//   class_mode : round fitted y.hat toward the nearest class (type = "CLASS")
+-//
+-// Returns list(rpm, yhat, residuals):
+-//   rpm        : G x (m+1); one row per unique NNS.ID in ascending (C-locale)
+-//                id order; columns = reduced IVs then reduced DV ("y.hat").
+-//   yhat       : length-n fitted values in ORIGINAL observation order, after the
+-//                grouped residual-bias correction.
+-//   residuals  : length-n (yhat - dv) after the bias correction.
+-//
+-// [[Rcpp::export]]
+-List NNS_mreg_reduce_cpp(NumericMatrix X, NumericVector dv,
+-                         CharacterVector ids, int reducer, bool class_mode) {
+-  const int n = X.nrow();
+-  const int m = X.ncol();
+-
+-  std::vector<std::string> id(n);
+-  for (int i = 0; i < n; ++i) id[i] = as<std::string>(ids[i]);
+-
+-  // unique ids in ascending byte (C-locale) order -- matches order(method = "radix")
+-  std::vector<std::string> uid(id);
+-  std::sort(uid.begin(), uid.end());
+-  uid.erase(std::unique(uid.begin(), uid.end()), uid.end());
+-  const int G = (int) uid.size();
+-
+-  std::unordered_map<std::string, int> pos;
+-  pos.reserve(G * 2 + 1);
+-  for (int g = 0; g < G; ++g) pos[uid[g]] = g;
+-
+-  std::vector<int> grp(n);
+-  std::vector< std::vector<int> > rows(G);
+-  for (int i = 0; i < n; ++i) { const int g = pos[id[i]]; grp[i] = g; rows[g].push_back(i); }
+-
+-  NumericMatrix rpm(G, m + 1);
+-  for (int g = 0; g < G; ++g) {
+-    const std::vector<int>& r = rows[g];
+-    for (int j = 0; j <= m; ++j) {
+-      std::vector<double> col;
+-      col.reserve(r.size());
+-      for (size_t t = 0; t < r.size(); ++t) col.push_back(j < m ? X(r[t], j) : dv[r[t]]);
+-
+-      double val;
+-      if (reducer == 5) {                              // identity: first row
+-        val = col.front();
+-      } else if (reducer == 1) {                       // mean
+-        long double s = 0.0L; for (double d : col) s += d;
+-        val = (double)(s / (long double) col.size());
+-      } else if (reducer == 2) {                       // median
+-        std::vector<double> t2(col);
+-        std::sort(t2.begin(), t2.end());
+-        const int L = (int) t2.size();
+-        val = (L % 2) ? t2[L / 2] : 0.5 * (t2[L / 2 - 1] + t2[L / 2]);
+-      } else if (reducer == 3 || reducer == 4) {       // mode / mode_class
+-        NumericVector mr(NNS_mode_cpp(wrap(col), reducer == 4, false));
+-        val = mr.size() ? mr[0] : NA_REAL;
+-      } else {                                         // gravity (off / default)
+-        val = grav_finite(col);
+-      }
+-      rpm(g, j) = val;
+-    }
+-  }
+-
+-  // initial fitted y.hat in original order = each obs's group reduced DV
+-  NumericVector yhat(n);
+-  for (int i = 0; i < n; ++i) yhat[i] = rpm(grp[i], m);
+-  if (class_mode) {
+-    for (int i = 0; i < n; ++i) {
+-      const double v = yhat[i], f = v - std::floor(v);
+-      yhat[i] = (f < 0.5) ? std::floor(v) : std::ceil(v);
+-    }
+-  }
+-
+-  // residual-bias correction by NNS.ID: bias = gravity(residuals); y.hat -= bias
+-  std::vector<double> resid(n);
+-  for (int i = 0; i < n; ++i) resid[i] = yhat[i] - dv[i];
+-  for (int g = 0; g < G; ++g) {
+-    const std::vector<int>& r = rows[g];
+-    std::vector<double> rr;
+-    rr.reserve(r.size());
+-    for (size_t t = 0; t < r.size(); ++t) rr.push_back(resid[r[t]]);
+-    const double b = grav_finite(rr);
+-    for (size_t t = 0; t < r.size(); ++t) yhat[r[t]] -= b;
+-  }
+-
+-  NumericVector residuals(n);
+-  for (int i = 0; i < n; ++i) residuals[i] = yhat[i] - dv[i];
+-
+-  return List::create(_["rpm"] = rpm, _["yhat"] = yhat, _["residuals"] = residuals);
+-}
+-- 
+2.43.0
+

@@ -1,0 +1,51 @@
+From 15b4bd8944e5b51adaa6a70b64d202333796e413 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:51:11 +0000
+Subject: [PATCH 35/61] NNS.ANOVA: compute both bootstrap quantiles for
+ one-sided tails
+
+With confidence.interval and tails = "left" the effect-size lower bound
+needs treatment_lower - control_upper, but control_upper was only
+computed for tails "both"/"right"; tails = "right" likewise needed the
+uncomputed control_lower. Every one-sided call (including robust = TRUE)
+stopped with "object 'control_upper' / 'control_lower' not found".
+Compute all four one-sided quantiles for every tail choice.
+
+Before -> after (x ~ N(0,1), y ~ N(1,1), n = 50, confidence.interval = .95):
+  tails = "left"   error -> Effect_Size_LB 0.624, Effect_Size_UB Inf
+  tails = "right"  error -> Effect_Size_LB -Inf, Effect_Size_UB 1.459
+  tails = "both"   unchanged (0.563, 1.543)
+---
+ R/Binary_ANOVA.R | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/R/Binary_ANOVA.R b/R/Binary_ANOVA.R
+index a180bac..1855767 100644
+--- a/R/Binary_ANOVA.R
++++ b/R/Binary_ANOVA.R
+@@ -129,15 +129,13 @@ NNS.ANOVA.bin <- function(control, treatment,
+     # Calculate confidence bounds
+     alpha <- if(tails == "both") (1 - confidence.interval)/2 else 1 - confidence.interval
+     
+-    if(tails %in% c("both", "right")) {
+-      control_upper <- UPM.VaR(alpha, 0, control_stats)
+-      treatment_upper <- UPM.VaR(alpha, 0, treatment_stats)
+-    }
+-    
+-    if(tails %in% c("both", "left")) {
+-      control_lower <- LPM.VaR(alpha, 0, control_stats)
+-      treatment_lower <- LPM.VaR(alpha, 0, treatment_stats)
+-    }
++    # Every tail choice needs both quantiles of both groups: a one-sided
++    # lower effect bound is treatment_lower - control_upper, a one-sided upper
++    # bound is treatment_upper - control_lower.
++    control_upper <- UPM.VaR(alpha, 0, control_stats)
++    treatment_upper <- UPM.VaR(alpha, 0, treatment_stats)
++    control_lower <- LPM.VaR(alpha, 0, control_stats)
++    treatment_lower <- LPM.VaR(alpha, 0, treatment_stats)
+     
+     # Calculate conservative effect size bounds
+     if(tails == "both") {
+-- 
+2.43.0
+

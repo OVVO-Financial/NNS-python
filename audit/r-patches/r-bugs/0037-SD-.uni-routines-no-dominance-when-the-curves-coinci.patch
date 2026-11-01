@@ -1,0 +1,86 @@
+From ec87e4aaf13c119244d6ee5b4e7692e161c32103 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:53:21 +0000
+Subject: [PATCH 37/61] SD .uni routines: no dominance when the curves coincide
+
+R's bidirectional NNS.FSD/SSD/TSD report no dominance when the two
+curves are identical on the combined grid (!identical(LPM_x, LPM_y)),
+but the native pairwise test only guarded identical samples. When two
+different samples have identical curves at every threshold (continuous
+FSD ratios that coincide at the knots, or the same distribution with
+different sample sizes) both NNS.*.uni(x, y) and NNS.*.uni(y, x)
+returned 1, i.e. mutual dominance, and the efficient set dropped one of
+them. Return 0 when the curves never differ.
+
+Before -> after:
+  x = c(0,0,3,3), y = c(1,1,3,0), continuous FSD
+    NNS.FSD.uni x>y, y>x: 1, 1 -> 0, 0 (NNS.FSD: "NO FSD EXISTS")
+    NNS.SD.efficient.set(cbind(x,y), 1, "continuous"): x -> x y
+  x = c(1,2), y = c(1,1,2,2) (same distribution)
+    SSD.uni 1,1 -> 0,0; TSD.uni 1,1 -> 0,0; FSD.uni 1,1 -> 0,0
+11-asset daily-return efficient sets (degrees 1-3) and the 200
+unequal-length integer pairs (all agree with the bidirectional tests)
+are unchanged.
+---
+ src/SD.cpp | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/src/SD.cpp b/src/SD.cpp
+index 2cfc263..734300d 100644
+--- a/src/SD.cpp
++++ b/src/SD.cpp
+@@ -108,7 +108,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+     if (!(X.mn >= Y.mn)) return 0;                 // FSD gate
+     if (identical_samples(X, Y)) return 0;         // identical series -> 0 (matches R's identical(LPM_x, LPM_y))
+     
+-    bool x_gt_y = false;
++    bool x_gt_y = false, curves_differ = false;
+     int deg = (discrete ? 0 : 1); // discrete->0, continuous->1
+     for_each_threshold(X, Y, [&](double t, int kx, int ky){
+       double Rx, Ry;
+@@ -125,7 +125,12 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+         Ry = (Ay>0.0 ? Ly/Ay : 0.0);
+       }
+       if (Rx > Ry) x_gt_y = true;
++      if (Rx != Ry) curves_differ = true;
+     });
++    // Curves equal at every threshold -> no dominance, as in R's NNS.FSD
++    // (!identical(LPM_x_sort, LPM_y_sort)); otherwise both directions would
++    // report dominance.
++    if (!curves_differ) return 0;
+     return x_gt_y ? 0 : 1;                         // 1 iff "X FSD Y"
+   }
+   
+@@ -134,23 +139,27 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+   if (identical_samples(X, Y)) return 0;           // identical series -> 0
+   
+   if (degree==2){ // SSD: compare LPM degree 1
+-    bool x_gt_y = false;
++    bool x_gt_y = false, curves_differ = false;
+     for_each_threshold(X, Y, [&](double t, int kx, int ky){
+       double Lx, Ux, Ly, Uy; (void)Ux; (void)Uy;   // not used beyond calc
+       lpm_upm_deg1(X, kx, t, Lx, Ux);
+       lpm_upm_deg1(Y, ky, t, Ly, Uy);
+       if (Lx > Ly) x_gt_y = true;
++      if (Lx != Ly) curves_differ = true;
+     });
++    if (!curves_differ) return 0;                  // equal curves -> no SSD
+     return x_gt_y ? 0 : 1;                         // 1 iff "X SSD Y"
+   }
+   
+   // TSD: compare LPM degree 2
+-  bool x_gt_y = false;
++  bool x_gt_y = false, curves_differ = false;
+   for_each_threshold(X, Y, [&](double t, int kx, int ky){
+     double Lx2 = lpm_deg2(X, kx, t);
+     double Ly2 = lpm_deg2(Y, ky, t);
+     if (Lx2 > Ly2) x_gt_y = true;
++    if (Lx2 != Ly2) curves_differ = true;
+   });
++  if (!curves_differ) return 0;                    // equal curves -> no TSD
+   return x_gt_y ? 0 : 1;                           // 1 iff "X TSD Y"
+ }
+ 
+-- 
+2.43.0
+

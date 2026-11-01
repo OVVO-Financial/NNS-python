@@ -70,6 +70,7 @@ sdist.include = [
     "/sync/nns_source.json",
 ]
 sdist.exclude = [
+    "/audit",
     "/tests",
     "/tools",
     "/original_tests",
@@ -102,6 +103,7 @@ target-version = "py311"
 extend-exclude = [
     "*.ipynb",
     "extern/NNS-core",
+    "audit",
     "upstream",
     "gists",
 ]

@@ -1,0 +1,87 @@
+From 70224e6cc80cc84456f9a4db7f7bdfbe6ce8f9c6 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:49:57 +0000
+Subject: [PATCH 33/61] NNS.stack: score the "ALL" Method 1 candidate with the
+ deployed estimator
+
+In the Method 1 n.best search the ALL candidate was scored out-of-fold as
+a constant prediction, mean(training y), but when ALL won the final fit
+was NNS.reg(n.best = "all") (multivariate) or the univariate NNS.reg
+fit, both non-constant estimators. Model selection therefore compared
+the local candidates against a model that was never deployed, and
+OBJfn.reg reported the SSE of a constant mean.
+
+Score ALL in every fold with the estimator used for the final fit:
+NNS.reg(..., n.best = "all", point.only = TRUE) for multivariate designs
+and the univariate NNS.reg fit (.fit_univariate_raw) for one column.
+
+Before -> after (pure-noise y, n = 160 training rows, seed 5, method = 1):
+  univariate:   ALL wins, OBJfn.reg 192.79 (constant-mean SSE), n.best NA
+                -> local k = 6 wins, OBJfn.reg 204.65 (ALL's real OOF is worse)
+  multivariate: ALL wins, OBJfn.reg 192.79 -> ALL wins, OBJfn.reg 190.37
+                (OOF of NNS.reg(n.best = "all")), n.best 156
+Final predictions are unchanged in these cases; iris and Boston Method 1
+fits (where a local k wins) are unchanged. The selected n.best and
+OBJfn.reg change wherever ALL was involved in the decision.
+---
+ R/Stack.R | 37 ++++++++++++++++++++++++++-----------
+ 1 file changed, 26 insertions(+), 11 deletions(-)
+
+diff --git a/R/Stack.R b/R/Stack.R
+index 26159ae..d582922 100644
+--- a/R/Stack.R
++++ b/R/Stack.R
+@@ -1277,11 +1277,10 @@ NNS.stack <- function(IVs.train,
+         }
+         
+         # ALL is the separate full-support limit condition and is always
+-        # evaluated, irrespective of the later local stopping point.
+-        all_raw <- rep(
+-          mean(train_y_fit) - response_offset,
+-          length(test_x)
+-        )
++        # evaluated, irrespective of the later local stopping point. Score the
++        # estimator that is deployed when ALL wins (the univariate NNS.reg
++        # fit), not a constant training mean.
++        all_raw <- .fit_univariate_raw(train_x, train_y_fit, test_x)$raw
+         good <- is.finite(all_raw)
+         if (any(good)) {
+           rows <- valid_idx[good]
+@@ -1356,12 +1355,28 @@ NNS.stack <- function(IVs.train,
+           }
+         }
+         
+-        # Preserve the current full-support limit behavior from this version:
+-        # all RPM points reduce to the balanced fitting-response mean. The ALL
+-        # candidate is always populated for every fold.
+-        all_raw <- rep(
+-          mean(train_y_fit) - response_offset,
+-          length(valid_idx)
++        # The ALL candidate is always populated for every fold. Score the
++        # estimator that is deployed when ALL wins, NNS.reg(n.best = "all"),
++        # rather than a constant training mean.
++        all_fit <- suppressWarnings(
++          NNS.reg(
++            train_design,
++            train_y_fit,
++            point.est = valid_design,
++            plot = FALSE,
++            residual.plot = FALSE,
++            n.best = "all",
++            order = order,
++            type = NULL,
++            factor.2.dummy = FALSE,
++            dist = dist,
++            ncores = ncores,
++            point.only = TRUE
++          )
++        )
++        all_raw <- .sanitize_raw(
++          as.numeric(all_fit$Point.est) - response_offset,
++          y[train_idx]
+         )
+         good <- is.finite(all_raw)
+         if (any(good)) {
+-- 
+2.43.0
+

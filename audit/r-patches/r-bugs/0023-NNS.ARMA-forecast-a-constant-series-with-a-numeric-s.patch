@@ -1,0 +1,40 @@
+From 3b6a6cf464442085b1119414cf42d62733152e20 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:40:03 +0000
+Subject: [PATCH 23/61] NNS.ARMA: forecast a constant series with a numeric
+ seasonal.factor
+
+With a numeric seasonal.factor the lag weights are based on the ratio of
+each lag's CV to the series CV. For a constant series both are 0/0, the
+weights were NaN and every forecast was NaN. Use equal weights when the
+computed weights are not finite. (The auto-seasonality path of a
+constant series was fixed by the zero-weight fallback in the previous
+commit.)
+
+Before -> after:
+  NNS.ARMA(rep(5, 60), h = 3, seasonal.factor = 12)          NaN NaN NaN -> 5 5 5
+  same, method = "lin"                                        NaN NaN NaN -> 5 5 5
+  seasonal.factor = c(12,24), all four methods               NaN -> 5 5 5
+  NNS.ARMA(rep(-2, 30), h = 2, seasonal.factor = 7)          -> -2 -2
+Non-constant series are unchanged.
+---
+ R/ARMA.R | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index d1151ef..96e76d8 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -121,6 +121,9 @@ NNS.ARMA <- function(variable,
+       Seasonal.weighting <- 1 / pmax(Relative.seasonal, .Machine$double.eps)
+       Observation.weighting <- 1 / sqrt(seasonal.factor)
+       Weights <- (Seasonal.weighting * Observation.weighting) / sum(Observation.weighting * Seasonal.weighting)
++      # A constant series has CV 0/0 = NaN for every lag: weight the lags equally
++      # instead of propagating NaN into the forecast.
++      if(any(!is.finite(Weights))) Weights <- rep(1/length(lag), length(lag))
+       seasonal.plot <- FALSE
+     } else {
+       Weights <- weights
+-- 
+2.43.0
+

@@ -1,0 +1,51 @@
+From e404d7e218335afa7a5781326b96629025ad9eb0 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:31:21 +0000
+Subject: [PATCH 10/61] NNS.caus: orient the p.value statistic as x -> y
+
+With p.value = TRUE the observed and permutation statistics came from
+signed_from_cp(), which returned cp[3] without looking at its name. cp[3]
+is the log-ratio in the direction of the stronger causation, labelled
+"C(x--->y)" or "C(y--->x)", and is non-negative in practice, so the
+'signed' x -> y statistic ignored direction: NNS.caus(x, y) and
+NNS.caus(y, x) reported the same observed_signed and the same
+x_causes_y p-value. Flip the sign for "C(y--->x)", as NNS.caus.matrix
+already does.
+
+Evidence (x ~ N(0,1), y = x^2 + N(0,0.1^2), n = 300, nperm = 50, seed 1):
+  NNS.caus(x, y): C(x--->y) 1.428, observed_signed 1.428,
+                  p x_causes_y 0.0196, p y_causes_x 1       (unchanged)
+  NNS.caus(y, x): C(y--->x) 1.428
+    before: observed_signed  1.428, p x_causes_y 0.0196, p y_causes_x 1
+    after:  observed_signed -1.428, p x_causes_y 1,      p y_causes_x 0.0196
+
+The causation vector itself is unchanged; the p-values, observed_signed,
+null_distribution and CI change whenever a statistic is labelled
+C(y--->x).
+---
+ R/Uni_Causation.R | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/R/Uni_Causation.R b/R/Uni_Causation.R
+index 5bbd662..401b583 100644
+--- a/R/Uni_Causation.R
++++ b/R/Uni_Causation.R
+@@ -95,10 +95,13 @@ Uni.caus <- function(x, y, tau, plot = TRUE){
+ 
+ 
+ 
+-# Internal helper: extract canonical signed causation from the third element of cp.
++# Internal helper: extract canonical signed causation x -> y from cp.
+ signed_from_cp <- function(cp){
+-  # Extract the third element (log-ratio in direction of stronger causation) and cap infinities
++  # The third element is the log-ratio in the direction of the stronger
++  # causation; its name carries the direction. Orient it as x -> y (flip the
++  # sign for "C(y--->x)", as NNS.caus.matrix does) and cap infinities.
+   raw_val <- as.numeric(cp[3])
++  if(identical(names(cp)[3], "C(y--->x)")) raw_val <- -raw_val
+   if(is.infinite(raw_val)) raw_val <- sign(raw_val) * 100
+   return(raw_val)
+ }
+-- 
+2.43.0
+

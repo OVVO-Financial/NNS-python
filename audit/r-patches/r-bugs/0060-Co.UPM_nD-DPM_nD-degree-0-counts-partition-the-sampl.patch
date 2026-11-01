@@ -1,0 +1,67 @@
+From 7a7749dcd191e8020a5c4641a606297116dd4397 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 60/61] Co.UPM_nD/DPM_nD: degree-0 counts partition the sample
+ (ties are lower)
+
+At degree 0 the nD co-moments did not partition the sample when an
+observation ties the target: Co.LPM_nD counted x <= t as lower,
+Co.UPM_nD counted x >= t as upper, and DPM_nD counted any tie as
+discordant, so a tied point was counted two or three times. The
+bivariate functions use x <= t (lower) / x > t (upper), so the nD
+functions did not reduce to them at d = 2.
+
+Use the bivariate split everywhere at degree 0: CUPM_nD counts rows
+with every x > t, DPM_nD counts rows that are neither all-lower
+(x <= t) nor all-upper (x > t). Degree > 0 is unaffected (a tied
+coordinate contributes a zero factor either way).
+
+Before -> after: x = c(1,2,3,3,4,5), y = c(3,3,1,5,3,2), t = (3, 3):
+  Co.UPM_nD(0)   0.333 -> 0     (= Co.UPM(0) = 0)
+  DPM_nD(0)      1     -> 0.5   (= D.LPM(0) + D.UPM(0) = 0.5)
+  CLPM + CUPM + DPM (nD, degree 0)  1.833 -> 1
+Independent {-1,0,1} pairs with column means exactly 0 (n = 12000):
+  NNS.copula 0.413 -> 0.237 (the remaining floor is DEP-14); 3-D:
+  0.304 -> 0.245, and the three nD counts now sum to 1 (was 1.52).
+Data without ties at the target are unchanged (continuous 3-D copula
+0.1433, Boston NNS.reg R2 0.91150, iris copula 0.4619).
+---
+ src/partial_moments.cpp | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/partial_moments.cpp b/src/partial_moments.cpp
+index 7b4ea09..5c3a50c 100644
+--- a/src/partial_moments.cpp
++++ b/src/partial_moments.cpp
+@@ -141,9 +141,12 @@ struct CoUPM_CountWorker : public Worker {
+   void operator()(std::size_t begin, std::size_t end) override {
+     std::size_t d = target.length();
+     for (std::size_t i = begin; i < end; ++i) {
++      // Strictly above in every coordinate, as Co.UPM (x > target) does.
++      // Ties belong to the lower side (x <= target), so that at degree 0
++      // CLPM + CUPM + DPM partition the sample.
+       bool above_all = true;
+       for (std::size_t j = 0; j < d; ++j) {
+-        if (data(i, j) < target[j]) { above_all = false; break; }
++        if (data(i, j) <= target[j]) { above_all = false; break; }
+       }
+       output[i] = above_all ? 1.0 : 0.0;
+     }
+@@ -184,10 +187,13 @@ struct DpmCountWorker : public Worker {
+   void operator()(std::size_t begin, std::size_t end) override {
+     std::size_t d = target.length();
+     for (std::size_t i = begin; i < end; ++i) {
++      // Discordant = neither all-lower (x <= target, the CLPM count) nor
++      // all-upper (x > target, the CUPM count), so the three degree-0 counts
++      // partition the sample (ties used to count as discordant AND lower).
+       bool allBelow = true, allAbove = true;
+       for (std::size_t j = 0; j < d; ++j) {
+         double diff = data(i, j) - target[j];
+-        if (diff >= 0.0) allBelow = false;
++        if (diff > 0.0) allBelow = false;
+         if (diff <= 0.0) allAbove = false;
+         if (!allBelow && !allAbove) break;
+       }
+-- 
+2.43.0
+

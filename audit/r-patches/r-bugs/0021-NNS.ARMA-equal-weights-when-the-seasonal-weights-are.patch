@@ -1,0 +1,47 @@
+From ed0a68ccce04197bb74df08908276210d39291d0 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:39:00 +0000
+Subject: [PATCH 21/61] NNS.ARMA: equal weights when the seasonal weights are
+ all zero
+
+The default seasonal.factor = TRUE with best.periods = 1 goes through
+ARMA.seas.weighting(FALSE, .), whose weights are (VarCV - CV)/sqrt(lag)
+normalised by their sum. When every selected row has CV == VarCV (the
+no-seasonality sentinel, modulo-added periods, a constant series) the
+sum is 0 and every weight was 0, so the forecast was exactly 0.
+Fall back to equal weights in that case.
+
+Before -> after:
+  white noise (mean 10.03), NNS.ARMA(x, h = 4, modulo = 7)
+                          0 0 0 0 -> 8.73 10.75 8.58 10.07
+  same, modulo = 5        0 0 0 0 -> 8.60 10.08 7.43 8.85
+  NNS.ARMA(rep(5, 60), h = 3)    0 0 0 -> 5 5 5
+Calls whose weights were not all zero are unchanged (AirPassengers
+default, sf = FALSE / best.periods = 2, white noise default).
+---
+ R/ARMA.R | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index c9fa147..2d67ffa 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -389,5 +389,14 @@ NNS.ARMA <- function(variable,
+   if (isTRUE(sf) && is.data.frame(M) && "Period" %in% names(M)) {
+     return(list(lag = M$Period[1], Weights = 1))
+   }
+-  ARMA.seas.weighting(sf, M)
++  ASW <- ARMA.seas.weighting(sf, M)
++  # The weights are (VarCV - CV) / sqrt(lag), normalised. When every row has
++  # CV == VarCV (no-seasonality sentinel, modulo-added periods, constant
++  # series) the denominator is 0 and all weights came back 0, which forced a
++  # forecast of 0. Use equal weights instead.
++  w <- ASW$Weights
++  if (length(ASW$lag) > 0 && (length(w) == 0 || all(w == 0) || any(!is.finite(w)))) {
++    ASW$Weights <- rep(1 / length(ASW$lag), length(ASW$lag))
++  }
++  ASW
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,34 @@
+From e53c20af11290d7464fc83766c8dcbe39443caed Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:33:39 +0000
+Subject: [PATCH 14/61] NNS.dep: reject infinite values
+
+NNS.dep stopped on NA but silently accepted Inf/-Inf (NNS.copula and the
+partial-moment functions reject them), returning numbers computed from
+partitions with infinite means.
+
+Before -> after (x ~ N(0,1), y = x + N(0,1), n = 100):
+  NNS.dep(c(x[-1], Inf), y)        -0.175 / 0.551 -> error "x must be finite."
+  NNS.dep(x, c(y[-1], -Inf))        0.140 / 0.578 -> error "y must be finite."
+  NNS.dep(cbind(c(x[-1], Inf), y))  matrix        -> error "x must be finite."
+Finite inputs are unchanged (NNS.dep(x, y) 0.2243 / 0.6781).
+---
+ R/Dependence.R | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/R/Dependence.R b/R/Dependence.R
+index 41e96b3..cbf6298 100644
+--- a/R/Dependence.R
++++ b/R/Dependence.R
+@@ -68,6 +68,8 @@ NNS.dep <- function(x,
+   # ---- missing values -------------------------------------------------------
+   if (anyNA(x)) stop("x has missing values, please address.")
+   if (!is.null(y) && anyNA(y)) stop("y has missing values, please address.")
++  if (any(is.infinite(x))) stop("x must be finite.")
++  if (!is.null(y) && any(is.infinite(y))) stop("y must be finite.")
+   
+   # ---- p.value permutation setup --------------------------------------------
+   if (p.value) {
+-- 
+2.43.0
+

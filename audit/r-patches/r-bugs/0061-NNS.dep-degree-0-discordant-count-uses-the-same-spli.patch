@@ -1,0 +1,58 @@
+From 0a322ff6f247fd4d1f0d49903178c4b14982e06b Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:24 +0000
+Subject: [PATCH 61/61] NNS.dep: degree-0 discordant count uses the same split
+ as the co-counts
+
+copula_signed() and copula_degree0_unsigned() counted co-lower as
+dx <= 0 & dy <= 0 and co-upper as dx > 0 & dy > 0, but discordant as
+'not (both < 0) and not (both > 0)', so an observation tied with a cell
+mean in either coordinate was counted as both co-lower and discordant.
+The degree-0 frequencies then did not sum to 1 and produced a
+dependence floor on discrete data. Define discordant as neither co-lower
+nor co-upper under the same split (the bivariate counterpart of the
+nD fix in the previous commit).
+
+Before -> after (Correlation / Dependence):
+  independent {-1,0,1} pairs, means exactly 0 (n = 12000):
+    0 / 0.2879 -> 0 / 0.1597 (asym likewise)
+Unchanged (identical output): independent and dependent Poisson pairs,
+y = x + {0,1}, binary dep(b,b), continuous dep(x, x+e), dep(x, -x),
+independent normals, step function, Boston ptratio asym dep and
+NNS.reg(medv ~ rad). Only cells with an observation exactly at the cell
+mean change.
+---
+ src/NNS_dep.cpp | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/NNS_dep.cpp b/src/NNS_dep.cpp
+index 4ae8040..ee70396 100644
+--- a/src/NNS_dep.cpp
++++ b/src/NNS_dep.cpp
+@@ -66,7 +66,10 @@ static double copula_signed(const std::vector<double>& xv,
+     
+     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
+     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
+-    if (!((dx < 0.0 && dy < 0.0) || (dx > 0.0 && dy > 0.0)))
++    // Discordant = neither co-lower (<= target) nor co-upper (> target), the
++    // same split as the two counts above, so the degree-0 frequencies
++    // partition the cell (a tie used to count as co-lower AND discordant).
++    if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
+       dpm_d0_count += 1.0;
+     
+     if (dx >= 0.0 && dy >= 0.0) {
+@@ -134,7 +137,10 @@ static double copula_degree0_unsigned(const std::vector<double>& xv,
+     double dy = yv[i] - ty;
+     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
+     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
+-    if (!((dx < 0.0 && dy < 0.0) || (dx > 0.0 && dy > 0.0)))
++    // Discordant = neither co-lower (<= target) nor co-upper (> target), the
++    // same split as the two counts above, so the degree-0 frequencies
++    // partition the cell (a tie used to count as co-lower AND discordant).
++    if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
+       dpm_d0_count += 1.0;
+   }
+   
+-- 
+2.43.0
+

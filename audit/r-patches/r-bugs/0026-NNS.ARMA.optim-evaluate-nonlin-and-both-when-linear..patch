@@ -1,0 +1,51 @@
+From 5aae7c7d2aa3da665da547922cdca8465795195f Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:42:42 +0000
+Subject: [PATCH 26/61] NNS.ARMA.optim: evaluate nonlin and both when
+ linear.approximation = FALSE
+
+Without the linear approximation the nonlin and both stages computed no
+objective at all: nns.estimates.indiv stayed numeric(), min() of it is
+Inf, and those methods could never win, so linear.approximation = FALSE
+silently returned the lin-only answer (in 0.02 s). The docs describe
+FALSE as 'a more exhaustive search over the objective space'.
+
+Score every candidate seasonal set with NNS.ARMA(method = j) in those
+stages, using the same greedy path search as the lin stage.
+
+Before -> after (AirPassengers[1:132], h = 12,
+seasonal.factor = c(6,12,18,24), linear.approximation = FALSE):
+  method lin,  periods 12,     obj.fn 0.07894 (= lin.only = TRUE)
+  method both, periods 12 24,  obj.fn 0.04621 (= Python nns_arma_optim)
+linear.approximation = TRUE (the default) is unchanged.
+---
+ R/ARMA_optim.R | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/R/ARMA_optim.R b/R/ARMA_optim.R
+index a086f27..eda47b0 100644
+--- a/R/ARMA_optim.R
++++ b/R/ARMA_optim.R
+@@ -235,6 +235,19 @@ NNS.ARMA.optim <- function(variable,
+         nns.estimates.indiv <- unlist(nns.estimates.indiv)
+       }
+       
++      if(j != "lin" && !linear.approximation){
++        # Exhaustive search: score every candidate seasonal set with the
++        # method itself (previously nothing was evaluated here, so nonlin and
++        # both could never be selected).
++        nns.estimates.indiv <- unlist(lapply(1:ncol(seasonal.combs[[i]]), function(k) {
++          actual <- tail(variable, h_eval)
++          predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval,
++                                seasonal.factor = seasonal.combs[[i]][, k], method = j,
++                                plot = FALSE, negative.values = negative.values)
++          eval(obj.fn)
++        }))
++      }
++      
+       if(j=="nonlin" && linear.approximation){
+         # Find the min (obj.fn) for a given seasonals sequence
+         actual <- tail(variable, h_eval)
+-- 
+2.43.0
+

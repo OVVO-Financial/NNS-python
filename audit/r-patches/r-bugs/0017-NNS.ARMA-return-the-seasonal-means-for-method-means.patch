@@ -1,0 +1,36 @@
+From b33e9f34794bc86f89a787bb2c0ded12ced9a2e1 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:36:44 +0000
+Subject: [PATCH 17/61] NNS.ARMA: return the seasonal means for method =
+ "means"
+
+In the recursive path Estimates[j] was assigned only for "lin", "both"
+and "nonlin"; the means estimate computed into Lin.estimates was thrown
+away, so method = "means" always returned a vector of zeros (and
+pred.int failed because meboot of a constant vector fails). The Rd says
+"Means for each subset are returned with (method = "means")".
+
+Before -> after, NNS.ARMA(AirPassengers, h = 4, method = "means"):
+  seasonal.factor = 12        0 0 0 0 -> 241.75 235 270.17 267.08
+                              (241.75 = mean of the 12 January values)
+  seasonal.factor = c(12,24)  0 0 0 0 -> 236.15 230.13 266.97 262.74
+Other methods are unchanged.
+---
+ R/ARMA.R | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index 126b64e..8ee1b15 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -268,6 +268,7 @@ NNS.ARMA <- function(variable,
+       }
+       
+       if (method == "lin") Estimates[j] <- sum(Lin.estimates * Weights)
++      if (method == "means") Estimates[j] <- Lin.estimates
+       if (method == 'both') Estimates[j] <- mean(c(Lin.estimates, Nonlin.estimates))
+       if (method == "nonlin")  Estimates[j] <- sum(Nonlin.estimates * Weights)
+       
+-- 
+2.43.0
+

@@ -1,0 +1,5 @@
+suppressMessages(library(NNS)); set.seed(1); x <- rnorm(300); y <- x^2 + rnorm(300, sd=.1)
+a <- NNS.caus(x, y, tau=0, p.value=TRUE, nperm=50, seed=1); b <- NNS.caus(y, x, tau=0, p.value=TRUE, nperm=50, seed=1)
+cat("x,y:", names(a$causation)[3], a$causation[3], " observed_signed:", a$p.value$observed_signed, " p x_causes_y:", a$p.value$x_causes_y, " p y_causes_x:", a$p.value$y_causes_x, "\n")
+cat("y,x:", names(b$causation)[3], b$causation[3], " observed_signed:", b$p.value$observed_signed, " p x_causes_y:", b$p.value$x_causes_y, " p y_causes_x:", b$p.value$y_causes_x, "\n")
+cat("null range a:", range(a$p.value$null_distribution), " frac null >=0:", mean(a$p.value$null_distribution>=0), "\n")

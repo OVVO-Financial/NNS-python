@@ -1,0 +1,92 @@
+From 1d08b3e7c0e716e76c3a979c39a5d7d382e4d76d Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:54:27 +0000
+Subject: [PATCH 39/61] NNS.FSD/SSD/TSD (+ .uni): check NA without cbind()
+
+The missing-value check anyNA(cbind(x, y)) recycles the shorter sample,
+so every call with samples of unequal length warned "number of rows of
+result is not a multiple of vector length". Use anyNA(x) || anyNA(y).
+
+Before -> after: NNS.SSD(c(1,2,5), c(0,1,1,2,3)) "X SSD Y" + recycling
+warning -> "X SSD Y", no warning. NA input still stops with the same
+message. Results are unchanged.
+---
+ R/FSD.R             | 2 +-
+ R/SSD.R             | 2 +-
+ R/TSD.R             | 2 +-
+ R/Uni_SD_Routines.R | 6 +++---
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/R/FSD.R b/R/FSD.R
+index d3b3629..1897e60 100644
+--- a/R/FSD.R
++++ b/R/FSD.R
+@@ -41,7 +41,7 @@ NNS.FSD <- function(x, y, type = "discrete", plot = TRUE){
+   y <- to_numeric_vector(y, "y")
+ 
+ 
+-  if(anyNA(cbind(x,y))) stop("You have some missing values, please address.")
++  if(anyNA(x) || anyNA(y)) stop("You have some missing values, please address.")
+ 
+   Combined_sort <- sort(c(x, y), decreasing = FALSE)
+ 
+diff --git a/R/SSD.R b/R/SSD.R
+index 1519da3..343f645 100644
+--- a/R/SSD.R
++++ b/R/SSD.R
+@@ -33,7 +33,7 @@ NNS.SSD <- function(x, y, plot = TRUE){
+   x <- to_numeric_vector(x, "x")
+   y <- to_numeric_vector(y, "y")
+ 
+-  if(anyNA(cbind(x,y))) stop("You have some missing values, please address.")
++  if(anyNA(x) || anyNA(y)) stop("You have some missing values, please address.")
+ 
+   Combined_sort <- sort(c(x, y), decreasing = FALSE)
+ 
+diff --git a/R/TSD.R b/R/TSD.R
+index 0835cb8..331c6ed 100644
+--- a/R/TSD.R
++++ b/R/TSD.R
+@@ -32,7 +32,7 @@ NNS.TSD <- function(x, y, plot = TRUE){
+   x <- to_numeric_vector(x, "x")
+   y <- to_numeric_vector(y, "y")
+     
+-  if(anyNA(cbind(x,y))) stop("You have some missing values, please address.")
++  if(anyNA(x) || anyNA(y)) stop("You have some missing values, please address.")
+ 
+   Combined_sort <- sort(c(x, y), decreasing = FALSE)
+ 
+diff --git a/R/Uni_SD_Routines.R b/R/Uni_SD_Routines.R
+index a905788..3594f9a 100644
+--- a/R/Uni_SD_Routines.R
++++ b/R/Uni_SD_Routines.R
+@@ -33,7 +33,7 @@ NNS.FSD.uni <- function(x, y, type = "discrete"){
+   x <- to_numeric_vector(x, "x")
+   y <- to_numeric_vector(y, "y")
+   
+-  if(anyNA(cbind(x,y))) {
++  if(anyNA(x) || anyNA(y)) {
+     stop("You have some missing values, please address.")
+   }
+   
+@@ -76,7 +76,7 @@ NNS.SSD.uni <- function(x, y){
+   x <- to_numeric_vector(x, "x")
+   y <- to_numeric_vector(y, "y")
+   
+-  if(anyNA(cbind(x,y))) {
++  if(anyNA(x) || anyNA(y)) {
+     stop("You have some missing values, please address.")
+   }
+   
+@@ -115,7 +115,7 @@ NNS.TSD.uni <- function(x, y){
+   x <- to_numeric_vector(x, "x")
+   y <- to_numeric_vector(y, "y")
+   
+-  if(anyNA(cbind(x,y))) {
++  if(anyNA(x) || anyNA(y)) {
+     stop("You have some missing values, please address.")
+   }
+   
+-- 
+2.43.0
+

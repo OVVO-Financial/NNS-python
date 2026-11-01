@@ -1,0 +1,146 @@
+From 41c32972ab6ee787bafffd0b12b919fd2197212f Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:23:29 +0000
+Subject: [PATCH 02/61] LPM.ratio/UPM.ratio/Co.*/D.*/PM.matrix: reject
+ non-finite input
+
+LPM() and UPM() stop on NA/Inf, but the ratio and co-moment wrappers did
+no validation and counted NA observations in n. With x = c(1,2,3,NA,5):
+LPM.ratio(0,2,x) + UPM.ratio(0,2,x) = 0.8 and LPM.ratio(0,6,x) = 0.8 (a
+CDF beyond the maximum must be 1). NNS.CDF passes sort(variable), which
+drops NA, against the full variable, so a double vector with NA topped
+out below 1 (airquality$Ozone: max CDF 0.758 = 116/153).
+
+The C++ wrappers for LPM.ratio, UPM.ratio, Co.LPM, Co.UPM, D.LPM, D.UPM
+and PM.matrix now stop with "`<arg>` must be finite." as LPM() does.
+NNS.CDF drops missing observations (complete cases for a matrix) before
+evaluating, so its grid and denominator agree.
+
+Before -> after:
+  LPM.ratio(0, 2, c(1,2,3,NA,5))         0.4     -> error "`variable` must be finite."
+  Co.LPM(0, x, x, 6, 6)                  0.8     -> error "`x` must be finite."
+  NNS.CDF(airquality$Ozone)$CDF range    0.0065..0.758 (153 obs) -> 0.0086..1 (116 obs)
+  NNS.CDF(Ozone, target = 30)            error "missing value where TRUE/FALSE needed"
+                                         -> 0.491
+
+Finite inputs are unaffected. Callers passing NA directly to these
+functions now get an error instead of a silently wrong number.
+---
+ R/Partial_Moments.R          | 10 +++++++++-
+ src/partial_moments_rcpp.cpp | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/R/Partial_Moments.R b/R/Partial_Moments.R
+index d9f172f..7390af5 100644
+--- a/R/Partial_Moments.R
++++ b/R/Partial_Moments.R
+@@ -239,7 +239,15 @@ NNS.CDF <- function(variable,
+   if (any(class(variable) %in% c("tbl","data.table"))) {
+     variable <- as.data.frame(variable)
+   }
+-  
++
++  # — Drop missing observations (the sorted evaluation grid already drops
++  #   them; keeping them in the denominator capped the CDF below 1)
++  if (is.null(dim(variable))) {
++    variable <- variable[!is.na(variable)]
++  } else {
++    variable <- variable[stats::complete.cases(variable), , drop = FALSE]
++  }
++
+   # — Bounds check
+   if (!is.null(target)) {
+     if (is.null(dim(variable))||ncol(variable)==1) {
+diff --git a/src/partial_moments_rcpp.cpp b/src/partial_moments_rcpp.cpp
+index 1d00cc5..253968e 100644
+--- a/src/partial_moments_rcpp.cpp
++++ b/src/partial_moments_rcpp.cpp
+@@ -35,6 +35,14 @@ static inline bool is_supplied_target(const RObject &target) {
+     (is<NumericVector>(target) || is<IntegerVector>(target));
+ }
+ 
++// Same contract as LPM()/UPM(): NA/NaN/Inf are rejected instead of being
++// counted in n (which made e.g. LPM.ratio(0, max(x), x) < 1 with an NA).
++static inline void stop_if_not_finite(const NumericVector &v, const char *what) {
++  for (R_xlen_t i = 0; i < v.size(); ++i) {
++    if (!R_FINITE(v[i])) Rcpp::stop("`%s` must be finite.", what);
++  }
++}
++
+ 
+ // [[Rcpp::export(rng = false)]]
+ double CoLPM_nD_RCPP(const NumericMatrix &data,
+@@ -172,6 +180,8 @@ NumericVector UPM_RCPP(const double &degree,
+      target_vec = NumericVector(1);
+      target_vec[0] = mean(variable_vec);
+    }
++   stop_if_not_finite(variable_vec, "variable");
++   stop_if_not_finite(target_vec, "target");
+    return LPM_ratio_CPv(degree, target_vec, variable_vec);
+  }
+ 
+@@ -213,6 +223,8 @@ NumericVector UPM_RCPP(const double &degree,
+      target_vec = NumericVector(1);
+      target_vec[0] = mean(variable_vec);
+    }
++   stop_if_not_finite(variable_vec, "variable");
++   stop_if_not_finite(target_vec, "target");
+    return UPM_ratio_CPv(degree, target_vec, variable_vec);
+  }
+ 
+@@ -248,6 +260,10 @@ NumericVector CoLPM_RCPP(
+      target_y_vec = NumericVector(1);
+      target_y_vec[0] = mean(y_vec);
+    }
++   stop_if_not_finite(x_vec, "x");
++   stop_if_not_finite(y_vec, "y");
++   stop_if_not_finite(target_x_vec, "target_x");
++   stop_if_not_finite(target_y_vec, "target_y");
+    return CoLPM_CPv(degree_lpm, degree_y, x_vec, y_vec, target_x_vec, target_y_vec);
+  }
+ 
+@@ -283,6 +299,10 @@ NumericVector CoUPM_RCPP(
+      target_y_vec = NumericVector(1);
+      target_y_vec[0] = mean(y_vec);
+    }
++   stop_if_not_finite(x_vec, "x");
++   stop_if_not_finite(y_vec, "y");
++   stop_if_not_finite(target_x_vec, "target_x");
++   stop_if_not_finite(target_y_vec, "target_y");
+    return CoUPM_CPv(degree_upm, degree_y, x_vec, y_vec, target_x_vec, target_y_vec);
+  }
+ 
+@@ -336,6 +356,10 @@ NumericVector CoUPM_RCPP(
+      target_y_vec = NumericVector(1);
+      target_y_vec[0] = mean(y_vec);
+    }
++   stop_if_not_finite(x_vec, "x");
++   stop_if_not_finite(y_vec, "y");
++   stop_if_not_finite(target_x_vec, "target_x");
++   stop_if_not_finite(target_y_vec, "target_y");
+    return DLPM_CPv(degree_lpm, degree_upm, x_vec, y_vec, target_x_vec, target_y_vec);
+  }
+ 
+@@ -389,6 +413,10 @@ NumericVector CoUPM_RCPP(
+      target_y_vec = NumericVector(1);
+      target_y_vec[0] = mean(y_vec);
+    }
++   stop_if_not_finite(x_vec, "x");
++   stop_if_not_finite(y_vec, "y");
++   stop_if_not_finite(target_x_vec, "target_x");
++   stop_if_not_finite(target_y_vec, "target_y");
+    return DUPM_CPv(degree_lpm, degree_upm, x_vec, y_vec, target_x_vec, target_y_vec);
+  }
+ 
+@@ -430,6 +458,8 @@ NumericVector CoUPM_RCPP(
+      return List::create();
+    }
+    
++   stop_if_not_finite(variable_matrix, "variable");
++   stop_if_not_finite(tgt, "target");
+    return PMMatrix_CPv(LPM_degree, UPM_degree, tgt, variable_matrix, pop_adj, norm);
+  }
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,48 @@
+From 5202d5489caca9205b04d9d5fb0319f11be79f4d Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:43:18 +0000
+Subject: [PATCH 27/61] NNS.ARMA.optim: score the "both" stage with
+ NNS.ARMA(method = "both")
+
+With linear.approximation = TRUE the both stage scored the average of the
+separately forecast lin and nonlin paths, (lin + nonlin)/2, but the
+returned model (predicted, errors, results) is NNS.ARMA(method = "both"),
+which averages lin and nonlin inside the recursion. The reported obj.fn
+and the method choice therefore referred to a model that was never
+returned.
+
+Score NNS.ARMA(method = "both") directly.
+
+Before -> after:
+  AirPassengers[1:132], h = 12, sf = c(6,12,18,24):
+    both, obj.fn 0.03975 -> both, obj.fn 0.04633 (= objective of the
+    returned errors); results unchanged
+  AirPassengers, h = 12, sf = c(1,2,12) (and sf = 1:24):
+    both 12, obj.fn 0.09697, bias 15.86, results 452.2 423.8 464.0 494.8
+    -> nonlin 12, obj.fn 0.1160, bias 0.86, results 451.1 422.4 447.0 500.7
+Changes obj.fn whenever both is evaluated, and the selected method when
+the path average was the only reason both won.
+---
+ R/ARMA_optim.R | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/R/ARMA_optim.R b/R/ARMA_optim.R
+index eda47b0..0b8f7f8 100644
+--- a/R/ARMA_optim.R
++++ b/R/ARMA_optim.R
+@@ -262,8 +262,10 @@ NNS.ARMA.optim <- function(variable,
+         # Find the min (obj.fn) for a given seasonals sequence
+         actual <- tail(variable, h_eval)
+         
+-        lin.predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = unlist(overall.seasonals[[1]]), method = "lin", plot = FALSE, negative.values = negative.values)
+-        predicted <- both.predicted <- (lin.predicted + nonlin.predicted) / 2
++        # Score the model that is returned: NNS.ARMA(method = "both") averages
++        # lin and nonlin inside the recursion, which differs from averaging the
++        # two separately forecast paths.
++        predicted <- both.predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = unlist(overall.seasonals[[1]]), method = "both", plot = FALSE, negative.values = negative.values)
+         
+         nns.estimates.indiv <- eval(obj.fn)
+       }
+-- 
+2.43.0
+

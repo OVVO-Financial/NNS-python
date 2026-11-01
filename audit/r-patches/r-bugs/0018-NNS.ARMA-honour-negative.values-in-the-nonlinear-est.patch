@@ -1,0 +1,40 @@
+From 8db15ae2527c91c899356e06140d33f8c15b22a7 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:37:07 +0000
+Subject: [PATCH 18/61] NNS.ARMA: honour negative.values in the nonlinear
+ estimates
+
+The per-lag nonlinear estimates were always clipped with pmax(0, .),
+while the linear branch is guarded by if(!negative.values). Every nonlin
+(and the nonlin half of "both") forecast of returns, spreads or demeaned
+data was floored at 0, even with negative.values = TRUE or when negative
+values were auto-detected from the series.
+
+Before -> after: 3*sin(2*pi*t/12) + N(0, 0.5^2), t = 1..240 (seed 1),
+NNS.ARMA(s, h = 12, seasonal.factor = 12, negative.values = TRUE):
+  1.63 2.76 2.46 1.01 1.16 0.34  0      0      0      0      0     0.02
+  1.63 2.76 2.46 1.01 1.16 0.34 -1.52 -2.66 -2.67 -3.26 -0.91  0.02
+  (true signal for months 7..11: -1.5 -2.6 -3.0 -2.6 -1.5)
+
+Series that stay non-negative (negative.values = FALSE) are unchanged
+(AirPassengers nonlin/lin/both identical).
+---
+ R/ARMA.R | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index 8ee1b15..7779bec 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -243,7 +243,7 @@ NNS.ARMA <- function(variable,
+           last.y + (rise / run)
+         })
+         
+-        Regression.Estimates <- pmax(0, Regression.Estimates)
++        if(!negative.values) Regression.Estimates <- pmax(0, Regression.Estimates)
+         Nonlin.estimates <- sum(Regression.Estimates * Weights)
+       }
+       
+-- 
+2.43.0
+

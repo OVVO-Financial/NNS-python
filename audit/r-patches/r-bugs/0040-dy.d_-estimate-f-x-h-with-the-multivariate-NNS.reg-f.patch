@@ -1,0 +1,70 @@
+From cebf75053fc2fadbc73499f83a34f7f9cc8a9b5b Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:56:37 +0000
+Subject: [PATCH 40/61] dy.d_: estimate f(x +/- h) with the multivariate
+ NNS.reg fit
+
+The finite-difference estimates came from NNS.stack on the equal-weight
+synthetic regressor Xstar = rowMeans(x), for both the training data and
+the evaluation points. f(x +/- h e_j) then depended only on mean(x), so
+every regressor received about the index-model slope / p regardless of
+its true effect: for y = 2*x1 the derivative wrt the irrelevant x2 was
+about 1. Use the multivariate NNS.reg fit on the actual regressors (the
+roxygen already says 'NNS.reg estimates as f(x + h) and f(x - h)').
+
+Before -> after (work/REG/diff/dyd2.R and dyd.csv):
+  y = 2*x1, n = 500, points (-1,0), (0,1), (1,-1):
+    dy/dx1 (truth 2):  0.825 0.783 1.050 -> 1.251 1.470 1.288
+    dy/dx2 (truth 0):  1.067 0.826 0.897 -> -0.021 -0.002 0.049
+  y = x1^2 + 3*x2 at x1 = (-1, 0, 1, 1.5):
+    dy/dx1 (truth -2 0 2 3): 1.059 1.581 1.486 1.494 -> -0.260 0.022 0.212 0.466
+    dy/dx2 (truth 3):        1.53 1.47 1.60 1.45 -> 1.84 1.76 1.94 1.86
+  runtime of that script 3.5 s -> 0.7 s
+
+Signs and relative effects are now right; magnitudes remain attenuated
+by the wide default bandwidths and the smoothing of the multivariate fit
+(see R_PROPOSALS.md). All dy.d_ results change.
+---
+ R/dy_d_wrt.R | 24 +++++++++++-------------
+ 1 file changed, 11 insertions(+), 13 deletions(-)
+
+diff --git a/R/dy_d_wrt.R b/R/dy_d_wrt.R
+index 76732c0..41deaa5 100644
+--- a/R/dy_d_wrt.R
++++ b/R/dy_d_wrt.R
+@@ -115,21 +115,19 @@ dy.d_ <- function(x, y, wrt,
+                           x)
+   }
+ 
+-  # ---- Estimates: NNS.stack on the equal-weight synthetic regressor X* -------
++  # ---- Estimates: multivariate NNS.reg on the actual regressors -------------
++  # f(x +/- h e_wrt) must come from a model that can tell the regressors
++  # apart. The previous equal-weight index rowMeans(x) made every evaluation
++  # depend on mean(x) only, so each regressor got ~ the index slope, whatever
++  # its true effect (y = 2*x1 gave dy/dx2 ~ 1).
+   stack.est <- function(train, resp, pts) {
+-    xs <- as.numeric(rowMeans(as.matrix(train)))
+-    ps <- as.numeric(rowMeans(as.matrix(pts)))
+-    as.numeric(NNS.stack(
+-      IVs.train = cbind(Xstar = xs, Xstar2 = xs),
+-      DV.train = resp,
+-      IVs.test = cbind(Xstar = ps, Xstar2 = ps),
+-      method = c(1, 2),
+-      dim.red.method = "equal",
+-      order = "max",
+-      folds = 5,
+-      status = FALSE,
++    as.numeric(NNS.reg(
++      as.matrix(train), resp,
++      point.est = as.matrix(pts),
++      order = NULL,
++      plot = FALSE,
+       ncores = 1
+-    )$stack)
++    )$Point.est)
+   }
+ 
+   # ---- dy.dx() locally-adaptive step -----------------------------------------
+-- 
+2.43.0
+

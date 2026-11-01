@@ -1,0 +1,93 @@
+From 06ec89ade1e4bea0d1bb90e445e67244f3e6c901 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:37:59 +0000
+Subject: [PATCH 19/61] NNS.ARMA: apply weights once, as relative weights
+
+In the recursive path Lin.estimates and Nonlin.estimates are already
+sum(estimate * Weights); "lin" and "nonlin" then multiplied by the
+weights a second time (sum(Lin.estimates * Weights)), so forecasts were
+scaled by sum(w): no effect for weights summing to 1, but c(1,1) gave
+4x for lin/nonlin and 2x for "both" (which weights once), and a single
+lag with weights = 0.5 gave 0.25x for nonlin but 0.5x for the vectorised
+lin path. A wrong-length weights vector was silently recycled, and
+weights = "equal" (documented) crashed with a numeric seasonal.factor.
+
+Apply the weights once; treat user weights as relative (rescaled to sum
+to 1); require one weight per lag; accept "equal" for numeric
+seasonal.factor too. Roxygen and Rd document this.
+
+Before -> after (AirPassengers, h = 3, seasonal.factor = c(12,24)):
+  lin    weights c(1,1)   1660.6 1557.6 1812.3 -> 415.1 389.4 453.1 (= c(.5,.5))
+  nonlin weights c(1,1)   1727.9 1623.9 1821.5 -> 432.0 406.0 455.4
+  both   weights c(1,1)    847.1  795.4  908.5 -> 423.6 397.7 454.2
+  sf = 12, weights = .5 nonlin 112.6 105.4 111.5 -> 450.3 421.5 446.1 (= no weights)
+  weights = 1 for 2 lags   864 812 911 -> error (length mismatch)
+  weights = "equal"        error -> 432.0 406.0 455.4
+Weights that sum to 1 (and weights = NULL) give unchanged results.
+---
+ R/ARMA.R        | 19 ++++++++++++++++---
+ man/NNS.ARMA.Rd |  2 +-
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/R/ARMA.R b/R/ARMA.R
+index 7779bec..c811c90 100644
+--- a/R/ARMA.R
++++ b/R/ARMA.R
+@@ -10,7 +10,7 @@
+ #' @param seasonal.factor logical or integer(s); \code{TRUE} (default) Automatically selects the best seasonal lag from the seasonality test.  To use weighted average of all seasonal lags set to \code{(seasonal.factor = FALSE)}.  Otherwise, directly input known frequency integer lag to use, i.e. \code{(seasonal.factor = 12)} for monthly data.  Multiple frequency integers can also be used, i.e. \code{(seasonal.factor = c(12, 24, 36))}
+ #' @param modulo integer(s); NULL (default) Used to find the nearest multiple(s) in the reported seasonal period.
+ #' @param mod.only logical; \code{TRUE} (default) Limits the number of seasonal periods returned to the specified \code{modulo}.
+-#' @param weights numeric or \code{"equal"}; \code{NULL} (default) sets the weights of the \code{seasonal.factor} vector when specified as integers.  If \code{(weights = NULL)} each \code{seasonal.factor} is weighted on its \link{NNS.seas} result and number of observations it contains, else an \code{"equal"} weight is used.
++#' @param weights numeric or \code{"equal"}; \code{NULL} (default) sets the weights of the \code{seasonal.factor} vector when specified as integers.  If \code{(weights = NULL)} each \code{seasonal.factor} is weighted on its \link{NNS.seas} result and number of observations it contains, else an \code{"equal"} weight is used.  Numeric weights must have one value per seasonal lag and are treated as relative weights (rescaled to sum to 1).
+ #' @param best.periods integer; [2] (default) used in conjunction with \code{(seasonal.factor = FALSE)}, uses the \code{best.periods} number of detected seasonal lags instead of \code{ALL} lags when
+ #' \code{(seasonal.factor = FALSE, best.periods = NULL)}.
+ #' @param negative.values logical; \code{FALSE} (default) If the variable can be negative, set to
+@@ -153,6 +153,18 @@ NNS.ARMA <- function(variable,
+     
+   }
+   
++  # User-supplied weights: "equal", or one numeric weight per lag, used as
++  # relative weights (normalised to sum to 1) and applied once per estimate.
++  if(!is.null(weights)){
++    if(is.character(weights)){
++      Weights <- rep(1/length(lag), length(lag))
++    } else {
++      if(length(weights) != length(lag)) stop("weights must have one value per seasonal lag (length(weights) == length(seasonal.factor)).")
++      if(!all(is.finite(weights)) || sum(weights) == 0) stop("weights must be finite and must not sum to 0.")
++      Weights <- weights / sum(weights)
++    }
++  }
++  
+   # Vectorized linear
+   Lin.Reg.Estimates <- list()
+   Regression.Estimates_means <- list()
+@@ -267,10 +279,11 @@ NNS.ARMA <- function(variable,
+         if(!negative.values)  Lin.estimates <- pmax(0, Lin.estimates)
+       }
+       
+-      if (method == "lin") Estimates[j] <- sum(Lin.estimates * Weights)
++      # Lin.estimates / Nonlin.estimates are already weighted sums over lags.
++      if (method == "lin") Estimates[j] <- Lin.estimates
+       if (method == "means") Estimates[j] <- Lin.estimates
+       if (method == 'both') Estimates[j] <- mean(c(Lin.estimates, Nonlin.estimates))
+-      if (method == "nonlin")  Estimates[j] <- sum(Nonlin.estimates * Weights)
++      if (method == "nonlin")  Estimates[j] <- Nonlin.estimates
+       
+       variable <- c(variable, Estimates[j])
+       FV <- variable
+diff --git a/man/NNS.ARMA.Rd b/man/NNS.ARMA.Rd
+index 2e6ae46..5c64ed7 100644
+--- a/man/NNS.ARMA.Rd
++++ b/man/NNS.ARMA.Rd
+@@ -33,7 +33,7 @@ NNS.ARMA(
+ 
+ \item{seasonal.factor}{logical or integer(s); \code{TRUE} (default) Automatically selects the best seasonal lag from the seasonality test.  To use weighted average of all seasonal lags set to \code{(seasonal.factor = FALSE)}.  Otherwise, directly input known frequency integer lag to use, i.e. \code{(seasonal.factor = 12)} for monthly data.  Multiple frequency integers can also be used, i.e. \code{(seasonal.factor = c(12, 24, 36))}}
+ 
+-\item{weights}{numeric or \code{"equal"}; \code{NULL} (default) sets the weights of the \code{seasonal.factor} vector when specified as integers.  If \code{(weights = NULL)} each \code{seasonal.factor} is weighted on its \link{NNS.seas} result and number of observations it contains, else an \code{"equal"} weight is used.}
++\item{weights}{numeric or \code{"equal"}; \code{NULL} (default) sets the weights of the \code{seasonal.factor} vector when specified as integers.  If \code{(weights = NULL)} each \code{seasonal.factor} is weighted on its \link{NNS.seas} result and number of observations it contains, else an \code{"equal"} weight is used.  Numeric weights must have one value per seasonal lag and are treated as relative weights (rescaled to sum to 1).}
+ 
+ \item{best.periods}{integer; [2] (default) used in conjunction with \code{(seasonal.factor = FALSE)}, uses the \code{best.periods} number of detected seasonal lags instead of \code{ALL} lags when
+ \code{(seasonal.factor = FALSE, best.periods = NULL)}.}
+-- 
+2.43.0
+

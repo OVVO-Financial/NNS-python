@@ -1,0 +1,46 @@
+From 8375a6e0f2646cdf876af21d3de5dd042f051873 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:38:36 +0000
+Subject: [PATCH 4/7] central_tendencies: clamp the mirrored index in
+ smooth_counts_tri7
+
+The continuous NNS.mode smooths the histogram with a 7-tap kernel and
+mirrors indices at the edges (counts[-idx], counts[2n-2-idx]), which
+assumes at least 4 bins. With 3 or fewer bins it reads past the end of
+the count vector: NNS.mode(c(0, 0, 1, 1)) triggers an ASan
+heap-buffer-overflow READ of size 4, 0 bytes past a 12-byte region.
+Inputs with 4-5 observations often produce 3 bins.
+
+Clamp the reflected index to [0, n - 1]. For n >= 4 the clamp never
+binds, so the smoothed series is unchanged; for n <= 3 the smoothed
+values are never consumed (the peak scan needs at least 7 bins). No
+result changes.
+---
+ src/central_tendencies.cpp | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/central_tendencies.cpp b/src/central_tendencies.cpp
+index 76f090b..157598f 100644
+--- a/src/central_tendencies.cpp
++++ b/src/central_tendencies.cpp
+@@ -246,10 +246,14 @@ static void smooth_counts_tri7(const std::vector<int>& counts, std::vector<doubl
+   smooth.assign(n, 0.0);
+   if (n == 0) return;
+   
+-  // Mirror at edges (symmetric extension)
++  // Mirror at edges (symmetric extension).  The reflected index is clamped
++  // to [0, n-1]: for n >= 4 bins the clamp never binds, and for n <= 3 the
++  // plain mirror read past the end of counts (heap over-read).  Those
++  // smoothed values are never used (the peak scan needs n >= 7 bins).
+   auto at = [&](int idx)->int{
+-    if (idx < 0)   return counts[-idx];            // reflect: -1 -> 1, -2 -> 2, ...
+-    if (idx >= n)  return counts[2*n - 2 - idx];   // reflect: n -> n-2, n+1 -> n-3, ...
++    if (idx < 0)   idx = -idx;                     // reflect: -1 -> 1, -2 -> 2, ...
++    if (idx >= n)  idx = 2*n - 2 - idx;            // reflect: n -> n-2, n+1 -> n-3, ...
++    idx = std::min(std::max(idx, 0), n - 1);
+     return counts[idx];
+   };
+   
+-- 
+2.43.0
+

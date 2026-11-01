@@ -1,0 +1,56 @@
+From 9219a12e0c1cc00cbe7a7dd8643a48d044a2f398 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:46:56 +0000
+Subject: [PATCH 30/61] NNS.boost: return response values for a two-valued
+ numeric response
+
+NNS.boost treats a numeric response as a regression unless type =
+"CLASS", but its final NNS.stack call auto-classifies a numeric response
+with exactly two unique values and returns integer class codes 1/2. Those
+codes were passed through as regression estimates, so a {0,1} or {-5,5}
+response came back as 1s and 2s.
+
+When the final stack reports class levels for a regression boost, map
+its codes (results and pred.int) back to the response values.
+
+Before -> after (iris rows 1:140 predicting setosa, test rows 141:150,
+truth all non-setosa; epochs = 5, learner.trials = 5, seed = 1):
+  y = 0/1          1 1 1 ... 1 -> 0 0 0 ... 0
+  y = -5/5         1 1 1 ... 1 -> -5 -5 ... -5 (pred.int 1/1 -> -5/-5)
+Continuous and factor responses are unchanged.
+---
+ R/Boost.R | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/R/Boost.R b/R/Boost.R
+index 4b51e46..77f17f0 100644
+--- a/R/Boost.R
++++ b/R/Boost.R
+@@ -924,6 +924,24 @@ NNS.boost <- function(IVs.train,
+   results <- final.stack$reg
+   pred.int.output <- final.stack$reg.pred.int
+   
++  # NNS.stack auto-classifies a two-valued numeric response even when boost
++  # treats it as a regression (type = NULL); its output is then integer class
++  # codes 1/2. Map those codes back to the response values.
++  if (!is_class && !is.null(final.stack$class.levels)) {
++    stack_values <- as.numeric(final.stack$class.levels)
++    .decode_stack_codes <- function(v) {
++      v <- as.numeric(v)
++      ok <- is.finite(v)
++      v[ok] <- stack_values[pmin(pmax(as.integer(round(v[ok])), 1L), length(stack_values))]
++      v
++    }
++    results <- .decode_stack_codes(results)
++    if (!is.null(pred.int.output)) {
++      pred.int.output <- as.data.frame(pred.int.output)
++      pred.int.output[] <- lapply(pred.int.output, .decode_stack_codes)
++    }
++  }
++  
+   estimates_code <- .sanitize_predictions(results, y)
+   pred_int_out <- pred.int.output
+   
+-- 
+2.43.0
+

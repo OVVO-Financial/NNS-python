@@ -1,0 +1,329 @@
+From 3cd09924f2912898860030b757129d00f06b8637 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 02:08:23 +0000
+Subject: [PATCH 57/61] NNS.caus / NNS.dep: remove dead and duplicated code
+
+- Uni.caus: drop the unused xy <- NNS.norm(cbind(x, y), ...) (one
+  extra normalisation per call) and the junk list(tau + 1) / named
+  numeric(0) placeholders of the lag lists.
+- NNS.caus_core: drop the 'recompute when equal or zero' blocks; they
+  re-ran Uni.caus with identical deterministic inputs, doubling the cost
+  on exactly those inputs.
+- NNS.dep.matrix: drop the unused order / degree arguments and the dead
+  'if (nrow(x) < 20) order <- 2'.
+- NNS_dep.cpp: delete the exported but never called NNS_dep_matrix_cpp
+  (and its workers), which used a different, mean-centred partition;
+  RcppExports regenerated with Rcpp::compileAttributes (only those
+  entries removed).
+
+Results are unchanged: NNS.caus with tau 0, 1, 3, "cs", "ts", the
+causation matrix, NNS.caus(x, x), NNS.dep matrices (sym and asym) and
+NNS.reg(dim.red.method = "NNS.caus") are identical() before and after.
+---
+ R/Dependence.R      |   4 +-
+ R/RcppExports.R     |   4 --
+ R/Uni_Causation.R   |  22 +-----
+ src/NNS_dep.cpp     | 161 +-------------------------------------------
+ src/RcppExports.cpp |  13 ----
+ 5 files changed, 4 insertions(+), 200 deletions(-)
+
+diff --git a/R/Dependence.R b/R/Dependence.R
+index 07da910..8fedf84 100644
+--- a/R/Dependence.R
++++ b/R/Dependence.R
+@@ -177,7 +177,7 @@ NNS.dep <- function(x,
+ }
+ 
+ 
+-NNS.dep.matrix <- function(x, order = NULL, degree = NULL, asym = FALSE){
++NNS.dep.matrix <- function(x, asym = FALSE){
+   
+   n <- ncol(x)
+   if(is.null(n)){
+@@ -188,8 +188,6 @@ NNS.dep.matrix <- function(x, order = NULL, degree = NULL, asym = FALSE){
+   
+   x <- data.matrix(x)
+   
+-  if(nrow(x) < 20 ) order <- 2
+-  
+   upper_lower <- function(x, y, asym){
+     basic_dep <- NNS.dep(x, y, print.map = FALSE, asym = asym)
+     if(asym){
+diff --git a/R/RcppExports.R b/R/RcppExports.R
+index c601b70..304fa6f 100644
+--- a/R/RcppExports.R
++++ b/R/RcppExports.R
+@@ -5,10 +5,6 @@ NNS_dep_pair_cpp <- function(x, y, quad_xy, quad_yx, asym = FALSE) {
+     .Call(`_NNS_NNS_dep_pair_cpp`, x, y, quad_xy, quad_yx, asym)
+ }
+ 
+-NNS_dep_matrix_cpp <- function(X, asym = FALSE) {
+-    .Call(`_NNS_NNS_dep_matrix_cpp`, X, asym)
+-}
+-
+ NNS_distance_cpp <- function(X, yhat, dest, k, use_class) {
+     .Call(`_NNS_NNS_distance_cpp`, X, yhat, dest, k, use_class)
+ }
+diff --git a/R/Uni_Causation.R b/R/Uni_Causation.R
+index 38b87d2..46510fb 100644
+--- a/R/Uni_Causation.R
++++ b/R/Uni_Causation.R
+@@ -3,18 +3,14 @@ Uni.caus <- function(x, y, tau, plot = TRUE){
+   if(tau=="cs") tau <- 0
+   if(tau=="ts") tau <- 3
+ 
+-  xy <- NNS.norm(cbind(x, y), linear = FALSE, chart.type = NULL)
+-
+   min.length <- min(length(x), length(y))
+ 
+-  x.vectors <- list(tau+1)
+-  y.vectors <- list(tau+1)
++  x.vectors <- vector("list", tau + 1)
++  y.vectors <- vector("list", tau + 1)
+ 
+   ## Create tau vectors
+   if(tau > 0){
+     for (i in 0:tau){
+-        x.vectors[[paste('x.tau.', i, sep = "")]] <- numeric(0L)
+-        y.vectors[[paste('y.tau.', i, sep = "")]] <- numeric(0L)
+         start <- tau - i + 1
+         end <- min.length - i
+         x.vectors[[i + 1]] <- x[start : end]
+@@ -179,13 +175,6 @@ NNS.caus_core <- function(x, y = NULL,
+       Causation.y.given.x <- Uni.caus(y, x, tau = tau, plot = FALSE)
+       Causation.x.given.y[is.na(Causation.x.given.y)] <- 0
+       Causation.y.given.x[is.na(Causation.y.given.x)] <- 0
+-      if(Causation.x.given.y == Causation.y.given.x ||
+-         Causation.x.given.y == 0 || Causation.y.given.x == 0){
+-        Causation.x.given.y <- Uni.caus(x, y, tau = tau, plot = FALSE)
+-        Causation.y.given.x <- Uni.caus(y, x, tau = tau, plot = FALSE)
+-        Causation.x.given.y[is.na(Causation.x.given.y)] <- 0
+-        Causation.y.given.x[is.na(Causation.y.given.x)] <- 0
+-      }
+     }
+     
+     if(identical(tau, "cs")){
+@@ -193,13 +182,6 @@ NNS.caus_core <- function(x, y = NULL,
+       Causation.y.given.x <- Uni.caus(y, x, tau = 0, plot = FALSE)
+       Causation.x.given.y[is.na(Causation.x.given.y)] <- 0
+       Causation.y.given.x[is.na(Causation.y.given.x)] <- 0
+-      if(Causation.x.given.y == Causation.y.given.x ||
+-         Causation.x.given.y == 0 || Causation.y.given.x == 0){
+-        Causation.x.given.y <- Uni.caus(x, y, tau = 0, plot = FALSE)
+-        Causation.y.given.x <- Uni.caus(y, x, tau = 0, plot = FALSE)
+-        Causation.x.given.y[is.na(Causation.x.given.y)] <- 0
+-        Causation.y.given.x[is.na(Causation.y.given.x)] <- 0
+-      }
+     }
+     
+     if(identical(tau, "ts")){
+diff --git a/src/NNS_dep.cpp b/src/NNS_dep.cpp
+index 6b4155a..4ae8040 100644
+--- a/src/NNS_dep.cpp
++++ b/src/NNS_dep.cpp
+@@ -3,7 +3,7 @@
+ //
+ // Exported functions (called from R):
+ //   NNS_dep_pair_cpp    - bivariate dependence given pre-computed partition labels
+-//   NNS_dep_matrix_cpp  - full pairwise dependence matrix, parallelized
++// (NNS.dep's matrix form loops over NNS_dep_pair_cpp in R/Dependence.R.)
+ //
+ // [[Rcpp::depends(RcppParallel)]]
+ // [[Rcpp::plugins(cpp17)]]
+@@ -273,162 +273,3 @@ List NNS_dep_pair_cpp(NumericVector x,
+   return List::create(_["Correlation"] = res.correlation,
+                       _["Dependence"]  = res.dependence);
+ }
+-
+-struct PrecomputePartitionsWorker : public Worker {
+-  const RMatrix<double> X;
+-  const int n_obs;
+-  const int obs_req;
+-  std::vector<std::vector<uint64_t>>& all_quads;
+-  
+-  PrecomputePartitionsWorker(const NumericMatrix& X_, int obs_req_, std::vector<std::vector<uint64_t>>& all_quads_)
+-    : X(X_), n_obs(X_.nrow()), obs_req(obs_req_), all_quads(all_quads_) {}
+-  
+-  void operator()(std::size_t begin, std::size_t end) {
+-    for (std::size_t j = begin; j < end; ++j) {
+-      int max_order = std::max(1, static_cast<int>(std::floor(std::log2(std::max(1, n_obs)))));
+-      std::vector<uint64_t> quad(n_obs, 1);
+-      
+-      for (int depth = 0; depth < max_order; ++depth) {
+-        std::unordered_map<uint64_t, std::vector<int>> grp;
+-        grp.reserve(n_obs);
+-        for (int i = 0; i < n_obs; ++i) grp[quad[i]].push_back(i);
+-        
+-        bool any_split = false;
+-        for (auto& kv : grp) {
+-          const auto& idx = kv.second;
+-          if (static_cast<int>(idx.size()) <= obs_req) continue;
+-          
+-          double cx = 0.0;
+-          for (int i : idx) cx += X(i, j);
+-          cx /= static_cast<double>(idx.size());
+-          
+-          for (int i : idx) {
+-            quad[i] = (quad[i] << 2) | ((X(i, j) > cx) ? 2 : 1);
+-          }
+-          
+-          any_split = true;
+-        }
+-        if (!any_split) break;
+-      }
+-      all_quads[j] = std::move(quad);
+-    }
+-  }
+-};
+-
+-struct DepMatrixWorker : public Worker {
+-  const RMatrix<double> X;
+-  const int n_obs;
+-  const int n_vars;
+-  const bool asym;
+-  const std::vector<std::vector<uint64_t>>& all_quads;
+-  
+-  RVector<double> corr_upper;
+-  RVector<double> dep_upper;
+-  RVector<double> corr_lower;
+-  RVector<double> dep_lower;
+-  
+-  std::vector<int> pair_i, pair_j;
+-  
+-  DepMatrixWorker(const NumericMatrix& X_,
+-                  bool asym_,
+-                  const std::vector<std::vector<uint64_t>>& all_quads_,
+-                  NumericVector& cu,
+-                  NumericVector& du,
+-                  NumericVector& cl,
+-                  NumericVector& dl)
+-    : X(X_), n_obs(X_.nrow()), n_vars(X_.ncol()), asym(asym_), all_quads(all_quads_),
+-      corr_upper(cu), dep_upper(du), corr_lower(cl), dep_lower(dl)
+-  {
+-    int np = n_vars * (n_vars - 1) / 2;
+-    pair_i.reserve(np); pair_j.reserve(np);
+-    for (int i = 0; i < n_vars - 1; ++i) {
+-      for (int j = i + 1; j < n_vars; ++j) {
+-        pair_i.push_back(i);
+-        pair_j.push_back(j);
+-      }
+-    }
+-  }
+-  
+-  void operator()(std::size_t begin, std::size_t end) {
+-    for (std::size_t p = begin; p < end; ++p) {
+-      int ci = pair_i[p];
+-      int cj = pair_j[p];
+-      
+-      const std::vector<uint64_t>& q_xy = all_quads[ci];
+-      const std::vector<uint64_t>& q_yx = all_quads[cj];
+-      
+-      std::vector<double> xnv(n_obs), ynv(n_obs);
+-      for (int r = 0; r < n_obs; ++r) {
+-        xnv[r] = X(r, ci);
+-        ynv[r] = X(r, cj);
+-      }
+-      
+-      DepResult res_ij = NNS_dep_pair_core(xnv, ynv, q_xy, q_yx, asym);
+-      corr_upper[p] = res_ij.correlation;
+-      dep_upper[p]  = res_ij.dependence;
+-      
+-      if (asym) {
+-        DepResult res_ji = NNS_dep_pair_core(ynv, xnv, q_yx, q_xy, true);
+-        corr_lower[p] = res_ji.correlation;
+-        dep_lower[p]  = res_ji.dependence;
+-      } else {
+-        corr_lower[p] = corr_upper[p];
+-        dep_lower[p]  = dep_upper[p];
+-      }
+-    }
+-  }
+-};
+-
+-// [[Rcpp::export]]
+-List NNS_dep_matrix_cpp(NumericMatrix X, bool asym = false) {
+-  int n_vars = X.ncol();
+-  int n_obs  = X.nrow();
+-  if (n_vars < 2)
+-    stop("NNS_dep_matrix_cpp: X must have at least 2 columns");
+-  
+-  int n_pairs = n_vars * (n_vars - 1) / 2;
+-  
+-  int obs_req = std::max(8, n_obs / 8);
+-  std::vector<std::vector<uint64_t>> all_quads(n_vars);
+-  PrecomputePartitionsWorker partitioner(X, obs_req, all_quads);
+-  parallelFor(0, n_vars, partitioner);
+-  
+-  NumericVector corr_upper(n_pairs, 0.0);
+-  NumericVector dep_upper (n_pairs, 0.0);
+-  NumericVector corr_lower(n_pairs, 0.0);
+-  NumericVector dep_lower (n_pairs, 0.0);
+-  
+-  DepMatrixWorker worker(X, asym, all_quads, corr_upper, dep_upper, corr_lower, dep_lower);
+-  parallelFor(0, n_pairs, worker);
+-  
+-  NumericMatrix rhos(n_vars, n_vars);
+-  NumericMatrix deps(n_vars, n_vars);
+-  for (int i = 0; i < n_vars; ++i) { rhos(i, i) = 1.0; deps(i, i) = 1.0; }
+-  
+-  {
+-    int p = 0;
+-    for (int i = 0; i < n_vars - 1; ++i) {
+-      for (int j = i + 1; j < n_vars; ++j, ++p) {
+-        if (!asym) {
+-          double r = (corr_upper[p] + corr_lower[p]) / 2.0;
+-          double d = (dep_upper[p]  + dep_lower[p])  / 2.0;
+-          rhos(i, j) = r; rhos(j, i) = r;
+-          deps(i, j) = d; deps(j, i) = d;
+-        } else {
+-          rhos(i, j) = corr_upper[p];
+-          deps(i, j) = dep_upper[p];
+-          rhos(j, i) = corr_lower[p];
+-          deps(j, i) = dep_lower[p];
+-        }
+-      }
+-    }
+-  }
+-  
+-  CharacterVector cn = colnames(X);
+-  if (cn.size() == n_vars) {
+-    colnames(rhos) = cn; rownames(rhos) = cn;
+-    colnames(deps) = cn; rownames(deps) = cn;
+-  }
+-  
+-  return List::create(_["Correlation"] = rhos, _["Dependence"]  = deps);
+-}
+diff --git a/src/RcppExports.cpp b/src/RcppExports.cpp
+index 293cb43..50d3cfc 100644
+--- a/src/RcppExports.cpp
++++ b/src/RcppExports.cpp
+@@ -25,18 +25,6 @@ BEGIN_RCPP
+     return rcpp_result_gen;
+ END_RCPP
+ }
+-// NNS_dep_matrix_cpp
+-List NNS_dep_matrix_cpp(NumericMatrix X, bool asym);
+-RcppExport SEXP _NNS_NNS_dep_matrix_cpp(SEXP XSEXP, SEXP asymSEXP) {
+-BEGIN_RCPP
+-    Rcpp::RObject rcpp_result_gen;
+-    Rcpp::RNGScope rcpp_rngScope_gen;
+-    Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
+-    Rcpp::traits::input_parameter< bool >::type asym(asymSEXP);
+-    rcpp_result_gen = Rcpp::wrap(NNS_dep_matrix_cpp(X, asym));
+-    return rcpp_result_gen;
+-END_RCPP
+-}
+ // NNS_distance_cpp
+ SEXP NNS_distance_cpp(NumericMatrix X, NumericVector yhat, NumericVector dest, int k, bool use_class);
+ RcppExport SEXP _NNS_NNS_distance_cpp(SEXP XSEXP, SEXP yhatSEXP, SEXP destSEXP, SEXP kSEXP, SEXP use_classSEXP) {
+@@ -821,7 +809,6 @@ END_RCPP
+ 
+ static const R_CallMethodDef CallEntries[] = {
+     {"_NNS_NNS_dep_pair_cpp", (DL_FUNC) &_NNS_NNS_dep_pair_cpp, 5},
+-    {"_NNS_NNS_dep_matrix_cpp", (DL_FUNC) &_NNS_NNS_dep_matrix_cpp, 2},
+     {"_NNS_NNS_distance_cpp", (DL_FUNC) &_NNS_NNS_distance_cpp, 5},
+     {"_NNS_NNS_distance_path_cpp", (DL_FUNC) &_NNS_NNS_distance_path_cpp, 5},
+     {"_NNS_NNS_distance_bulk_cpp", (DL_FUNC) &_NNS_NNS_distance_bulk_cpp, 5},
+-- 
+2.43.0
+

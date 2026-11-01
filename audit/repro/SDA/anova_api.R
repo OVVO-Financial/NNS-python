@@ -1,0 +1,8 @@
+suppressMessages(library(NNS)); aq <- read.csv("/home/user/audit/data/airquality.csv")
+f <- function(l,e) cat(l, "->", tryCatch(paste(capture.output(print(e)),collapse=" "), error=function(err) paste("ERR",conditionMessage(err))), "\n")
+f("airquality NaN cols", NNS.ANOVA(as.matrix(aq[,c("Ozone","Solar.R")]), plot=FALSE))
+f("airquality binary NA", NNS.ANOVA(aq$Ozone, aq$Solar.R, confidence.interval=NULL, plot=FALSE)$Certainty)
+f("len1", NNS.ANOVA(1,2,confidence.interval=NULL,plot=FALSE))
+f("len2", NNS.ANOVA(c(1,2),c(2,3),confidence.interval=NULL,plot=FALSE)$Certainty)
+f("robust ci NULL", NNS.ANOVA(rnorm(100),rnorm(100),robust=TRUE,confidence.interval=NULL,plot=FALSE))
+f("ci 1.5", NNS.ANOVA(rnorm(100),rnorm(100),confidence.interval=1.5,plot=FALSE)$Effect_Size_LB)

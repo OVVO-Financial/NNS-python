@@ -1,0 +1,7 @@
+suppressPackageStartupMessages({library(NNS);library(jsonlite)})
+a <- commandArgs(TRUE); e <- new.env(parent=asNamespace("NNS")); sys.source("Stack_dbg2.R", envir=e)
+DIM <- NULL; M1 <- NULL; BAL <- list(); UNI <- list()
+spec <- fromJSON(file.path("cases",a[1],"spec.json")); Xtr <- read.csv(spec$xtrain); ytr <- read.csv(spec$ytrain)[[1]]; Xte <- read.csv(spec$xtest); if (isTRUE(spec$yfactor)) ytr <- factor(ytr)
+r <- do.call(e$NNS.stack, c(list(Xtr,ytr,Xte,status=FALSE,ncores=1), spec$args))
+out <- list(uni=UNI, dim_sum=DIM$sum, dim_count=DIM$count, m1sum=M1$sum, m1count=M1$count, bal=BAL, splits=lapply(DIM$splits, function(s) s$validation))
+write(toJSON(out, digits=I(17)), file.path("cases",a[1],"rdbg.json"))

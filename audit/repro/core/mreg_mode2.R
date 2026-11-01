@@ -1,0 +1,7 @@
+suppressMessages(library(NNS))
+set.seed(4); X <- matrix(round(rnorm(600), 1), ncol = 2); y <- round(X[,1] + X[,2]^2 + rnorm(300, sd=.3), 1)
+write.csv(data.frame(X, y=y), "mreg_mode_data.csv", row.names = FALSE)
+a <- NNS.reg(X, y, noise.reduction = "mode", plot = FALSE)
+options(NNS.native.mreg = FALSE); b <- NNS.reg(X, y, noise.reduction = "mode", plot = FALSE)
+write.csv(data.frame(native = a$RPM$y.hat, fallback = b$RPM$y.hat), "mreg_mode_R.csv", row.names = FALSE)
+cat("R R2 native", a$R2, " fallback", b$R2, "\n")

@@ -1,0 +1,154 @@
+From 0f94f02c56cb5e4ad4337fd4eb9a589eff3a93d9 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:28:47 +0000
+Subject: [PATCH 07/61] NNS.CDF: correct multivariate survival/hazard for d >=
+ 3
+
+The multivariate survival, hazard and cumulative hazard used the 2-D
+inclusion-exclusion formula 1 - sum(marginals) + joint CDF for any number
+of columns. For d >= 3 that is not P(X_1 > t_1, ..., X_d > t_d): the
+pairwise terms are missing. The bounds check only looked at target[1]
+and target[2], and the target.value of hazard/cumulative hazard used
+1 - CDF(target) (and, for hazard, a regression of the already
+transformed hazard values) instead of the joint survival used for the
+rows, so target.value disagreed with the returned function even for d=2.
+
+Compute the joint survival by inclusion-exclusion over all subsets of
+the columns (Co.LPM_nD.batch on each subset), evaluate target.value with
+the same formula, and bounds-check every coordinate (with a length check).
+
+Evidence (3 correlated normals, n = 300, seed 7):
+  degree-0 survival, max |S - brute-force P(all X > t)|:
+    d = 3            0.373 -> 3.7e-16 (with ties: 0.357 -> 4.7e-16)
+    d = 2            1.9e-16 (unchanged; d = 2 Function output is bit-identical)
+  target = c(0, 0, 1e6) (3rd coordinate outside support)  0.34 -> error
+  d = 2, target = row 5, degree 0: Function vs target.value
+    hazard             0.1211 vs 0.1331 -> 0.1211 vs 0.1211
+    cumulative hazard  0.2966 vs 0.0943 -> 0.2966 vs 0.2966
+
+Results change for d >= 3 survival/hazard/cumulative hazard, and for the
+d = 2 hazard and cumulative hazard target.value. The roxygen and Rd
+(@param type/target) no longer claim multivariate is CDF-only.
+---
+ R/Partial_Moments.R | 54 +++++++++++++++++++++++++++++++--------------
+ man/NNS.CDF.Rd      |  4 ++--
+ 2 files changed, 39 insertions(+), 19 deletions(-)
+
+diff --git a/R/Partial_Moments.R b/R/Partial_Moments.R
+index f3806d7..46fb3ff 100644
+--- a/R/Partial_Moments.R
++++ b/R/Partial_Moments.R
+@@ -189,8 +189,8 @@ DPM_nD <- function(data, target, degree = 0.0, norm = TRUE) {
+ #'
+ #' @param variable a numeric vector or data.frame of >= 2 variables for joint CDF.
+ #' @param degree numeric; \code{(degree = 0)} (default) is frequency, \code{(degree = 1)} is area.
+-#' @param target numeric; \code{NULL} (default) Must lie within support of each variable.
+-#' @param type options("CDF", "survival", "hazard", "cumulative hazard"); \code{"CDF"} (default) Selects type of function to return for bi-variate analysis.  Multivariate analysis is restricted to \code{"CDF"}.
++#' @param target numeric; \code{NULL} (default) Must lie within support of each variable (one value per column for multivariate \code{variable}).
++#' @param type options("CDF", "survival", "hazard", "cumulative hazard"); \code{"CDF"} (default) Selects type of function to return.  For multivariate \code{variable} the joint survival \eqn{P(X_1 > t_1, \ldots, X_d > t_d)} is computed by inclusion-exclusion over all subsets of the columns (\eqn{2^d} joint CDF evaluations), and the hazard and cumulative hazard are built from it.
+ #' @param plot logical; plots CDF.
+ #' @return Returns:
+ #' \itemize{
+@@ -253,8 +253,9 @@ NNS.CDF <- function(variable,
+     if (is.null(dim(variable))||ncol(variable)==1) {
+       if (target<min(variable)||target>max(variable)) stop("target out of bounds")
+     } else {
+-      if (target[1]<min(variable[,1])||target[1]>max(variable[,1])||
+-          target[2]<min(variable[,2])||target[2]>max(variable[,2])) stop("target out of bounds")
++      if (length(target) != ncol(variable)) stop("target must have one value per column of variable")
++      lo <- apply(variable, 2, min); hi <- apply(variable, 2, max)
++      if (any(target < lo | target > hi)) stop("target out of bounds")
+     }
+   }
+   
+@@ -327,39 +328,58 @@ NNS.CDF <- function(variable,
+     # Compute joint conditional CDF using one batched C++ call.
+     # This replaces n R-level Co.LPM_nD dispatches and n parallel launches.
+     variable <- as.matrix(variable)
++    d <- ncol(variable)
+     CDF <- Co.LPM_nD.batch(variable, variable, degree = degree, norm = TRUE)
+     
++    # Joint survival S(t) = P(X_1 > t_1, ..., X_d > t_d) by inclusion-exclusion
++    # over all subsets A of the coordinates: S = sum_A (-1)^|A| F_A(t_A), with
++    # F_A the joint CDF of the coordinates in A (F_{} = 1, F_{1..d} = joint CDF).
++    # For d = 2 this is 1 - F_1 - F_2 + F_12.
++    joint.survival <- function(points, joint_cdf) {
++      points <- matrix(points, ncol = d)
++      marginals <- vapply(seq_len(d), function(j) LPM.ratio(degree, points[, j], variable[, j]),
++                          numeric(nrow(points)))
++      S <- 1 - rowSums(matrix(marginals, ncol = d))
++      if (d > 2) {
++        for (k in 2:(d - 1)) {
++          for (A in utils::combn(d, k, simplify = FALSE)) {
++            S <- S + (-1)^k * Co.LPM_nD.batch(variable[, A, drop = FALSE], points[, A, drop = FALSE],
++                                              degree = degree, norm = TRUE)
++          }
++        }
++      }
++      S + (-1)^d * joint_cdf
++    }
++    
++    if (type != "cdf") S <- joint.survival(variable, CDF)
++    
+     # Apply transformation based on type
+     if (type == "survival") {
+-      marginal_probs <- apply(variable, 2, function(col) LPM.ratio(degree, col, col))
+-      CDF <- pmax(0, pmin(1, 1 - rowSums(marginal_probs) + CDF))
++      CDF <- pmax(0, pmin(1, S))
+     }
+     
+     if (type == "hazard") {
+-      f <- NNS.reg(variable, pmax(CDF, 1e-10), order = "max", plot = FALSE)$Fitted$y.hat
+-      marginals <- apply(variable, 2, function(col) LPM.ratio(degree, col, col))
+-      CDF <- pmax(f / pmax(1 - rowSums(marginals) + CDF, 1e-10), 0)
++      f <- NNS.reg(variable, pmax(CDF, 1e-10), order = "max", plot = FALSE, point.est = target)
++      CDF <- pmax(f$Fitted$y.hat / pmax(S, 1e-10), 0)
+     }
+     
+     if (type == "cumulative hazard") {
+-      marginals <- apply(variable, 2, function(col) LPM.ratio(degree, col, col))
+-      CDF <- pmax(-log(pmax(1 - rowSums(marginals) + CDF, 1e-10)), 0)
++      CDF <- pmax(-log(pmax(S, 1e-10)), 0)
+     }
+     
+-    # Target evaluation
++    # Target evaluation (the same function as the rows, evaluated at target)
+     Pv <- numeric(0)
+     if (!is.null(target)) {
+       Pv <- Co.LPM_nD(variable, target, degree = degree)
++      if (type != "cdf") S_t <- joint.survival(target, Pv)
+       if (type == "survival") {
+-        marg_target <- mapply(LPM.ratio, degree, target, as.data.frame(variable))
+-        Pv <- max(0, min(1, 1 - sum(marg_target) + Pv))
++        Pv <- max(0, min(1, S_t))
+       }
+       if (type == "hazard") {
+-        Pv <- NNS.reg(variable, CDF, order = "max", plot = FALSE, point.est = target)$Point.est /
+-          pmax(1 - Pv, 1e-10)
++        Pv <- max(f$Point.est / pmax(S_t, 1e-10), 0)
+       }
+       if (type == "cumulative hazard") {
+-        Pv <- pmax(-log(pmax(1 - Pv, 1e-10)), 0)
++        Pv <- pmax(-log(pmax(S_t, 1e-10)), 0)
+       }
+     }
+     
+diff --git a/man/NNS.CDF.Rd b/man/NNS.CDF.Rd
+index 384992a..a48e9a9 100644
+--- a/man/NNS.CDF.Rd
++++ b/man/NNS.CDF.Rd
+@@ -11,9 +11,9 @@ NNS.CDF(variable, degree = 0, target = NULL, type = "CDF", plot = TRUE)
+ 
+ \item{degree}{numeric; \code{(degree = 0)} (default) is frequency, \code{(degree = 1)} is area.}
+ 
+-\item{target}{numeric; \code{NULL} (default) Must lie within support of each variable.}
++\item{target}{numeric; \code{NULL} (default) Must lie within support of each variable (one value per column for multivariate \code{variable}).}
+ 
+-\item{type}{options("CDF", "survival", "hazard", "cumulative hazard"); \code{"CDF"} (default) Selects type of function to return for bi-variate analysis.  Multivariate analysis is restricted to \code{"CDF"}.}
++\item{type}{options("CDF", "survival", "hazard", "cumulative hazard"); \code{"CDF"} (default) Selects type of function to return.  For multivariate \code{variable} the joint survival \eqn{P(X_1 > t_1, \ldots, X_d > t_d)} is computed by inclusion-exclusion over all subsets of the columns (\eqn{2^d} joint CDF evaluations), and the hazard and cumulative hazard are built from it.}
+ 
+ \item{plot}{logical; plots CDF.}
+ }
+-- 
+2.43.0
+

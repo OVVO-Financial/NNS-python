@@ -1,0 +1,63 @@
+From 6d016c01a59ca44f8939f9be1392f54c9bc46def Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:35:14 +0000
+Subject: [PATCH 16/61] NNS.caus: validate tau and reject constant or infinite
+ inputs
+
+Invalid arguments and degenerate inputs reached the internals and failed
+with misleading messages or silently did something arbitrary:
+  tau = 1.5            fractional subscripts, returned 0.022/0.271/2.53
+  tau = -1             silently treated as 0
+  tau = "3" / "foo"    "object 'Causation.y.given.x' not found"
+  tau >= n             "only 0's may be mixed with negative subscripts"
+  tau = "ts" when NNS.seas has no period <= sqrt(n) (e.g. AR(1) series,
+                       seed 22): "missing value where TRUE/FALSE needed"
+  constant y           "x has missing values, please address." (from NNS.dep)
+
+The bivariate path now checks lengths, finiteness, non-constant x and y,
+and that tau is "cs", "ts" or a single non-negative integer smaller
+than length(x) - 2, each with a clear stop() message. tau = "ts" without
+a qualifying seasonal period stops with a message asking for a numeric
+tau (no silent fallback).
+
+Valid calls are unchanged (tau = 0/"cs": 0.3226/0.2669/0.1898; tau = 3:
+0.0369/0.2803/2.0266; matrix input as before).
+---
+ R/Uni_Causation.R | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/R/Uni_Causation.R b/R/Uni_Causation.R
+index 401b583..38b87d2 100644
+--- a/R/Uni_Causation.R
++++ b/R/Uni_Causation.R
+@@ -163,6 +163,17 @@ NNS.caus_core <- function(x, y = NULL,
+   if(!is.null(y)){
+     if(is.factor(y)) y <- as.numeric(y)
+     
++    # ---- input validation ---------------------------------------------------
++    if(length(x) != length(y)) stop("x and y must have the same length.")
++    if(any(is.infinite(x)) || any(is.infinite(y))) stop("x and y must be finite.")
++    if(length(unique(x)) < 2 || length(unique(y)) < 2)
++      stop("x and y must not be constant: causation is undefined for a variable with no variation.")
++    if(!(identical(tau, "cs") || identical(tau, "ts"))){
++      if(!is.numeric(tau) || length(tau) != 1 || !is.finite(tau) || tau < 0 ||
++         tau != round(tau) || tau >= length(x) - 2)
++        stop("tau must be \"cs\", \"ts\" or a single non-negative integer smaller than length(x) - 2.")
++    }
++    
+     if(is.numeric(tau)){
+       Causation.x.given.y <- Uni.caus(x, y, tau = tau, plot = FALSE)
+       Causation.y.given.x <- Uni.caus(y, x, tau = tau, plot = FALSE)
+@@ -198,6 +209,9 @@ NNS.caus_core <- function(x, y = NULL,
+       
+       x_tau <- x_tau[x_tau <= (l)^(1/2)][1]
+       y_tau <- y_tau[y_tau <= (l)^(1/2)][1]
++      if(is.na(x_tau) || is.na(y_tau))
++        stop(paste0("tau = \"ts\": NNS.seas found no seasonal period <= sqrt(length(x)) for ",
++                    if(is.na(x_tau)) "x" else "y", "; supply a numeric tau instead."))
+       
+       Causation.y.given.x <- Uni.caus(y, x, tau = x_tau, plot = FALSE)
+       Causation.x.given.y <- Uni.caus(x, y, tau = y_tau, plot = FALSE)
+-- 
+2.43.0
+

@@ -1,0 +1,67 @@
+From ce818bd9c1272078929dd8e42e10107324cabd20 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:45:09 +0000
+Subject: [PATCH 28/61] NNS.ARMA.optim: actually evaluate the equal-weights
+ candidate
+
+For multi-period selections the optimizer meant to compare the
+NNS.seas-based weights with equal weights, but weight.SSE was computed
+from the weights = NULL forecast, so it always equalled nns.SSE,
+'weight.SSE < nns.SSE' could never hold and $weights was always NULL.
+Forecast with weights = rep(1/k, k) first, score that, and keep the
+weights = NULL forecast when equal weights are not better.
+
+Evidence: 50 + 5 sin(2 pi t/12) + 4 sin(2 pi t/7) + N(0, 1.5^2), n = 160,
+h = 10, seasonal.factor = c(4,6,7,12,14,24), 25 seeds: 5 multi-period
+selections; equal weights now chosen in 2 of them (before: never).
+  seed 9  (lin, periods 12 7):  validation MSE NULL 9.719 vs equal 9.644
+     weights NULL -> 0.5 0.5; results 51.683 51.226 50.361 -> 51.563 51.391 50.698
+  seed 17 (both, periods 12 14): weights NULL -> 0.5 0.5,
+     results 56.004 53.703 53.368 -> 55.574 53.990 54.298
+Single-period selections, and multi-period ones where equal weights do
+not improve the objective, are unchanged (all AirPassengers/VIX configs
+identical).
+---
+ R/ARMA_optim.R | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/R/ARMA_optim.R b/R/ARMA_optim.R
+index 0b8f7f8..64b4b0f 100644
+--- a/R/ARMA_optim.R
++++ b/R/ARMA_optim.R
+@@ -357,8 +357,15 @@ NNS.ARMA.optim <- function(variable,
+     nns.SSE <- min(unlist(overall.estimates))
+     predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = NULL)
+     
+-    if(length(nns.periods)>1){
+-       weight.SSE <- eval(obj.fn)
++    if(length(nns.periods) > 1){
++      # Candidate: equal weights across the selected periods. (weight.SSE used
++      # to be evaluated on the weights = NULL forecast, i.e. equal to nns.SSE,
++      # so equal weights could never be chosen.)
++      predicted.null <- predicted
++      predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = rep(1/length(nns.periods), length(nns.periods)))
++      weight.SSE <- eval(obj.fn)
++      if(is.na(weight.SSE)) weight.SSE <- Inf
++      predicted <- predicted.null
+       
+       if(weight.SSE < nns.SSE){
+         nns.weights <- rep((1/length(nns.periods)),length(nns.periods))
+@@ -398,7 +405,14 @@ NNS.ARMA.optim <- function(variable,
+     predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = NULL)
+     
+     if(length(nns.periods) > 1){
++      # Candidate: equal weights across the selected periods. (weight.SSE used
++      # to be evaluated on the weights = NULL forecast, i.e. equal to nns.SSE,
++      # so equal weights could never be chosen.)
++      predicted.null <- predicted
++      predicted <- NNS.ARMA(variable, training.set = training.set, h = h_eval, seasonal.factor = nns.periods, method = nns.method, plot = FALSE, negative.values = negative.values, weights = rep(1/length(nns.periods), length(nns.periods)))
+       weight.SSE <- eval(obj.fn)
++      if(is.na(weight.SSE)) weight.SSE <- -Inf
++      predicted <- predicted.null
+       
+       if(weight.SSE > nns.SSE){
+         nns.weights <- rep((1/length(nns.periods)),length(nns.periods))
+-- 
+2.43.0
+

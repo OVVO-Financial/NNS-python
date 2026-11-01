@@ -1,0 +1,8 @@
+suppressPackageStartupMessages({library(NNS);library(jsonlite)})
+spec <- fromJSON("cases/iris_shuf/spec.json"); Xtr <- read.csv(spec$xtrain); ytr <- read.csv(spec$ytrain)[[1]]; Xte <- read.csv(spec$xtest)
+r1 <- NNS.stack(Xtr, factor(ytr), Xte, type="CLASS", status=FALSE, ncores=1)
+r2 <- NNS.stack(Xtr, as.character(ytr), Xte, type="CLASS", status=FALSE, ncores=1)
+cat("factor: levels", r1$class.levels, " OOF acc", r1$OBJfn.reg, r1$OBJfn.dim.red, "\n stack labels:", r1$class.levels[r1$stack], "\n")
+cat("character: levels", r2$class.levels, " OOF acc", r2$OBJfn.reg, r2$OBJfn.dim.red, "\n stack labels:", r2$class.levels[r2$stack], "\n")
+b1 <- NNS.boost(Xtr, as.character(ytr), Xte, epochs=10, learner.trials=10, status=FALSE, feature.importance=FALSE)
+cat("boost character levels:", b1$class.levels, "\n")

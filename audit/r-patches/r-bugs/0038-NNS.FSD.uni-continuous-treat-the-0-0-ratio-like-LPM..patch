@@ -1,0 +1,47 @@
+From 05f6d3d410c4c5ab33993623eee161e8ed480e3c Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:53:59 +0000
+Subject: [PATCH 38/61] NNS.FSD.uni (continuous): treat the 0/0 ratio like
+ LPM.ratio
+
+The continuous FSD ratio L1/(L1+U1) is 0/0 when every observation of a
+sample equals the threshold (a constant sample, or a threshold equal to
+a point mass). The native .uni code mapped it to 0, while LPM.ratio (and
+hence the bidirectional NNS.FSD(type = "continuous"), which previously
+returned NA here: SDA-13) now uses the degree-0 ratio, i.e. the
+right-continuous CDF value 1. Mapping to 0 made a point mass look as if
+it had no mass at its own location and produced spurious dominance.
+
+Before -> after:
+  a = c(5,5,0,4,0,2), b = rep(4,6) (a has mass above 4, so b cannot FSD a):
+    NNS.FSD.uni(b, a, "continuous") 1 -> 0  (NNS.FSD: NO FSD EXISTS)
+  x = c(0,0), y = c(0,3):
+    NNS.FSD.uni(y, x, "continuous") 0 -> 1; NNS.FSD(x, y, "continuous")
+    NA (unpatched) -> "Y FSD X" (= discrete test)
+  400 random small integer pairs: .uni vs NNS.FSD continuous disagreements
+    1 -> 0
+The 11-asset continuous efficient set is unchanged.
+---
+ src/SD.cpp | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/SD.cpp b/src/SD.cpp
+index 734300d..f31475a 100644
+--- a/src/SD.cpp
++++ b/src/SD.cpp
+@@ -121,8 +121,10 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
+         lpm_upm_deg1(X, kx, t, Lx, Ux);
+         lpm_upm_deg1(Y, ky, t, Ly, Uy);
+         double Ax = Lx+Ux, Ay = Ly+Uy;
+-        Rx = (Ax>0.0 ? Lx/Ax : 0.0);
+-        Ry = (Ay>0.0 ? Ly/Ay : 0.0);
++        // 0/0 (every observation equals t): use the degree-0 ratio, as
++        // LPM.ratio does, i.e. the right-continuous CDF value k/m (= 1).
++        Rx = (Ax>0.0 ? Lx/Ax : double(kx)/double(X.m));
++        Ry = (Ay>0.0 ? Ly/Ay : double(ky)/double(Y.m));
+       }
+       if (Rx > Ry) x_gt_y = true;
+       if (Rx != Ry) curves_differ = true;
+-- 
+2.43.0
+

@@ -1,0 +1,12 @@
+suppressMessages(library(NNS))
+r <- as.matrix(na.omit(read.csv("/home/user/audit/data/returns_daily_equity_etf.csv"))[,-1]); p <- na.omit(read.csv("/home/user/audit/data/prices_daily.csv")$SPY)
+T <- function(lbl, expr) { f <- function() eval.parent(substitute(expr)); invisible(eval(substitute(expr))); t <- system.time(eval(substitute(expr)))[["elapsed"]]; cat(sprintf("%s: %.4fs\n", lbl, t)) }
+T("R SD.efficient.set deg1", NNS.SD.efficient.set(r, degree=1, status=FALSE))
+T("R SD.efficient.set deg2", NNS.SD.efficient.set(r, degree=2, status=FALSE))
+T("R SD.efficient.set deg3", NNS.SD.efficient.set(r, degree=3, status=FALSE))
+T("R NNS.seas SPY n=2000", NNS.seas(p[1:2000], plot=FALSE))
+T("R NNS.dep matrix 11x2000", NNS.dep(r[1:2000,]))
+T("R NNS.part mean n=4000", NNS.part(r[1:4000,1], r[1:4000,2], noise.reduction="mean"))
+T("R NNS.part off n=4000", NNS.part(r[1:4000,1], r[1:4000,2]))
+T("R NNS.gravity 1e5", NNS.gravity(rep(r[,1],30)[1:1e5]))
+T("R NNS.mode 1e5", NNS.mode(rep(r[,1],30)[1:1e5]))

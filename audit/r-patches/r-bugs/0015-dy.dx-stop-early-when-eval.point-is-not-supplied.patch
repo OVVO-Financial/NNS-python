@@ -1,0 +1,36 @@
+From 4ff8eab49c2fdca29b539f570b8c16586fd6999a Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:34:08 +0000
+Subject: [PATCH 15/61] dy.dx: stop early when eval.point is not supplied
+
+The documented default eval.point = NULL always failed deep inside with
+"undefined columns selected" (cbind() of the NULL point drops the
+eval.point column). The docs say eval.point must be provided, so stop
+up front with a clear message instead of defaulting to "overall".
+
+Before -> after, dy.dx(rnorm(60), sin(x)):
+  Error "undefined columns selected"
+  -> Error "eval.point must be provided: numeric point(s) or 'overall'"
+Numeric and "overall" calls are unchanged (eval.point = 0.5: 0.5236 /
+0.00796; "overall": 0.6656).
+---
+ R/dy_dx.R | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/R/dy_dx.R b/R/dy_dx.R
+index 2f557b8..10d6429 100644
+--- a/R/dy_dx.R
++++ b/R/dy_dx.R
+@@ -29,6 +29,9 @@
+ #' @export
+ 
+ dy.dx <- function(x, y, eval.point = NULL){
++  
++  if(is.null(eval.point) || length(eval.point) == 0)
++    stop("eval.point must be provided: numeric point(s) or 'overall'")
+ 
+   if(any(class(x)%in%c("tbl","data.table"))) x <- as.vector(unlist(x))
+   if(any(class(y)%in%c("tbl","data.table"))) y <- as.vector(unlist(y))
+-- 
+2.43.0
+

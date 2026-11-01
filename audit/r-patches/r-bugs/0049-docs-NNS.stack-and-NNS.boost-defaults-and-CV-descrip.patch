@@ -1,0 +1,122 @@
+From f7dca9519f4cce214b6fa016e9b99223be7abb53 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 00:10:08 +0000
+Subject: [PATCH 49/61] docs: NNS.stack and NNS.boost defaults and CV
+ description
+
+Roxygen (R/Stack.R, R/Boost.R) and Rd:
+- NNS.stack dim.red.method: the default is "cor" (usage and code), not
+  "NNS.dep", and "cor" is Spearman rank correlation.
+- NNS.stack CV.size: NULL means (stratified) k-fold CV for folds > 1; the
+  random 0.2-0.33 holdout applies only with folds = 1; a numeric CV.size
+  gives one random holdout per fold.
+- Remove the stale note about "object 'RP' not found" (that code no
+  longer exists).
+- NNS.boost objective: the default is "min", not "max".
+Documentation only.
+---
+ R/Boost.R        |  2 +-
+ R/Stack.R        | 11 ++---------
+ man/NNS.boost.Rd |  2 +-
+ man/NNS.stack.Rd | 10 ++--------
+ 4 files changed, 6 insertions(+), 19 deletions(-)
+
+diff --git a/R/Boost.R b/R/Boost.R
+index 39f7ecd..fe0d8fb 100644
+--- a/R/Boost.R
++++ b/R/Boost.R
+@@ -15,7 +15,7 @@
+ #' @param threshold numeric [0, 1]; \code{NULL} (default) Probability supplied to \link{LPM.VaR} over the learner-trial objective distribution to determine the objective cutoff for keeping feature combinations.  Defaults to 0.80 when \code{objective = "max"} and 0.20 when \code{objective = "min"}.  It is not a literal objective-score cutoff.
+ #' @param obj.fn expression;
+ #' \code{expression( sum((predicted - actual)^2) )} (default) Sum of squared errors is the default objective function.  Any \code{expression(...)} using the specific terms \code{predicted} and \code{actual} can be used.  Automatically selects an accuracy measure when \code{(type = "CLASS")}.
+-#' @param objective options: ("min", "max") \code{"max"} (default) Select whether to minimize or maximize the objective function \code{obj.fn}.
++#' @param objective options: ("min", "max") \code{"min"} (default) Select whether to minimize or maximize the objective function \code{obj.fn}.
+ #' @param extreme logical; \code{FALSE} (default) Sets the \link{LPM.VaR} probability to 1 (0) for maximization (minimization) \code{objective}, i.e. the most extreme learner-trial objective value becomes the cutoff.  Overrides \code{threshold}.
+ #' @param features.only logical; \code{FALSE} (default) Returns only the final feature loadings along with the final feature frequencies.
+ #' @param feature.importance logical; \code{TRUE} (default) Draws a two-panel diagnostic: the learner-trial objective distribution with its \link{LPM.VaR} cutoff, and the frequency of features used in the final estimate.
+diff --git a/R/Stack.R b/R/Stack.R
+index d582922..2d02ce6 100644
+--- a/R/Stack.R
++++ b/R/Stack.R
+@@ -10,14 +10,14 @@
+ #' @param objective options: ("min", "max") \code{"min"} (default) Select whether to minimize or maximize the objective function \code{obj.fn}.
+ #' @param optimize.threshold logical; \code{TRUE} (default) Will optimize the probability threshold value for rounding in classification problems.  If \code{FALSE}, returns 0.5.
+ #' @param dist options:(NULL, "NNS", "L1", "L2", "FACTOR") the method of distance calculation. \code{dist = NULL} is the default and selects the native blended NNS distance; \code{dist = "NNS"} is an explicit alias for the default. \code{dist = "L2"} selects Euclidean distance; \code{dist = "L1"} selects Manhattan distance; \code{dist = "FACTOR"} uses a frequency.
+-#' @param CV.size numeric [0, 1]; \code{NULL} (default) Sets the cross-validation size if \code{(IVs.test = NULL)}.  Defaults to a random value between 0.2 and 0.33 for a random sampling of the training set.
++#' @param CV.size numeric [0, 1]; \code{NULL} (default) Sets the holdout size for repeated holdout cross-validation (one random holdout per fold).  With \code{CV.size = NULL} and \code{folds > 1}, (stratified, for classification) k-fold cross-validation is used; with \code{CV.size = NULL} and \code{folds = 1}, a single holdout of random size between 0.2 and 0.33 is used.
+ #' @param balance logical; \code{FALSE} (default) Uses both up and down sampling to balance the classes.  \code{type="CLASS"} required.
+ #' @param ts.test integer; NULL (default) Sets the length of the test set for time-series data; typically \code{2*h} parameter value from \link{NNS.ARMA} or double known periods to forecast.
+ #' @param folds integer; \code{folds = 5} (default) Select the number of cross-validation folds.
+ #' @param order options: (integer, "max", NULL); \code{NULL} (default) Sets the order for \link{NNS.reg}, where \code{(order = "max")} is the k-nearest neighbors equivalent, which is suggested for mixed continuous and discrete (unordered, ordered) data.
+ #' @param method numeric options: (1, 2); Select the NNS method to include in stack.  \code{(method = 1)} selects \link{NNS.reg}; \code{(method = 2)} selects \link{NNS.reg} dimension reduction regression.  Defaults to \code{method = c(1, 2)}, which will reduce the dimension first, then find the optimal \code{n.best}.
+ #' @param stack logical; \code{TRUE} (default) Uses dimension reduction output in \code{n.best} optimization, otherwise performs both analyses independently.
+-#' @param dim.red.method options: ("cor", "NNS.dep", "NNS.caus", "equal", "all") method for determining synthetic X* coefficients.  \code{(dim.red.method = "cor")} uses standard linear correlation for weights.  \code{(dim.red.method = "NNS.dep")} (default) uses \link{NNS.dep} for nonlinear dependence weights, while \code{(dim.red.method = "NNS.caus")} uses \link{NNS.caus} for causal weights.  \code{(dim.red.method = "all")} averages all methods for further feature engineering.
++#' @param dim.red.method options: ("cor", "NNS.dep", "NNS.caus", "equal", "all") method for determining synthetic X* coefficients.  \code{(dim.red.method = "cor")} (default) uses Spearman rank correlation for weights.  \code{(dim.red.method = "NNS.dep")} uses \link{NNS.dep} for nonlinear dependence weights, while \code{(dim.red.method = "NNS.caus")} uses \link{NNS.caus} for causal weights.  \code{(dim.red.method = "all")} averages all methods for further feature engineering.
+ #' @param pred.int numeric [0,1]; \code{NULL} (default) Returns the associated prediction intervals with each \code{method}.
+ #' @param status logical; \code{TRUE} (default) Prints status update message in console.
+ #' @param ncores integer; value specifying the number of cores to be used in the parallelized subroutine \link{NNS.reg}. If NULL (default), the number of cores to be used is equal to the number of cores of the machine - 1.
+@@ -52,13 +52,6 @@
+ #' \item Missing data should be handled prior as well using \link{na.omit} or \link{complete.cases} on the full dataset.
+ #' }
+ #'
+-#' If error received:
+-#'
+-#' \code{"Error in is.data.frame(x) : object 'RP' not found"}
+-#'
+-#' reduce the \code{CV.size}.
+-#'
+-#'
+ #' @examples
+ #'  ## Using 'iris' dataset where test set [IVs.test] is 'iris' rows 141:150.
+ #'  \dontrun{
+diff --git a/man/NNS.boost.Rd b/man/NNS.boost.Rd
+index 7439b69..cfff614 100644
+--- a/man/NNS.boost.Rd
++++ b/man/NNS.boost.Rd
+@@ -54,7 +54,7 @@ NNS.boost(
+ \item{obj.fn}{expression;
+ \code{expression( sum((predicted - actual)^2) )} (default) Sum of squared errors is the default objective function.  Any \code{expression(...)} using the specific terms \code{predicted} and \code{actual} can be used.  Automatically selects an accuracy measure when \code{(type = "CLASS")}.}
+ 
+-\item{objective}{options: ("min", "max") \code{"max"} (default) Select whether to minimize or maximize the objective function \code{obj.fn}.}
++\item{objective}{options: ("min", "max") \code{"min"} (default) Select whether to minimize or maximize the objective function \code{obj.fn}.}
+ 
+ \item{extreme}{logical; \code{FALSE} (default) Sets the \link{LPM.VaR} probability to 1 (0) for maximization (minimization) \code{objective}, i.e. the most extreme learner-trial objective value becomes the cutoff.  Overrides \code{threshold}.}
+ 
+diff --git a/man/NNS.stack.Rd b/man/NNS.stack.Rd
+index 929ecc8..c608444 100644
+--- a/man/NNS.stack.Rd
++++ b/man/NNS.stack.Rd
+@@ -44,7 +44,7 @@ NNS.stack(
+ 
+ \item{dist}{options:(NULL, "NNS", "L1", "L2", "FACTOR") the method of distance calculation. \code{dist = NULL} is the default and selects the native blended NNS distance; \code{dist = "NNS"} is an explicit alias for the default. \code{dist = "L2"} selects Euclidean distance; \code{dist = "L1"} selects Manhattan distance; \code{dist = "FACTOR"} uses a frequency.}
+ 
+-\item{CV.size}{numeric [0, 1]; \code{NULL} (default) Sets the cross-validation size if \code{(IVs.test = NULL)}.  Defaults to a random value between 0.2 and 0.33 for a random sampling of the training set.}
++\item{CV.size}{numeric [0, 1]; \code{NULL} (default) Sets the holdout size for repeated holdout cross-validation (one random holdout per fold).  With \code{CV.size = NULL} and \code{folds > 1}, (stratified, for classification) k-fold cross-validation is used; with \code{CV.size = NULL} and \code{folds = 1}, a single holdout of random size between 0.2 and 0.33 is used.}
+ 
+ \item{balance}{logical; \code{FALSE} (default) Uses both up and down sampling to balance the classes.  \code{type="CLASS"} required.}
+ 
+@@ -58,7 +58,7 @@ NNS.stack(
+ 
+ \item{stack}{logical; \code{TRUE} (default) Uses dimension reduction output in \code{n.best} optimization, otherwise performs both analyses independently.}
+ 
+-\item{dim.red.method}{options: ("cor", "NNS.dep", "NNS.caus", "equal", "all") method for determining synthetic X* coefficients.  \code{(dim.red.method = "cor")} uses standard linear correlation for weights.  \code{(dim.red.method = "NNS.dep")} (default) uses \link{NNS.dep} for nonlinear dependence weights, while \code{(dim.red.method = "NNS.caus")} uses \link{NNS.caus} for causal weights.  \code{(dim.red.method = "all")} averages all methods for further feature engineering.}
++\item{dim.red.method}{options: ("cor", "NNS.dep", "NNS.caus", "equal", "all") method for determining synthetic X* coefficients.  \code{(dim.red.method = "cor")} (default) uses Spearman rank correlation for weights.  \code{(dim.red.method = "NNS.dep")} uses \link{NNS.dep} for nonlinear dependence weights, while \code{(dim.red.method = "NNS.caus")} uses \link{NNS.caus} for causal weights.  \code{(dim.red.method = "all")} averages all methods for further feature engineering.}
+ 
+ \item{pred.int}{numeric [0,1]; \code{NULL} (default) Returns the associated prediction intervals with each \code{method}.}
+ 
+@@ -97,12 +97,6 @@ Prediction model using the predictions of the NNS base models \link{NNS.reg} as
+ 
+ \item Missing data should be handled prior as well using \link{na.omit} or \link{complete.cases} on the full dataset.
+ }
+-
+-If error received:
+-
+-\code{"Error in is.data.frame(x) : object 'RP' not found"}
+-
+-reduce the \code{CV.size}.
+ }
+ \examples{
+  ## Using 'iris' dataset where test set [IVs.test] is 'iris' rows 141:150.
+-- 
+2.43.0
+

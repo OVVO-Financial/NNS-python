@@ -1,0 +1,66 @@
+From 692ac6fe9a6c5a7c57192a45258310a16c32b8e9 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:41:01 +0000
+Subject: [PATCH 24/61] NNS.VAR: evaluate the multivariate stage on the
+ forecast rows
+
+The multivariate NNS.stack was trained on head(lagged_new_values, n - h)
+and evaluated on IVs.test = tail(IV, h), where IV is that *training* lag
+matrix. The test rows were therefore the last h observed periods, so the
+'multivariate forecast' was an in-sample refit of observations
+n-h+1..n and carried no information about the forecast period; the
+ensemble (0.5 univariate + 0.5 multivariate) was half a replay of the
+last h observations.
+
+Evaluate on the last h rows of the lag matrix built from the series
+extended with the univariate forecasts (the rows for n+1..n+h, which the
+training set drops).
+
+Evidence (SPY/TLT/GLD monthly returns, h = 6, tau = 1):
+  before: multivariate SPY and GLD = exactly the observed rows 196-201
+          (e.g. SPY 0.0526 -0.0103 0.0003 0.0268 -0.0033 -0.0091)
+  after:  SPY -0.0173 0.0529 0.0147 0.0238 0.0029 0.0008
+          (no column reproduces the observed tail; univariate unchanged)
+
+Changes the multivariate and ensemble outputs of every NNS.VAR call with
+h > 0; univariate output is unchanged.
+---
+ R/NNS_VAR.R | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/R/NNS_VAR.R b/R/NNS_VAR.R
+index 787247c..45e351b 100644
+--- a/R/NNS_VAR.R
++++ b/R/NNS_VAR.R
+@@ -411,6 +411,10 @@ NNS.VAR <- function(variables,
+     
+     IV <- lagged_new_values_train[, -i, drop = FALSE]
+     DV <- lagged_new_values_train[, i]
++    # Forecast-period regressors: the last h rows of the lag matrix built on
++    # the series extended with the univariate forecasts (rows n+1, ..., n+h).
++    # tail(IV, h) would be the last h *observed* rows, i.e. an in-sample refit.
++    IV.test <- tail(lagged_new_values[, -i, drop = FALSE], h)
+     
+     # ts.test must be a whole number: NNS.stack now validates it as an integer
+     # >= 1, so round the 0.2 * length(DV) floor up rather than passing the raw
+@@ -432,7 +436,7 @@ NNS.VAR <- function(variables,
+     .run_var_stack <- function(stack_obj_fn, stack_objective) {
+       NNS.stack(IVs.train = IV[, rel_vars, drop = FALSE],
+                 DV.train = DV,
+-                IVs.test = tail(IV, h)[, rel_vars, drop = FALSE],
++                IVs.test = IV.test[, rel_vars, drop = FALSE],
+                 ts.test = ts,
+                 folds = 1,
+                 obj.fn = stack_obj_fn,
+@@ -468,7 +472,7 @@ NNS.VAR <- function(variables,
+   lists <- if (use_parallel) {
+     parallel::clusterExport(
+       cl,
+-      varlist = c("status", "variables", "lagged_new_values_train", "h",
++      varlist = c("status", "variables", "lagged_new_values", "lagged_new_values_train", "h",
+                   "obj.fn", "objective", "use_default_objective",
+                   "dim.red.method", "nns_IVs_results"),
+       envir = environment()
+-- 
+2.43.0
+

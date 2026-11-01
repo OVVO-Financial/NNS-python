@@ -1,0 +1,152 @@
+From a0dd36d807fd17910f83844d65c31f1e264acbf8 Mon Sep 17 00:00:00 2001
+From: Rasheed <99349713+gitRasheed@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:42:28 +0000
+Subject: [PATCH 5/7] central_tendencies: bound NNS.gravity/NNS.mode histograms
+ to O(n) bins
+
+simple_bin_counts() allocated one bin per width step between the
+minimum and maximum, with width = IQR / sqrt(n). Nothing bounds that
+count by n: a tight IQR plus one outlier needs hundreds of millions of
+bins, and the count was computed as int, so beyond INT_MAX the cast was
+undefined behaviour (x86 gives INT_MIN, i.e. one bin holding all the
+mass).
+
+  set.seed(1); x <- c(5 + 1e-7 * rnorm(1000), 6)
+  NNS.gravity(x)   # 12.8 s, > 2.7 GB transient
+  NNS.mode(x)      # 13.3 s
+
+Gravity and the continuous mode only look at counts within 6 bins of a
+non-empty bin (the +-1 / +-3 centre windows and the 7-tap smoother
+feeding a +-3 peak test). Emit the histogram with every run of more
+than 16 empty bins shortened to 16 (the first and last 8 bins of the
+run, keeping their true names); the downstream code is unchanged and
+bit-identical, while memory and time are O(n). Bin indices are
+computed in double/int64, and only a width so small that the true bin
+count exceeds 2^52 (previously UB or an allocation failure) is widened
+to (max - min) / 2^52.
+
+After the change the example takes about 1 ms for each call (same
+gravity, 5.0002497406). On 480 random vectors (normal, Cauchy,
+rounded, outliers, bimodal, heavy tails, n = 4 .. 3000) NNS.gravity,
+NNS.mode (multi on/off) and the discrete variants are identical() to
+unpatched 13.3. Results change only for inputs whose bin count
+overflowed int.
+---
+ src/central_tendencies.cpp | 88 ++++++++++++++++++++++++++++----------
+ 1 file changed, 65 insertions(+), 23 deletions(-)
+
+diff --git a/src/central_tendencies.cpp b/src/central_tendencies.cpp
+index 157598f..457e22a 100644
+--- a/src/central_tendencies.cpp
++++ b/src/central_tendencies.cpp
+@@ -2,6 +2,8 @@
+ #include <Rcpp.h>
+ #include <algorithm>
+ #include <cmath>
++#include <cstdint>
++#include <unordered_map>
+ #include "central_tendencies.h"
+ 
+ using namespace Rcpp;
+@@ -73,35 +75,75 @@ static void quartiles_like_R_code(const std::vector<double>& xs, double& q1, dou
+   }
+ }
+ 
+-// Minimal replacement for NNS_bin used by mode/gravity:
+-// Given sorted x, fixed bin width, origin, return counts and the width.
+-// We align with the R usage where z_names <- seq(x1, xl, width) and length(counts) matches z_names length.
++// Minimal replacement for NNS_bin used by mode/gravity.
+ //
+-// We assign each x to idx = floor((x - origin) / width), clipped to [0, nbins-1].
++// Bins are [origin + k*width, origin + (k+1)*width), k = 0 .. nbins-1, with
++// nbins = floor((max - origin) / width + 1e-12) + 1 and each value assigned to
++// floor((v - origin) / width) clipped to the last bin, as before.
+ //
+-static void simple_bin_counts(const std::vector<double>& xs,
+-                              double width, double origin,
+-                              std::vector<double>& bin_names,
+-                              std::vector<int>& counts) {
+-  const int l = (int)xs.size();
+-  if (l == 0) { bin_names.clear(); counts.clear(); return; }
+-  
++// The bin count is not bounded by n: a tight IQR plus one outlier gives
++// hundreds of millions of bins (seconds and GBs for n = 1001), and beyond
++// INT_MAX the old `int` cast was undefined behaviour. Every consumer (gravity
++// and the continuous mode) only looks at counts within 6 bins of a non-empty
++// bin, so runs of more than kMaxEmptyRun empty bins are shortened to
++// kMaxEmptyRun bins (the first and last kMaxEmptyRun / 2 of the run, with their
++// true names). Gravity and mode are then bit-identical to the full histogram
++// while memory and time are O(n). Indices are computed in double / int64, and
++// only a width so small that the true bin count exceeds 2^52 (previously UB or
++// an allocation failure) is widened to (max - origin) / 2^52.
++static constexpr std::int64_t kMaxEmptyRun = 16;
++static constexpr double kMaxBinIndex = 4503599627370496.0;  // 2^52
++
++static void simple_bin_counts(const std::vector<double>& xs, double width, double origin,
++                              std::vector<double>& bin_names, std::vector<int>& counts) {
++  bin_names.clear();
++  counts.clear();
++  if (xs.empty()) return;
+ 
+   const double xmax = xs.back();
+-  // Number of bins so that last bin_name <= xmax and bin_names[k] = origin + k*width
+-  int nbins = (int)std::floor( (xmax - origin) / width + 1e-12 ) + 1;
+-  if (nbins < 1) nbins = 1;
+-  
+-  bin_names.resize(nbins);
+-  for (int k = 0; k < nbins; ++k) bin_names[k] = origin + k * width;
+-  
+-  counts.assign(nbins, 0);
++  double last = std::floor((xmax - origin) / width + 1e-12);
++  if (!(last < kMaxBinIndex)) {
++    width = (xmax - origin) / kMaxBinIndex;
++    last = std::floor((xmax - origin) / width + 1e-12);
++    if (!(last < kMaxBinIndex)) last = kMaxBinIndex;
++  }
++  const std::int64_t nbins = (last >= 0.0) ? static_cast<std::int64_t>(last) + 1 : 1;
++  const std::int64_t cap = static_cast<std::int64_t>(xs.size()) * (kMaxEmptyRun + 1) + kMaxEmptyRun;
++  bin_names.reserve(static_cast<std::size_t>(std::min(nbins, cap)));
++  counts.reserve(static_cast<std::size_t>(std::min(nbins, cap)));
++
++  auto push_bin = [&](std::int64_t k, int c) {
++    bin_names.push_back(origin + static_cast<double>(k) * width);
++    counts.push_back(c);
++  };
++  // Emit the empty bins first .. last (inclusive), shortening long runs.
++  auto push_empty_run = [&](std::int64_t first, std::int64_t last_bin) {
++    const std::int64_t len = last_bin - first + 1;
++    if (len <= 0) return;
++    if (len <= kMaxEmptyRun) {
++      for (std::int64_t k = first; k <= last_bin; ++k) push_bin(k, 0);
++      return;
++    }
++    const std::int64_t half = kMaxEmptyRun / 2;
++    for (std::int64_t k = first; k < first + half; ++k) push_bin(k, 0);
++    for (std::int64_t k = last_bin - half + 1; k <= last_bin; ++k) push_bin(k, 0);
++  };
++
++  // xs is sorted, so bin indices are non-decreasing.
++  const double top = static_cast<double>(nbins - 1);
++  std::int64_t prev = -1;
+   for (double v : xs) {
+-    int idx = (int)std::floor((v - origin) / width);
+-    if (idx < 0) idx = 0;
+-    if (idx >= nbins) idx = nbins - 1;
+-    counts[idx] += 1;
++    const double q = std::floor((v - origin) / width);
++    const std::int64_t k = (q < 0.0) ? 0 : (q >= top ? nbins - 1 : static_cast<std::int64_t>(q));
++    if (k == prev) {
++      ++counts.back();
++      continue;
++    }
++    push_empty_run(prev + 1, k - 1);
++    push_bin(k, 1);
++    prev = k;
+   }
++  push_empty_run(prev + 1, nbins - 1);
+ }
+ 
+ // ---------- NNS.gravity ----------
+-- 
+2.43.0
+

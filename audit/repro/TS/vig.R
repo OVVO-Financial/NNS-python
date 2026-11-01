@@ -1,0 +1,6 @@
+suppressPackageStartupMessages(library(NNS))
+x <- as.numeric(AirPassengers)
+nl <- NNS.ARMA(x, h=44, training.set=100, method="nonlin", seasonal.factor=12, plot=FALSE); cat("nonlin RMSE", sqrt(mean((nl-tail(x,44))^2)), "\n")
+li <- NNS.ARMA(x, h=44, training.set=100, method="lin", seasonal.factor=12, plot=FALSE); cat("lin RMSE", sqrt(mean((li-tail(x,44))^2)), "\n")
+o <- NNS.ARMA.optim(x, training.set=100, seasonal.factor=seq(12,60,6), obj.fn=expression(sqrt(mean((predicted-actual)^2))), objective="min", pred.int=.95, print.trace=FALSE, ncores=1)
+cat("optim", o$periods, o$method, o$obj.fn, o$shrink, o$nns.regress, o$bias.shift, "\n"); cat(head(o$results), "\n")
