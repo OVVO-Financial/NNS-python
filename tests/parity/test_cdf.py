@@ -98,6 +98,41 @@ def test_nns_cdf_rejects_infinite_values(variable: np.ndarray) -> None:
         nns_cdf(variable)
 
 
+_HAZARD_TIE_RUNS = [
+    # A run of 12 zeros: the +-5 finite-difference window of the middle points lies
+    # inside the run (zero width), as in daily returns with zero-return days.
+    [-2.0, -1.5, -1.0, -0.5, *([0.0] * 12), 0.5, 1.0, 1.5, 2.0, 3.0],
+    # Discrete counts with long tie runs.
+    [
+        *[3.0, 1.0, 2.0, 4.0, 3.0, 2.0, 3.0, 5.0, 2.0, 3.0, 1.0, 3.0, 2.0, 4.0, 3.0, 2.0],
+        *[6.0, 3.0, 2.0, 3.0, 4.0, 2.0, 3.0, 3.0, 0.0, 2.0, 3.0, 4.0, 3.0, 2.0, 3.0, 1.0],
+        *[3.0, 2.0, 5.0, 3.0, 2.0, 3.0, 4.0, 3.0],
+    ],
+]
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("x", _HAZARD_TIE_RUNS)
+@pytest.mark.parametrize("degree", [0.0, 1.0])
+def test_nns_cdf_hazard_with_tie_runs_matches_r(x: list[float], degree: float) -> None:
+    # R fix be02460: a zero-width window inside a tie run is widened to the
+    # neighbouring distinct values (13.3 divided 0/0 and nns_reg stopped).
+    expected = cast(
+        dict[str, object],
+        nns_cdf_custom(x, degree=degree, target=1.0, type="hazard"),
+    )
+    actual = nns_cdf(np.asarray(x), degree=degree, target=1.0, type="hazard")
+
+    assert np.all(np.isfinite(cast(dict[str, np.ndarray], actual["Function"])["h(x)"]))
+    _assert_cdf_result(actual, expected, atol=COMPOUND)
+
+
+@pytest.mark.parity
+def test_nns_cdf_hazard_constant_variable_raises() -> None:
+    with pytest.raises(ValueError, match="at least two distinct values"):
+        nns_cdf(np.repeat(2.0, 5), type="hazard")
+
+
 @pytest.mark.parity
 @pytest.mark.parametrize("target", [0.0, 5.0])
 def test_nns_cdf_univariate_out_of_bounds_target_raises(target: float) -> None:
