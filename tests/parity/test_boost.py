@@ -343,6 +343,7 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         cv_size=0.25,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)
@@ -378,6 +379,7 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         features_only=True,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nns import nns_m_reg, nns_reg, nns_stack
+from nns import nns_boost, nns_m_reg, nns_reg, nns_stack
 from tests._r import nns_frame_call, r_column
 from tests._tolerances import COMPOUND
 
@@ -354,3 +354,29 @@ def test_nns_stack_factor_predictor_levels_and_names() -> None:
         x, cars.mpg, x.iloc[:5], folds=2, factor_levels={"flag": ["1", "0"]}
     )
     np.testing.assert_allclose(by_levels["stack"], actual["stack"])
+
+
+# --------------------------------------------------------------------------
+# STK-08: nns_boost feature names
+# --------------------------------------------------------------------------
+
+def test_nns_boost_feature_names_are_column_names() -> None:
+    cars = _cars()
+    x = cars[["wt", "hp", "disp"]]
+    expected = nns_frame_call(
+        "labels.boost.names",
+        "r <- NNS.boost(x[1:30, ], y[1:30], IVs.test = x[31:40, ], learner.trials = 7, "
+        "epochs = 10, CV.size = 0.25, status = FALSE, feature.importance = FALSE); "
+        "list(results = r$results, freq = r$feature.frequency)",
+        {"x": _spec(x), "y": _vec(cars.mpg)},
+    )
+    assert isinstance(expected, dict)
+    actual = nns_boost(x.iloc[:30], cars.mpg.iloc[:30], x.iloc[30:], learner_trials=7,
+                       epochs=10, cv_size=0.25)
+    freq = expected["freq"]
+    assert isinstance(freq, dict)
+    assert list(actual["feature.frequency"]) == list(freq["names"])
+    np.testing.assert_allclose(
+        list(actual["feature.frequency"].values()), _num(freq["values"])
+    )
+    np.testing.assert_allclose(actual["results"], _num(expected["results"]), atol=COMPOUND)
