@@ -614,7 +614,8 @@ repeats and R's `dy.dx` fails, the port uses the distinct bandwidths.
 `eval_point` must be given (a number, a vector, or `"overall"`).
 `nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")` with
 `tol = tol / 10`, and declares convergence when the bisection bracket on the
-intercept `B` is narrower than `tol * max(1, |B|)` (as in the patched R), so
+intercept `B` is narrower than `tol * max(|point|, |f(point) - B|)`, a
+derivative error of about `tol * max(1, |f'(point)|)` (as in the patched R), so
 iterations and convergence flags match R.
 
 NNS Python derivative parity is defined at the public input/output level, while

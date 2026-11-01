@@ -629,10 +629,15 @@ def nns_distance_bulk_custom(
         return result
 
 
-def nns_diff_custom(name: str, point: float, h: float | None = None) -> RValue:
+def nns_diff_custom(
+    name: str, point: float, h: float | None = None, tol: float | None = None
+) -> RValue:
     args: dict[str, Any] = {"name": name, "point": point}
+    # Only a non-default h or tol enters the payload, so existing cache keys are kept.
     if h is not None:
         args["h"] = h
+    if tol is not None:
+        args["tol"] = tol
     key = _cache_key("NNS.diff.custom", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -1792,9 +1797,11 @@ def _call_r_diff_custom(args: dict[str, Any]) -> RValue:
         "  tanh = function(x) tanh(x),\n"
         "  abs = function(x) abs(x),\n"
         "  quartic = function(x) x^4 - 3 * x,\n"
-        "  quintic = function(x) -.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x))))\n"
-        "result <- if (is.null(args$h)) NNS::NNS.diff(f, args$point, plot = FALSE) else\n"
-        "  NNS::NNS.diff(f, args$point, h = args$h, plot = FALSE)\n"
+        "  quintic = function(x) -.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x))),\n"
+        "  sin_offset = function(x) sin(x) + 1000)\n"
+        "tol <- if (is.null(args$tol)) 1e-10 else args$tol\n"
+        "h <- if (is.null(args$h)) abs(args$point) * 0.1 + 0.01 else args$h\n"
+        "result <- NNS::NNS.diff(f, args$point, h = h, tol = tol, plot = FALSE)\n"
         "payload <- as.numeric(result[, 1])\n"
         "names(payload) <- rownames(result)\n"
         "cat(jsonlite::toJSON(as.list(payload), auto_unbox = TRUE, digits = NA))\n"
