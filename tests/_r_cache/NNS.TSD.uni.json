@@ -1,0 +1,11 @@
+{
+  "entries": {
+    "0a00365a2f91354d85df4e3b023b5ccc211400960fd0cabe5f0c8679f5e0386c": 0.0,
+    "a7e8b370419fa6b306b68db9e931f948f5d0b45eb82e18c2a6ca63dcce4d3a82": 1.0,
+    "bbf8ee8002481bc88f42d7e79b50a65cd27ffc3a42949ef8b05511e9c0ea4a08": 0.0,
+    "c17bdb01601e34daa0b938864bd722821c7d26e78c6f5c003da0d8f044b46f64": 0.0
+  },
+  "label": "NNS.TSD.uni",
+  "nns_version": "13.3",
+  "schema_version": 2
+}

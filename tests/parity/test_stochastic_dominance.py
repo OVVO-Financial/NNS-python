@@ -84,6 +84,45 @@ def test_fsd_uni_continuous_matches_r(size: int, case: str) -> None:
         assert fsd_uni(first, second, "continuous") == int(np.asarray(expected).reshape(-1)[0])
 
 
+_UNI_EDGE_CASES = [
+    ([5.0, 5.0, 0.0, 4.0, 0.0, 2.0], [4.0] * 6),  # point mass at a threshold
+    ([0.0, 0.0], [0.0, 3.0]),  # constant sample: 0/0 continuous ratio
+    ([0.0, 0.0, 3.0, 3.0], [1.0, 1.0, 3.0, 0.0]),  # curves coincide at the knots
+    ([1.0, 2.0], [1.0, 1.0, 2.0, 2.0]),  # same distribution, unequal lengths
+    ([1.0, 2.0, 5.0], [0.0, 1.0, 1.0, 2.0, 3.0]),  # unequal lengths
+]
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(("x", "y"), _UNI_EDGE_CASES)
+def test_sd_uni_edge_cases_match_patched_r(x: list[float], y: list[float]) -> None:
+    # R fixes 019fc1a (each sample walked with its own length), ec87e4a (no dominance
+    # when the curves coincide) and 05f6d3d (continuous FSD 0/0 ratio = the degree-0
+    # ratio, as LPM.ratio): the patched R .uni routines now agree with Python's and
+    # with the bidirectional tests.
+    a = np.asarray(x)
+    b = np.asarray(y)
+    for first, second in ((a, b), (b, a)):
+        for fsd_type in ("continuous", "discrete"):
+            expected = nns("NNS.FSD.uni", first.tolist(), second.tolist(), fsd_type)
+            actual = fsd_uni(first, second, fsd_type)
+            assert actual == int(np.asarray(expected).reshape(-1)[0])
+        for order, function in (("SSD", ssd_uni), ("TSD", tsd_uni)):
+            if first.size != second.size:
+                expected = nns(f"NNS.{order}.uni", first.tolist(), second.tolist())
+                expected_value = int(np.asarray(expected).reshape(-1)[0])
+            else:
+                # jsonlite turns two equal-length vectors into a matrix, so check
+                # equal lengths against the bidirectional test instead.
+                bidirectional = _sd_result_from_r(
+                    f"NNS.{order}", first, second, f"X {order} Y", f"Y {order} X",
+                    f"NO {order} EXISTS",
+                )
+                expected_value = 1 if bidirectional == 1 else 0
+            assert function(first, second) == expected_value
+    assert fsd(a, b, "continuous") == _sd_result_from_r_typed(a, b, "continuous")
+
+
 @pytest.mark.parity
 @pytest.mark.parametrize("degree", [1, 2, 3])
 @pytest.mark.parametrize("size", SIZES)

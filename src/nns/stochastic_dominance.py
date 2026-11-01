@@ -53,8 +53,8 @@ def fsd(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") 
     ``type="discrete"`` compares empirical CDFs; ``type="continuous"`` compares the
     degree-1 ratio ``LPM1 / (LPM1 + UPM1)``, as R's ``NNS.FSD(type=)`` does. Like R,
     an unrecognised ``type`` warns and runs the continuous test; where both
-    partial moments vanish the ratio is taken as 0 (R's C++ convention; R's
-    R-level ``NNS.FSD`` returns ``NA`` there).
+    partial moments vanish the ratio is the degree-0 ratio (the CDF value), as
+    in ``lpm_ratio`` and the patched R.
     """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
@@ -577,10 +577,12 @@ def _pair_curve_values_at_thresholds(
         lower = (counts * thresholds - sums1) / observations
         totals = prefix1_column[-1]
         upper = (totals - sums1 - (observations - counts) * thresholds) / observations
+        # 0/0 (every observation equals the threshold): the degree-0 ratio, i.e. the
+        # right-continuous CDF value, as LPM.ratio does (R fix 05f6d3d; it was 0).
         ratio: NDArray[np.float64] = np.divide(
             lower,
             lower + upper,
-            out=np.zeros_like(lower, dtype=np.float64),
+            out=np.asarray(counts / observations, dtype=np.float64),
             where=(lower + upper) != 0,
         )
         return ratio
