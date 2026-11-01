@@ -648,6 +648,13 @@ def _dominates_sorted(
             interior_excess = _ratio_deg1_interior_excess(
                 x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale
             )
+        if not interior_excess and not np.any(x_curve - y_curve > tol):
+            midpoint = _ratio_deg1_midpoint_verdict(
+                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale,
+                np.abs(x_curve - y_curve) > tol,
+            )
+            if midpoint is not None:
+                return midpoint
     elif degree == 2:
         # LPM1 is piecewise linear with knots at the data: checking the knots is exact.
         x_curve = (x_counts * thresholds - x_prefix1[x_counts]) / x_count
@@ -763,6 +770,42 @@ def _ratio_deg1_interior_excess(
         ratio_y = (ay * ts + by) / denom_y
         tol = _SD_EPS64 * np.maximum(1.0, scale / np.minimum(denom_x, denom_y))
         return bool(np.any(valid & (ratio_x - ratio_y > tol)))
+
+
+def _ratio_deg1_midpoint_verdict(
+    x_prefix1: NDArray[np.float64],
+    x_counts: NDArray[np.intp],
+    x_count: int,
+    y_prefix1: NDArray[np.float64],
+    y_counts: NDArray[np.intp],
+    y_count: int,
+    thresholds: NDArray[np.float64],
+    scale: float,
+    knot_differs: NDArray[np.bool_],
+) -> bool | None:
+    """The verdict when the ratios first differ at an interval midpoint, else None.
+
+    Two linear-fractional ratios that agree at both knots and at the midpoint agree
+    on the whole interval. As in R, a midpoint is checked only while the curves have
+    not yet differed (at a knot or an earlier midpoint).
+    """
+    if thresholds.size < 2:
+        return None
+    s = 0.5 * (thresholds[:-1] + thresholds[1:])
+    kx = x_counts[:-1]
+    ky = y_counts[:-1]
+    x_ratio, x_total = _ratio_deg1(x_prefix1, kx, s, x_count)
+    y_ratio, y_total = _ratio_deg1(y_prefix1, ky, s, y_count)
+    d = x_ratio - y_ratio
+    tol = _SD_EPS64 * np.maximum(1.0, scale / np.minimum(x_total, y_total))
+    differs = np.abs(d) > tol
+    first_knot = np.flatnonzero(knot_differs)
+    if first_knot.size:
+        differs[first_knot[0] :] = False
+    first = np.flatnonzero(differs)
+    if not first.size:
+        return None
+    return not bool(d[first[0]] > tol[first[0]])
 
 
 def _ratio_deg1_coefs(
