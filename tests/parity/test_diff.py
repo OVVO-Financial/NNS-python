@@ -36,9 +36,9 @@ DY_D_PARITY = 5e-2
     ],
 )
 def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
-    # The root finder mirrors R's uniroot (tol = eps^0.25, extendInt = "yes"),
-    # so every reported field, including iterations and the convergence flags,
-    # matches R's 12-digit output.
+    # The root finder mirrors R's uniroot (extendInt = "yes", tol = tol / 10 and the
+    # bracket-on-B convergence test of R fix d8f70b8), so every reported field,
+    # including iterations and the convergence flags, matches R's 12-digit output.
     expected = _r_nns_diff(name, point)
     actual = nns_diff(func, point)
     for key, value in actual.items():
@@ -46,6 +46,22 @@ def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
             assert np.isnan(value), key
             continue
         np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
+
+
+@pytest.mark.parametrize(
+    ("func", "point", "truth"),
+    [
+        (np.sin, 1.0, math.cos(1.0)),
+        (lambda x: x**3, 2.0, 12.0),
+        (np.log, 5.0, 0.2),
+        (lambda x: x**4 - 3 * x, -2.0, -35.0),
+    ],
+)
+def test_nns_diff_converged_derivative_is_accurate(func: Any, point: float, truth: float) -> None:
+    # R fix d8f70b8: "converged" used to be reported with errors of 4e-7 to 6e-4.
+    result = nns_diff(func, point)
+    assert result["converged"] == 1.0
+    assert abs(result["DERIVATIVE"] - truth) < 1e-7
 
 
 @pytest.mark.parity
