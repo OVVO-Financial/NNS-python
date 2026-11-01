@@ -251,6 +251,41 @@ def test_continuous_fsd_checks_the_curves_between_sample_points() -> None:
     ]
 
 
+def _mean_preserving_spread(shift: float) -> tuple[np.ndarray, np.ndarray]:
+    from scipy.stats import norm  # type: ignore[import-untyped]
+
+    base = norm.ppf((np.arange(1, 101) - 0.5) / 100.0)
+    return base + shift, 2.0 * base + shift
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("x", "y"),
+    [
+        # x = qnorm(ppoints(100)), y = 2x: an exact mean-preserving spread, so X SSD Y
+        # and X TSD Y; 13.3 said NO SSD (LPM1 difference +8.9e-16, mean -3.7e-18).
+        _mean_preserving_spread(0.0),
+        _mean_preserving_spread(0.37),
+        # 0.1 + 0.7 = 0.7999999999999999: 13.3 said NO SSD, the same data x10 X SSD Y.
+        (np.array([0.1, 0.7]), np.array([0.0, 0.8])),
+        (np.array([1.0, 7.0]), np.array([0.0, 8.0])),
+    ],
+)
+def test_sd_rounding_noise_does_not_decide_dominance(x: np.ndarray, y: np.ndarray) -> None:
+    # R fix 2ca5aca: differences up to 64 * eps * S^d are ties, and the bidirectional
+    # tests take their verdict from the pairwise (.uni) test in both directions.
+    assert ssd(x, y) == 1 == ssd_uni(x, y)
+    assert tsd(x, y) == 1 == tsd_uni(x, y)
+    assert ssd_uni(y, x) == tsd_uni(y, x) == 0
+    assert ssd(x, y) == _sd_result_from_r("NNS.SSD", x, y, "X SSD Y", "Y SSD X", "NO SSD EXISTS")
+    assert tsd(x, y) == _sd_result_from_r("NNS.TSD", x, y, "X TSD Y", "Y TSD X", "NO TSD EXISTS")
+    for degree in (2, 3):
+        returns = np.column_stack([y, x])
+        expected = nns("NNS.SD.efficient.set", returns.tolist(), degree, "discrete", False)
+        actual = sd_efficient_set(returns, degree)
+        assert _strings(expected) == [f"X_{index + 1}" for index in actual]
+
+
 SDPairFunction = Callable[[np.ndarray, np.ndarray], int]
 
 
