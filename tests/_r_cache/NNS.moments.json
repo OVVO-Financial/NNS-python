@@ -15,7 +15,7 @@
     "4a13cf392285e68bf67581527cedadc997caff9088a51b20b27747b64b102366": {
       "kurtosis": 1.67492109156106,
       "mean": 1.66666666666667,
-      "skewness": 1.61281677390665,
+      "skewness": 1.2269112891547,
       "variance": 12.7666666666667
     },
     "4ac23888a348e7a4f674526b3c6ce2dbf22aafb45d5ef33f5d5e7e1d3fc314b5": {
@@ -81,8 +81,14 @@
     "9c82e18ea3f8a05642b65a3937ac2c3902b56a84307214f99420e8824dc7b5ad": {
       "kurtosis": NaN,
       "mean": 2.33333333333333,
-      "skewness": 1.71810798372273,
+      "skewness": 0.935219529582823,
       "variance": 2.33333333333333
+    },
+    "acad28f35907ab7a54f84d43f696e713f999ec0adf5513ada1238310fd80624f": {
+      "kurtosis": 1.30376344086022,
+      "mean": 6.2,
+      "skewness": 1.32531470981341,
+      "variance": 37.2
     },
     "cb9a1ab3185bde6fecaf3c2ba5e469bf502bf8248d40c4132c7949d8d2fcbf9c": {
       "kurtosis": -2.0,

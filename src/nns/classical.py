@@ -72,7 +72,11 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
             skewness = float(skew_base / variance**1.5)
             kurtosis = float(kurt_base / variance**2 - 3.0)
         else:
-            skewness = float((n / ((n - 1) * (n - 2))) * ((n * skew_base) / variance**1.5))
+            # Adjusted Fisher-Pearson G1: n/((n-1)(n-2)) * sum(z^3) / s^3 with s the
+            # sample (n-1) standard deviation, as in the kurtosis branch below.
+            skewness = float(
+                (n / ((n - 1) * (n - 2))) * ((n * skew_base) / (variance * (n / (n - 1))) ** 1.5)
+            )
             kurtosis = float(
                 ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3)))
                 * ((n * kurt_base) / (variance * (n / (n - 1))) ** 2)
