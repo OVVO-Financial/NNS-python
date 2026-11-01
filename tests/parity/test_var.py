@@ -542,8 +542,8 @@ _VAR_KEYS = ("interpolated_and_extrapolated", "univariate", "multivariate", "ens
 _AWAITS_VAR_FIXES = pytest.mark.xfail(
     strict=False,
     reason=(
-        "Python NNS.VAR here has the integer-x centroid fix but not the forecast-row "
-        "and stack fixes, so no R build matches it until later slices."
+        "Python NNS.VAR here has the forecast-row fix but not the stack fixes, so no "
+        "R build matches it until the stack fixes are mirrored."
     ),
 )
 
@@ -580,7 +580,6 @@ def _assert_var_matches(actual: dict[str, Any], expected: dict[str, Any]) -> Non
     )
 
 
-@_AWAITS_VAR_FIXES
 @pytest.mark.parametrize("dim_red_method", ["cor", "NNS.dep", "NNS.caus", "all"])
 def test_public_nns_var_driven_series_matches_r(dim_red_method: str) -> None:
     variables = _driven_variables()
@@ -594,7 +593,6 @@ def test_public_nns_var_driven_series_matches_r(dim_red_method: str) -> None:
     assert "x2_tau_0" not in relevant_y
 
 
-@_AWAITS_VAR_FIXES
 @pytest.mark.parametrize(
     ("name", "tau"),
     [("vector", [1, 2, 2]), ("lists", [[1, 2], [1], [1, 3]])],
@@ -607,7 +605,6 @@ def test_public_nns_var_tau_forms_match_r(name: str, tau: Any) -> None:
     _assert_var_matches(cast(dict[str, Any], actual), expected)
 
 
-@_AWAITS_VAR_FIXES
 def test_public_nns_var_own_lag_weights_match_r() -> None:
     variables = _driven_variables()
     expected = _custom_var_reference(variables, h=3, tau=2, naive_weights=False)
@@ -615,6 +612,7 @@ def test_public_nns_var_own_lag_weights_match_r() -> None:
     _assert_var_matches(cast(dict[str, Any], actual), expected)
 
 
+@_AWAITS_VAR_FIXES
 def test_public_nns_var_objective_max_matches_r() -> None:
     variables = _driven_variables()
     expected = _custom_var_reference(variables, h=3, tau=1, objective="max")
@@ -622,7 +620,6 @@ def test_public_nns_var_objective_max_matches_r() -> None:
     _assert_var_matches(cast(dict[str, Any], actual), expected)
 
 
-@_AWAITS_VAR_FIXES
 def test_public_nns_var_interior_and_trailing_missing_values_match_r() -> None:
     variables = _driven_variables()
     variables[[10, 11, 30], 0] = np.nan
