@@ -142,6 +142,50 @@ def test_nns_cdf_multivariate_out_of_bounds_target_raises() -> None:
         nns_cdf(matrix, target=np.array([0.0, 2.0]))
 
 
+def _trivariate_matrix() -> np.ndarray:
+    rng = np.random.default_rng(7)
+    z = rng.standard_normal((40, 3))
+    base = z[:, :1]
+    return np.round(np.hstack([base, 0.6 * base + 0.8 * z[:, 1:2], z[:, 2:3] - 0.5 * base]), 6)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("degree", [0.0, 1.0])
+@pytest.mark.parametrize("type_name", ["survival", "hazard", "cumulative hazard"])
+def test_nns_cdf_trivariate_types_and_target_match_r(type_name: str, degree: float) -> None:
+    # R fix 0f94f02: the joint survival for d >= 3 uses inclusion-exclusion over all
+    # subsets, and target.value is the same function as the rows.
+    matrix = _trivariate_matrix()
+    target = [0.1, 0.0, -0.2]
+
+    expected = cast(
+        dict[str, object],
+        nns_cdf_custom(matrix.tolist(), degree=degree, target=target, type=type_name),
+    )
+    actual = nns_cdf(matrix, degree=degree, target=np.array(target), type=type_name)
+
+    _assert_cdf_result(actual, expected, atol=COMPOUND)
+
+
+def test_nns_cdf_trivariate_degree0_survival_is_joint_exceedance() -> None:
+    matrix = _trivariate_matrix()
+    actual = nns_cdf(matrix, degree=0.0, type="survival", target=np.array([0.1, 0.0, -0.2]))
+    function = cast(dict[str, np.ndarray], actual["Function"])
+
+    brute = np.array([np.mean(np.all(matrix > row, axis=1)) for row in matrix])
+    np.testing.assert_allclose(function["CDF"], brute, atol=1e-12)
+    target_brute = np.mean(np.all(matrix > np.array([0.1, 0.0, -0.2]), axis=1))
+    np.testing.assert_allclose(actual["target.value"], [target_brute], atol=1e-12)
+
+
+def test_nns_cdf_multivariate_checks_every_target_coordinate() -> None:
+    matrix = _trivariate_matrix()
+    with pytest.raises(ValueError, match="target out of bounds"):
+        nns_cdf(matrix, target=np.array([0.0, 0.0, 1e6]))
+    with pytest.raises(ValueError, match="one value per column"):
+        nns_cdf(matrix, target=np.array([0.0, 0.0]))
+
+
 def _assert_cdf_result(
     actual: dict[str, object],
     expected: dict[str, object],
