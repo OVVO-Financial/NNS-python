@@ -129,6 +129,7 @@ def nns_part(
     obs_req: int | None = 8,
     min_obs_stop: bool = True,
     noise_reduction: NoiseReduction = "off",
+    plot: bool = False,
 ) -> PartResult:
     """Return R's NNS.part partition map as NumPy arrays.
 
@@ -138,8 +139,35 @@ def nns_part(
     ``type`` is ``None`` (XY quadrants) or ``"XONLY"``; ``order`` is ``None``,
     ``"max"`` or a positive integer and ``obs_req`` a non-negative integer
     (NumPy integers and integral floats are accepted). The returned ``order`` is
-    the depth reached, at most ``floor(log2(n))``.
+    the depth reached, at most ``floor(log2(n))``. ``plot=True`` also draws
+    the partition (``nns.plotting.plot_nns_part``, R's ``Voronoi = TRUE``).
     """
+    result = _nns_part(
+        x,
+        y,
+        type=type,
+        order=order,
+        obs_req=obs_req,
+        min_obs_stop=min_obs_stop,
+        noise_reduction=noise_reduction,
+    )
+    if plot:
+        from nns.plotting.regression import plot_nns_part
+
+        plot_nns_part(result)
+    return result
+
+
+def _nns_part(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    *,
+    type: str | None = None,
+    order: int | str | None = None,
+    obs_req: int | None = 8,
+    min_obs_stop: bool = True,
+    noise_reduction: NoiseReduction = "off",
+) -> PartResult:
     if type is not None and (not isinstance(type, str) or type.lower() != "xonly"):
         raise ValueError("[type] must be NULL or 'XONLY'.")
     x_values, y_values = _part_pair(x, y)

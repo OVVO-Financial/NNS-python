@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast, overload
@@ -241,15 +242,21 @@ def _maybe_render_reg(
 ) -> None:
     """Render the NNS.reg figure(s) as a side effect when a plot flag is set.
 
-    Plotting is decoupled from computation: this only fires for the standard
-    univariate result (one that carries ``Fitted.xy``) so the value-only return
-    contract is unchanged. ``plot``/``plot_regions`` draw the regression figure;
-    ``residual_plot`` draws a residual scatter.
+    Plotting is decoupled from computation, so the value-only return contract
+    is unchanged. For a univariate result ``plot``/``plot_regions`` draw the
+    regression figure and ``residual_plot`` a residual scatter. For a
+    multivariate result, as in R's ``NNS.M.reg``, ``residual_plot`` draws y and
+    y.hat over the observation index and ``plot`` a 3-D scatter of two
+    regressors against y; with more than two regressors there is no regression
+    figure and a warning says so.
     """
     if not (plot or plot_regions or residual_plot):
         return
     fitted = result.get("Fitted.xy") if isinstance(result, dict) else None
-    if not isinstance(fitted, dict) or "x" not in fitted:
+    if not isinstance(fitted, dict):
+        return
+    if "x" not in fitted:
+        _maybe_render_m_reg(fitted, plot=plot or plot_regions, residual_plot=residual_plot)
         return
     if plot or plot_regions:
         from nns.plotting.regression import plot_nns_reg
@@ -265,6 +272,39 @@ def _maybe_render_reg(
             ax.scatter(xs, residuals, color="steelblue")
             ax.axhline(0.0, color="red")
             ax.set_title("NNS Residual Plot")
+
+
+def _maybe_render_m_reg(
+    fitted: Mapping[str, object], *, plot: bool, residual_plot: bool
+) -> None:
+    """Render the multivariate NNS.reg figures (R's ``NNS.M.reg`` plot branches)."""
+    names = list(fitted)
+    regressors = names[: names.index("y")] if "y" in names else []
+    if plot:
+        if len(regressors) == 2:
+            from nns.plotting._mpl import require_mpl
+
+            ax: Any = require_mpl().figure().add_subplot(projection="3d")
+            ax.scatter(
+                np.asarray(fitted[regressors[0]], dtype=np.float64),
+                np.asarray(fitted[regressors[1]], dtype=np.float64),
+                np.asarray(fitted["y"], dtype=np.float64),
+                color="steelblue",
+            )
+            ax.set_xlabel(regressors[0])
+            ax.set_ylabel(regressors[1])
+            ax.set_zlabel("Y")
+        else:
+            warnings.warn(
+                f"plot=True draws a regression figure for one or two regressors only "
+                f"({len(regressors)} given); use residual_plot=True for the fitted-values plot.",
+                UserWarning,
+                stacklevel=4,
+            )
+    if residual_plot:
+        from nns.multivariate_regression import _render_m_reg
+
+        _render_m_reg(cast(Any, fitted))
 
 
 def prepare_factor_predictors(
