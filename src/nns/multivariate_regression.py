@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,15 +18,17 @@ from nns.var import upm_var
 NBest = int | Literal["all"] | None
 
 MRegFitted = dict[str, NDArray[np.float64] | NDArray[np.str_]]
-"""Fit table keyed ``V1..Vn`` per regressor plus ``y``, ``y.hat``, ``NNS.ID``,
-``residuals``, and (with ``confidence_interval``) ``conf.int.pos``/``conf.int.neg``.
-Column count depends on the input, so keys stay dynamic."""
+"""Fit table keyed by encoded predictor name (frame column names, factor dummies
+``<name>_<level>``, ``V1..Vn`` for an unnamed matrix) plus ``y``, ``y.hat``,
+``NNS.ID``, ``residuals``, and (with ``confidence_interval``)
+``conf.int.pos``/``conf.int.neg``. Column count depends on the input, so keys
+stay dynamic."""
 
 MRegPredInt = TypedDict(
     "MRegPredInt",
     {
-        "lower.pred.int": NDArray[np.float64],
-        "upper.pred.int": NDArray[np.float64],
+        "pred.int.neg": NDArray[np.float64],
+        "pred.int.pos": NDArray[np.float64],
     },
 )
 """Prediction interval bounds for the requested ``point_est`` rows."""
@@ -36,17 +38,21 @@ MRegResult = TypedDict(
     {
         "Point.est": "NDArray[np.float64] | None",
         "RPM": dict[str, NDArray[np.float64]],
-        "R2": NotRequired[float],
-        "rhs.partitions": NotRequired[dict[str, NDArray[np.float64]]],
-        "pred.int": NotRequired["MRegPredInt | None"],
-        "Fitted.xy": NotRequired[MRegFitted],
+        "R2": "float | None",
+        "rhs.partitions": dict[str, NDArray[np.float64]],
+        "pred.int": "MRegPredInt | None",
+        "Fitted.xy": "MRegFitted | None",
+        "n.best": int,
+        "dist": str,
+        "class.levels": "list[str] | None",
     },
 )
 """``nns_m_reg`` result.
 
-``point_only=True`` returns only ``Point.est`` and ``RPM``; the full form always
-carries the remaining keys (``pred.int`` is ``None`` unless
-``confidence_interval`` is set).
+Every key is always present: ``R2`` and ``Fitted.xy`` are ``None`` with
+``point_only=True``, ``Point.est`` is ``None`` without ``point_est``,
+``pred.int`` is ``None`` unless ``confidence_interval`` is set, and
+``class.levels`` is ``None`` for a numeric response.
 """
 
 
@@ -438,7 +444,7 @@ def _apply_multivariate_intervals(
     point_predictions: NDArray[np.float64] | None,
     *,
     confidence_interval: float | None,
-) -> MRegPredInt | None:
+) -> dict[str, NDArray[np.float64]] | None:
     if confidence_interval is None:
         return None
     alpha = (1.0 - float(confidence_interval)) / 2.0

@@ -60,7 +60,8 @@ RegFitted = TypedDict(
         "NNS.ID": NDArray[np.str_],
         "gradient": NDArray[np.float64],
         "residuals": NDArray[np.float64],
-        "standard.errors": NDArray[np.float64],
+        # Only the unused legacy implementation below fills this column.
+        "standard.errors": NotRequired[NDArray[np.float64]],
         "conf.int.pos": NotRequired[NDArray[np.float64]],
         "conf.int.neg": NotRequired[NDArray[np.float64]],
     },
@@ -82,23 +83,27 @@ class RegXStar(TypedDict):
 RegResult = TypedDict(
     "RegResult",
     {
-        "R2": float,
-        "SE": float,
+        "R2": float | None,
+        "SE": float | None,
         "Prediction.Accuracy": float | None,
         "equation": "RegEquation | None",
         "x.star": "RegXStar | None",
         "derivative": DerivativeTable,
-        "Point.est": NDArray[np.float64],
+        "Point.est": "NDArray[np.float64] | None",
         "pred.int": "RegPredInt | None",
         "regression.points": RegPoints,
-        "Fitted.xy": RegFitted,
+        "Fitted.xy": "RegFitted | None",
+        "class.levels": NotRequired["list[str] | None"],
     },
 )
 """Univariate ``nns_reg`` result.
 
 ``equation`` and ``x.star`` are populated only on the dimension-reduction path;
 ``Prediction.Accuracy`` only in class mode; ``pred.int`` only when
-``confidence_interval`` is set; ``Point.est`` is empty unless ``point_est`` is given.
+``confidence_interval`` is set (one row per ``point_est`` row); ``Point.est``
+is ``None`` unless ``point_est`` is given; ``R2``, ``SE`` and ``Fitted.xy`` are
+``None`` with ``point_only=True``. ``class.levels`` is the label behind each
+class code (classification and categorical responses), else ``None``.
 """
 
 
