@@ -80,6 +80,50 @@ def test_nns_dep_asym_identical_pair_matches_r() -> None:
     np.testing.assert_allclose(actual["Dependence"], expected_dependence, atol=EXACT)
 
 
+def _r_seq(start: float, stop: float, by: float) -> np.ndarray:
+    """R ``seq(start, stop, by)``: start + (0:n) * by, clamped at ``stop``."""
+    count = int(np.floor((stop - start) / by + 1e-10))
+    return np.minimum(start + np.arange(count + 1, dtype=np.float64) * by, stop)
+
+
+def _tie_sensitive_case(name: str) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(9)
+    if name == "sin_grid_4pi":
+        x = _r_seq(0.0, 4.0 * np.pi, np.pi / 100.0)
+        return x, np.sin(x)
+    if name == "sin_grid_2pi":
+        x = _r_seq(0.0, 2.0 * np.pi, np.pi / 100.0)
+        return x, np.sin(x)
+    if name == "rounded":
+        x = np.round(rng.normal(size=300), 1)
+        return x, np.round(x**2 + rng.normal(size=300), 1)
+    if name == "three_valued":
+        x = np.round(rng.normal(5.0, 1.0, size=216), 1)
+        return x, np.digitize(x, [4.5, 5.5]).astype(np.float64)
+    x = rng.integers(0, 6, size=400).astype(np.float64) / 10.0
+    return x, (x * 10.0 + rng.integers(0, 3, size=400)) / 10.0
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("asym", [False, True])
+@pytest.mark.parametrize(
+    "case", ["sin_grid_4pi", "sin_grid_2pi", "rounded", "three_valued", "tenths"]
+)
+def test_nns_dep_tie_sensitive_cells_match_r(case: str, asym: bool) -> None:
+    # Points that sit exactly on a cell mean: R takes the cell means as a
+    # sequential double sum / n, and a pairwise (np.mean) mean that differs in
+    # the last ulp moved such points between quadrants (DEP-09; sin_grid_4pi
+    # gave Dependence 0.92402 vs R 0.92466).
+    x, y = _tie_sensitive_case(case)
+
+    expected = nns("NNS.dep", x.tolist(), y.tolist(), asym, False, False)
+    assert isinstance(expected, dict)
+    actual = nns_dep(x, y, asym=asym)
+
+    np.testing.assert_allclose(actual["Correlation"], _scalar(expected["Correlation"]), atol=EXACT)
+    np.testing.assert_allclose(actual["Dependence"], _scalar(expected["Dependence"]), atol=EXACT)
+
+
 def _scalar(value: object) -> float:
     assert isinstance(value, np.ndarray)
     return float(value)

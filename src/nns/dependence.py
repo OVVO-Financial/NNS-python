@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
 from nns._native import native_fn
-from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
 
 
 @overload
@@ -166,6 +165,9 @@ def _directional_dep(
     quadrants: list[str],
     fallback: float,
 ) -> tuple[float, float]:
+    # R (and the native kernel) add the cell terms in std::unordered_map order
+    # of the hashed labels; this adds them in first-seen order, so the totals
+    # can differ from R's in the last ulp (the cell copulas themselves match).
     groups: dict[str, list[int]] = defaultdict(list)
     for index, quadrant in enumerate(quadrants):
         groups[quadrant].append(index)
@@ -213,42 +215,63 @@ def _xonly_partition(x: NDArray[np.float64], obs_req: int) -> list[str]:
     return quadrants
 
 
+def _sequential_sum(values: NDArray[np.float64]) -> float:
+    """Left-to-right double sum, like a C++ ``for`` loop (``np.sum`` is pairwise)."""
+    if values.size == 0:
+        return 0.0
+    return float(np.cumsum(values)[-1])
+
+
+def _copula_moments(
+    x: NDArray[np.float64], y: NDArray[np.float64]
+) -> tuple[float, float, NDArray[np.float64], NDArray[np.float64]]:
+    """Degree-0 co-moment and DPM shares about the cell means, as R ``copula_signed``.
+
+    R's ``NNS_dep.cpp`` takes the cell means as a sequential double sum / n and
+    scales the counts by ``1 / n``. A pairwise (``np.mean``) cell mean can differ
+    in the last ulp on evenly spaced or tied data, and a point sitting exactly on
+    the mean then switches between the concordant and discordant counts.
+    """
+    n = x.size
+    dx = x - _sequential_sum(x) / n
+    dy = y - _sequential_sum(y) / n
+    inv_n = 1.0 / n
+    d0_concordant = np.count_nonzero((dx > 0.0) & (dy > 0.0)) + np.count_nonzero(
+        (dx <= 0.0) & (dy <= 0.0)
+    )
+    aligned = ((dx < 0.0) & (dy < 0.0)) | ((dx > 0.0) & (dy > 0.0))
+    d0_co = float(d0_concordant) * inv_n
+    dpm_d0 = float(np.count_nonzero(~aligned)) * inv_n
+    return d0_co, dpm_d0, dx, dy
+
+
 def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
+    """Signed bivariate copula of one cell (R ``NNS_dep.cpp`` ``copula_signed``).
+
+    Every sum runs in R's order (one sequential pass), so tie-sensitive comparisons
+    and the result match R bit for bit.
+    """
     n = x.size
     if n < 2:
         return 0.0
 
-    target_x = float(np.mean(x))
-    target_y = float(np.mean(y))
-
-    d0_cupm = float(co_upm(0.0, x, y, target_x, target_y))
-    d0_clpm = float(co_lpm(0.0, x, y, target_x, target_y))
-    d0_co = d0_cupm + d0_clpm
+    d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
     if d0_co == 1.0 or d0_co == 0.0:
         return 1.0
 
-    c1_cupm = float(co_upm(1.0, x, y, target_x, target_y))
-    c1_clpm = float(co_lpm(1.0, x, y, target_x, target_y))
-    c1_dlpm = float(d_lpm(1.0, 1.0, x, y, target_x, target_y))
-    c1_dupm = float(d_upm(1.0, 1.0, x, y, target_x, target_y))
-    if n > 1:
-        adjust = n / (n - 1)
-        c1_cupm *= adjust
-        c1_clpm *= adjust
-        c1_dlpm *= adjust
-        c1_dupm *= adjust
-    total = c1_cupm + c1_dupm + c1_dlpm + c1_clpm
-    if total > 0.0:
-        c1_cupm /= total
-        c1_clpm /= total
+    product = dx * dy
+    upper = (dx >= 0.0) & (dy >= 0.0)
+    lower = ~upper & (dx <= 0.0) & (dy <= 0.0)
+    discordant = ~(upper | lower)
+    c1_cupm = _sequential_sum(np.where(upper, product, 0.0))
+    c1_clpm = _sequential_sum(np.where(lower, product, 0.0))
+    c1_dpm = _sequential_sum(np.where(discordant, np.abs(dx) * np.abs(dy), 0.0))
+    c1_total = c1_cupm + c1_clpm + c1_dpm
+    co_d1 = (c1_cupm + c1_clpm) / c1_total if c1_total > 0.0 else 0.0
+    dpm_d1 = c1_dpm / c1_total if c1_total > 0.0 else 0.0
 
-    data = np.column_stack((x, y))
-    target = np.array([target_x, target_y], dtype=np.float64)
-    dpm_d0 = _dpm_nd(data, target, 0.0, norm=True)
-    dpm_d1 = _dpm_nd(data, target, 1.0, norm=True)
-
-    discrete_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
-    continuous_dep = min(max(abs(c1_cupm + c1_clpm - 0.5) / 0.5, 0.0), 1.0)
+    discrete_dep = min(1.0, max(0.0, abs(d0_co - 0.5) / 0.5))
+    continuous_dep = min(1.0, max(0.0, abs(co_d1 - 0.5) / 0.5))
     # DPM_nD counts a point as concordant when it is all-below OR all-above the
     # target (both fully-aligned orthants), so under independence the discordant
     # null is 1 - 2*0.5**n = 0.5 for the bivariate copula, not 1 - 0.5**n = 0.75.
@@ -258,19 +281,18 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     nd_cont_dep = abs(dpm_d1 - 0.5) / 0.5
 
     copula = math.sqrt((discrete_dep + continuous_dep + nd_disc_dep + nd_cont_dep) / 4.0)
-    return copula * _ols_sign(x, y)
+    cov = _sequential_sum(product)
+    varx = _sequential_sum(dx * dx)
+    slope_sign = 0.0 if varx == 0.0 else (1.0 if cov > 0.0 else (-1.0 if cov < 0.0 else 0.0))
+    return copula * slope_sign
 
 
 def _copula_degree0_unsigned(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
-    target_x = float(np.mean(x))
-    target_y = float(np.mean(y))
-    d0_co = float(co_upm(0.0, x, y, target_x, target_y)) + float(
-        co_lpm(0.0, x, y, target_x, target_y)
-    )
-    data = np.column_stack((x, y))
-    target = np.array([target_x, target_y], dtype=np.float64)
-    dpm_d0 = _dpm_nd(data, target, 0.0, norm=True)
-    disc_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
+    """R ``NNS_dep.cpp`` ``copula_degree0_unsigned`` (the discrete-case blend term)."""
+    if x.size < 2:
+        return 0.0
+    d0_co, dpm_d0, _, _ = _copula_moments(x, y)
+    disc_dep = min(1.0, max(0.0, abs(d0_co - 0.5) / 0.5))
     # Bivariate discordant independence null is 1 - 2*0.5**2 = 0.5 (see
     # _copula_signed); the old 0.75 anchor never vanished for independent data.
     nd_disc = abs(dpm_d0 - 0.5) / 0.5
@@ -803,21 +825,6 @@ def _gravity_subsets_are_safe(values: NDArray[np.float64], min_size: int) -> boo
                 return False
         block *= 2
     return True
-
-
-def _ols_sign(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
-    if x.size < 2:
-        return 0.0
-    dx = x - np.mean(x)
-    denominator = float(np.sum(dx * dx))
-    if denominator == 0.0:
-        return 0.0
-    slope = float(np.sum(dx * (y - np.mean(y))) / denominator)
-    if slope > 0.0:
-        return 1.0
-    if slope < 0.0:
-        return -1.0
-    return 0.0
 
 
 def _is_discrete_case(x: NDArray[np.float64], y: NDArray[np.float64]) -> bool:
