@@ -1,6 +1,6 @@
 // src/dependence.cpp
 //
-// Implementation extracted from NNS 13.0 NNS_dep.cpp. Decoupled from Rcpp.
+// Implementation extracted from NNS NNS_dep.cpp (synced to R 13.3, 82a92eb). Decoupled from Rcpp.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 #include "nns/dependence.hpp"
@@ -86,7 +86,13 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   double dpm_d1 = c1_total > 0.0 ? c1_dpm / c1_total : 0.0;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  // Independence null for the discordant partial moment (R 13.1). A point is
+  // concordant when it is all-below OR all-above the target (both aligned
+  // orthants), so under independence P(discordant) = 1 - 2 * 0.5^2 = 0.5 for
+  // the bivariate copula, not 1 - 0.5^2 = 0.75. The old 0.75 anchor left a
+  // fixed 1/3 residual in each discordant term (a ~0.41 dependence floor for
+  // independent data).
+  constexpr double indep_D  = 0.5;
   
   double discrete_dep   = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double continuous_dep = std::min(1.0, std::max(0.0, std::abs(co_d1 - indep_Co) / indep_Co));
@@ -122,7 +128,13 @@ double copula_degree0_unsigned(const std::vector<double>& xv, const std::vector<
   double dpm_d0 = dpm_d0_count * inv_n;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  // Independence null for the discordant partial moment (R 13.1). A point is
+  // concordant when it is all-below OR all-above the target (both aligned
+  // orthants), so under independence P(discordant) = 1 - 2 * 0.5^2 = 0.5 for
+  // the bivariate copula, not 1 - 0.5^2 = 0.75. The old 0.75 anchor left a
+  // fixed 1/3 residual in each discordant term (a ~0.41 dependence floor for
+  // independent data).
+  constexpr double indep_D  = 0.5;
   
   double disc_dep = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double nd_disc  = std::abs(dpm_d0 - indep_D) / indep_D;
@@ -260,7 +272,7 @@ DepMatrixResult dep_matrix(const double* X, std::size_t n, std::size_t p,
       }
       all_quads[j] = std::move(quad);
     }
-  }, nthreads);
+  }, nthreads, n * 8U);  // ~log2(n) hashing passes over n rows
   
   // Phase 2: Compute Pairwise Dependence
   std::vector<double> corr_upper(n_pairs, 0.0);
@@ -304,7 +316,7 @@ DepMatrixResult dep_matrix(const double* X, std::size_t n, std::size_t p,
         dep_lower[idx]  = dep_upper[idx];
       }
     }
-  }, nthreads);
+  }, nthreads, n * 16U);  // dep_pair: several passes over n rows
   
   // Phase 3: Construct the final Column-Major output matrices
   DepMatrixResult result;

@@ -1,6 +1,7 @@
 // src/distance.cpp
 //
-// Implementation extracted from NNS 13.0 NNS_distance.cpp. Decoupled from Rcpp.
+// Implementation extracted from NNS NNS_distance.cpp (synced to R 13.3, 82a92eb; the
+// 13.3 column-major indexing fix needs no change here). Decoupled from Rcpp.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 #include "nns/distance.hpp"
@@ -482,7 +483,7 @@ std::vector<double> distance_path_parallel(const double* RPM, std::size_t l, std
         }
       }
     }
-  }, nthreads);
+  }, nthreads, l * n + static_cast<std::size_t>(kmax) * static_cast<std::size_t>(kmax));
   
   return out;
 }
@@ -619,7 +620,7 @@ std::vector<double> distance_path_single_parallel(const double* RPM, std::size_t
         out[r] = mode_class_weighted(topY, w);
       }
     }
-  }, nthreads);
+  }, nthreads, l * n + static_cast<std::size_t>(k));
   
   return out;
 }
