@@ -36,43 +36,6 @@ def _as_matrix(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
     return values
 
 
-def _as_vector_or_matrix(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    """Return x as a non-empty, all-finite 2D float64 matrix, promoting 1D to a column."""
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError(f"{name} must be a non-empty numeric vector or matrix.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
-
-
-def _as_point_matrix(x: NDArray[np.float64], n_cols: int) -> NDArray[np.float64]:
-    """Return evaluation points as an all-finite matrix with the training column count."""
-    values = np.asarray(x, dtype=np.float64)
-    if values.ndim == 1:
-        if n_cols == 1:
-            values = values.reshape(-1, 1)
-        else:
-            values = values.reshape(1, -1)
-    if values.ndim != 2 or values.shape[1] != n_cols:
-        raise ValueError("ivs_test must have the same column count as ivs_train.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("ivs_test must contain only finite values.")
-    return values
-
-
-def _as_flat_vector(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
-    """Return x flattened to a non-empty, all-finite 1D float64 vector."""
-    values = np.asarray(x, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        raise ValueError(f"{name} must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
-
-
 def _as_pair(
     x: NDArray[np.float64],
     y: NDArray[np.float64],

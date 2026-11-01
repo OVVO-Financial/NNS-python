@@ -124,32 +124,6 @@ def _balance_class_training(
     return np.vstack((down_x, up_x)), np.concatenate((down_y, up_y))
 
 
-def _dense_factor_codes(
-    values: NDArray[Any] | Sequence[Any],
-    *,
-    levels: Sequence[Any] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return R ``as.numeric(factor(values))`` codes and observed class order."""
-    if levels is not None:
-        codes, resolved = encode_factor_codes(values, levels=levels)
-        classes = np.arange(1, len(resolved) + 1, dtype=np.float64)
-        return codes, classes
-
-    arr = np.asarray(values)
-    if arr.ndim != 1:
-        arr = arr.reshape(-1)
-    if arr.dtype.kind in {"U", "S", "O"}:
-        raise ValueError("string/object values require explicit levels to mimic R factors.")
-    numeric = np.asarray(arr, dtype=np.float64)
-    if not np.all(np.isfinite(numeric)):
-        raise ValueError("class values must contain only finite values.")
-    observed = np.unique(numeric)
-    mapping = {float(value): float(index + 1) for index, value in enumerate(observed)}
-    codes = np.asarray([mapping[float(value)] for value in numeric], dtype=np.float64)
-    classes = np.arange(1, observed.size + 1, dtype=np.float64)
-    return codes, classes
-
-
 def _resolve_levels(arr: NDArray[Any], levels: Sequence[Any] | None) -> list[Any]:
     if levels is not None:
         resolved = [_normalize_bool(level) for level in levels]
