@@ -26,6 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._indices import ordered_complement
+from nns._native import honours_ncores
 from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
@@ -60,6 +61,7 @@ def _scalar_integer(
     return int(v)
 
 
+@honours_ncores
 def nns_boost(
     ivs_train: NDArray[Any],
     dv_train: NDArray[Any],

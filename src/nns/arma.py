@@ -6,7 +6,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _fast_lm, _warn_unsupported
+from nns._helpers import _fast_lm
+from nns._native import honours_ncores
 from nns.co_moments import co_lpm, co_upm
 from nns.dependence import _gravity
 from nns.mc import nns_mc
@@ -15,6 +16,7 @@ from nns.seasonality import nns_seas
 from nns.var import lpm_var, upm_var
 
 
+@honours_ncores
 def nns_arma_optim(
     variable: NDArray[np.float64],
     h: int | None = None,
@@ -32,7 +34,6 @@ def nns_arma_optim(
     plot: bool = False,
 ) -> dict[str, Any]:
     """Optimize seasonal factors for :func:`nns_arma` like R's ``NNS.ARMA.optim``."""
-    _warn_unsupported(ncores=ncores is not None)
     del print_trace  # R console trace flag; NNS Python emits no console output.
 
     values = _as_variable(variable)

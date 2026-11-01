@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
+from nns._native import honours_ncores
 from nns.part import NoiseReduction
 from nns.regression import Order, _normalize_type
 
@@ -50,6 +51,7 @@ Every key is always present: ``R2`` and ``Fitted.xy`` are ``None`` with
 """
 
 
+@honours_ncores
 def nns_m_reg(
     x: NDArray[Any],
     y: NDArray[Any],
@@ -89,7 +91,6 @@ def nns_m_reg(
         dist=False,
         return_values=return_values is not False,
         plot_regions=plot_regions,
-        ncores=ncores is not None,
     )
     type_value = _normalize_type(type)
     from nns._reg_engine import nns_reg_engine
