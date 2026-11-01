@@ -719,6 +719,53 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
 
 @pytest.mark.parity
 @pytest.mark.stochastic
+def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
+    # R fix 7e170c9: sample(g, k) on a one-member class g sampled from 1:g and
+    # dropped the rare class; R now indexes g[sample.int(length(g), k)], which is
+    # what NNS Python's R-sample emulation already did. Seeds now reach R's
+    # NNS.stack(seed =) (it re-seeded with its default 123, X-10).
+    x = np.linspace(-2.0, 2.0, 60)
+    variable = np.column_stack((x, np.sin(3.0 * x)))
+    y = np.where(x < -0.05, 1.0, 2.0)
+    y[[20, 45]] = 3.0
+    point = variable[[3, 20, 33, 45, 58]]
+
+    expected = nns_stack_numeric(
+        variable.tolist(),
+        y.tolist(),
+        point.tolist(),
+        cv_size=0.25,
+        folds=1,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        seed=1,
+    )
+    actual = nns_stack(
+        variable,
+        y,
+        point,
+        cv_size=0.25,
+        folds=1,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        random_seed=1,
+        dist=None,
+    )
+
+    _assert_stack_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
+
+
+@pytest.mark.parity
+@pytest.mark.stochastic
 def test_nns_stack_balance_multiclass_and_factor_structure() -> None:
     x = np.linspace(-2.0, 2.0, 45)
     variable = np.column_stack((x, x**2, np.sin(x)))
