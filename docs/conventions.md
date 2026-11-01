@@ -131,10 +131,14 @@ handled inside `nns_cdf` without loosening the global partial-moment APIs.
 ## Dependence
 
 `nns_dep` follows R's `NNS.dep` bivariate path, including `NNS.gravity` handling
-for zero-range inputs and non-positive or non-finite bin widths. NNS Python also caps
-the internal gravity bin count at `4 * len(input)` to prevent pathological
-allocations on inputs where R's C++ `int` conversion effectively collapses an
-absurd bin count. `abs(Correlation) <= Dependence` is not guaranteed by
+for zero-range inputs and non-positive or non-finite bin widths. The gravity
+histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
+single outlier that makes R allocate millions of empty bins costs nothing and gives
+R's value. Like R, a bin count beyond the C `int` range collapses to one bin. The
+compiled `gravity_exact` kernel used by `nns_part`/`nns_dep` clips its dense
+histogram at 1e6 bins; NNS Python checks every gravity call of a native partition
+against that cap and recomputes in Python when it would bind, so results match R
+on such data too. `abs(Correlation) <= Dependence` is not guaranteed by
 `NNS.dep`; both R and NNS Python can return signed correlation magnitudes above the
 dependence component for near-binary inputs.
 
