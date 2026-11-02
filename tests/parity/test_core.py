@@ -122,14 +122,9 @@ def test_edge_cases_match_r_category(
         return
 
     if not np.all(np.isfinite(edge_case.values)):
-        # Live R calls for non-finite partial-moment values can produce no JSON
-        # output, so these are local edge-behavior checks rather than
-        # cache-backed R parity entries.
-        result = function(degree, target, edge_case.values)
-        if edge_case.name == "contains-nan":
-            assert np.isnan(result)
-            return
-        assert np.isscalar(result)
+        # R's LPM/UPM stop with "`variable` must be finite." for NA, NaN and Inf.
+        with pytest.raises(ValueError, match="finite"):
+            function(degree, target, edge_case.values)
         return
 
     try:

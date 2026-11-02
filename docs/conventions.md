@@ -38,6 +38,15 @@ scalar numeric target across all variables; R requires callers to pass an
 explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
 does not match the number of variables raise `ValueError`.
 
+## Mode Default Divergence From R
+
+`nns_mode` defaults to `multi=False` and returns a single float, while R's
+`NNS.mode` defaults to `multi = TRUE` and returns every detected mode (e.g. two
+values for a bimodal sample). Pass `multi=True` for R's default output; explicit
+`multi` values match R. The Python default is kept because the multi-mode peak
+finder also reports spurious secondary modes on unimodal data (in R as well),
+and the internal callers all ask for a single mode.
+
 ## Classical Moment Normalization
 
 `mean_pm`, `var_pm`, `skew_pm`, and `kurt_pm` use population normalization by
@@ -46,7 +55,9 @@ accepts `ddof` for NumPy-style variance scaling. `skew_pm` and `kurt_pm` do not
 apply SciPy's optional finite-sample bias correction.
 
 `nns_moments` is the public `NNS.moments` wrapper and returns R's dictionary
-shape with `mean`, `variance`, `skewness`, and `kurtosis`. `nns_gravity` exposes
+shape with `mean`, `variance`, `skewness`, and `kurtosis`. As in R, undefined
+moments are `NaN` rather than errors (constant input; `population=False` with
+n <= 3). `nns_gravity` exposes
 R's public `NNS.gravity` central-tendency helper. `fsd_uni`, `ssd_uni`, and
 `tsd_uni` are the unidirectional stochastic-dominance wrappers behind R's
 `.uni` exports. `co_lpm_nd`, `co_upm_nd`, and `dpm_nd` expose the public
@@ -107,7 +118,9 @@ uses R's lower-partial-moment frequency convention, and positive degrees use
 `LPM.ratio` deformation. Univariate output columns follow installed R (`x` plus
 `CDF`, `S(x)`, `h(x)`, or `H(x)`), while multivariate output keeps the final
 column named `CDF` for all types, including survival, hazard, and cumulative
-hazard. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
+hazard. Input column names that repeat each other or `CDF` get R
+`make.unique` suffixes (`CDF.1`, `a.1`), since a dict cannot hold the duplicate
+names R returns. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
 handled inside `nns_cdf` without loosening the global partial-moment APIs.
 
 ## Dependence
