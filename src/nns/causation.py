@@ -87,7 +87,7 @@ def causal_matrix(
     """
     labels = _column_labels(x)
     values = _as_matrix(x, "x")
-    if not (isinstance(tau, str) and tau == "ts"):
+    if not (isinstance(tau, str) and tau in {"ts", "cs"}):
         tau = _tau_value(tau, values.shape[0])
     n_variables = values.shape[1]
     causes = np.zeros((n_variables, n_variables), dtype=np.float64)

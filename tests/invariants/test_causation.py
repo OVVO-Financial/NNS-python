@@ -60,6 +60,13 @@ def test_causal_matrix_positive_entry_means_the_column_causes_the_row() -> None:
     assert result[0, 1] == pytest.approx(-x_causes_y)
 
 
+def test_causal_matrix_accepts_cross_sectional_tau_for_two_observations() -> None:
+    # R's NNS.caus.matrix(cbind(c(1, 2), c(2, 1)), tau = "cs") is the zero matrix.
+    variable = np.array([[1.0, 2.0], [2.0, 1.0]])
+
+    np.testing.assert_array_equal(causal_matrix(variable, tau="cs"), np.zeros((2, 2)))
+
+
 def test_nns_causation_ts_tau_no_longer_raises() -> None:
     x = np.linspace(-2.0, 2.0, 100)
 
