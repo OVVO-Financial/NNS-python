@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast, overload
@@ -7,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast, ov
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _is_fcl
-from nns.categorical import factor_2_dummy_fr
 from nns.part import NoiseReduction
 
 Order = int | Literal["max"] | None
@@ -241,15 +240,21 @@ def _maybe_render_reg(
 ) -> None:
     """Render the NNS.reg figure(s) as a side effect when a plot flag is set.
 
-    Plotting is decoupled from computation: this only fires for the standard
-    univariate result (one that carries ``Fitted.xy``) so the value-only return
-    contract is unchanged. ``plot``/``plot_regions`` draw the regression figure;
-    ``residual_plot`` draws a residual scatter.
+    Plotting is decoupled from computation, so the value-only return contract
+    is unchanged. For a univariate result ``plot``/``plot_regions`` draw the
+    regression figure and ``residual_plot`` a residual scatter. For a
+    multivariate result, as in R's ``NNS.M.reg``, ``residual_plot`` draws y and
+    y.hat over the observation index and ``plot`` a 3-D scatter of two
+    regressors against y; with more than two regressors there is no regression
+    figure and a warning says so.
     """
     if not (plot or plot_regions or residual_plot):
         return
     fitted = result.get("Fitted.xy") if isinstance(result, dict) else None
-    if not isinstance(fitted, dict) or "x" not in fitted:
+    if not isinstance(fitted, dict):
+        return
+    if "x" not in fitted:
+        _maybe_render_m_reg(fitted, plot=plot or plot_regions, residual_plot=residual_plot)
         return
     if plot or plot_regions:
         from nns.plotting.regression import plot_nns_reg
@@ -267,6 +272,39 @@ def _maybe_render_reg(
             ax.set_title("NNS Residual Plot")
 
 
+def _maybe_render_m_reg(
+    fitted: Mapping[str, object], *, plot: bool, residual_plot: bool
+) -> None:
+    """Render the multivariate NNS.reg figures (R's ``NNS.M.reg`` plot branches)."""
+    names = list(fitted)
+    regressors = names[: names.index("y")] if "y" in names else []
+    if plot:
+        if len(regressors) == 2:
+            from nns.plotting._mpl import require_mpl
+
+            ax: Any = require_mpl().figure().add_subplot(projection="3d")
+            ax.scatter(
+                np.asarray(fitted[regressors[0]], dtype=np.float64),
+                np.asarray(fitted[regressors[1]], dtype=np.float64),
+                np.asarray(fitted["y"], dtype=np.float64),
+                color="steelblue",
+            )
+            ax.set_xlabel(regressors[0])
+            ax.set_ylabel(regressors[1])
+            ax.set_zlabel("Y")
+        else:
+            warnings.warn(
+                f"plot=True draws a regression figure for one or two regressors only "
+                f"({len(regressors)} given); use residual_plot=True for the fitted-values plot.",
+                UserWarning,
+                stacklevel=4,
+            )
+    if residual_plot:
+        from nns.multivariate_regression import _render_m_reg
+
+        _render_m_reg(cast(Any, fitted))
+
+
 def prepare_factor_predictors(
     x: NDArray[Any],
     *,
@@ -280,83 +318,21 @@ def prepare_factor_predictors(
     ``nns_reg(..., factor_2_dummy=True)``. The returned arrays are always
     two-dimensional so they can be passed directly to ``nns_m_reg``.
     """
-    train, points, feature_names = _expand_factor_predictors_with_names(
-        x,
-        point_est,
-        factor_levels=factor_levels,
-        names=names,
+    from nns._reg_engine import _encode_predictors
+
+    if np.ndim(x) == 0:
+        x = np.asarray(x).reshape(1)
+    n_columns = 1 if np.ndim(x) == 1 else int(np.shape(x)[1])
+    prefixes = _factor_column_prefixes(names, n_columns)
+    encoded = _encode_predictors(
+        x, point_est, True, factor_levels, names=None if prefixes is None else list(prefixes)
     )
+    points = encoded["point_est"]
     return FactorDesign(
-        x=_as_factor_design_matrix(train, "x"),
+        x=_as_factor_design_matrix(encoded["x"], "x"),
         point_est=None if points is None else _as_factor_design_matrix(points, "point_est"),
-        feature_names=tuple(feature_names),
+        feature_names=tuple(encoded["encoded_names"]),
     )
-
-
-def _expand_factor_predictors_with_names(
-    x: NDArray[Any],
-    point_est: NDArray[Any] | float | None,
-    *,
-    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None,
-    names: str | Sequence[str] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64] | None, list[str]]:
-    x_array = np.asarray(x)
-    point_array = None if point_est is None else np.asarray(point_est)
-    if x_array.ndim == 0:
-        x_array = x_array.reshape(1)
-    if x_array.ndim == 1:
-        prefixes = _factor_column_prefixes(names, 1)
-        combined = (
-            x_array
-            if point_array is None
-            else np.concatenate((x_array.reshape(-1), point_array.reshape(-1)))
-        )
-        levels = _levels_for_column(factor_levels, 0, x_array.ndim)
-        expanded, names = _dummy_matrix_for_column(
-            combined,
-            levels=levels,
-            prefix="x" if prefixes is None else prefixes[0],
-        )
-        n_train = x_array.shape[0]
-        train = expanded[:n_train]
-        points = None if point_array is None else expanded[n_train:]
-        if train.shape[1] == 1:
-            return train[:, 0], None if points is None else points[:, 0], names
-        return train, points, names
-
-    if x_array.ndim != 2:
-        raise ValueError("x must be a vector or 2D matrix.")
-    prefixes = _factor_column_prefixes(names, x_array.shape[1])
-    if point_array is not None:
-        if point_array.ndim == 1:
-            point_array = point_array.reshape(1, -1)
-        if point_array.ndim != 2:
-            raise ValueError("point_est must be a vector or 2D matrix.")
-        if point_array.shape[1] != x_array.shape[1]:
-            raise ValueError("point_est must have the same column count as x.")
-
-    train_blocks: list[NDArray[np.float64]] = []
-    point_blocks: list[NDArray[np.float64]] = []
-    variable_names: list[str] = []
-    for col in range(x_array.shape[1]):
-        column = x_array[:, col]
-        if point_array is None:
-            combined = column
-        else:
-            combined = np.concatenate((column, point_array[:, col]))
-        levels = _levels_for_column(factor_levels, col, x_array.ndim)
-        expanded, column_names = _dummy_matrix_for_column(
-            combined,
-            levels=levels,
-            prefix=f"X{col + 1}" if prefixes is None else prefixes[col],
-        )
-        train_blocks.append(expanded[: x_array.shape[0]])
-        variable_names.extend(column_names)
-        if point_array is not None:
-            point_blocks.append(expanded[x_array.shape[0] :])
-    train_matrix = np.column_stack(train_blocks)
-    point_matrix = None if point_array is None else np.column_stack(point_blocks)
-    return train_matrix, point_matrix, variable_names
 
 
 def _as_factor_design_matrix(values: NDArray[np.float64], label: str) -> NDArray[np.float64]:
@@ -384,41 +360,6 @@ def _factor_column_prefixes(
     return prefixes
 
 
-def _dummy_matrix_for_column(
-    values: NDArray[Any],
-    *,
-    levels: Sequence[object] | None,
-    prefix: str,
-) -> tuple[NDArray[np.float64], list[str]]:
-    if levels is None:
-        try:
-            numeric = np.asarray(values, dtype=np.float64).reshape(-1, 1)
-        except (TypeError, ValueError):
-            if not _is_fcl(values):
-                raise
-        else:
-            return numeric, [prefix]
-    block = factor_2_dummy_fr(values, levels=levels)
-    columns = [np.asarray(column, dtype=np.float64).reshape(-1) for column in block.values()]
-    names = [prefix if name == "x" else f"{prefix}_{name}" for name in block]
-    return np.column_stack(columns), names
-
-
-def _levels_for_column(
-    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None,
-    column: int,
-    x_ndim: int,
-) -> Sequence[object] | None:
-    if factor_levels is None:
-        return None
-    if x_ndim == 1:
-        return factor_levels
-    if column >= len(factor_levels):
-        raise ValueError("factor_levels must provide levels for every x column.")
-    levels = cast(Sequence[Sequence[object] | None], factor_levels)[column]
-    return levels
-
-
 def _normalize_type(type_value: str | None) -> str | None:
     if type_value is None:
         return None
@@ -434,6 +375,8 @@ def _r2(y: NDArray[np.float64], y_hat: NDArray[np.float64]) -> float:
     y_hat_centered = y_hat - float(np.mean(y_hat))
     denominator = float(np.sum(y_centered**2) * np.sum(y_hat_centered**2))
     if denominator == 0.0:
-        return 1.0 if np.array_equal(y, y_hat) else 0.0
+        from nns._reg_engine import _r_all_equal
+
+        return 1.0 if _r_all_equal(y, y_hat) else 0.0
     numerator = float(np.sum(y_centered * y_hat_centered) ** 2)
     return float(np.clip(numerator / denominator, 0.0, 1.0))

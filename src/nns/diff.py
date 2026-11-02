@@ -37,8 +37,31 @@ def nns_diff(
     tol: float = 1e-10,
     max_iter: int | None = None,
     digits: int = 12,
+    *,
+    plot: bool = False,
 ) -> DiffResult:
-    """Numerically differentiate a scalar callable, matching R's NNS.diff."""
+    """Numerically differentiate a scalar callable, matching R's NNS.diff.
+
+    ``plot=True`` also draws ``f`` around ``point`` with the secant lines
+    (``nns.plotting.plot_nns_diff``), as R's ``plot = TRUE`` does.
+    """
+    result = _nns_diff(f, point, h=h, tol=tol, max_iter=max_iter, digits=digits)
+    if plot:
+        from nns.plotting.differentiation import plot_nns_diff
+
+        plot_nns_diff(f, float(point), h=h)
+    return result
+
+
+
+def _nns_diff(
+    f: Callable[[float | complex | NDArray[np.float64]], float | complex | NDArray[np.float64]],
+    point: float,
+    h: float | None = None,
+    tol: float = 1e-10,
+    max_iter: int | None = None,
+    digits: int = 12,
+) -> DiffResult:
     point = _finite_scalar(point, "point")
     h_value = abs(point) * 0.1 + 0.01 if h is None else _finite_scalar(h, "h")
     if h_value <= 0.0:

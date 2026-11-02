@@ -30,7 +30,14 @@ from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import _validate_dist, nns_reg_engine
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
-from nns.stack import _prepare_inputs, nns_stack
+from nns.stack import (
+    _objective_value,
+    _prepare_inputs,
+    _resolve_seed,
+    _scalar_integer,
+    _scalar_logical,
+    nns_stack,
+)
 from nns.var import lpm_var
 
 Objective = Literal["min", "max"]
@@ -40,25 +47,6 @@ BoostResult = dict[str, Any]
 feature.frequency, class.levels). ``feature.weights`` / ``feature.frequency``
 are keyed by predictor name: the frame's column names, ``V1..Vp`` for an
 unnamed matrix, as in R."""
-
-
-def _scalar_logical(value: Any, name: str) -> bool:
-    if not isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"[{name}] must be TRUE or FALSE.")
-    return bool(value)
-
-
-def _scalar_integer(
-    value: Any, name: str, minimum: int = 0, allow_null: bool = False
-) -> int | None:
-    if allow_null and value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer, float, np.floating)):
-        raise ValueError(f"[{name}] must be an integer >= {minimum}.")
-    v = float(value)
-    if not math.isfinite(v) or v < minimum or v != math.floor(v):
-        raise ValueError(f"[{name}] must be an integer >= {minimum}.")
-    return int(v)
 
 
 @honours_ncores
@@ -91,10 +79,15 @@ def nns_boost(
     ncores: int | None = None,
     factor_levels: Any = None,
 ) -> BoostResult:
-    del feature_importance
+    if _scalar_logical(feature_importance, "feature.importance"):
+        warnings.warn(
+            "feature_importance=True draws no figure in NNS Python; the feature "
+            "frequencies are returned in result['feature.frequency'].",
+            UserWarning,
+            stacklevel=external_stacklevel(),
+        )
     # random_seed is an accepted alias for seed (matches nns_stack).
-    if random_seed is not None and seed == 123:
-        seed = random_seed
+    seed = _resolve_seed(seed, random_seed)
 
     balance = _scalar_logical(balance, "balance")
     extreme = _scalar_logical(extreme, "extreme")
@@ -221,7 +214,7 @@ def nns_boost(
             raise ValueError(
                 "The objective received predicted and actual vectors of different lengths."
             )
-        value = float(cast(Callable[..., float], obj_fn)(predicted, actual))
+        value = _objective_value(cast(Callable[..., Any], obj_fn)(predicted, actual))
         return value if math.isfinite(value) else float("nan")
 
     def central_value(v: NDArray[np.float64], classification: bool) -> float:

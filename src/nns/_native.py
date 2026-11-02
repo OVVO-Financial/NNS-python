@@ -72,7 +72,18 @@ def native_threads(ncores: Any) -> Iterator[None]:
         return
     value = _integer(ncores, "ncores")
     if value < 1:
-        raise ValueError("[ncores] must be NULL or a positive integer.")
+        # Earlier releases ignored ncores, and R's univariate paths accept any value,
+        # so treat 0 / negative (e.g. scikit-style -1) as "default" with a warning.
+        import warnings
+
+        warnings.warn(
+            "ncores < 1 is treated as the default thread count; pass None instead. "
+            "This will raise in a future release.",
+            DeprecationWarning,
+            stacklevel=external_stacklevel(),
+        )
+        yield
+        return
     setter = native_fn("_set_call_threads")
     if setter is None:
         yield
@@ -110,10 +121,15 @@ def external_stacklevel() -> int:
     """
     frame = sys._getframe(1)
     level = 1
-    while frame.f_back is not None and frame.f_globals.get("__name__", "").startswith("nns."):
+    while frame.f_back is not None and _is_internal(frame.f_globals.get("__name__", "")):
         frame = frame.f_back
         level += 1
     return level
+
+
+def _is_internal(module: str) -> bool:
+    # native_threads warns from inside a @contextmanager, under contextlib's __enter__.
+    return module.startswith("nns.") or module == "contextlib"
 
 
 def _integer(value: Any, name: str) -> int:

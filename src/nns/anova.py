@@ -28,14 +28,52 @@ def nns_anova(
     robust: bool = False,
     n_boot: int = 1000,
     random_seed: int | None = None,
+    plot: bool = False,
 ) -> AnovaResult | NDArray[np.float64]:
     """Partial-moment ANOVA, matching R's non-plotting NNS.ANOVA paths.
 
     The bootstrap draws (effect-size interval and ``robust`` resamples) come from
     R's Mersenne-Twister stream: ``random_seed=s`` reproduces R's
     ``set.seed(s); NNS.ANOVA(...)`` draw for draw. Without a seed the stream is
-    seeded from fresh entropy.
+    seeded from fresh entropy. ``plot=True`` also draws R's group boxplots
+    (``nns.plotting.plot_nns_anova``); R's default is ``plot = TRUE``.
     """
+    result = _nns_anova(
+        control,
+        treatment,
+        means_only=means_only,
+        medians=medians,
+        confidence_interval=confidence_interval,
+        tails=tails,
+        pairwise=pairwise,
+        robust=robust,
+        n_boot=n_boot,
+        random_seed=random_seed,
+    )
+    if plot:
+        from nns.plotting.anova import plot_nns_anova
+
+        if treatment is not None:
+            groups = [_as_group(control, "control"), _as_group(treatment, "treatment")]
+        else:
+            groups = _as_groups(control)
+        plot_nns_anova(groups, medians=medians)
+    return result
+
+
+def _nns_anova(
+    control: NDArray[np.float64] | Sequence[NDArray[np.float64]],
+    treatment: NDArray[np.float64] | None = None,
+    *,
+    means_only: bool = False,
+    medians: bool = False,
+    confidence_interval: float | None = 0.95,
+    tails: Tail | str = "Both",
+    pairwise: bool = False,
+    robust: bool = False,
+    n_boot: int = 1000,
+    random_seed: int | None = None,
+) -> AnovaResult | NDArray[np.float64]:
     tail = _tail(tails)
     if treatment is not None:
         control_values = _as_group(control, "control")

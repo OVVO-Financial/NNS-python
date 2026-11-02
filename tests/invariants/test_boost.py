@@ -326,3 +326,16 @@ def test_nns_boost_ts_test_stochastic_epoch_path_shape_and_seed_determinism() ->
     assert first["feature.frequency"] == second["feature.frequency"]
 
 
+
+
+def test_nns_boost_feature_importance_warns_and_obj_fn_checked() -> None:
+    rng = np.random.default_rng(23)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    kwargs = {"epochs": 2, "learner_trials": 2, "folds": 2}
+    with pytest.warns(UserWarning, match="feature_importance=True draws no figure"):
+        nns_boost(x, y, x[:3], feature_importance=True, **kwargs)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_boost(x, y, x[:3], obj_fn=lambda p, a: (p - a) ** 2, **kwargs)
+    with pytest.raises(ValueError, match="random_seed"):
+        nns_boost(x, y, x[:3], seed=7, random_seed=5, **kwargs)

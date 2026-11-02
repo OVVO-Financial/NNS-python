@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import functools
 import math
-import re
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -36,10 +35,12 @@ from nns._labels import (
     codes_for,
     declared_codes,
     declared_levels,
+    is_logical,
     is_text,
     level_keys,
     match_columns,
     point_codes,
+    r_make_names,
     r_make_unique,
     resolve_factor_levels,
     response_values,
@@ -138,6 +139,11 @@ def _response_vector(y: Any) -> tuple[NDArray[Any], list[Any] | None]:
     return response_values(y, "[y] must be a vector or one-column object.")
 
 
+def _r_number_label(value: float) -> str:
+    """A numeric class code as R's ``as.character`` prints it (15 significant digits)."""
+    return f"{float(value):.15g}"
+
+
 def _task(
     type_value: str | None,
     y: NDArray[Any],
@@ -174,7 +180,7 @@ def _task(
         auto_class = True
         y_numeric = y.astype(np.float64)
         class_values = np.unique(y_numeric)
-        class_levels_out = [str(v) for v in class_values]
+        class_levels_out = [_r_number_label(v) for v in class_values]
     elif is_text(y):
         auto_class = True
         keys = level_keys(y, "[y] contains missing values.")
@@ -193,7 +199,7 @@ def _task(
     is_xonly = type_value == "xonly"
     if class_values is None and is_class:
         class_values = np.unique(y_numeric)
-        class_levels_out = [str(v) for v in class_values]
+        class_levels_out = [_r_number_label(v) for v in class_values]
 
     return {
         "is_class": is_class,
@@ -235,31 +241,11 @@ def _raw_column_names(cols: Columns) -> list[str]:
     return r_make_unique(names, ".")
 
 
-def _make_names(labels: list[str]) -> list[str]:
-    """Mimic R's make.names(): sanitise to syntactically valid, unique names."""
-    out: list[str] = []
-    for raw in labels:
-        s = re.sub(r"[^0-9A-Za-z._]", ".", str(raw))
-        if s == "" or not re.match(r"^[A-Za-z.]", s) or re.match(r"^\.[0-9]", s):
-            s = "X" + s
-        out.append(s)
-    # make.unique: append .1, .2, ... to duplicates
-    seen: dict[str, int] = {}
-    unique: list[str] = []
-    for s in out:
-        if s in seen:
-            seen[s] += 1
-            unique.append(f"{s}.{seen[s]}")
-        else:
-            seen[s] = 0
-            unique.append(s)
-    return unique
-
-
 def _input_column_names(x: Any, ncol: int) -> list[str]:
     """Column names for [x], mirroring R's .nns_reg_as_frame default naming.
 
-    A pandas frame contributes its own column labels; a bare matrix/array gets
+    A pandas frame contributes its own column labels (kept as they are, then
+    made unique with R's ``make.unique``); a bare matrix/array gets
     R's ``as.data.frame`` defaults ``V1, V2, ...``. Blank labels fall back to
     ``x{i}`` as in R.
     """
@@ -280,7 +266,8 @@ def _input_column_names(x: Any, ncol: int) -> list[str]:
         nm if nm not in ("", "None") and nm is not None else f"x{j + 1}"
         for j, nm in enumerate(names)
     ]
-    return _make_names(names)
+    # R keeps the raw labels (check.names = FALSE) and only de-duplicates them.
+    return r_make_unique(names, ".")
 
 
 def _prepare_points(point_est: Any, train_names: list[str]) -> list[NDArray[Any]] | None:
@@ -324,6 +311,7 @@ def _encode_predictors(
     point_est: Any,
     factor_2_dummy: bool,
     factor_levels: Any = None,
+    names: list[str] | None = None,
 ) -> dict[str, Any]:
     """R ``.nns_reg_encode_predictors``.
 
@@ -332,14 +320,16 @@ def _encode_predictors(
     strings). Levels are the declared levels in their order; undeclared label
     columns use sorted levels. (R uses first-appearance order for character
     columns, which makes its fit depend on the row order; the sorted order is
-    R's ``factor()`` order.) Missing values in a categorical column are an
-    error, as in R. bool columns stay numeric 0/1.
+    R's ``factor()`` order.) bool columns are factors with levels FALSE/TRUE,
+    as R treats logicals. Missing values in a categorical column are an
+    error, as in R.
     """
     cols = _train_columns(x)
     p = len(cols.values)
     raw_names = _raw_column_names(cols)
+    # Explicit names only prefix the outputs; point_est still matches the training columns.
+    column_names = _input_column_names(x, p) if names is None else r_make_unique(names, ".")
     points = _prepare_points(point_est, raw_names)
-    column_names = _input_column_names(x, p)
     declared = resolve_factor_levels(factor_levels, raw_names, cols.labels)
 
     n = cols.values[0].shape[0]
@@ -357,7 +347,7 @@ def _encode_predictors(
         z = cols.values[j]
         zp = None if points is None else points[j]
         level_decl = declared[j] if declared[j] is not None else cols.categories[j]
-        categorical = level_decl is not None or is_text(z)
+        categorical = level_decl is not None or is_text(z) or is_logical(z)
 
         if categorical:
             missing = f"Predictor '{raw}' contains missing values."
@@ -392,7 +382,7 @@ def _encode_predictors(
                     )
                 )
                 encoded_names.extend(
-                    f"{nm}_{sanitized}" for sanitized in _make_names(list(levels))
+                    f"{nm}_{sanitized}" for sanitized in r_make_names(levels)
                 )
                 if codes_point is not None and point_parts is not None:
                     point_parts.append(
@@ -786,9 +776,35 @@ def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
     predicted_centered = predicted - float(np.mean(predicted))
     denominator = float(np.sum(actual_centered**2) * np.sum(predicted_centered**2))
     if denominator == 0.0:
-        return 1.0 if np.array_equal(actual, predicted) else 0.0
+        return 1.0 if _r_all_equal(actual, predicted) else 0.0
     numerator = float(np.sum(actual_centered * predicted_centered) ** 2)
     return float(np.clip(numerator / denominator, 0.0, 1.0))
+
+
+def _r_all_equal(
+    target: NDArray[np.float64], current: NDArray[np.float64], tolerance: float = 1.5e-8
+) -> bool:
+    """R's ``isTRUE(all.equal(target, current))`` for two numeric vectors.
+
+    Missing values must sit at the same positions. Over the elements that
+    differ, the mean absolute difference is taken relative to their mean
+    ``|target|`` when that exceeds ``tolerance`` and absolute otherwise.
+    """
+    if target.shape != current.shape:
+        return False
+    missing = np.isnan(target)
+    if not np.array_equal(missing, np.isnan(current)):
+        return False
+    differ = ~missing & (target != current)
+    if not np.any(differ):
+        return True
+    t = target[differ]
+    with np.errstate(invalid="ignore", over="ignore"):
+        xy = float(np.mean(np.abs(t - current[differ])))
+        xn = float(np.mean(np.abs(t)))
+    if math.isfinite(xn) and xn > tolerance:
+        xy /= xn
+    return not math.isnan(xy) and xy <= tolerance
 
 
 def _intervals(
