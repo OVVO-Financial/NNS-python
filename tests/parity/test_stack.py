@@ -766,7 +766,7 @@ def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
     # sample(g, k) on a one-member class g sampled from 1:g and
     # dropped the rare class; R now indexes g[sample.int(length(g), k)], which is
     # what NNS Python's R-sample emulation already did. Seeds now reach R's
-    # NNS.stack(seed =) (it re-seeded with its default 123, X-10).
+    # NNS.stack(seed =) (it re-seeded with its default 123).
     x = np.linspace(-2.0, 2.0, 60)
     variable = np.column_stack((x, np.sin(3.0 * x)))
     y = np.where(x < -0.05, 1.0, 2.0)
