@@ -211,8 +211,7 @@ def test_nns_dep_fallback_keeps_the_sign_of_fully_discordant_cells(
     monkeypatch: pytest.MonkeyPatch, x: np.ndarray, y: np.ndarray, asym: bool
 ) -> None:
     # Patched R: a partition cell whose points are all discordant scores -1, not
-    # +1, so NNS.dep(x, -x) has Correlation -1. The NumPy path mirrors it; the native
-    # nns_dep_pair kernel still has the old early return until it is rebuilt.
+    # +1, so NNS.dep(x, -x) has Correlation -1. This pins the NumPy fallback.
     import nns.dependence as dependence
 
     monkeypatch.setattr(dependence, "native_fn", lambda name: None)
