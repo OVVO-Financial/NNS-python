@@ -105,8 +105,8 @@ def test_nns_anova_robust_matches_seeded_r(
     confidence_interval: float | None,
     medians: bool,
 ) -> None:
-    # Same resample indices and the same control/treatment pairing as R, so the
-    # robust estimate and its bounds match set.seed(seed) in R exactly.
+    # Same resample indices as the patched R (each group bootstrapped from its own
+    # full sample), so the robust estimate and its bounds match set.seed(seed).
     control, treatment = _groups(30)
     treatment = np.sin(3.0 * treatment[:26]) + 0.1
 
@@ -142,6 +142,24 @@ def test_nns_anova_robust_matches_seeded_r(
         assert {f"Lower {level}% CI", f"Upper {level}% CI"} <= set(actual)
     for key, value in renamed.items():
         np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parity
+def test_nns_anova_robust_resamples_all_of_the_longer_group() -> None:
+    # Patched R: control = 50 x N(0,1)-like values then 150 shifted by 5; the
+    # treatment matches only the first 50. Resampling just the first min(n1, n2)
+    # control observations made the robust certainty look high.
+    idx = np.arange(200, dtype=np.float64)
+    control = np.where(idx < 50, np.sin(idx), 5.0 + np.sin(idx))
+    treatment = np.sin(np.arange(50, dtype=np.float64) + 0.5)
+
+    expected = _r_anova_seeded(control, treatment, seed=1, ci=0.95, robust=True)
+    actual = nns_anova(control, treatment, robust=True, random_seed=1)
+
+    assert isinstance(actual, dict)
+    for key in ("Robust Certainty Estimate", "Lower 95% CI", "Upper 95% CI", "Certainty"):
+        np.testing.assert_allclose(actual[key], np.asarray(expected[key]), atol=1e-12)
+    assert actual["Robust Certainty Estimate"] < 0.05
 
 
 @pytest.mark.parity
@@ -188,15 +206,39 @@ def test_nns_anova_effect_size_bootstrap_matches_seeded_r(
 @pytest.mark.parity
 @pytest.mark.parametrize("tails", ["left", "right"])
 @pytest.mark.parametrize("robust", [False, True])
-def test_nns_anova_one_sided_ci_raises_where_r_fails(tails: str, robust: bool) -> None:
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9])
+def test_nns_anova_one_sided_ci_matches_patched_r(
+    tails: str, robust: bool, confidence_interval: float
+) -> None:
+    # Patched R: both bootstrap quantiles are computed for one-sided tails, so
+    # tails="left" gives (treatment_lower - control_upper, Inf) and "right" gives
+    # (-Inf, treatment_upper - control_lower); R 13.3 stopped with "object not found".
     control, treatment = _groups(30)
 
-    r_result = _r_anova_seeded(
-        control, treatment, seed=1, ci=0.95, tails=tails, robust=robust, catch=True
+    expected = _r_anova_seeded(
+        control, treatment, seed=1, ci=confidence_interval, tails=tails, robust=robust
     )
-    assert "not found" in str(r_result["error"])
-    with pytest.raises(ValueError, match="confidence_interval is not supported"):
-        nns_anova(control, treatment, tails=tails, robust=robust, random_seed=1)
+    actual = nns_anova(
+        control,
+        treatment,
+        tails=tails,
+        robust=robust,
+        confidence_interval=confidence_interval,
+        random_seed=1,
+    )
+
+    assert isinstance(actual, dict)
+    renamed = {
+        key.split(".")[0] if key.startswith("Effect_Size") else key: value
+        for key, value in expected.items()
+    }
+    assert set(actual) == set(renamed)
+    for key, value in renamed.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+    if tails == "left":
+        assert actual["Effect_Size_UB"] == np.inf and np.isfinite(actual["Effect_Size_LB"])
+    else:
+        assert actual["Effect_Size_LB"] == -np.inf and np.isfinite(actual["Effect_Size_UB"])
 
     # Without an interval the tail choice is irrelevant to the binary test.
     expected = _r_anova_seeded(control, treatment, seed=1, ci=None, tails=tails)

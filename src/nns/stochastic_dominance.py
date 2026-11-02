@@ -1,15 +1,22 @@
 """Stochastic dominance routines matching NNS' discrete SD conventions.
 
-Dominance uses strict floating-point comparisons with no tolerance, plus R's
-curve equality guard: equal LPM/CDF curves are non-dominance even when samples
-differ below meaningful double precision. Efficient-set output follows the R
-C++ routine's LPM-at-global-maximum ordering and original-index tie break.
+Every pairwise verdict (``fsd``/``ssd``/``tsd``, their ``*_uni`` forms, the
+efficient set and SD clustering) comes from one test, a port of R's native
+``sd_dom_pair``: the curves are compared on the merged sample points and, for
+TSD and continuous FSD, also at their closed-form extrema between those points
+(LPM2 is piecewise quadratic and the continuous ratio linear-fractional, so the
+difference can peak between knots). Differences up to ``64 * eps * S**d``
+(``S`` the largest absolute value of the two samples; ``d`` = 1 for SSD and the
+mean gate, 2 for TSD, a ratio analogue for continuous FSD) are ties, so rounding
+noise does not decide dominance; discrete FSD compares exact ECDF fractions.
+Equal curves are non-dominance (R's curve equality guard). Efficient-set output
+follows the R C++ routine's LPM-at-global-maximum ordering and original-index
+tie break.
 
-Pairwise tests accept samples of unequal length: each sample's LPM/CDF curve is
-evaluated on the merged threshold grid, exactly as R's NNS.FSD/NNS.SSD/NNS.TSD
-compute ``LPM(degree, sort(c(x, y)), sample)`` per sample. (R's C++ ``.uni``
-walkers assume equal lengths; the Python ``*_uni`` wrappers extend the same
-merged-grid semantics to unequal lengths.)
+Pairwise tests accept samples of unequal length: each sample's curve is
+evaluated on the merged threshold grid with its own length, as R's
+``NNS.FSD``/``NNS.SSD``/``NNS.TSD`` and (in the patched R) the ``.uni``
+walkers do.
 """
 
 from __future__ import annotations
@@ -23,9 +30,11 @@ from numpy.typing import NDArray
 from scipy.cluster.hierarchy import linkage  # type: ignore[import-untyped]
 from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
-from nns.core import _as_1d_values, lpm
+from nns.core import _as_1d_values
 
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
+# R's native SD test ignores excesses up to 64 * DBL_EPSILON (relative to the data scale).
+_SD_EPS64 = 64.0 * float(np.finfo(np.float64).eps)
 
 
 @dataclass(frozen=True)
@@ -34,9 +43,6 @@ class _SDPrefixPrecomputed:
     sorted_values: NDArray[np.float64]
     prefix1: NDArray[np.float64]
     prefix2: NDArray[np.float64] | None
-    own_curves: NDArray[np.float64]
-    minimums: NDArray[np.float64]
-    means: NDArray[np.float64]
     identical: NDArray[np.bool_]
 
 
@@ -53,8 +59,8 @@ def fsd(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") 
     ``type="discrete"`` compares empirical CDFs; ``type="continuous"`` compares the
     degree-1 ratio ``LPM1 / (LPM1 + UPM1)``, as R's ``NNS.FSD(type=)`` does. Like R,
     an unrecognised ``type`` warns and runs the continuous test; where both
-    partial moments vanish the ratio is taken as 0 (R's C++ convention; R's
-    R-level ``NNS.FSD`` returns ``NA`` there).
+    partial moments vanish the ratio is the degree-0 ratio (the CDF value), as
+    in ``lpm_ratio`` and the patched R.
     """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
@@ -343,15 +349,6 @@ def _prefix_sd_precompute(
         sorted_values=sorted_values,
         prefix1=prefix1,
         prefix2=prefix2,
-        own_curves=_own_threshold_curves(
-            sorted_values,
-            prefix1,
-            prefix2,
-            degree,
-            discrete=discrete,
-        ),
-        minimums=sorted_values[0, :],
-        means=np.mean(values, axis=0),
         identical=_identical_sorted_columns(sorted_values),
     )
 
@@ -378,29 +375,6 @@ def _identical_sorted_columns(sorted_values: NDArray[np.float64]) -> NDArray[np.
         key = np.ascontiguousarray(sorted_values[:, index] + 0.0).tobytes()
         column_labels[index] = labels.setdefault(key, len(labels))
     return np.asarray(column_labels[:, np.newaxis] == column_labels[np.newaxis, :])
-
-
-def _own_threshold_curves(
-    sorted_values: NDArray[np.float64],
-    prefix1: NDArray[np.float64],
-    prefix2: NDArray[np.float64] | None,
-    degree: int,
-    *,
-    discrete: bool,
-) -> NDArray[np.float64]:
-    columns = sorted_values.shape[1]
-    curves = np.empty(sorted_values.shape, dtype=np.float64, order="F")
-    for index in range(columns):
-        curves[:, index] = _pair_curve_values_at_thresholds(
-            sorted_values[:, index],
-            prefix1[:, index],
-            None if prefix2 is None else prefix2[:, index],
-            sorted_values[:, index],
-            sorted_values.shape[0],
-            degree,
-            discrete=discrete,
-        )
-    return curves
 
 
 def _sd_efficient_active_indices_from_matrix(
@@ -515,83 +489,17 @@ def _dominates_from_prefix_pair(
 ) -> bool:
     if precomputed.identical[source_index, target_index]:
         return False
-    if precomputed.minimums[source_index] < precomputed.minimums[target_index]:
-        return False
-    if degree > 1 and precomputed.means[source_index] < precomputed.means[target_index]:
-        return False
-
-    observations = precomputed.sorted_values.shape[0]
-    source_sorted = precomputed.sorted_values[:, source_index]
-    source_prefix1 = precomputed.prefix1[:, source_index]
-    source_prefix2 = None if precomputed.prefix2 is None else precomputed.prefix2[:, source_index]
-    source_own_curve = precomputed.own_curves[:, source_index]
-    target_sorted = precomputed.sorted_values[:, target_index]
-    target_prefix1 = precomputed.prefix1[:, target_index]
-    target_prefix2 = None if precomputed.prefix2 is None else precomputed.prefix2[:, target_index]
-    target_own_curve = precomputed.own_curves[:, target_index]
-
-    source_curve_at_target = _pair_curve_values_at_thresholds(
-        source_sorted,
-        source_prefix1,
-        source_prefix2,
-        target_sorted,
-        observations,
+    prefix2 = precomputed.prefix2
+    return _dominates_sorted(
+        precomputed.sorted_values[:, source_index],
+        precomputed.prefix1[:, source_index],
+        None if prefix2 is None else prefix2[:, source_index],
+        precomputed.sorted_values[:, target_index],
+        precomputed.prefix1[:, target_index],
+        None if prefix2 is None else prefix2[:, target_index],
         degree,
         discrete=discrete,
     )
-    if np.any(source_curve_at_target > target_own_curve):
-        return False
-
-    target_gt_source = bool(np.any(target_own_curve > source_curve_at_target))
-    target_curve_at_source = _pair_curve_values_at_thresholds(
-        target_sorted,
-        target_prefix1,
-        target_prefix2,
-        source_sorted,
-        observations,
-        degree,
-        discrete=discrete,
-    )
-    if np.any(source_own_curve > target_curve_at_source):
-        return False
-
-    return target_gt_source or bool(np.any(target_curve_at_source > source_own_curve))
-
-
-def _pair_curve_values_at_thresholds(
-    sorted_column: NDArray[np.float64],
-    prefix1_column: NDArray[np.float64],
-    prefix2_column: NDArray[np.float64] | None,
-    thresholds: NDArray[np.float64],
-    observations: int,
-    degree: int,
-    *,
-    discrete: bool,
-) -> NDArray[np.float64]:
-    counts = np.searchsorted(sorted_column, thresholds, side="right")
-    if degree == 1 and discrete:
-        return np.asarray(counts / observations, dtype=np.float64)
-
-    sums1 = prefix1_column[counts]
-    if degree == 1:
-        lower = (counts * thresholds - sums1) / observations
-        totals = prefix1_column[-1]
-        upper = (totals - sums1 - (observations - counts) * thresholds) / observations
-        ratio: NDArray[np.float64] = np.divide(
-            lower,
-            lower + upper,
-            out=np.zeros_like(lower, dtype=np.float64),
-            where=(lower + upper) != 0,
-        )
-        return ratio
-
-    if degree == 2:
-        return (counts * thresholds - sums1) / observations
-
-    if prefix2_column is None:
-        raise ValueError("degree 3 prefix evaluation requires second-moment prefixes.")
-    sums2 = prefix2_column[counts]
-    return (counts * thresholds * thresholds - 2.0 * thresholds * sums1 + sums2) / observations
 
 
 def _sd_result(
@@ -615,45 +523,265 @@ def _dominates_uni(
     *,
     discrete: bool,
 ) -> bool:
-    if np.array_equal(np.sort(x), np.sort(y)):
-        return False
-    if np.min(x) < np.min(y):
-        return False
-    if degree > 1 and np.mean(x) < np.mean(y):
-        return False
+    x_sorted = np.sort(x)
+    y_sorted = np.sort(y)
+    return _dominates_sorted(
+        x_sorted,
+        _prefix_sum_1d(x_sorted),
+        _prefix_sum_1d(x_sorted * x_sorted) if degree == 3 else None,
+        y_sorted,
+        _prefix_sum_1d(y_sorted),
+        _prefix_sum_1d(y_sorted * y_sorted) if degree == 3 else None,
+        degree,
+        discrete=discrete,
+    )
 
-    grid = np.sort(np.concatenate((x, y)))
-    x_lpm = _dominance_curve(x, grid, degree, discrete=discrete)
-    y_lpm = _dominance_curve(y, grid, degree, discrete=discrete)
-    if np.array_equal(x_lpm, y_lpm):
-        return False
-    return bool(not np.any(x_lpm > y_lpm))
 
-
-def _dominance_curve(
-    values: NDArray[np.float64],
-    grid: NDArray[np.float64],
+def _dominates_sorted(
+    x_sorted: NDArray[np.float64],
+    x_prefix1: NDArray[np.float64],
+    x_prefix2: NDArray[np.float64] | None,
+    y_sorted: NDArray[np.float64],
+    y_prefix1: NDArray[np.float64],
+    y_prefix2: NDArray[np.float64] | None,
     degree: int,
     *,
-    discrete: bool = True,
+    discrete: bool,
+) -> bool:
+    """True iff x dominates y: a port of R's native pairwise test ``sd_dom_pair``.
+
+    Samples are sorted, with prefix sums ``P[k] = sum(sorted[:k])`` (and of squares
+    for TSD). Each curve is evaluated on the merged unique thresholds with the
+    sample's own count ``k`` of observations ``<= t``. For TSD and continuous FSD
+    the closed-form extremum of the curve difference inside each interval between
+    thresholds is checked too, as the patched R does.
+
+    Curve values from prefix sums that are equal in exact arithmetic can differ by
+    rounding noise of order ``eps * S**degree`` (``S`` the largest absolute value of
+    the two samples), so differences up to ``64 * eps * S**d`` are ties: ``d`` = 1 for
+    SSD and the mean gate, 2 for TSD, and a ratio analogue for continuous FSD.
+    Discrete FSD compares exact ECDF fractions with no tolerance.
+    """
+    x_count = x_sorted.size
+    y_count = y_sorted.size
+    scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
+    if not x_sorted[0] >= y_sorted[0]:
+        return False
+    if degree > 1 and y_prefix1[-1] / y_count - x_prefix1[-1] / x_count > _SD_EPS64 * scale:
+        return False
+    if x_count == y_count and np.array_equal(x_sorted, y_sorted):
+        return False
+
+    thresholds, x_counts, y_counts = _merged_thresholds(x_sorted, y_sorted)
+
+    interior_excess = False
+    tol: float | NDArray[np.float64]
+    if degree == 1 and discrete:
+        # L0/(L0+U0) == ECDF.
+        x_curve = x_counts / x_count
+        y_curve = y_counts / y_count
+        tol = 0.0
+    elif degree == 1:
+        x_curve, x_total = _ratio_deg1(x_prefix1, x_counts, thresholds, x_count)
+        y_curve, y_total = _ratio_deg1(y_prefix1, y_counts, thresholds, y_count)
+        total_min = np.minimum(x_total, y_total)
+        with np.errstate(divide="ignore"):
+            tol = _SD_EPS64 * np.where(total_min > 0.0, np.maximum(1.0, scale / total_min), 1.0)
+        if not np.any(x_curve - y_curve > tol):
+            interior_excess = _ratio_deg1_interior_excess(
+                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale
+            )
+    elif degree == 2:
+        # LPM1 is piecewise linear with knots at the data: checking the knots is exact.
+        x_curve = (x_counts * thresholds - x_prefix1[x_counts]) / x_count
+        y_curve = (y_counts * thresholds - y_prefix1[y_counts]) / y_count
+        tol = _SD_EPS64 * scale
+    else:
+        if x_prefix2 is None or y_prefix2 is None:
+            raise ValueError("degree 3 prefix evaluation requires second-moment prefixes.")
+        x_curve = _lpm_deg2(x_prefix1, x_prefix2, x_counts, thresholds, x_count)
+        y_curve = _lpm_deg2(y_prefix1, y_prefix2, y_counts, thresholds, y_count)
+        tol = _SD_EPS64 * scale * scale
+        if not np.any(x_curve - y_curve > tol):
+            interior_excess = _lpm_deg2_interior_excess(
+                x_prefix1,
+                x_prefix2,
+                x_counts,
+                x_count,
+                y_prefix1,
+                y_prefix2,
+                y_counts,
+                y_count,
+                thresholds,
+                scale,
+            )
+
+    excess = x_curve - y_curve
+    if interior_excess or np.any(excess > tol):
+        return False
+    # Curves equal (within the tolerance) at every threshold -> no dominance (R's
+    # curve equality guard).
+    return bool(np.any(np.abs(excess) > tol))
+
+
+def _merged_thresholds(
+    x_sorted: NDArray[np.float64], y_sorted: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.intp], NDArray[np.intp]]:
+    """The merged unique thresholds and each sample's count of observations <= them.
+
+    Equal to ``np.union1d`` plus ``np.searchsorted(..., side="right")`` per sample,
+    but one stable merge of the two sorted runs replaces the two binary searches
+    over the 2n thresholds (about 2.5x faster at n = 1e4).
+    """
+    merged = np.concatenate((x_sorted, y_sorted))
+    order = np.argsort(merged, kind="stable")
+    values = merged[order]
+    from_x = np.cumsum(order < x_sorted.size)
+    breaks = np.flatnonzero(values[1:] != values[:-1])
+    ends = np.append(breaks, values.size - 1)
+    x_counts = from_x[ends]
+    y_counts = ends + 1 - x_counts
+    return values[ends], x_counts, y_counts
+
+
+def _ratio_deg1(
+    prefix1: NDArray[np.float64],
+    counts: NDArray[np.intp],
+    thresholds: NDArray[np.float64],
+    observations: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Continuous FSD ratio LPM1 / (LPM1 + UPM1) at the thresholds, and LPM1 + UPM1."""
+    sums1 = prefix1[counts]
+    lower = (counts * thresholds - sums1) / observations
+    upper = ((prefix1[-1] - sums1) - (observations - counts) * thresholds) / observations
+    total = lower + upper
+    # 0/0 (every observation equals the threshold): the degree-0 ratio, i.e. the
+    # right-continuous CDF value, as LPM.ratio does (it was 0).
+    ratio: NDArray[np.float64] = np.divide(
+        lower,
+        total,
+        out=np.asarray(counts / observations, dtype=np.float64),
+        where=total > 0.0,
+    )
+    return ratio, total
+
+
+def _ratio_deg1_interior_excess(
+    x_prefix1: NDArray[np.float64],
+    x_counts: NDArray[np.intp],
+    x_count: int,
+    y_prefix1: NDArray[np.float64],
+    y_counts: NDArray[np.intp],
+    y_count: int,
+    thresholds: NDArray[np.float64],
+    scale: float,
+) -> bool:
+    """Whether ratio_x - ratio_y peaks above 0 strictly inside an interval of thresholds.
+
+    On ``(t, t_next)`` with fixed counts each ratio is ``(a t + b) / (g t + d)``; the
+    stationary points of the difference solve ``Ax / Dx(t)^2 = Ay / Dy(t)^2`` with
+    ``A = a d - b g`` and ``D > 0``, i.e. ``Dy(t) = sqrt(Ay / Ax) * Dx(t)``.
+    """
+    lower_knots = thresholds[:-1]
+    upper_knots = thresholds[1:]
+    kx = x_counts[:-1]
+    ky = y_counts[:-1]
+    ax, bx, gx, dx = _ratio_deg1_coefs(x_prefix1, kx, x_count)
+    ay, by, gy, dy = _ratio_deg1_coefs(y_prefix1, ky, y_count)
+    det_x = ax * dx - bx * gx
+    det_y = ay * dy - by * gy
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        valid = (det_x != 0.0) & (det_y != 0.0) & ((det_x > 0.0) == (det_y > 0.0))
+        r = np.sqrt(np.where(valid, det_y / det_x, 1.0))
+        den = gy - r * gx
+        valid &= den != 0.0
+        ts = (r * dx - dy) / np.where(valid, den, 1.0)
+        valid &= (ts > lower_knots) & (ts < upper_knots)
+        denom_x = gx * ts + dx
+        denom_y = gy * ts + dy
+        valid &= (denom_x > 0.0) & (denom_y > 0.0)
+        if not np.any(valid):
+            return False
+        ratio_x = (ax * ts + bx) / denom_x
+        ratio_y = (ay * ts + by) / denom_y
+        tol = _SD_EPS64 * np.maximum(1.0, scale / np.minimum(denom_x, denom_y))
+        return bool(np.any(valid & (ratio_x - ratio_y > tol)))
+
+
+def _ratio_deg1_coefs(
+    prefix1: NDArray[np.float64],
+    counts: NDArray[np.intp],
+    observations: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """LPM1 = a t + b and LPM1 + UPM1 = g t + d on an interval with fixed count k."""
+    sums1 = prefix1[counts]
+    alpha = counts / observations
+    beta = -sums1 / observations
+    gamma = (2.0 * counts - observations) / observations
+    delta = (prefix1[-1] - 2.0 * sums1) / observations
+    return alpha, beta, gamma, delta
+
+
+def _lpm_deg2(
+    prefix1: NDArray[np.float64],
+    prefix2: NDArray[np.float64],
+    counts: NDArray[np.intp],
+    thresholds: NDArray[np.float64],
+    observations: int,
 ) -> NDArray[np.float64]:
-    if degree == 1:
-        if discrete:
-            return np.asarray(lpm(0, grid, values), dtype=np.float64)
-        # LPM1/(LPM1 + UPM1) from prefix sums of the sorted sample, as R's C++
-        # .uni walker does: O((n + grid) log n) instead of a dense grid x n matrix.
-        sorted_values = np.sort(values)
-        prefix1 = np.concatenate(([0.0], np.cumsum(sorted_values)))
-        return _pair_curve_values_at_thresholds(
-            sorted_values,
-            prefix1,
-            None,
-            grid,
-            sorted_values.size,
-            1,
-            discrete=False,
-        )
-    return np.asarray(lpm(degree - 1, grid, values), dtype=np.float64)
+    """LPM2 = mean(max(t - x, 0)^2) = (k t^2 - 2 t P1[k] + P2[k]) / m."""
+    return np.asarray(
+        (counts * thresholds * thresholds - 2.0 * thresholds * prefix1[counts] + prefix2[counts])
+        / observations,
+        dtype=np.float64,
+    )
+
+
+def _lpm_deg2_interior_excess(
+    x_prefix1: NDArray[np.float64],
+    x_prefix2: NDArray[np.float64],
+    x_counts: NDArray[np.intp],
+    x_count: int,
+    y_prefix1: NDArray[np.float64],
+    y_prefix2: NDArray[np.float64],
+    y_counts: NDArray[np.intp],
+    y_count: int,
+    thresholds: NDArray[np.float64],
+    scale: float,
+) -> bool:
+    """Whether LPM2_x - LPM2_y peaks above 0 strictly inside an interval of thresholds.
+
+    On ``(t, t_next)`` the difference is ``a s^2 - 2 b s + c`` with
+    ``a = kx/mx - ky/my`` and ``b = P1x/mx - P1y/my``; when ``a < 0`` it has an
+    interior maximum at ``s* = b / a``, which the knots miss.
+    """
+    kx = x_counts[:-1]
+    ky = y_counts[:-1]
+    a = kx / x_count - ky / y_count
+    concave = a < 0.0
+    if not np.any(concave):
+        return False
+    kx = kx[concave]
+    ky = ky[concave]
+    b = x_prefix1[kx] / x_count - y_prefix1[ky] / y_count
+    ts = b / a[concave]
+    inside = (ts > thresholds[:-1][concave]) & (ts < thresholds[1:][concave])
+    if not np.any(inside):
+        return False
+    kx = kx[inside]
+    ky = ky[inside]
+    ts = ts[inside]
+    excess = _lpm_deg2(x_prefix1, x_prefix2, kx, ts, x_count) - _lpm_deg2(
+        y_prefix1, y_prefix2, ky, ts, y_count
+    )
+    return bool(np.any(excess > _SD_EPS64 * scale * scale))
+
+
+def _prefix_sum_1d(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    prefix = np.empty(values.size + 1, dtype=np.float64)
+    prefix[0] = 0.0
+    np.cumsum(values, out=prefix[1:])
+    return prefix
 
 
 def _prefix_sum(values: NDArray[np.float64]) -> NDArray[np.float64]:

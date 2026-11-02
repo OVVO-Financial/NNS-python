@@ -109,9 +109,12 @@ and evaluating dominance on each pair's merged threshold grid rather than on one
 global all-column grid. Pairwise tests (`fsd`, `ssd`, `tsd`, and the `*_uni`
 wrappers) accept samples of unequal length: each sample's curve is evaluated on
 the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
-`LPM(degree, sort(c(x, y)), sample)` per sample. R's C++ `.uni` walkers assume
-equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
-intentional extension carrying the same merged-grid semantics. The
+`LPM(degree, sort(c(x, y)), sample)` per sample, and as the patched R `.uni`
+walkers do (each sample walked with its own length). Every pairwise verdict
+comes from one port of R's native pairwise test: for TSD and continuous FSD it
+also checks the closed-form extremum of the curve difference strictly between
+merged sample points (LPM2 is piecewise quadratic and the continuous ratio
+linear-fractional, so the difference can peak there), as the patched R does. The
 matrix-based efficient-set and cluster routines operate on data columns and
 therefore remain equal-length by construction. Every efficient-set and cluster
 call, whatever the column count, tests each pair on that pair's own grid, so a
@@ -124,11 +127,14 @@ kept-only prefix scan.
 Columns are visited in R's LPM-at-global-maximum order with original-index tie
 breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating
-curves, then exits as soon as dominance is disproved.
+curves.
 
-These choices preserve exact R-style dominance semantics: no tolerances,
-approximate equality, output reordering, or diagonal/identical-column behavior
-changes are introduced. Polars is intentionally not used in this SD kernel
+Curve differences up to `64 * eps * S^d` (`S` the largest absolute value of
+the two samples; `d` = 1 for SSD and the mean condition, 2 for TSD, a ratio
+analogue for continuous FSD) are treated as ties, as in the patched R, so
+rounding noise does not decide dominance; discrete FSD compares exact
+empirical CDF fractions. No output reordering or diagonal/identical-column
+behavior changes are introduced. Polars is intentionally not used in this SD kernel
 because the hot path is dense pairwise threshold evaluation rather than
 data-frame grouping or filtering. R remains faster on some large finance
 fixtures because its C++ path walks merged sorted thresholds in tight parallel
@@ -626,15 +632,16 @@ path); `±Inf` raises a `ValueError` (R's binary path fails on it in
 reproduction of R's Mersenne-Twister `sample()` stream, so
 `random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
 the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
-entropy. `robust=True` follows R's resampling exactly: 100 resamples of the
-first `min(n_control, n_treatment)` positions, with control resample `g` paired
-with treatment resample 1 (`g = 1`) or `102 - g`, so the two groups are resampled
-independently apart from two replicates. It returns `Robust Certainty Estimate`
+entropy. `robust=True` follows R's resampling exactly: 100 independent bootstrap
+resamples of each group, each from its own full sample and size (as in the patched
+R; 13.3 resampled only the first `min(n_control, n_treatment)` positions of both
+groups). It returns `Robust Certainty Estimate`
 plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
 `confidence_interval=None`. R names the effect-size keys of the robust output
 `Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
-`Effect_Size_LB`/`Effect_Size_UB`. One-sided (`tails="left"`/`"right"`)
-effect-size intervals raise a `ValueError` because R's `NNS.ANOVA` fails on
-them. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+`Effect_Size_LB`/`Effect_Size_UB`. One-sided effect-size intervals follow the
+patched R: `tails="left"` gives `(treatment_lower - control_upper, Inf)` and
+`tails="right"` gives `(-Inf, treatment_upper - control_lower)` (R 13.3 failed
+on them). Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
 convention; where every robust certainty is `NaN`, R's VaR stops while NNS Python
 returns `NaN` bounds.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Literal
 
@@ -39,7 +40,6 @@ def nns_anova(
     if treatment is not None:
         control_values = _as_group(control, "control")
         treatment_values = _as_group(treatment, "treatment")
-        _check_one_sided_ci(confidence_interval, tail)
         rng = _r_rng(random_seed)
         if robust:
             return _anova_robust(
@@ -235,26 +235,27 @@ def _anova_robust(
     n_boot: int,
     rng: RRNG,
 ) -> AnovaResult:
-    # R draws the resample indices first: replicate(100, sample.int(l, replace =
-    # TRUE)) with l = min(length(treatment), length(control)). (Resampling only
-    # the first l observations of the longer group is shared with R.)
-    sample_size = min(control.size, treatment.size)
-    draws = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1)
-    # R's treatment_matrix is cbind(resample 1, resamples 100, 99, ..., 1), so
-    # control resample g is paired with treatment resample 1 for g = 1 and with
-    # 102 - g otherwise: the two groups are resampled (almost) independently.
-    treatment_draws = draws[np.r_[0, np.arange(99, 0, -1)]]
+    # R draws the resample indices first: replicate(100, sample.int(n, replace =
+    # TRUE)) for the control and then for the treatment, each group from its own
+    # full sample and size (the shared min(n1, n2) index matrix only
+    # ever resampled the first min(n1, n2) observations of the longer group).
+    control_draws = (rng.sample_int_replace(control.size, control.size * 100) - 1).reshape(
+        100, -1
+    )
+    treatment_draws = (
+        rng.sample_int_replace(treatment.size, treatment.size * 100) - 1
+    ).reshape(100, -1)
     certainties = np.array(
         [
             _anova_bin(
-                control[draws[replicate]],
+                control[control_draws[replicate]],
                 treatment[treatment_draws[replicate]],
                 means_only=means_only,
                 medians=medians,
                 confidence_interval=None,
                 tails=tails,
             )["Certainty"]
-            for replicate in range(draws.shape[0])
+            for replicate in range(100)
         ],
         dtype=np.float64,
     )
@@ -308,15 +309,16 @@ def _effect_size_bounds(
     treatment_stats = (
         np.median(treatment_boot, axis=1) if medians else np.mean(treatment_boot, axis=1)
     )
-    _check_one_sided_ci(confidence_interval, tails)
     alpha = _ci_alpha(confidence_interval, tails)
 
+    # Every tail choice needs both quantiles of both groups (R used
+    # to compute only one side and failed on one-sided tails).
     control_upper = _quantile_var(alpha, upper=True, values=control_stats)
     treatment_upper = _quantile_var(alpha, upper=True, values=treatment_stats)
     control_lower = _quantile_var(alpha, upper=False, values=control_stats)
     treatment_lower = _quantile_var(alpha, upper=False, values=treatment_stats)
-    min_effect = treatment_lower - control_upper
-    max_effect = treatment_upper - control_lower
+    min_effect = treatment_lower - control_upper if tails != "right" else -math.inf
+    max_effect = treatment_upper - control_lower if tails != "left" else math.inf
     return {
         "Effect_Size_LB": float(min_effect),
         "Effect_Size_UB": float(max_effect),
@@ -332,19 +334,6 @@ def _r_rng(seed: int | None) -> RRNG:
 
 def _r_boot_indices(rng: RRNG, size: int, n_boot: int) -> NDArray[np.int64]:
     return (rng.sample_int_replace(size, size * n_boot) - 1).reshape(n_boot, size)
-
-
-def _check_one_sided_ci(confidence_interval: float | None, tails: Tail) -> None:
-    # R's NNS.ANOVA.bin computes control_upper only for "both"/"right" and
-    # control_lower only for "both"/"left", then uses the missing one, so every
-    # one-sided effect-size interval stops with "object ... not found". Python
-    # used to return (-inf, inf) instead; fail clearly until R is fixed.
-    if confidence_interval is not None and tails != "both":
-        raise ValueError(
-            f"tails={tails!r} with a confidence_interval is not supported: the one-sided "
-            "effect-size bound fails in R's NNS.ANOVA (object 'control_upper'/'control_lower' "
-            "not found). Use tails='both', or confidence_interval=None."
-        )
 
 
 def _ci_alpha(confidence_interval: float | None, tails: Tail) -> float:
