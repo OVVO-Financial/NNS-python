@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import cmath
+import math
 from typing import Any
 
 import numpy as np
 import pytest
 from _r import dy_d_scalar, dy_dx_numeric, dy_dx_overall, nns_diff_custom
-from _tolerances import EXACT
+from _tolerances import COMPOUND, EXACT
 
 from nns import dy_d, dy_dx, nns_diff
 
-DIFF_PARITY = 1e-5
 # dy.d_ is evaluated through independent fitted NNS models in R and Python.
 # Small fit differences are magnified by finite-difference denominators.
 DY_D_PARITY = 5e-2
@@ -24,17 +25,43 @@ DY_D_PARITY = 5e-2
         ("exp", np.exp, 0.5),
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
+        ("square", lambda x: x * x, 3.0),
+        ("cube", lambda x: x**3, 2.0),
+        ("log", np.log, 5.0),
+        # math.tanh is the C library tanh R uses; np.tanh can differ by an ulp,
+        # which changes the bisection path.
+        ("tanh", lambda x: cmath.tanh(x) if isinstance(x, complex) else math.tanh(x), 0.5),
+        ("abs", abs, -1.0),
+        ("quartic", lambda x: x**4 - 3 * x, -2.0),
     ],
 )
-def test_nns_diff_derivative_matches_r(name: str, func: Any, point: float) -> None:
+def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
+    # The root finder mirrors R's uniroot (tol = eps^0.25, extendInt = "yes"),
+    # so every reported field, including iterations and the convergence flags,
+    # matches R's 12-digit output.
     expected = _r_nns_diff(name, point)
     actual = nns_diff(func, point)
-    np.testing.assert_allclose(actual["DERIVATIVE"], expected["DERIVATIVE"], atol=DIFF_PARITY)
-    np.testing.assert_allclose(
-        actual["Value of f(x) at point"],
-        expected["Value of f(x) at point"],
-        atol=EXACT,
-    )
+    for key, value in actual.items():
+        if key not in expected:  # R NA
+            assert np.isnan(value), key
+            continue
+        np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
+
+
+@pytest.mark.parity
+def test_nns_diff_steps_past_a_zero_inferred_h_like_r() -> None:
+    # uniroot evaluates the inferred-h equation at h = 0, where R's 0/0 is NaN.
+    def quintic(x: Any) -> Any:
+        return -0.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x)))
+
+    expected = _r_nns_diff_h("quintic", -0.25, 0.2)
+    actual = nns_diff(quintic, -0.25, h=0.2)
+    assert actual["converged"] == 1.0
+    for key, value in actual.items():
+        if key not in expected:
+            assert np.isnan(value), key
+            continue
+        np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
 
 
 @pytest.mark.parity
@@ -56,7 +83,40 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
     assert isinstance(actual, dict)
     assert list(actual) == list(expected)
     for key in actual:
-        np.testing.assert_allclose(actual[key], expected[key], atol=5e-3, equal_nan=True)
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("size", [30, 60, 250])
+def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
+    # R steps by gravity(|diff(x)|) * h_s (the bandwidth value, not its index);
+    # for n < 49 R keeps only the bandwidths that occur once in h_s.
+    # x on a 1/1024 grid makes x * x * x exact, so the cache key matches on every numpy build.
+    rng = np.random.default_rng(size)
+    x = rng.integers(-2048, 2049, size) / 1024.0
+    y = x * x * x - x
+    eval_point = [-1.5, 0.0, 0.5, 1.5]
+    expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
+    actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
+    assert isinstance(actual, dict)
+    for key in actual:
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+def test_dy_dx_numeric_boundary_eval_points_match_r() -> None:
+    # At min(x) and max(x) one run is 0: R uses the one-sided slope and the
+    # second derivative is NaN.
+    rng = np.random.default_rng(7)
+    x = np.sort(rng.uniform(0.0, 2.0 * np.pi, 120))
+    y = np.cos(x)
+    eval_point = [float(x[0]), 3.0, float(x[-1])]
+    expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
+    actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
+    assert isinstance(actual, dict)
+    assert np.isnan(actual["second.derivative"][[0, 2]]).all()
+    for key in actual:
+        np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
 
 
 @pytest.mark.parity
@@ -173,7 +233,11 @@ def test_dy_d_vectorized_wrt_numeric_eval_mixed_matches_scalar_python_calls() ->
 
 
 def _r_nns_diff(name: str, point: float) -> dict[str, float]:
-    result = nns_diff_custom(name, point)
+    return _r_nns_diff_h(name, point, None)
+
+
+def _r_nns_diff_h(name: str, point: float, h: float | None) -> dict[str, float]:
+    result = nns_diff_custom(name, point, h)
     assert isinstance(result, dict)
     return {
         key: float(np.asarray(value).reshape(-1)[0])

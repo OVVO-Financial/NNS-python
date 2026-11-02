@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -61,7 +62,7 @@ def nns_diff(
     lower_b = min(b1, b2)
     upper_b = max(b1, b2)
 
-    if np.isclose(lower_b, upper_b, rtol=np.sqrt(np.finfo(float).eps), atol=0.0):
+    if _r_all_equal(lower_b, upper_b, tolerance=math.sqrt(_DBL_EPS)):
         slope = float(np.mean([left_slope, right_slope]))
         return _rounded_result(
             [
@@ -94,6 +95,9 @@ def nns_diff(
         current_b = new_b
 
         def new_f(x: float, intercept: float = current_b) -> float:
+            if x == 0.0:
+                # R's 0/0 is NaN, which uniroot (and _zeroin2) replaces and steps past.
+                return math.nan
             return -f_x + ((f_x - _eval_real(f, point - x, "f(point - x)")) / x) * point + intercept
 
         inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value)
@@ -172,6 +176,10 @@ def dy_dx(
     eval_point: str | float | NDArray[np.float64] | None = None,
 ) -> DyDxResult:
     """Partial derivative wrapper for R's dy.dx paths."""
+    if eval_point is None:
+        # R's dy.dx(x, y) with the default eval.point = NULL also fails, but
+        # deep inside with "undefined columns selected".
+        raise ValueError("eval_point must be provided: a numeric point/vector or 'overall'")
     x_values = np.asarray(x, dtype=np.float64).reshape(-1)
     y_values = np.asarray(y, dtype=np.float64).reshape(-1)
     if x_values.size != y_values.size:
@@ -193,8 +201,6 @@ def dy_dx(
         if not isinstance(fitted, dict):
             raise TypeError("nns_reg returned an unexpected fitted table.")
         return float(np.mean(np.asarray(fitted["gradient"], dtype=np.float64)))
-    if eval_point is None:
-        raise ValueError("some columns are not in the data.table: [eval.point]")
     return _dy_dx_numeric(x_values, y_values, np.asarray(eval_point, dtype=np.float64).reshape(-1))
 
 
@@ -697,18 +703,25 @@ def _dy_dx_numeric(
         raise ValueError("eval_point must be finite.")
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
-    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5))).astype(np.int64)
+    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5)))
+    # R steps by gravity(|diff(x)|) * h_s[index]. When h_s holds a repeated
+    # bandwidth (n < 49), R's `deriv.points[[index]] <- ...` with a length-2
+    # index is a recursive assignment and rbind() drops those blocks, so R only
+    # uses the bandwidths that occur once. Below n = 16 every bandwidth repeats
+    # and R fails; use the distinct bandwidths there instead.
+    values, counts = np.unique(h_s, return_counts=True)
+    bandwidths = h_s[np.isin(h_s, values[counts == 1])]
+    if bandwidths.size == 0:
+        bandwidths = values
     spacing = float(_gravity(np.abs(np.diff(x))))
+    x_min = float(np.min(x))
+    x_max = float(np.max(x))
     rows: list[NDArray[np.float64]] = []
-    for h_value in h_s:
-        indices = np.flatnonzero(h_s == h_value).astype(np.float64) + 1.0
-        h_step = spacing * indices
-        length = max(eval_points.size, h_step.size)
-        eval_recycled = np.resize(eval_points, length)
-        h_recycled = np.resize(h_step, length)
-        lower = np.maximum(float(np.min(x)), eval_recycled - h_recycled)
-        upper = np.minimum(float(np.max(x)), eval_recycled + h_recycled)
-        rows.append(np.column_stack((lower, eval_recycled, upper)))
+    for h_value in bandwidths:
+        h_step = spacing * float(h_value)
+        lower = np.maximum(x_min, eval_points - h_step)
+        upper = np.minimum(x_max, eval_points + h_step)
+        rows.append(np.column_stack((lower, eval_points, upper)))
 
     deriv_points = np.vstack(rows)
     point_est = np.concatenate((deriv_points[:, 0], deriv_points[:, 1], deriv_points[:, 2]))
@@ -726,19 +739,13 @@ def _dy_dx_numeric(
     run_1 = deriv_points[:, 2] - deriv_points[:, 1]
     run_2 = deriv_points[:, 1] - deriv_points[:, 0]
 
-    zero_upper = run_1 == 0.0
-    zero_lower = run_2 == 0.0
-    if np.any(zero_upper) or np.any(zero_lower):
-        fallback_step = (abs(float(np.max(x) - np.min(x))) / float(n)) * float(len(h_s))
-        deriv_points[zero_upper, 2] = deriv_points[zero_upper, 1] - fallback_step
-        deriv_points[zero_lower, 2] = deriv_points[zero_lower, 1] - fallback_step
-        run_1 = deriv_points[:, 2] - deriv_points[:, 1]
-        run_2 = deriv_points[:, 1] - deriv_points[:, 0]
-
     rise_1 = estimates[:, 2] - estimates[:, 1]
     rise_2 = estimates[:, 1] - estimates[:, 0]
-    first = (rise_1 + rise_2) / (run_1 + run_2)
-    second = (rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0)
+    # At min(x) or max(x) one run is 0: R uses the one-sided slope for the
+    # first derivative and the second derivative is NaN/Inf.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        first = (rise_1 + rise_2) / (run_1 + run_2)
+        second = (rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0)
 
     unique_eval = np.array(sorted(set(float(v) for v in eval_col)), dtype=np.float64)
     first_out = np.empty(unique_eval.size, dtype=np.float64)
@@ -831,34 +838,128 @@ def _finite_step(
     return neg_step, pos_step, float(np.mean([neg_step, pos_step]))
 
 
-def _uniroot_extend(fn: Callable[[float], float], lower: float, upper: float) -> float:
-    eps = np.finfo(float).eps
-    lo = lower if lower != 0.0 else -eps
-    hi = upper if upper != 0.0 else eps
-    try:
-        f_lo = fn(lo)
-        f_hi = fn(hi)
-        for _ in range(100):
-            if np.isfinite(f_lo) and np.isfinite(f_hi) and f_lo * f_hi <= 0.0:
-                from scipy import optimize  # type: ignore[import-untyped]
+_DBL_EPS = float(np.finfo(float).eps)
+_DBL_MAX = float(np.finfo(float).max)
 
-                return float(
-                    optimize.brentq(
-                        fn,
-                        lo,
-                        hi,
-                        xtol=1e-14,
-                        rtol=np.finfo(float).eps * 4.0,
-                        maxiter=1000,
-                    )
-                )
-            lo *= 2.0
-            hi *= 2.0
-            f_lo = fn(lo)
-            f_hi = fn(hi)
+
+def _uniroot_extend(fn: Callable[[float], float], lower: float, upper: float) -> float:
+    """Root of ``fn`` like R's ``uniroot(fn, c(lower, upper), extendInt = "yes")``.
+
+    Uses R's default ``tol = .Machine$double.eps^0.25`` and ``maxiter = 1000``:
+    the interval is widened additively on both sides until the end values
+    bracket a root, then refined with Brent's method as in R's ``zeroin2``.
+    Returns NaN where R's ``uniroot`` stops with an error.
+    """
+    tol = _DBL_EPS**0.25
+    maxiter = 1000
+    try:
+        f_lower = float(fn(lower))
+        f_upper = float(fn(upper))
+        if math.isnan(f_lower) or math.isnan(f_upper):
+            return np.nan
+        if _truncate(f_lower) * _truncate(f_upper) > 0.0:
+            delta = [0.01 * max(1e-4, abs(lower)), 0.01 * max(1e-4, abs(upper))]
+            it = 0
+            while f_lower * f_upper > 0.0 and (math.isfinite(lower) or math.isfinite(upper)):
+                it += 1
+                if it > maxiter:
+                    return np.nan
+                if math.isfinite(lower):
+                    old, old_f = lower, f_lower
+                    lower -= delta[0]
+                    f_lower = float(fn(lower))
+                    if math.isnan(f_lower):
+                        lower, f_lower = old, old_f
+                        delta[0] /= 4.0
+                if math.isfinite(upper):
+                    old, old_f = upper, f_upper
+                    upper += delta[1]
+                    f_upper = float(fn(upper))
+                    if math.isnan(f_upper):
+                        upper, f_upper = old, old_f
+                        delta[1] /= 4.0
+                delta = [2.0 * delta[0], 2.0 * delta[1]]
+        if not np.sign(f_lower) * np.sign(f_upper) <= 0.0:
+            return np.nan
+        return _zeroin2(fn, lower, upper, _truncate(f_lower), _truncate(f_upper), tol, maxiter)
     except (ArithmeticError, ValueError, TypeError, OverflowError):
         return np.nan
-    return np.nan
+
+
+def _r_all_equal(target: float, current: float, *, tolerance: float) -> bool:
+    """R's ``isTRUE(all.equal(target, current, tolerance))`` for two scalars.
+
+    The mean absolute difference is taken relative to ``|target|`` when that
+    exceeds ``tolerance`` and absolute otherwise.
+    """
+    diff = abs(target - current)
+    scale = abs(target)
+    if math.isfinite(scale) and scale > tolerance:
+        diff /= scale
+    return not math.isnan(diff) and diff <= tolerance
+
+
+def _truncate(value: float) -> float:
+    return min(max(value, -_DBL_MAX), _DBL_MAX)
+
+
+def _zeroin2(
+    fn: Callable[[float], float],
+    a: float,
+    b: float,
+    fa: float,
+    fb: float,
+    tol: float,
+    maxiter: int,
+) -> float:
+    """Brent's root finder, a line-by-line port of R's ``R_zeroin2`` (zeroin.c)."""
+
+    def f(x: float) -> float:
+        value = float(fn(x))
+        if math.isfinite(value):
+            return value
+        return -_DBL_MAX if value == -math.inf else _DBL_MAX
+
+    c, fc = a, fa
+    if fa == 0.0:
+        return a
+    if fb == 0.0:
+        return b
+    for _ in range(maxiter + 1):
+        prev_step = b - a
+        if abs(fc) < abs(fb):
+            a, b, c = b, c, b
+            fa, fb, fc = fb, fc, fb
+        tol_act = 2.0 * _DBL_EPS * abs(b) + tol / 2.0
+        new_step = (c - b) / 2.0
+        if abs(new_step) <= tol_act or fb == 0.0:
+            return b
+        if abs(prev_step) >= tol_act and abs(fa) > abs(fb):
+            cb = c - b
+            if a == c:
+                t1 = fb / fa
+                p = cb * t1
+                q = 1.0 - t1
+            else:
+                q = fa / fc
+                t1 = fb / fc
+                t2 = fb / fa
+                p = t2 * (cb * q * (q - t1) - (b - a) * (t1 - 1.0))
+                q = (q - 1.0) * (t1 - 1.0) * (t2 - 1.0)
+            if p > 0.0:
+                q = -q
+            else:
+                p = -p
+            if p < (0.75 * cb * q - abs(tol_act * q) / 2.0) and p < abs(prev_step * q / 2.0):
+                new_step = p / q
+        if abs(new_step) < tol_act:
+            new_step = tol_act if new_step > 0.0 else -tol_act
+        a, fa = b, fb
+        b += new_step
+        fb = f(b)
+        if (fb > 0.0 and fc > 0.0) or (fb < 0.0 and fc < 0.0):
+            c, fc = a, fa
+    return b
 
 
 def _eval_real(
@@ -869,7 +970,7 @@ def _eval_real(
     result = f(value)
     if not np.isscalar(result):
         raise ValueError(f"{label} must return a scalar.")
-    scalar = cast(float | complex, result)
+    scalar = result
     if isinstance(scalar, complex):
         if scalar.imag != 0.0:
             raise ValueError(f"{label} must return a real value.")

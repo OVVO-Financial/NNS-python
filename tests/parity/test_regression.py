@@ -11,11 +11,6 @@ from nns import nns_reg
 from nns.part import NoiseReduction
 from nns.regression import Order
 
-# smooth=TRUE ports R's stats::smooth.spline penalized fit. The smoothing-
-# parameter ratio comes from R's Fortran band trace, which the pure-Python port
-# reproduces to ~1e-4 rather than machine precision (documented deviation).
-SMOOTH_SPLINE_PARITY = 5e-4
-
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]
 MODE_RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]
@@ -112,10 +107,7 @@ def test_nns_reg_order_max_smooth_fallback_matches_r() -> None:
     )
     actual = nns_reg(x, y, order="max", point_est=point, smooth=True, confidence_interval=0.95)
 
-    # smooth=TRUE reproduces R's stats::smooth.spline penalized fit; the
-    # smoothing-parameter ratio derives from R's Fortran band trace, so the port
-    # tracks R to ~1e-4 rather than machine precision (documented deviation).
-    _assert_reg_matches(actual, expected, atol=SMOOTH_SPLINE_PARITY)
+    _assert_reg_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -133,7 +125,26 @@ def test_nns_reg_spline_eligible_smooth_matches_r() -> None:
     )
     actual = nns_reg(x, y, order=2, point_est=point, smooth=True, confidence_interval=0.95)
 
-    _assert_reg_matches(actual, expected, atol=5e-5)
+    _assert_reg_matches(actual, expected)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(("size", "order"), [(600, None), (400, "max"), (1000, "max")])
+def test_nns_reg_smooth_thinned_knots_matches_r(size: int, order: str | None) -> None:
+    # More than 49 regression points: smooth.spline places .nknots.smspl(nx)
+    # knots instead of one per unique x.
+    rng = np.random.default_rng(20261031)
+    x = np.sort(rng.uniform(0.0, 10.0, size))
+    y = np.sin(x) + 0.1 * rng.standard_normal(size)
+    point = np.array([1.0, 2.5, 5.0, 7.25, 9.5])
+
+    expected = _r_nns_reg_smooth(x, y, order=order, point_est=point, confidence_interval=0.95)
+    actual = nns_reg(
+        x, y, order=cast(Order, order), point_est=point, smooth=True, confidence_interval=0.95
+    )
+
+    assert len(actual["regression.points"]["x"]) > 49
+    _assert_reg_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -164,7 +175,7 @@ def test_nns_reg_dimred_smooth_matches_r() -> None:
         smooth=True,
     )
 
-    _assert_reg_matches(actual, expected, check_dimred=True, atol=5e-5)
+    _assert_reg_matches(actual, expected, check_dimred=True)
 
 
 @pytest.mark.parity
@@ -199,7 +210,7 @@ def test_nns_reg_dimred_smooth_out_of_range_points_match_r() -> None:
         smooth=True,
     )
 
-    _assert_reg_matches(actual, expected, check_dimred=True, atol=5e-3)
+    _assert_reg_matches(actual, expected, check_dimred=True)
 
 
 @pytest.mark.parity
