@@ -443,11 +443,11 @@ As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
 `nns_seas` (the default `best_periods=1` selects the best period).
 `seasonal_factor=True, best_periods=None` uses the first detected period
 (weight 1), and `seasonal_factor=False, best_periods=None` weights all periods. `dynamic=True` with numeric seasonal factors
-raises with R's static-seasonality error. Constant-series behavior follows
-installed R, including zero forecasts for automatic seasonality paths and `NaN`
-forecasts for some explicit numeric-lag paths. Character `weights` with numeric
-multi-lag seasonal factors is rejected because installed R errors during numeric
-multiplication on that path. Explicit numeric multi-lag seasonal factors weight
+raises with R's static-seasonality error. Where the lag weights are `0/0` (a
+constant series, or selected periods whose CV equals the variable CV), the
+weights fall back to equal weights as in the patched R, so a constant series
+forecasts its constant. Character `weights` such as `"equal"` weight every lag
+equally, including with numeric multi-lag seasonal factors. Explicit numeric multi-lag seasonal factors weight
 each lag by the coefficient of variation of that lag's own reverse component
 series, as installed R does (`seasonal.factor[i]`).
 
