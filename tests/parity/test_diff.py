@@ -22,7 +22,9 @@ DY_D_PARITY = 5e-2
     [
         ("square", lambda x: x * x, 2.0),
         ("sin", np.sin, 1.0),
-        ("exp", np.exp, 0.5),
+        # libm exp, as R uses: np.exp's SIMD loops can differ by an ulp per CPU,
+        # and at h near 1e-9 that moves the inferred h.
+        ("exp", lambda x: cmath.exp(x) if isinstance(x, complex) else math.exp(x), 0.5),
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
         ("square", lambda x: x * x, 3.0),
