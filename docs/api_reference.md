@@ -55,9 +55,9 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Causation | `nns_causation` | `NNS.caus` | implemented | Directional causation. |
 | Causation | `causal_matrix` | `NNS.caus` (matrix input) | implemented | Matrix form of causation relationships. |
 | Regression | `nns_reg` | `NNS.reg` | implemented | Bivariate regression, classification, and interval surfaces. |
-| Regression | `nns_m_reg` | `NNS.M.reg` | partial | Multivariate regression. Raw factor expansion is guarded. |
+| Regression | `nns_m_reg` | `NNS.M.reg` | implemented | Multivariate regression, including raw factor predictors. |
 | Regression | `nns_stack` | `NNS.stack` | implemented | Stacked ensemble path. |
-| Regression | `nns_boost` | `NNS.boost` | partial | Boosted ensemble path with one high-feature stochastic threshold guard. |
+| Regression | `nns_boost` | `NNS.boost` | implemented | Boosted ensemble path. |
 | Regression helpers | `FactorDesign` | Python helper | implemented | Dataclass returned by factor-preparation helpers. |
 | Regression helpers | `prepare_factor_predictors` | Factor preparation path | implemented | Builds regression-ready factor design matrices. |
 | Categorical helpers | `encode_factor_codes` | Factor-code helper | implemented | Encodes categorical labels into deterministic numeric codes. |
@@ -229,7 +229,7 @@ Computes the antisymmetric net-causation matrix; entry `[i, j]` is the net causa
 
 Closest R API: `NNS.reg`.
 
-Bivariate NNS regression and classification. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and public factor-expansion paths.
+Bivariate NNS regression and classification. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and factor paths. pandas column names are kept, `point_est` columns are matched by name, and string/categorical columns are factors (declared or sorted level order; `class_levels=` / `factor_levels=` declare levels).
 
 Returns Python-native structures, generally dictionaries containing estimates, diagnostics, residuals, intervals, and related arrays.
 
@@ -237,19 +237,19 @@ Returns Python-native structures, generally dictionaries containing estimates, d
 
 Closest R API: `NNS.M.reg`.
 
-Multivariate regression and classification surface. Numeric and class paths are implemented. Direct raw-factor `factor_2_dummy=True` is guarded because the installed R direct raw-factor path errors; use `prepare_factor_predictors(...)` first.
+Multivariate regression and classification surface (R `NNS.M.reg`). Numeric, class, and raw factor/character predictor paths are implemented; `factor_2_dummy=True` is the default, as in R 13.3, and pandas column names are kept.
 
 #### `nns_stack`
 
 Closest R API: `NNS.stack`.
 
-Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. `NNS.dim.red.variables` (0-based predictor indices, ranked by absolute coefficient) and `NNS.dim.red.coefficients` report the dimension-reduction selection; with `stack=True` those predictors are the only ones behind `stack`.
+Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. `NNS.dim.red.variables` (predictor names, ranked by absolute coefficient) and `NNS.dim.red.coefficients` (dict of encoded column name to coefficient) report the dimension-reduction selection; with `stack=True` those predictors are the only ones behind `stack`.
 
 #### `nns_boost`
 
 Closest R API: `NNS.boost`.
 
-Boosted ensemble API. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Deterministic and stochastic structures are implemented. The high-feature stochastic threshold path is guarded to make an installed-R failure explicit.
+Boosted ensemble API. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Seeded runs reproduce R's random stream; `feature.weights` / `feature.frequency` are keyed by predictor name (`V1..Vp` for an unnamed matrix).
 
 ### Categorical and factor helpers
 
@@ -259,7 +259,7 @@ Python helper dataclass used to hold prepared factor design matrices and metadat
 
 #### `prepare_factor_predictors`
 
-Builds a regression-ready full-rank factor design matrix before calling `nns_m_reg(...)`.
+Builds a full-rank factor design matrix. Not needed for `nns_reg` / `nns_m_reg`, which encode raw factor columns themselves.
 
 #### `encode_factor_codes`
 

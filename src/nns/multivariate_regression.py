@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,15 +18,17 @@ from nns.var import upm_var
 NBest = int | Literal["all"] | None
 
 MRegFitted = dict[str, NDArray[np.float64] | NDArray[np.str_]]
-"""Fit table keyed ``V1..Vn`` per regressor plus ``y``, ``y.hat``, ``NNS.ID``,
-``residuals``, and (with ``confidence_interval``) ``conf.int.pos``/``conf.int.neg``.
-Column count depends on the input, so keys stay dynamic."""
+"""Fit table keyed by encoded predictor name (frame column names, factor dummies
+``<name>_<level>``, ``V1..Vn`` for an unnamed matrix) plus ``y``, ``y.hat``,
+``NNS.ID``, ``residuals``, and (with ``confidence_interval``)
+``conf.int.pos``/``conf.int.neg``. Column count depends on the input, so keys
+stay dynamic."""
 
 MRegPredInt = TypedDict(
     "MRegPredInt",
     {
-        "lower.pred.int": NDArray[np.float64],
-        "upper.pred.int": NDArray[np.float64],
+        "pred.int.neg": NDArray[np.float64],
+        "pred.int.pos": NDArray[np.float64],
     },
 )
 """Prediction interval bounds for the requested ``point_est`` rows."""
@@ -36,17 +38,21 @@ MRegResult = TypedDict(
     {
         "Point.est": "NDArray[np.float64] | None",
         "RPM": dict[str, NDArray[np.float64]],
-        "R2": NotRequired[float],
-        "rhs.partitions": NotRequired[dict[str, NDArray[np.float64]]],
-        "pred.int": NotRequired["MRegPredInt | None"],
-        "Fitted.xy": NotRequired[MRegFitted],
+        "R2": "float | None",
+        "rhs.partitions": dict[str, NDArray[np.float64]],
+        "pred.int": "MRegPredInt | None",
+        "Fitted.xy": "MRegFitted | None",
+        "n.best": int,
+        "dist": str,
+        "class.levels": "list[str] | None",
     },
 )
 """``nns_m_reg`` result.
 
-``point_only=True`` returns only ``Point.est`` and ``RPM``; the full form always
-carries the remaining keys (``pred.int`` is ``None`` unless
-``confidence_interval`` is set).
+Every key is always present: ``R2`` and ``Fitted.xy`` are ``None`` with
+``point_only=True``, ``Point.est`` is ``None`` without ``point_est``,
+``pred.int`` is ``None`` unless ``confidence_interval`` is set, and
+``class.levels`` is ``None`` for a numeric response.
 """
 
 
@@ -54,7 +60,7 @@ def nns_m_reg(
     x: NDArray[Any],
     y: NDArray[Any],
     *,
-    factor_2_dummy: bool = False,
+    factor_2_dummy: bool = True,
     order: Order = None,
     n_best: NBest = None,
     type: str | None = None,
@@ -70,11 +76,19 @@ def nns_m_reg(
     ncores: int | None = None,
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
+    factor_levels: Any = None,
 ) -> MRegResult:
-    """Multivariate numeric regression matching R's NNS.M.reg path.
+    """Multivariate regression matching R's ``NNS.M.reg``.
 
-    Delegates to the repaired :func:`nns._reg_engine.nns_reg_engine`, whose
-    multivariate branch is the authoritative port of R's ``NNS.M.reg``.
+    Delegates to :func:`nns._reg_engine.nns_reg_engine`, whose multivariate
+    branch is the port of R's ``NNS.M.reg``. Predictors are encoded exactly as
+    in :func:`nns.nns_reg`: string and categorical columns become one-hot
+    dummies (``factor_2_dummy=True``, R's default) or integer codes, pandas
+    column names are kept as the ``RPM`` / ``Fitted.xy`` keys, and
+    [point_est] columns are matched by name. A string, bool or categorical
+    response (or one with ``class_levels``) is a classification target, as in
+    R; ``class_levels`` fixes the code order. At least two encoded predictor
+    columns are required.
     """
     _warn_unsupported(
         location=location is not None,
@@ -83,42 +97,26 @@ def nns_m_reg(
         plot_regions=plot_regions,
         ncores=ncores is not None,
     )
-    if factor_2_dummy:
-        raise NotImplementedError(
-            "direct nns_m_reg factor_2_dummy=True is rejected because installed R's "
-            "internal NNS.M.reg raw factor path errors; use nns_reg(..., "
-            "factor_2_dummy=True, factor_levels=...) instead."
-        )
     type_value = _normalize_type(type)
     from nns._reg_engine import nns_reg_engine
-
-    x_values = np.asarray(x, dtype=np.float64)
-    if x_values.ndim == 1:
-        x_values = x_values.reshape(-1, 1)
-    if x_values.shape[1] < 2:
-        raise ValueError("nns_m_reg requires at least two predictor columns.")
-
-    # class_levels fixes the categorical y ordering; encode to 1..K codes so the
-    # engine (which sorts unique labels) reproduces the requested mapping.
-    y_for_engine: Any = y
-    if class_levels is not None:
-        levels = [str(level) for level in class_levels]
-        y_str = [str(v) for v in np.asarray(y).ravel().tolist()]
-        y_for_engine = np.asarray([levels.index(v) + 1 for v in y_str], dtype=np.float64)
 
     result = cast(
         "MRegResult",
         nns_reg_engine(
-            x_values,
-            y_for_engine,
+            x,
+            y,
+            factor_2_dummy=factor_2_dummy,
             order=order,
             n_best=cast(Any, n_best),
             type=type_value,
-            point_est=None if point_est is None else np.asarray(point_est, dtype=np.float64),
+            point_est=point_est,
             point_only=point_only,
             noise_reduction=noise_reduction,
             dist=dist,
             confidence_interval=confidence_interval,
+            class_levels=class_levels,
+            factor_levels=factor_levels,
+            multivariate_only=True,
         ),
     )
     if (plot or residual_plot) and isinstance(result.get("Fitted.xy"), dict):
@@ -156,41 +154,6 @@ def _render_m_reg(fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]]) -> 
     ax.set_xlabel("Index")
     ax.set_ylabel("y (blue)   y.hat (red)")
     ax.set_title("NNS.M.reg Residual Plot")
-
-
-def _validate_inputs(
-    x: NDArray[Any],
-    y: NDArray[Any],
-    factor_2_dummy: bool,
-    *,
-    type_value: str | None,
-    class_levels: list[object] | None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    if factor_2_dummy:
-        raise NotImplementedError(
-            "direct nns_m_reg factor_2_dummy=True is rejected because installed R's "
-            "internal NNS.M.reg raw factor path errors; use prepare_factor_predictors(...) "
-            "before nns_m_reg(...) or nns_reg(..., factor_2_dummy=True, factor_levels=...)."
-        )
-    x_values = np.asarray(x, dtype=np.float64)
-    if x_values.ndim == 1:
-        x_values = x_values.reshape(-1, 1)
-    if x_values.ndim != 2:
-        raise ValueError("x must be a 2D numeric matrix.")
-    from nns.regression import _prepare_y_values
-
-    y_values, _ = _prepare_y_values(
-        y,
-        type_value=type_value,
-        class_levels=class_levels,
-    )
-    if x_values.shape[0] == 0 or x_values.shape[1] == 0:
-        raise ValueError("x must be non-empty.")
-    if y_values.size != x_values.shape[0]:
-        raise ValueError("x and y must have the same row count.")
-    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
-        raise ValueError("x and y must contain only finite values.")
-    return x_values, y_values
 
 
 def _validate_point_est(
@@ -481,7 +444,7 @@ def _apply_multivariate_intervals(
     point_predictions: NDArray[np.float64] | None,
     *,
     confidence_interval: float | None,
-) -> MRegPredInt | None:
+) -> dict[str, NDArray[np.float64]] | None:
     if confidence_interval is None:
         return None
     alpha = (1.0 - float(confidence_interval)) / 2.0

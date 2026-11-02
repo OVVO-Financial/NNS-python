@@ -319,7 +319,9 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     labels = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     y = x + np.where(labels == "low", 1.0, np.where(labels == "mid", 2.0, 3.0)) * 0.25
-    variable = np.column_stack((labels, x))
+    # Object columns: a numeric column stays numeric (a '<U' array would make
+    # every column a factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
 
     expected = nns_boost_factor_predictor(
         labels.tolist(),
@@ -341,6 +343,7 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         cv_size=0.25,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)
@@ -351,7 +354,9 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     labels = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     y = x + np.where(labels == "low", 1.0, np.where(labels == "mid", 2.0, 3.0)) * 0.25
-    variable = np.column_stack((labels, x))
+    # Object columns: a numeric column stays numeric (a '<U' array would make
+    # every column a factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
 
     expected = nns_boost_factor_predictor(
         labels.tolist(),
@@ -374,6 +379,7 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         features_only=True,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)

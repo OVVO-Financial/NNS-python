@@ -261,7 +261,10 @@ def test_nns_m_reg_factor_levels_return_numeric_codes() -> None:
         dist=None,
     )
 
-    _assert_m_reg_matches(actual, expected)
+    # The R reference is fitted on the 1..K codes, so its class.levels are the
+    # codes; the port reports the labels behind them.
+    assert actual["class.levels"] == levels
+    _assert_m_reg_matches(_without_levels(actual), _without_levels(expected))
 
 
 @pytest.mark.parity
@@ -295,7 +298,10 @@ def test_nns_m_reg_factor_levels_class_confidence_interval_matches_r() -> None:
         dist=None,
     )
 
-    _assert_m_reg_matches(actual, expected)
+    # The R reference is fitted on the 1..K codes, so its class.levels are the
+    # codes; the port reports the labels behind them.
+    assert actual["class.levels"] == levels
+    _assert_m_reg_matches(_without_levels(actual), _without_levels(expected))
 
 
 @pytest.mark.parity
@@ -352,6 +358,10 @@ def _r_nns_m_reg(
         1,
         confidence_interval,
     )
+
+
+def _without_levels(result: Any) -> dict[str, Any]:
+    return {key: value for key, value in result.items() if key != "class.levels"}
 
 
 def _assert_m_reg_matches(actual: dict[str, Any], expected: Any) -> None:

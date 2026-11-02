@@ -1,0 +1,48 @@
+{
+  "entries": {
+    "453a90d79e5bba06d2e7e013e23eb6cd27d716cfff26459ffa63ec18cc262731": {
+      "levels": [
+        "setosa",
+        "versicolor",
+        "virginica"
+      ],
+      "reg": [
+        2.0,
+        1.0,
+        1.0,
+        1.0,
+        3.0,
+        3.0,
+        2.0,
+        3.0,
+        3.0,
+        2.0
+      ],
+      "stack": [
+        2.0,
+        1.0,
+        1.0,
+        1.0,
+        3.0,
+        3.0,
+        2.0,
+        3.0,
+        3.0,
+        3.0
+      ],
+      "w": {
+        "names": [
+          "reg",
+          "dim.red"
+        ],
+        "values": [
+          0.01,
+          0.99
+        ]
+      }
+    }
+  },
+  "label": "labels.stack.factor_y",
+  "nns_version": "13.3",
+  "schema_version": 2
+}

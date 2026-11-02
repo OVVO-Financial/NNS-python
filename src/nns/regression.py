@@ -13,7 +13,7 @@ from nns._native import native_fn
 from nns.categorical import encode_factor_codes, factor_2_dummy_fr
 from nns.causation import _uni_caus
 from nns.central_tendencies import nns_mode
-from nns.copula import _copula
+from nns.copula import _copula, _r_col_means
 from nns.dependence import _gravity, nns_dep
 from nns.part import NoiseReduction, PartResult, nns_part
 from nns.smoothing import r_smooth_spline_fixed_spar
@@ -60,7 +60,8 @@ RegFitted = TypedDict(
         "NNS.ID": NDArray[np.str_],
         "gradient": NDArray[np.float64],
         "residuals": NDArray[np.float64],
-        "standard.errors": NDArray[np.float64],
+        # Only the unused legacy implementation below fills this column.
+        "standard.errors": NotRequired[NDArray[np.float64]],
         "conf.int.pos": NotRequired[NDArray[np.float64]],
         "conf.int.neg": NotRequired[NDArray[np.float64]],
     },
@@ -82,23 +83,27 @@ class RegXStar(TypedDict):
 RegResult = TypedDict(
     "RegResult",
     {
-        "R2": float,
-        "SE": float,
+        "R2": float | None,
+        "SE": float | None,
         "Prediction.Accuracy": float | None,
         "equation": "RegEquation | None",
         "x.star": "RegXStar | None",
         "derivative": DerivativeTable,
-        "Point.est": NDArray[np.float64],
+        "Point.est": "NDArray[np.float64] | None",
         "pred.int": "RegPredInt | None",
         "regression.points": RegPoints,
-        "Fitted.xy": RegFitted,
+        "Fitted.xy": "RegFitted | None",
+        "class.levels": NotRequired["list[str] | None"],
     },
 )
 """Univariate ``nns_reg`` result.
 
 ``equation`` and ``x.star`` are populated only on the dimension-reduction path;
 ``Prediction.Accuracy`` only in class mode; ``pred.int`` only when
-``confidence_interval`` is set; ``Point.est`` is empty unless ``point_est`` is given.
+``confidence_interval`` is set (one row per ``point_est`` row); ``Point.est``
+is ``None`` unless ``point_est`` is given; ``R2``, ``SE`` and ``Fitted.xy`` are
+``None`` with ``point_only=True``. ``class.levels`` is the label behind each
+class code (classification and categorical responses), else ``None``.
 """
 
 
@@ -197,13 +202,21 @@ def nns_reg(
 ) -> Any:
     """Repaired NNS.reg port with the original bounded Racine-Hastie R2.
 
-    Plotting arguments and the legacy class_levels/factor_levels emulation
-    parameters are accepted for API compatibility and ignored.
+    pandas inputs keep their column names and types: [point_est] columns are
+    matched to the training columns by name (reordered when the names are the
+    same set, positional when they share none, an error otherwise), string and
+    categorical columns are factors, and a pandas categorical response or
+    predictor is coded in its declared category order. ``class_levels`` gives
+    the response levels explicitly (codes ``1..K`` in that order; it implies
+    classification) and ``factor_levels`` the predictor levels: a mapping from
+    column name to levels, one entry per column (``None`` for numeric
+    columns), or a flat level list for a single predictor. Plotting arguments
+    are handled by the public wrapper; ``return_values`` and ``ncores`` are
+    accepted for API compatibility and ignored.
     """
     from nns._reg_engine import nns_reg_engine
 
     del return_values, plot, plot_regions, residual_plot, ncores
-    del class_levels, factor_levels
     return nns_reg_engine(
         x,
         y,
@@ -221,6 +234,8 @@ def nns_reg(
         dist=dist,
         point_only=point_only,
         multivariate_call=multivariate_call,
+        class_levels=class_levels,
+        factor_levels=factor_levels,
     )
 
 
@@ -1157,7 +1172,7 @@ def _rescale_01(values: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _nns_copula_matrix(values: NDArray[np.float64]) -> float:
-    target = cast(NDArray[np.float64], np.mean(values, axis=0))
+    target = _r_col_means(values)
     return _copula(values, target, continuous=True)
 
 

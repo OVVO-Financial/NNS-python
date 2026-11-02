@@ -95,7 +95,9 @@ def test_nns_m_reg_class_confidence_interval_keeps_raw_bounds() -> None:
     assert set(result["Point.est"]).issubset(set(y))
 
 
-def test_nns_m_reg_direct_factor_dummy_path_stays_rejected() -> None:
+def test_nns_m_reg_direct_factor_dummy_path_encodes_raw_factors() -> None:
+    # R 13.3 NNS.M.reg encodes raw factor/character predictors itself
+    # (factor.2.dummy = TRUE by default); parity is in tests/parity/test_labels.py.
     x = np.array(
         [
             ["b", 0.0],
@@ -107,5 +109,14 @@ def test_nns_m_reg_direct_factor_dummy_path_stays_rejected() -> None:
     )
     y = np.array([2.0, 1.0, 3.0, 4.0])
 
-    with pytest.raises(NotImplementedError, match=r"factor_2_dummy=True"):
-        nns_m_reg(x, y, factor_2_dummy=True)
+    result = nns_m_reg(x, y)
+    assert list(result["RPM"]) == ["V1_a", "V1_b", "V1_c", "V2", "y.hat"]
+    codes = nns_m_reg(x, y, factor_2_dummy=False)
+    assert list(codes["RPM"]) == ["V1", "V2", "y.hat"]
+    np.testing.assert_array_equal(codes["Fitted.xy"]["V1"], [2.0, 1.0, 2.0, 3.0])
+
+
+def test_nns_m_reg_requires_two_encoded_predictors() -> None:
+    x = np.linspace(0.0, 1.0, 10)
+    with pytest.raises(ValueError, match="at least two encoded predictors"):
+        nns_m_reg(x, x**2)

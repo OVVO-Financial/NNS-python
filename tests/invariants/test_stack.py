@@ -36,7 +36,9 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert result["stack"].shape == (7,)
     assert result["probability.threshold"] == pytest.approx(0.5)
     assert np.all(np.isfinite(result["stack"]))
-    assert result["NNS.dim.red.coefficients"].shape == (3,)
+    # R names: V1..Vp for an unnamed matrix, encoded column names for coefficients.
+    assert list(result["NNS.dim.red.coefficients"]) == ["V1", "V2", "V3"]
+    assert set(result["NNS.dim.red.variables"]) <= {"V1", "V2", "V3"}
 
 
 def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
@@ -51,8 +53,11 @@ def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
         return nns_stack(train, y[:70], test_rows, ts_test=14, folds=1, method=(1, 2))
 
     base = fit(test)
-    selected = np.asarray(base["NNS.dim.red.variables"])
-    coefficients = np.asarray(base["NNS.dim.red.coefficients"])
+    names = ["V1", "V2", "V3"]
+    selected = np.asarray(
+        [names.index(v) for v in base["NNS.dim.red.variables"]], dtype=np.int64
+    )
+    coefficients = np.asarray(list(base["NNS.dim.red.coefficients"].values()))
     assert selected.size >= 1
     assert sorted(selected.tolist()) == np.flatnonzero(coefficients != 0).tolist()
     assert 0 in selected.tolist()
@@ -421,6 +426,45 @@ def test_nns_stack_predict_matches_full_stack() -> None:
                 np.asarray(full, dtype=np.float64),
                 rtol=0.0, atol=1e-9,
             )
+
+
+def test_nns_stack_fit_is_not_moved_by_later_changes_to_the_inputs() -> None:
+    from nns import nns_stack_fit, nns_stack_predict
+
+    rng = np.random.RandomState(0)
+    x = rng.uniform(-2.0, 2.0, size=(80, 2))
+    y = x[:, 0] - x[:, 1]
+    fit = nns_stack_fit(x, y, method=(1,), order="max", folds=2)
+    before = np.asarray(nns_stack_predict(fit, x[:5])["stack"], dtype=np.float64)
+
+    x += 1.0
+    y += 100.0
+    after = np.asarray(nns_stack_predict(fit, x[:5] - 1.0)["stack"], dtype=np.float64)
+
+    np.testing.assert_array_equal(after, before)
+
+
+def test_nns_stack_fit_calls_the_callers_objective() -> None:
+    import threading
+
+    from nns import nns_stack_fit
+
+    class Loss:
+        def __init__(self) -> None:
+            self.lock = threading.Lock()
+            self.calls = 0
+
+        def __call__(self, predicted: np.ndarray, actual: np.ndarray) -> float:
+            with self.lock:
+                self.calls += 1
+            return float(np.sum((predicted - actual) ** 2))
+
+    rng = np.random.RandomState(1)
+    x = rng.normal(size=(40, 2))
+    loss = Loss()
+    nns_stack_fit(x, x[:, 0] - x[:, 1], obj_fn=loss, method=(1,), order="max", folds=2)
+
+    assert loss.calls > 0
 
 
 def test_nns_stack_default_result_has_no_fit_key() -> None:

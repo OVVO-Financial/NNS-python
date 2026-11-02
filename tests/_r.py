@@ -899,6 +899,48 @@ def nns_cdf_custom(
         return result
 
 
+def nns_frame_call(label: str, expr: str, data: dict[str, Any]) -> RValue:
+    """Evaluate one R expression over typed data frames / vectors.
+
+    ``data`` maps an R variable name to a column spec (see :func:`r_column`)
+    or to ``{"frame": [column specs]}`` for a ``data.frame`` with
+    ``check.names = FALSE``. Factor columns carry their declared levels, so
+    tests can exercise R's name matching and factor/character handling.
+    Console output of ``expr`` is discarded; named atomic vectors come back as
+    ``{"names": [...], "values": [...]}``.
+    """
+    args = {"expr": expr, "data": data}
+    key = _cache_key(label, (args,))
+    cache, refresh = _cache_state()
+    if key in cache:
+        return _decode(cache[key])
+    if _offline():
+        raise RuntimeError(f"R cache miss for {label} with key {key}.")
+    with _cache_lock():
+        disk_cache, disk_refresh = _read_cache_from_disk()
+        if refresh or disk_refresh:
+            disk_cache = {}
+        if key in disk_cache:
+            return _decode(disk_cache[key])
+        result = _call_r_frame(args)
+        disk_cache[key] = _encode(result)
+        _write_cache(disk_cache, changed=key)
+        return result
+
+
+def r_column(
+    values: Sequence[Any], kind: str, name: str | None = None, levels: Sequence[Any] | None = None
+) -> dict[str, Any]:
+    """Column spec for :func:`nns_frame_call`: kind numeric/character/factor/logical."""
+    spec: dict[str, Any] = {"values": [v.item() if hasattr(v, "item") else v for v in values],
+                            "type": kind}
+    if name is not None:
+        spec["name"] = name
+    if levels is not None:
+        spec["levels"] = [str(v) for v in levels]
+    return spec
+
+
 def _uncached_nns(
     function: str,
     args: tuple[Any, ...],
@@ -1995,6 +2037,64 @@ def _call_r_var_custom(args: dict[str, Any]) -> RValue:
         "  as.numeric(x)\n"
         "}\n"
         "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, na = 'null'))\n"
+    )
+    completed = subprocess.run(
+        ["Rscript", "-e", script],
+        check=True,
+        capture_output=True,
+        env=_r_env(),
+        input=json.dumps(args),
+        text=True,
+    )
+    return _decode(json.loads(completed.stdout))
+
+
+def _call_r_frame(args: dict[str, Any]) -> RValue:
+    script = (
+        "library(NNS)\n"
+        "spec <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
+        "simplifyVector = FALSE)\n"
+        "build_col <- function(col) {\n"
+        "  v <- unlist(col$values)\n"
+        "  if (identical(col$type, 'numeric')) return(as.numeric(v))\n"
+        "  if (identical(col$type, 'character')) return(as.character(v))\n"
+        "  if (identical(col$type, 'logical')) return(as.logical(v))\n"
+        "  factor(as.character(v), levels = as.character(unlist(col$levels)))\n"
+        "}\n"
+        "env <- new.env()\n"
+        "for (nm in names(spec$data)) {\n"
+        "  item <- spec$data[[nm]]\n"
+        "  if (!is.null(item$frame)) {\n"
+        "    cols <- lapply(item$frame, build_col)\n"
+        "    names(cols) <- vapply(item$frame, function(cl) cl$name, '')\n"
+        "    value <- as.data.frame(cols, check.names = FALSE, stringsAsFactors = FALSE)\n"
+        "  } else {\n"
+        "    value <- build_col(item)\n"
+        "  }\n"
+        "  assign(nm, value, envir = env)\n"
+        "}\n"
+        "result <- NULL\n"
+        "invisible(utils::capture.output("
+        "result <- eval(parse(text = spec$expr), envir = env)))\n"
+        "encode <- function(x) {\n"
+        "  if (is.null(x)) return(NULL)\n"
+        "  if (is.data.frame(x)) {\n"
+        "    out <- lapply(x, encode)\n"
+        "    names(out) <- names(x)\n"
+        "    return(out)\n"
+        "  }\n"
+        "  if (is.matrix(x)) {\n"
+        "    return(unname(lapply(seq_len(nrow(x)), function(i) as.numeric(x[i, ]))))\n"
+        "  }\n"
+        "  if (is.list(x)) return(lapply(x, encode))\n"
+        "  if (is.factor(x) || is.character(x)) return(as.character(x))\n"
+        "  if (!is.null(names(x))) {\n"
+        "    return(list(names = I(names(x)), values = I(as.numeric(x))))\n"
+        "  }\n"
+        "  as.numeric(x)\n"
+        "}\n"
+        "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, "
+        "null = 'null', na = 'string'))\n"
     )
     completed = subprocess.run(
         ["Rscript", "-e", script],

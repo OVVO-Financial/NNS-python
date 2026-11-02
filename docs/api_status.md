@@ -13,11 +13,11 @@ data-frame quirk, or runtime side effect as a public Python API.
 Current release-relevant state: the core partial-moment APIs, deterministic
 regression/classification/forecasting surfaces, and scalar/vectorized
 multivariate derivative modes are parity-covered on focused fixtures. The
-largest remaining API work is now mostly ergonomic: categorical predictor
-preparation is explicit through `prepare_factor_predictors(...)`, while direct
-raw-factor `nns_m_reg(..., factor_2_dummy=True)` remains guarded because the
-installed R internal path errors. Named R data-frame factor ordering quirks are
-documented as outside NNS Python' positional-column API boundary. Performance gaps
+regression, stack and boost functions take pandas frames the way R takes data
+frames: column names are kept and prediction columns are matched by name,
+string and categorical columns are factors in their declared (or sorted) level
+order, and `class_levels=` / `factor_levels=` declare levels explicitly.
+Performance gaps
 remain mostly in large stochastic-dominance workloads where R uses compiled
 kernels.
 
@@ -48,17 +48,17 @@ invariant, and property coverage.
 | Distribution functions: `nns_cdf` | implemented | high | Deterministic non-plotting paths are implemented; plotting is ignored. |
 | Distance helpers: `nns_distance`, `nns_distance_bulk` | implemented | high | Numeric and classification conventions follow installed R behavior. |
 | Partitioning: `nns_part` | implemented | high | Returns plain dictionaries/arrays instead of R `data.table` objects. |
-| Regression: `nns_reg` | implemented | high | Numeric, class-code, confidence interval, smoothing, dimension-reduction, and public factor-expansion paths are covered. |
-| Multivariate regression: `nns_m_reg` | partial | medium-high | Numeric and class paths are implemented; use `prepare_factor_predictors(...)` for categorical design matrices before calling `nns_m_reg`. Direct raw factor expansion remains guarded. |
-| Stack: `nns_stack` | implemented | medium | Numeric/class paths, intervals, factor expansion, and `ts_test` are covered; exact stochastic sample parity is not expected. |
-| Boost: `nns_boost` | partial | medium | Deterministic and stochastic structures are implemented; one high-feature threshold path remains guarded to match installed-R failure behavior. |
+| Regression: `nns_reg` | implemented | high | Numeric, class-code, confidence interval, smoothing, dimension-reduction, and factor paths are covered; `point_est` columns are matched by name, categorical/declared levels are honoured. |
+| Multivariate regression: `nns_m_reg` | implemented | high | Numeric, class, and raw factor/character predictor paths (`factor_2_dummy=True` by default, as R 13.3) are covered; column names are kept. |
+| Stack: `nns_stack` | implemented | medium-high | Numeric/class paths, intervals, factor predictors, `ts_test`, and R's seeded CV/balance draws (bit-for-bit) are covered; test columns are matched by name and selection outputs carry predictor names. |
+| Boost: `nns_boost` | implemented | medium | Learner trials, epochs, and the final stack match R's seeded stream; feature weights/frequencies are named by column. |
 | Seasonality: `nns_seas` | implemented | high | Non-plotting installed-R path is implemented and cached defensively. |
 | ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and every VAR dimension-reduction path (`cor`, `NNS.dep`, `NNS.caus`, `all`) match R NNS 13.3 exactly on driven multi-variable fixtures, including own-lag weights, `objective="max"`, vector and list `tau`, and interior/trailing missing values. VAR's `relevant_variables` are the regressors the cross-validated dimension reduction threshold keeps, and `multivariate` is `nns_stack(method=1)` (`nns_reg`) on exactly those regressors. Stochastic interval streams are structural/statistical parity only. |
 | Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
 | Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
 | ANOVA: `nns_anova` | implemented | high | Binary, multi-group, pairwise, and degenerate `NaN` conventions are covered. |
 | Normalization: `nns_norm` | implemented | high | Numeric matrix path and R's list-of-vectors path are implemented; unequal-length vectors force linear scaling as in R. |
-| Categorical helpers: `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` | implemented | high | Explicit `levels=` / `factor_levels=` should be used to reproduce R factor ordering. `prepare_factor_predictors(...)` exposes the regression-ready full-rank design matrix path. |
+| Categorical helpers: `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` | implemented | high | Explicit `levels=` reproduces R factor ordering. `prepare_factor_predictors(...)` builds a full-rank dummy design; the regression functions encode raw factors themselves and do not need it. |
 | Scalar differentiation: `nns_diff`, `dy_dx` | implemented | high | `dy_dx(..., eval_point="overall")` and numeric evaluation points are covered. |
 | Multivariate differentiation: `dy_d` | partial | medium-high | Scalar and vectorized point/distribution modes are covered on focused fixtures. Mixed derivatives are supported for two-regressor inputs where defined; multi-row matrix mixed derivatives use pointwise Python semantics rather than R's order-dependent list-matrix packing quirk. |
 
@@ -66,9 +66,7 @@ invariant, and property coverage.
 
 | Area | Path | Current behavior | Reason / next action |
 |---|---|---|---|
-| Multivariate regression | direct `factor_2_dummy=True` raw predictor path | Guarded with `NotImplementedError` in direct `nns_m_reg(..., factor_2_dummy=True)`. | Installed R direct `NNS.M.reg` raw factor input errors. Use `prepare_factor_predictors(...)` first, or use the public `nns_reg(..., factor_2_dummy=True, factor_levels=...)` expansion path. |
-| Boost | `threshold` on the `n_features > 10` stochastic path | Guarded with `NotImplementedError` on the high-feature stochastic epoch path. | Installed R errors because `test.features` is never built. NNS Python keeps this explicit. |
-| Boost/factor predictors | named data-frame factor predictor ordering | Deferred, not represented as a named-column API. | NNS Python uses positional `X1`, `X2`, ... semantics. Installed R named data frames can reorder columns alphabetically before `data.matrix`. |
+| (none) | | No production path is guarded with `NotImplementedError`. | |
 
 ## Intentional Design Boundaries
 
@@ -96,8 +94,11 @@ examples include:
 - Empty numeric inputs raise `ValueError`; R NNS often returns `NaN`.
 - Co-moment length mismatches raise `ValueError`; R warns, truncates, and divides
   by the longer length.
-- Factor and class labels are explicit. R factor levels become numeric codes;
-  NNS Python callers should pass `levels=` or `class_levels=` when ordering matters.
+- R factor levels become numeric codes with `class.levels` as the label map.
+  pandas categoricals keep their declared order; plain string labels are
+  coded in sorted order (R's `factor()` order; R's `NNS.stack` and `NNS.reg`
+  character predictors use first appearance, which depends on row order);
+  `class_levels=` / `factor_levels=` declare an order explicitly.
 - Public outputs use NumPy arrays and plain dictionaries instead of R
   `data.table` objects.
 - Some installed-R quirks are intentionally matched when they affect stable
