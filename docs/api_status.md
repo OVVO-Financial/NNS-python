@@ -53,7 +53,7 @@ invariant, and property coverage.
 | Stack: `nns_stack` | implemented | medium | Numeric/class paths, intervals, factor expansion, and `ts_test` are covered; exact stochastic sample parity is not expected. |
 | Boost: `nns_boost` | partial | medium | Deterministic and stochastic structures are implemented; one high-feature threshold path remains guarded to match installed-R failure behavior. |
 | Seasonality: `nns_seas` | implemented | high | Non-plotting installed-R path is implemented and cached defensively. |
-| ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and every VAR dimension-reduction path (`cor`, `NNS.dep`, `NNS.caus`, `all`) match R NNS 13.3 exactly on driven multi-variable fixtures, including own-lag weights, `objective="max"`, vector and list `tau`, and interior/trailing missing values. VAR's `relevant_variables` are the regressors the cross-validated dimension reduction threshold keeps, and `multivariate` is `nns_stack(method=1)` (`nns_reg`) on exactly those regressors. Explicit numeric multi-lag ARMA uses actual-lag weighting instead of installed R's position-based weighting quirk. Stochastic interval streams are structural/statistical parity only. |
+| ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and every VAR dimension-reduction path (`cor`, `NNS.dep`, `NNS.caus`, `all`) match R NNS 13.3 exactly on driven multi-variable fixtures, including own-lag weights, `objective="max"`, vector and list `tau`, and interior/trailing missing values. VAR's `relevant_variables` are the regressors the cross-validated dimension reduction threshold keeps, and `multivariate` is `nns_stack(method=1)` (`nns_reg`) on exactly those regressors. Stochastic interval streams are structural/statistical parity only. |
 | Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
 | Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
 | ANOVA: `nns_anova` | implemented | high | Binary, multi-group, pairwise, and degenerate `NaN` conventions are covered. |
@@ -106,8 +106,8 @@ examples include:
   Current passing coverage includes partial-moment equivalences, curve fitting,
   regression residuals, Boston Housing, and the macro-like VAR univariate,
   multivariate, and ensemble outputs. Strict xfails track current installed-R
-  deviations in the Iris classification vignette and the documented ARMA
-  numeric multi-lag weighting divergence. The Iris
+  deviations in the Iris classification vignette; explicit numeric multi-lag
+  ARMA (e.g. `seasonal_factor=[132, 276]`) matches installed R. The Iris
   classification xfail mixes two different issues: NNS Python stack predicts the
   correct held-out class where installed R NNS 13.0 rounds the same borderline
   estimate down, while boost remains a true output disparity whose installed-R

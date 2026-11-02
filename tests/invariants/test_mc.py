@@ -65,3 +65,30 @@ def test_nns_mc_zero_by_errors() -> None:
 
     with pytest.raises(ValueError, match="by"):
         nns_mc(x, by=0.0)
+
+
+def test_nns_mc_recycles_vector_target_drift_along_rho_grid() -> None:
+    t = np.arange(1, 41, dtype=np.float64)
+    x = 50.0 + t + 3.0 * np.sin(t)
+
+    with pytest.warns(RuntimeWarning, match="not a multiple"):
+        result = nns_mc(x, reps=4, by=1.0, target_drift=[0.5, 4.0], random_seed=3)
+
+    assert list(result["replicates"]) == ["rho = 1", "rho = 0", "rho = -1"]
+    assert result["ensemble"].shape == (40,)
+
+
+def test_nns_mc_target_drift_takes_precedence_over_scale_like_r() -> None:
+    x = np.linspace(1.0, 5.0, 30) + 0.2 * np.sin(np.arange(30, dtype=np.float64))
+
+    both = nns_mc(x, reps=3, by=1.0, target_drift=0.3, target_drift_scale=5.0, random_seed=8)
+    drift_only = nns_mc(x, reps=3, by=1.0, target_drift=0.3, random_seed=8)
+
+    np.testing.assert_array_equal(both["ensemble"], drift_only["ensemble"])
+
+
+def test_nns_mc_rejects_target_drift_longer_than_rho_grid() -> None:
+    x = np.linspace(1.0, 5.0, 30)
+
+    with pytest.raises(ValueError, match="rho grid"):
+        nns_mc(x, reps=3, by=1.0, target_drift=[0.1, 0.2, 0.3, 0.4])

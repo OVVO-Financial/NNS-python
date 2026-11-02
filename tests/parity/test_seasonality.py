@@ -42,6 +42,24 @@ def test_nns_seas_series_matches_r(values: np.ndarray) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.array([1.0, 2.0, 3.0] * 4 + [1.0]),
+        np.random.default_rng(4).normal(10.0, 1.0, 21),
+        np.random.default_rng(4).normal(10.0, 1.0, 201),
+    ],
+)
+def test_nns_seas_odd_length_cap_matches_r(values: np.ndarray) -> None:
+    # R caps periods with the C++ integer division n/2, which drops floor(n/2) for odd n.
+    expected = nns("NNS.seas", values.tolist(), None, True, False)
+    actual = nns_seas(values)
+
+    assert values.size // 2 not in cast(np.ndarray, actual["periods"])
+    _assert_seas_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("mod_only", [True, False])
 def test_nns_seas_modulo_matches_r(mod_only: bool) -> None:
     values = np.sin(2.0 * np.pi * np.arange(1, 61, dtype=np.float64) / 7.0)
@@ -49,6 +67,43 @@ def test_nns_seas_modulo_matches_r(mod_only: bool) -> None:
 
     expected = nns("NNS.seas", values.tolist(), modulo, mod_only, False)
     actual = nns_seas(values, modulo=modulo, mod_only=mod_only)
+
+    _assert_seas_matches(actual, expected)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("mod_only", [True, False])
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.tile(np.array([-1.0, 1.0]), 5),
+        np.tile(np.array([1.0, 2.0, 3.0]), 6),
+    ],
+)
+def test_nns_seas_tied_periods_keep_r_order(values: np.ndarray, mod_only: bool) -> None:
+    # Periods tied on CV (e.g. modulo-added rows at VarCV) keep R's insertion order
+    # instead of being re-sorted by period, so best.period agrees with R.
+    modulo = [7, 12]
+
+    expected = nns("NNS.seas", values.tolist(), modulo, mod_only, False)
+    actual = nns_seas(values, modulo=modulo, mod_only=mod_only)
+
+    _assert_seas_matches(actual, expected)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.array([2.0, 0.0, 0.0, -2.0, 0.0]),
+        np.array([2.0, 0.0, 0.0, -2.0, 0.0, 0.0, 0.0, 0.0]),
+    ],
+)
+def test_nns_seas_zero_mean_zero_autocorrelation_matches_r(values: np.ndarray) -> None:
+    # Mean exactly 0 switches to the 1/|acf1| statistic; acf1 == 0 must give Inf
+    # (R's pow(0, -1)) rather than raising ZeroDivisionError.
+    expected = nns("NNS.seas", values.tolist(), None, True, False)
+    actual = nns_seas(values)
 
     _assert_seas_matches(actual, expected)
 

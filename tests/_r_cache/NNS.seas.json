@@ -1,5 +1,30 @@
 {
   "entries": {
+    "0ae83df1fa78ecfdc6c601ee27784450b69403cdd9cd1d102377223a61762d89": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          1.11111111111111,
+          1.11111111111111,
+          1.11111111111111
+        ],
+        "Period": [
+          2.0,
+          4.0,
+          1.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          1.11111111111111,
+          1.11111111111111,
+          1.11111111111111
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        4.0,
+        1.0
+      ]
+    },
     "149f1c0517cb12d3cf62397ab26bdcdbee4291281fc3b07925af6a63e7128016": {
       "all.periods": {
         "Coefficient.of.Variation": [
@@ -146,6 +171,35 @@
       "best.period": 0.0,
       "periods": 0.0
     },
+    "36216562e6c7694cc8562058aa72b046800469c2cafc246ce3962a19442eb0d6": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.0,
+          0.0,
+          0.420084025208403,
+          0.420084025208403
+        ],
+        "Period": [
+          3.0,
+          6.0,
+          1.0,
+          7.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.420084025208403,
+          0.420084025208403,
+          0.420084025208403,
+          0.420084025208403
+        ]
+      },
+      "best.period": 3.0,
+      "periods": [
+        3.0,
+        6.0,
+        1.0,
+        7.0
+      ]
+    },
     "47dad0a7925cc4506650cd3be4a2dc17f1e0468e280b7f8bce01fe09d9ac3073": {
       "all.periods": {
         "Coefficient.of.Variation": 0.0,
@@ -154,6 +208,116 @@
       },
       "best.period": 0.0,
       "periods": 0.0
+    },
+    "53f4f87585fa7aaa0550343e64d192fc80db702deae472721872a000a586da9a": {
+      "all.periods": {
+        "Coefficient.of.Variation": Infinity,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": Infinity
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
+    "58fdb063182469619d7f98b02c08747b4d253365a914ef5cd47731a15252d08a": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.0507130665343656,
+          0.0553502643744716,
+          0.0557675415201773,
+          0.0566530770390354,
+          0.0595976251013939,
+          0.0622049508051774,
+          0.0653706602444967,
+          0.0654525862263836,
+          0.0660484346970724,
+          0.066799059633027,
+          0.0668972101460728,
+          0.0675408351603882,
+          0.0688837839003991,
+          0.0697929459141141,
+          0.0698164404198684,
+          0.0726404225963507,
+          0.0734794155013724,
+          0.0747990814000966,
+          0.0754094182117415,
+          0.0877592649975661,
+          0.0882689904400341,
+          0.0928822682562201
+        ],
+        "Period": [
+          94.0,
+          56.0,
+          86.0,
+          68.0,
+          51.0,
+          54.0,
+          50.0,
+          84.0,
+          70.0,
+          41.0,
+          53.0,
+          47.0,
+          89.0,
+          44.0,
+          82.0,
+          45.0,
+          42.0,
+          73.0,
+          81.0,
+          35.0,
+          25.0,
+          6.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418,
+          0.099529452416418
+        ]
+      },
+      "best.period": 94.0,
+      "periods": [
+        94.0,
+        56.0,
+        86.0,
+        68.0,
+        51.0,
+        54.0,
+        50.0,
+        84.0,
+        70.0,
+        41.0,
+        53.0,
+        47.0,
+        89.0,
+        44.0,
+        82.0,
+        45.0,
+        42.0,
+        73.0,
+        81.0,
+        35.0,
+        25.0,
+        6.0
+      ]
     },
     "6e69e649e3d9ad39f6a795c927c2651c12705d49beba836885c7afa4cdb6d8f6": {
       "all.periods": {
@@ -297,6 +461,15 @@
         7.0
       ]
     },
+    "7eb75c6dbcd2b0769dfdd86f25fe75a057b0e74ca77246863db66869e6fc8617": {
+      "all.periods": {
+        "Coefficient.of.Variation": 0.420084025208403,
+        "Period": 7.0,
+        "Variable.Coefficient.of.Variation": 0.420084025208403
+      },
+      "best.period": 7.0,
+      "periods": 7.0
+    },
     "833045ed8b28ed050ad935047c36f9c6482faac9f826ea118d780c811e62a3ee": {
       "all.periods": {
         "Coefficient.of.Variation": [
@@ -393,6 +566,31 @@
         14.0,
         16.0,
         18.0
+      ]
+    },
+    "b3776005273d5b4de09d8708f1171783baa5e875e6be7ed9f594186e7c53e144": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          5.3,
+          Infinity,
+          Infinity
+        ],
+        "Period": [
+          2.0,
+          1.0,
+          3.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          "Inf",
+          "Inf",
+          "Inf"
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        1.0,
+        3.0
       ]
     },
     "b93e008a38dbda637112c3455857671da5ca1168fb9d70f7475311dcd6faa937": {
@@ -621,6 +819,27 @@
         3.0
       ]
     },
+    "ce977597e5c76e64b77528e20645e5b7878fbe8011722afda1e239a06e38566a": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.0,
+          0.436733806525615
+        ],
+        "Period": [
+          3.0,
+          1.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.44840457922134,
+          0.44840457922134
+        ]
+      },
+      "best.period": 3.0,
+      "periods": [
+        3.0,
+        1.0
+      ]
+    },
     "d40ea665298a3a2c14aec59fe57f49ed8d6873e393ea1f5c071c990e9042c6ef": {
       "all.periods": {
         "Coefficient.of.Variation": 0.0,
@@ -678,6 +897,24 @@
         8.0,
         9.0
       ]
+    },
+    "ee5a39ba8997e666d275e754854839f198a3f736063c61e0cdb74e2e6579991d": {
+      "all.periods": {
+        "Coefficient.of.Variation": 0.114121073988151,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 0.114121073988151
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
+    "fad1f5c95603fdd43f17dd2341e4894c87bc5b7c6530c60c96cab27192fe8522": {
+      "all.periods": {
+        "Coefficient.of.Variation": 1.11111111111111,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 1.11111111111111
+      },
+      "best.period": 1.0,
+      "periods": 1.0
     }
   },
   "label": "NNS.seas",
