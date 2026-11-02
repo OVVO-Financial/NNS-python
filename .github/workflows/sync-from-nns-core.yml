@@ -115,17 +115,22 @@ jobs:
           git status --short
 
       - name: Install the package (builds the native extension)
+        id: build
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install -U pip
-          python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy
-          python -m pip install hypothesis pytest-benchmark pytest-xdist pandas
-          python -m pip install -e .
-          python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+          {
+            python -m pip install -U pip &&
+            python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy &&
+            python -m pip install hypothesis pytest-benchmark pytest-xdist pandas &&
+            python -m pip install -e . &&
+            python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+          } 2>&1 | tee nns-core-sync-build.log
 
       - name: Run native and fallback gates
         id: gates
+        if: steps.build.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -142,10 +147,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nns-core-sync-${{ steps.payload.outputs.core_short }}
-          path: nns-core-sync-gates.log
+          path: |
+            nns-core-sync-build.log
+            nns-core-sync-gates.log
           if-no-files-found: warn
 
       - name: Open or update the NNS-core sync PR
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
@@ -159,9 +167,27 @@ jobs:
 
             - NNS-core commit: `${{ steps.payload.outputs.core_commit }}`
             - R source the core was ported from: `${{ steps.payload.outputs.r_repo }}@${{ steps.payload.outputs.r_commit }}` (NNS ${{ steps.payload.outputs.r_version }}, src tree `${{ steps.payload.outputs.r_src_tree_hash }}`)
+            - Build and native import: `${{ steps.build.outcome }}`
             - Gates (invariants, cached parity, the same with `NNS_DISABLE_NATIVE=1`, tools): `${{ steps.gates.outcome }}`
 
-            Only `extern/NNS-core` and `sync/nns_source.json` (`core_commit`) change here. If a gate failed this PR is a draft: native results moved, so check the gate log. Any parity shard whose R reference itself changed must be regenerated from R.
+            Only `extern/NNS-core` and `sync/nns_source.json` (`core_commit`) change here. If the build or a gate failed this PR is a draft: check the build and gate logs. Any parity shard whose R reference itself changed must be regenerated from R.
           add-paths: |
             extern/NNS-core/**
             sync/nns_source.json
+
+      - name: Match the existing PR's draft state to the gates
+        if: steps.cpr.outputs.pull-request-number != '' && steps.cpr.outputs.pull-request-operation != 'created'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
+          PR: ${{ steps.cpr.outputs.pull-request-number }}
+          READY: ${{ steps.gates.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          # create-pull-request leaves an existing PR's draft state as it was, even on an unchanged rerun.
+          draft=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$READY" = "true" ] && [ "$draft" = "true" ]; then
+            gh pr ready "$PR" --repo "$GITHUB_REPOSITORY"
+          elif [ "$READY" != "true" ] && [ "$draft" = "false" ]; then
+            gh pr ready "$PR" --repo "$GITHUB_REPOSITORY" --undo
+          fi
