@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import threading
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
@@ -89,20 +89,17 @@ def test_native_kernels_run_concurrently_from_python_threads() -> None:
     x = rng.normal(size=50_000)
     targets = np.linspace(-2.0, 2.0, 64)
     expected = np.asarray(nns.lpm(2.0, targets, x))
-    failures: list[str] = []
 
-    def work() -> None:
+    def work() -> bool:
         with native_threads(1):
-            for _ in range(5):
-                if not np.array_equal(np.asarray(nns.lpm(2.0, targets, x)), expected):
-                    failures.append("mismatch")
+            return all(
+                np.array_equal(np.asarray(nns.lpm(2.0, targets, x)), expected) for _ in range(5)
+            )
 
-    threads = [threading.Thread(target=work) for _ in range(4)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    assert not failures
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(work) for _ in range(4)]
+    # result() re-raises a worker's exception in the test thread.
+    assert all(future.result() for future in futures)
 
 
 def test_warnings_point_at_the_callers_line() -> None:
