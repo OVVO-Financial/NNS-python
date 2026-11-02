@@ -52,7 +52,9 @@ def plot_nns_diff(
     lo = min(point - 100 * h, point + 100 * h, 0.0)
     hi = max(point - 100 * h, point + 100 * h, 0.0)
     xs = np.linspace(lo, hi, 1000)
-    ax.plot(xs, np.asarray([f(v) for v in xs], dtype=np.float64), color=palette.AZURE4, linewidth=2)
+    with np.errstate(all="ignore"):
+        ys = np.asarray([_display_value(f, v) for v in xs], dtype=np.float64)
+    ax.plot(xs, ys, color=palette.AZURE4, linewidth=2)
 
     # Zero reference lines: R grey (#BEBEBE).
     ax.axhline(0.0, color=palette.GREY)
@@ -77,3 +79,11 @@ def plot_nns_diff(
 
 
 __all__ = ["plot_nns_diff"]
+
+
+def _display_value(f: Callable[[Any], Any], x: float) -> float:
+    # The grid spans 100 h and 0, so it can leave f's domain (math.log at x <= 0).
+    try:
+        return float(f(x))
+    except (ArithmeticError, ValueError, TypeError):
+        return float("nan")

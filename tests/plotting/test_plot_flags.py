@@ -11,6 +11,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import math
 import warnings
 
 import matplotlib.pyplot as plt
@@ -108,6 +109,12 @@ def test_nns_diff_plot_true_creates_figure() -> None:
     base = nns.nns_diff(np.sin, 1.0)
     assert _figures() == 0
     assert nns.nns_diff(np.sin, 1.0, plot=True) == base
+    assert _figures() == 1
+
+
+def test_nns_diff_plot_skips_display_samples_outside_the_domain() -> None:
+    base = nns.nns_diff(math.log, 5.0)
+    np.testing.assert_equal(nns.nns_diff(math.log, 5.0, plot=True), base)
     assert _figures() == 1
 
 
