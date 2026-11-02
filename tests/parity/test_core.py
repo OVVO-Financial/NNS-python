@@ -146,6 +146,16 @@ def test_ratios_at_a_point_mass_match_r(
 
 
 @pytest.mark.parity
+def test_ratio_overflow_stays_nan_like_r() -> None:
+    # Patched R fills only the constant-sample 0/0; Inf/Inf from overflow stays NaN.
+    x = [1e200, -1e200]
+    for label, function in (("LPM.ratio", lpm_ratio), ("UPM.ratio", upm_ratio)):
+        assert np.isnan(np.asarray(nns(label, 3.0, 0.0, x))).all()
+        with np.errstate(over="ignore"):
+            assert np.isnan(function(3.0, 0.0, np.asarray(x)))
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("function_name, function", [("LPM", lpm), ("UPM", upm)])
 def test_edge_cases_match_r_category(
     edge_case: EdgeCase,

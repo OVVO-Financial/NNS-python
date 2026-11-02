@@ -5,7 +5,7 @@ from typing import cast
 import numpy as np
 import pytest
 
-from nns import nns_cdf
+from nns import co_upm_nd, nns_cdf
 
 
 def test_nns_cdf_return_keys_and_empty_target_value() -> None:
@@ -96,3 +96,25 @@ def test_nns_cdf_dataframe_column_named_cdf_keeps_its_coordinate() -> None:
 
     np.testing.assert_array_equal(function["CDF.1"], [1.0, 2.0, 3.0])
     np.testing.assert_allclose(function["CDF"], [1 / 3, 1 / 3, 1.0])
+
+
+def test_nns_cdf_multivariate_degree1_survival_equals_co_upm_nd() -> None:
+    rng = np.random.default_rng(7)
+    matrix = rng.standard_normal((30, 3))
+    survival = cast(dict[str, np.ndarray], nns_cdf(matrix, degree=1.0, type="survival")["Function"])
+    expected = [co_upm_nd(matrix, row, degree=1.0) for row in matrix]
+
+    np.testing.assert_allclose(survival["CDF"], expected, atol=1e-12)
+
+
+def test_degree_zero_survival_beyond_three_columns_is_the_joint_upper_share() -> None:
+    from nns._rrng import RRNG
+
+    # R: set.seed(9); x <- matrix(sample(0:4, 400, TRUE), 20, 20)
+    x = (RRNG(9).sample_int_replace(5, 400) - 1).astype(np.float64).reshape(20, 20, order="F")
+    share = np.array([np.mean(np.all(x > row, axis=1)) for row in x])
+
+    result = nns_cdf(x, degree=0, type="cumulative hazard")
+    hazard = cast(dict[str, np.ndarray], result["Function"])["CDF"]
+
+    np.testing.assert_array_equal(hazard, np.maximum(-np.log(np.maximum(share, 1e-10)), 0.0))

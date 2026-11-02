@@ -178,15 +178,19 @@ def _fill_degenerate_ratio(
 
     When every observation equals the target, ``LPM + UPM`` is 0; R returns the
     frequency ratio there (the degree -> 0 limit, ECDF convention ``x <= target``),
-    i.e. ``LPM.ratio`` 1 and ``UPM.ratio`` 0.
+    i.e. ``LPM.ratio`` 1 and ``UPM.ratio`` 0.  Other NaNs (``Inf/Inf`` from overflow)
+    stay NaN.
     """
-    if degree <= 0:
+    if not degree > 0:
         return ratio
     missing = np.isnan(ratio)
     if not missing.any():
         return ratio
+    constant = values[0]
+    if not np.all(values == constant):
+        return ratio
     out = ratio.copy()
-    out[missing] = np.asarray(_moment(0.0, targets[missing], values, lower=lower))
+    out[missing & (targets == constant)] = 1.0 if lower else 0.0
     return out
 
 
@@ -235,7 +239,7 @@ def _as_targets(
 
 def _as_degree(degree: float) -> float:
     degree = float(degree)
-    if degree < 0:
+    if not degree >= 0:
         raise ValueError("degree must be non-negative.")
     return degree
 
