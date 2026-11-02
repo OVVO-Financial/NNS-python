@@ -98,10 +98,10 @@ def test_python_gravity_is_bit_identical_to_native() -> None:
         elif kind == 3:
             x = np.concatenate((np.full(n, 0.1), rng.normal(size=3), [np.nan]))
         elif kind == 4:
-            # More than 1e6 bins (DEP-10), or more than INT_MAX (DEP-11).
+            # More than 1e6 bins, or more than INT_MAX.
             x = np.append(rng.normal(size=n), -(10.0 ** rng.integers(5, 10)))
         else:
-            # Tight IQR plus one far value (CORE-08).
+            # Tight IQR plus one far value.
             x = np.append(5.0 + 1e-7 * rng.normal(size=n), 6.0)
         assert _gravity_python(x) == float(native(np.ascontiguousarray(x)))
 

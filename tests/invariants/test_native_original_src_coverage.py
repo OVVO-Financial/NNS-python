@@ -243,7 +243,7 @@ def test_many_target_partial_moments_match_scalar_and_fallback(
     # More than 32 targets select NNS-core's vectorised backend. Its old binomial
     # prefix expansion (also in R 13.3) cancelled
     # catastrophically for degree >= 3: SPY-like prices at degree 8 gave
-    # relative errors of 3e3 and negative UPMs (CORE-01).
+    # relative errors of 3e3 and negative UPMs.
     del disable_native
     rng = np.random.default_rng(20261101)
     x = rng.normal(100.0, 5.0, 500)

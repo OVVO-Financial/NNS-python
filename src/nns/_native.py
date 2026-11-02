@@ -15,7 +15,7 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 # NNS_DISABLE_NATIVE=1 (or true/yes/on) forces the pure-Python/NumPy fallbacks,
-# exactly as when the extension is not built (for testing them, CORE-17).
+# exactly as when the extension is not built (for testing them).
 _NATIVE_DISABLED = os.environ.get("NNS_DISABLE_NATIVE", "").strip().lower() in {
     "1",
     "true",

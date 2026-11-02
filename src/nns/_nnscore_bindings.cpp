@@ -262,9 +262,9 @@ nb::dict stochastic_superiority_dict(const Vector& x, const Vector& y) {
 // NNS.gravity as R's NNS_gravity_cpp (non-discrete), used by the partitioners
 // below and by nns.dependence._gravity. This is NNS-core's nns::gravity: R's
 // long-double mean and weighted bin average, and an O(n) histogram that only
-// shortens runs of empty bins (CORE-08). The previous port here clipped the
-// histogram at 1e6 bins, which put the mode term on the outlier (DEP-10), and
-// used pairwise double sums that differed from R in the last ulp (CORE-15).
+// shortens runs of empty bins. The previous port here clipped the
+// histogram at 1e6 bins, which put the mode term on the outlier, and
+// used pairwise double sums that differed from R in the last ulp.
 // Non-finite values are dropped, so the caller may pass a raw array.
 double gravity_exact_impl(const double* data, std::size_t raw_n) {
   return nns::gravity(data, raw_n, false);
@@ -661,7 +661,7 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
 // Matrices are passed flattened column-major (element (i, j) at i + j * rows).
 // NNS-core's mreg_setup and xstar_path are not bound: the NumPy partition, RPM
 // reduction and X* path already take a few ms, and mreg_setup's "mode" reducer
-// is the exact-frequency mode rather than NNS.mode (CORE-03).
+// is the exact-frequency mode rather than NNS.mode.
 
 void check_mreg_predict_args(const Vector& rpm_x, std::size_t n, std::size_t p,
                              const Vector& yhat, const Vector& xtest, std::size_t m,

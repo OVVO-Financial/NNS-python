@@ -1,4 +1,4 @@
-"""The NumPy fallbacks used without the compiled extension (CORE-17)."""
+"""The NumPy fallbacks used without the compiled extension."""
 
 from __future__ import annotations
 

@@ -113,7 +113,7 @@ def _discrete_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float
     n = values.size
     if n <= 3:
         return np.array([_nearest_int_half_up(_small_median(values))], dtype=np.float64)
-    # Keyed on the rounded value; "+ 0.0" folds -0.0 into 0.0 (CORE-07).
+    # Keyed on the rounded value; "+ 0.0" folds -0.0 into 0.0.
     integerized = _nearest_int_half_up_array(values) + 0.0
     modes, counts = np.unique(integerized, return_counts=True)
     sorted_modes: NDArray[np.float64] = modes[counts == int(np.max(counts))].astype(np.float64)
@@ -126,7 +126,7 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
     """NumPy port of NNS-core ``nns::mode`` (R ``NNS_mode_cpp``), continuous.
 
     Same histogram as gravity, kept as NNS-core keeps it: runs of more than 16
-    empty bins shortened to their first and last 8 bins (CORE-08), so the
+    empty bins shortened to their first and last 8 bins, so the
     smoothing, peak search and bin indices see exactly NNS-core's bin list. Sums
     are long double, as in R.
     """

@@ -427,7 +427,7 @@ def _gravity_python(x: NDArray[np.float64]) -> float:
 
     Like R, the mean and the weighted bin average are long-double sequential
     sums. The histogram stores only the occupied bins: gravity reads at most the
-    neighbours of the fullest bin, so the empty ones never matter (CORE-08).
+    neighbours of the fullest bin, so the empty ones never matter.
     """
     finite = x[np.isfinite(x)]
     n = finite.size

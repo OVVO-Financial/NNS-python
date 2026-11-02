@@ -112,7 +112,7 @@ def _tie_sensitive_case(name: str) -> tuple[np.ndarray, np.ndarray]:
 def test_nns_dep_tie_sensitive_cells_match_r(case: str, asym: bool) -> None:
     # Points that sit exactly on a cell mean: R takes the cell means as a
     # sequential double sum / n, and a pairwise (np.mean) mean that differs in
-    # the last ulp moved such points between quadrants (DEP-09; sin_grid_4pi
+    # the last ulp moved such points between quadrants (sin_grid_4pi
     # gave Dependence 0.92402 vs R 0.92466).
     x, y = _tie_sensitive_case(case)
 
