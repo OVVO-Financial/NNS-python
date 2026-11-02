@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
 from nns._native import native_fn
+from nns.core import lpm, lpm_ratio
 from nns.dependence import _dpm_nd
 from nns.pm_matrix import pm_matrix
 
@@ -72,6 +73,13 @@ def _copula(
     if values.ndim != 2 or values.shape[0] == 0:
         # The native kernel assumes at least one observation.
         raise ValueError("copula input must be non-empty.")
+    # A constant margin is independent of the rest and has no degree-1 lower share.
+    vary = np.any(values != values[0], axis=0)
+    if not np.all(vary):
+        if np.count_nonzero(vary) < 2:
+            return 0.0
+        values = np.ascontiguousarray(values[:, vary])
+        target = target[vary]
     native_copula = native_fn("copula_nd")
     if native_copula is not None:
         return float(
@@ -108,22 +116,41 @@ def _copula(
         continuous_co_pm = discrete_co_pm
         continuous_d_pm = discrete_d_pm
 
-    indep_co_pm = 0.25 * (n**2 - n)
-    discrete_dep = min(max(abs(discrete_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
-    continuous_dep = min(max(abs(continuous_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
-
-    # DPM_nD counts a point as concordant when it is all-below OR all-above the
-    # target (both fully-aligned orthants), so under independence
-    # P(discordant) = 1 - 2*0.5**n (0.5 when n == 2), not 1 - 0.5**n. The old
-    # 1 - 0.5**n anchor left a non-vanishing dependence floor for independent
-    # data.
-    indep_d_pm = 1.0 - 2.0 * 0.5**n
-    n_dim_discrete_dep = abs(discrete_d_pm - indep_d_pm) / indep_d_pm
-    n_dim_continuous_dep = abs(continuous_d_pm - indep_d_pm) / indep_d_pm
+    # Independence anchors from each margin's own lower-tail share at its target.
+    p0 = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
+    p1 = (
+        np.array([float(lpm_ratio(1.0, target[j], values[:, j])) for j in range(n)])
+        if continuous
+        else p0
+    )
+    discrete_co_anchor, discrete_d_anchor = _independence_anchors(p0, upper)
+    continuous_co_anchor, continuous_d_anchor = _independence_anchors(p1, upper)
+    discrete_dep = min(max(_relative_deviation(discrete_co_pm, discrete_co_anchor), 0.0), 1.0)
+    continuous_dep = min(
+        max(_relative_deviation(continuous_co_pm, continuous_co_anchor), 0.0), 1.0
+    )
+    n_dim_discrete_dep = min(_relative_deviation(discrete_d_pm, discrete_d_anchor), 1.0)
+    n_dim_continuous_dep = min(_relative_deviation(continuous_d_pm, continuous_d_anchor), 1.0)
 
     return math.sqrt(
         (discrete_dep + continuous_dep + n_dim_discrete_dep + n_dim_continuous_dep) / 4.0
     )
+
+
+def _independence_anchors(
+    p: NDArray[np.float64], upper: tuple[NDArray[np.intp], NDArray[np.intp]]
+) -> tuple[float, float]:
+    """Pairwise co-moment sum and nD divergent share under independence (R NNS.copula)."""
+    co = float(np.sum((np.outer(p, p) + np.outer(1.0 - p, 1.0 - p))[upper]))
+    return co, 1.0 - float(np.prod(p)) - float(np.prod(1.0 - p))
+
+
+def _relative_deviation(observed: float, anchor: float) -> float:
+    # A boundary target can zero an anchor; an observed 0 then matches it exactly.
+    if observed == anchor:
+        return 0.0
+    with np.errstate(divide="ignore"):
+        return float(np.divide(abs(observed - anchor), anchor))
 
 
 def _prepare(

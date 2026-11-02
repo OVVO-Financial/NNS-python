@@ -161,3 +161,33 @@ def test_nns_copula_mixed_sign_perfect_dependence_is_one(
     for c, want in zip(cases, expected, strict=True):
         assert want == 1.0
         assert nns_copula(c, continuous=continuous) == 1.0
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("native", [True, False])
+@pytest.mark.parametrize("continuous", [True, False])
+def test_nns_copula_margin_anchors_match_r(
+    monkeypatch: pytest.MonkeyPatch, continuous: bool, native: bool
+) -> None:
+    # Patched R anchors each term on the product of the marginal partial moments,
+    # drops constant margins first, and scores 0 when a moment equals a 0 anchor.
+    x = np.arange(-2.0, 3.0)
+    skewed = np.random.default_rng(3).exponential(size=(400, 3))
+    cases: list[tuple[np.ndarray, list[float] | None]] = [
+        (skewed, None),
+        (np.column_stack([x, np.ones(5)]), None),
+        (np.column_stack([x, x**2, np.ones(5)]), None),
+        (np.array([[-10.0, 0.1, 0.1], [0.1, -10.0, 0.1], [0.1, 0.1, -10.0]]), [0.0, 0.0, 0.0]),
+        (np.array([[0.0, 1.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.5]]), [1.0, 1.0]),
+    ]
+    expected = [
+        _scalar(nns("NNS.copula", m.tolist(), t, continuous, False, False)) for m, t in cases
+    ]
+    if not native:
+        import nns.copula as copula
+
+        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+    for (m, t), want in zip(cases, expected, strict=True):
+        target = None if t is None else np.asarray(t)
+        actual = nns_copula(m, continuous=continuous, target=target)
+        np.testing.assert_allclose(actual, want, atol=EXACT)

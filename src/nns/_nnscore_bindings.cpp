@@ -641,16 +641,38 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
     cont_d = disc_d;
   }
 
-  const double dd = static_cast<double>(d);
-  const double indep_co = 0.25 * (dd * dd - dd);
-  const double discrete_dep = clamp01(std::abs(disc_co - indep_co) / indep_co);
-  const double continuous_dep = clamp01(std::abs(cont_co - indep_co) / indep_co);
-  // DPM_nD counts a point concordant when all-below OR all-above the target
-  // (both fully-aligned orthants), so under independence
-  // P(discordant) = 1 - 2*0.5^d (0.5 when d == 2), not 1 - 0.5^d.
-  const double indep_d = 1.0 - 2.0 * std::pow(0.5, dd);
-  const double nd_disc = std::abs(disc_d - indep_d) / indep_d;
-  const double nd_cont = std::abs(cont_d - indep_d) / indep_d;
+  // Independence anchors from each margin's own lower-tail share at its target.
+  std::vector<double> p0(d), p1(d);
+  for (std::size_t c = 0; c < d; ++c) {
+    const double* col = data + c * n;
+    double below = 0.0, lower = 0.0, upper = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      const double diff = target[c] - col[i];
+      if (diff >= 0.0) below += 1.0;
+      if (diff > 0.0) lower += diff; else upper -= diff;
+    }
+    p0[c] = below / static_cast<double>(n);
+    p1[c] = lower / (lower + upper);
+  }
+  const auto co_anchor = [d](const std::vector<double>& p) {
+    std::vector<double> terms;
+    for (std::size_t j = 1; j < d; ++j)
+      for (std::size_t i = 0; i < j; ++i) terms.push_back(p[i] * p[j] + (1.0 - p[i]) * (1.0 - p[j]));
+    return np_pairwise_sum(terms.data(), terms.size());
+  };
+  const auto d_anchor = [](const std::vector<double>& p) {
+    double lo = 1.0, hi = 1.0;
+    for (double v : p) { lo *= v; hi *= 1.0 - v; }
+    return 1.0 - lo - hi;
+  };
+  const auto rel_dev = [](double obs, double indep) {
+    return obs == indep ? 0.0 : std::abs(obs - indep) / indep;
+  };
+  const std::vector<double>& pc = continuous ? p1 : p0;
+  const double discrete_dep = clamp01(rel_dev(disc_co, co_anchor(p0)));
+  const double continuous_dep = clamp01(rel_dev(cont_co, co_anchor(pc)));
+  const double nd_disc = std::min(rel_dev(disc_d, d_anchor(p0)), 1.0);
+  const double nd_cont = std::min(rel_dev(cont_d, d_anchor(pc)), 1.0);
   return std::sqrt((discrete_dep + continuous_dep + nd_disc + nd_cont) / 4.0);
 }
 
