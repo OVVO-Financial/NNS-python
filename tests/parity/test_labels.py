@@ -449,12 +449,12 @@ def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
 
 
 # --------------------------------------------------------------------------
-# REG-25: raw column names (check.names = FALSE) and numeric class labels
+# Raw column names (check.names = FALSE) and numeric class labels
 # --------------------------------------------------------------------------
 
 def test_nns_reg_keeps_raw_column_names() -> None:
     cars = _cars()
-    # A declared factor: R codes character columns by first appearance (REG-12).
+    # A declared factor: R codes character columns by first appearance.
     cyl = pd.Categorical(cars.cyl, categories=["four", "six", "eight"])
     x = pd.DataFrame({"my wt": cars.wt, "2nd": cars.hp, "my cyl": cyl})
     expected = nns_frame_call(
@@ -481,7 +481,7 @@ def test_nns_reg_numeric_class_levels_print_like_r(scale: float) -> None:
 
 
 # --------------------------------------------------------------------------
-# REG-21: logical predictors are factors, as R's is.logical branch
+# Logical predictors are factors, as R's is.logical branch
 # --------------------------------------------------------------------------
 
 def _logical_frame() -> tuple[pd.DataFrame, pd.Series]:
