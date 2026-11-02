@@ -76,7 +76,10 @@ convenience for that stochastic path.
 peels `sd_efficient_set` results and returns a dictionary of `Cluster_1`,
 `Cluster_2`, ... memberships. The output contains variable names, not numeric
 cluster labels; when names are omitted, NNS Python uses R-style `X_1`, `X_2`, ...
-names. `type="continuous"` is supported for first-degree efficient sets.
+names, or the column names of a DataFrame input. `type="continuous"` is
+supported for first-degree efficient sets, `fsd`, and `fsd_uni`; as in R, an
+unrecognised `type` warns (and `fsd` then runs its continuous branch, while
+`fsd_uni` and the efficient-set routines run the discrete one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
 NNS Python does not plot the dendrogram; it only returns the object data.
@@ -91,12 +94,14 @@ the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
 equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
 intentional extension carrying the same merged-grid semantics. The
 matrix-based efficient-set and cluster routines operate on data columns and
-therefore remain equal-length by construction. The full prefix-pair dominance matrix remains available
-internally for verification and fallback. Large degree-1 discrete calls use an
-exact order-statistic dominance matrix: with equal-length empirical samples,
-one sample first-order stochastically dominates another exactly when every
-sorted order statistic is at least as large and at least one is strictly larger.
-Large degree-1 continuous and degree 2/3 calls use a lazy kept-only prefix scan.
+therefore remain equal-length by construction. Every efficient-set and cluster
+call, whatever the column count, tests each pair on that pair's own grid, so a
+pair's verdict never depends on which other columns are present. Degree-1
+discrete calls use an exact order-statistic dominance matrix: with equal-length
+empirical samples, one sample first-order stochastically dominates another
+exactly when every sorted order statistic is at least as large and at least one
+is strictly larger. Degree-1 continuous and degree 2/3 calls use a lazy
+kept-only prefix scan.
 Columns are visited in R's LPM-at-global-maximum order with original-index tie
 breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating
@@ -568,8 +573,22 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 `nns_anova` maps to R's non-plotting `NNS.ANOVA` paths. Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
-symmetric certainty matrix. Confidence interval bootstrapping is structurally
-identical to R but uses NumPy RNG instead of R's `sample()`, so exact per-call
-parity is not achievable; numeric values converge to the same population CI.
-Pass `random_seed` for reproducible NNS Python results. Degenerate zero-variance
-groups preserve R's `NaN` CDF/certainty convention.
+symmetric certainty matrix. `NaN` values are dropped from every group (R drops
+them with `na.omit` in the multi-group path but propagates `NaN` in the binary
+path); `±Inf` raises a `ValueError` (R's binary path fails on it in
+`LPM.VaR`). Confidence-interval bootstrapping draws from a
+reproduction of R's Mersenne-Twister `sample()` stream, so
+`random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
+the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
+entropy. `robust=True` follows R's resampling exactly: 100 resamples of the
+first `min(n_control, n_treatment)` positions, with control resample `g` paired
+with treatment resample 1 (`g = 1`) or `102 - g`, so the two groups are resampled
+independently apart from two replicates. It returns `Robust Certainty Estimate`
+plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
+`confidence_interval=None`. R names the effect-size keys of the robust output
+`Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
+`Effect_Size_LB`/`Effect_Size_UB`. One-sided (`tails="left"`/`"right"`)
+effect-size intervals raise a `ValueError` because R's `NNS.ANOVA` fails on
+them. Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+convention; where every robust certainty is `NaN`, R's VaR stops while NNS Python
+returns `NaN` bounds.

@@ -317,7 +317,8 @@ NNS ANOVA-style comparison helper covering binary, multi-group, pairwise, and de
 
 Closest R API: `NNS.norm`.
 
-NNS normalization helper. Accepts a 2-D matrix or, like R's list input, a
+NNS normalization helper. Accepts a 2-D matrix, a pandas DataFrame (returned
+as a DataFrame with R's `"<column> Normalized"` names) or, like R's list input, a
 sequence of 1-D vectors (one per variable). Equal-length vectors are
 column-stacked and normalized through the matrix path; unequal-length
 vectors force `linear=True` exactly as R does and return a list of scaled

@@ -22,7 +22,7 @@ def nns_ss(
     y_values = _omit_nan_numeric(y)
     if x_values.size == 0 or y_values.size == 0:
         raise ValueError("x and y must both contain at least one non-missing value.")
-    if not isinstance(confidence_interval, bool):
+    if not isinstance(confidence_interval, (bool, np.bool_)):
         raise ValueError("confidence_interval must be a single TRUE/FALSE value.")
 
     empirical = _stoch_superiority(x_values, y_values)

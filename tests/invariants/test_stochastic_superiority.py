@@ -36,3 +36,15 @@ def test_nns_ss_degenerate_ci_raises_like_meboot_path() -> None:
             rho=0.0,
             random_seed=1,
         )
+
+
+def test_nns_ss_accepts_numpy_bool_flags() -> None:
+    x = np.linspace(-1.0, 2.0, 20)
+    y = np.linspace(-1.5, 1.5, 20)
+
+    assert nns_ss(x, y, confidence_interval=np.False_) == nns_ss(x, y)
+    result = nns_ss(x, y, confidence_interval=np.True_, reps=4, rho=0.0, random_seed=3)
+    expected = nns_ss(x, y, confidence_interval=True, reps=4, rho=0.0, random_seed=3)
+    np.testing.assert_array_equal(result["boot_vals"], expected["boot_vals"])
+    with pytest.raises(ValueError, match="TRUE/FALSE"):
+        nns_ss(x, y, confidence_interval=1)  # type: ignore[arg-type]
