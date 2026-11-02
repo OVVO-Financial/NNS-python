@@ -760,7 +760,7 @@ def _with_prediction_intervals(
     lower_pi = np.empty(estimates.size, dtype=np.float64)
     for row_index, row in enumerate(intervals):
         upper_pi[row_index] = upm_var(alpha, 0.0, row) + lin_residual
-        lower_pi[row_index] = abs(lpm_var(alpha, 0.0, row)) - lin_residual
+        lower_pi[row_index] = lpm_var(alpha, 0.0, row) - lin_residual
 
     pct = round(float(pred_int) * 100.0, 2)
     return {
