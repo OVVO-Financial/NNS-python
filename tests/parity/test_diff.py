@@ -49,6 +49,22 @@ def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
 
 
 @pytest.mark.parity
+def test_nns_diff_steps_past_a_zero_inferred_h_like_r() -> None:
+    # uniroot evaluates the inferred-h equation at h = 0, where R's 0/0 is NaN.
+    def quintic(x: Any) -> Any:
+        return -0.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x)))
+
+    expected = _r_nns_diff_h("quintic", -0.25, 0.2)
+    actual = nns_diff(quintic, -0.25, h=0.2)
+    assert actual["converged"] == 1.0
+    for key, value in actual.items():
+        if key not in expected:
+            assert np.isnan(value), key
+            continue
+        np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
+
+
+@pytest.mark.parity
 def test_dy_dx_overall_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     y = x + np.sin(x)
@@ -217,7 +233,11 @@ def test_dy_d_vectorized_wrt_numeric_eval_mixed_matches_scalar_python_calls() ->
 
 
 def _r_nns_diff(name: str, point: float) -> dict[str, float]:
-    result = nns_diff_custom(name, point)
+    return _r_nns_diff_h(name, point, None)
+
+
+def _r_nns_diff_h(name: str, point: float, h: float | None) -> dict[str, float]:
+    result = nns_diff_custom(name, point, h)
     assert isinstance(result, dict)
     return {
         key: float(np.asarray(value).reshape(-1)[0])

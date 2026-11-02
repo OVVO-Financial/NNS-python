@@ -175,6 +175,22 @@
       "converged": 1.0,
       "iterations": 0.0,
       "termination.code": 0.0
+    },
+    "f1fb033a24e898cd744739d3765a0ac86a6aea68009d80335879f6c1e698bdfe": {
+      "Complex Step Derivative (Inferred h)": -0.40625,
+      "DERIVATIVE": -0.406250000147,
+      "Final y-intercept (B)": -0.149414062537,
+      "Inferred h": 8.5e-11,
+      "Inferred h averaged finite step": -0.406249836853,
+      "Inferred h finite step: f(x+h)": -0.406249836853,
+      "Inferred h finite step: f(x-h)": -0.406249836853,
+      "Initial h averaged finite step": -0.40625,
+      "Initial h finite step: f(x+h)": -0.7225,
+      "Initial h finite step: f(x-h)": -0.09,
+      "Value of f(x) at point": -0.0478515625,
+      "converged": 1.0,
+      "iterations": 32.0,
+      "termination.code": 0.0
     }
   },
   "label": "NNS.diff.custom",

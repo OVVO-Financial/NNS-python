@@ -95,6 +95,9 @@ def nns_diff(
         current_b = new_b
 
         def new_f(x: float, intercept: float = current_b) -> float:
+            if x == 0.0:
+                # R's 0/0 is NaN, which uniroot (and _zeroin2) replaces and steps past.
+                return math.nan
             return -f_x + ((f_x - _eval_real(f, point - x, "f(point - x)")) / x) * point + intercept
 
         inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value)

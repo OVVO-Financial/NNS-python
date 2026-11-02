@@ -629,8 +629,10 @@ def nns_distance_bulk_custom(
         return result
 
 
-def nns_diff_custom(name: str, point: float) -> RValue:
-    args = {"name": name, "point": point}
+def nns_diff_custom(name: str, point: float, h: float | None = None) -> RValue:
+    args: dict[str, Any] = {"name": name, "point": point}
+    if h is not None:
+        args["h"] = h
     key = _cache_key("NNS.diff.custom", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -1733,8 +1735,10 @@ def _call_r_diff_custom(args: dict[str, Any]) -> RValue:
         "  log = function(x) log(x),\n"
         "  tanh = function(x) tanh(x),\n"
         "  abs = function(x) abs(x),\n"
-        "  quartic = function(x) x^4 - 3 * x)\n"
-        "result <- NNS::NNS.diff(f, args$point, plot = FALSE)\n"
+        "  quartic = function(x) x^4 - 3 * x,\n"
+        "  quintic = function(x) -.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x))))\n"
+        "result <- if (is.null(args$h)) NNS::NNS.diff(f, args$point, plot = FALSE) else\n"
+        "  NNS::NNS.diff(f, args$point, h = args$h, plot = FALSE)\n"
         "payload <- as.numeric(result[, 1])\n"
         "names(payload) <- rownames(result)\n"
         "cat(jsonlite::toJSON(as.list(payload), auto_unbox = TRUE, digits = NA))\n"
