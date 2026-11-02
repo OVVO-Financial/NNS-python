@@ -11,12 +11,13 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import pytest
 from _r import nns_frame_call, r_column
 from _tolerances import COMPOUND
 
 from nns import nns_boost, nns_m_reg, nns_reg, nns_stack
+
+pd = pytest.importorskip("pandas")
 
 pytestmark = pytest.mark.parity
 
