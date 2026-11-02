@@ -105,3 +105,16 @@ def test_nns_cdf_multivariate_degree1_survival_equals_co_upm_nd() -> None:
     expected = [co_upm_nd(matrix, row, degree=1.0) for row in matrix]
 
     np.testing.assert_allclose(survival["CDF"], expected, atol=1e-12)
+
+
+def test_degree_zero_survival_beyond_three_columns_is_the_joint_upper_share() -> None:
+    from nns._rrng import RRNG
+
+    # R: set.seed(9); x <- matrix(sample(0:4, 400, TRUE), 20, 20)
+    x = (RRNG(9).sample_int_replace(5, 400) - 1).astype(np.float64).reshape(20, 20, order="F")
+    share = np.array([np.mean(np.all(x > row, axis=1)) for row in x])
+
+    result = nns_cdf(x, degree=0, type="cumulative hazard")
+    hazard = cast(dict[str, np.ndarray], result["Function"])["CDF"]
+
+    np.testing.assert_array_equal(hazard, np.maximum(-np.log(np.maximum(share, 1e-10)), 0.0))
