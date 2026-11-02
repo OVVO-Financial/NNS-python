@@ -61,6 +61,22 @@ def test_nns_anova_multi_group_certainty_matches_r(size: int) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("medians", [False, True])
+def test_nns_anova_multi_group_grand_statistic_pools_observations_like_r(medians: bool) -> None:
+    # Patched R: the grand mean / median is that of all observations pooled (it was
+    # the unweighted mean of the group means / medians).
+    rng = np.random.default_rng(8)
+    groups = [rng.exponential(1.0, 12), rng.exponential(2.0, 60), rng.exponential(1.5, 25)]
+
+    expected = _r_anova_groups(groups, pairwise=False, medians=medians)
+    actual = nns_anova(groups, medians=medians, confidence_interval=None)
+
+    assert isinstance(actual, dict)
+    assert isinstance(expected, float)
+    np.testing.assert_allclose(actual["Certainty"], expected, atol=ANOVA_PARITY)
+
+
+@pytest.mark.parity
 def test_nns_anova_pairwise_matches_r() -> None:
     groups = _multi_groups(100)
 
@@ -313,13 +329,15 @@ def _r_anova_binary(
     return _scalar_dict(result)
 
 
-def _r_anova_groups(groups: list[np.ndarray], *, pairwise: bool) -> float | np.ndarray:
+def _r_anova_groups(
+    groups: list[np.ndarray], *, pairwise: bool, medians: bool = False
+) -> float | np.ndarray:
     result = _r_anova(
         {
             "mode": "groups",
             "groups": [group.tolist() for group in groups],
             "means_only": False,
-            "medians": False,
+            "medians": medians,
             "pairwise": pairwise,
         }
     )
