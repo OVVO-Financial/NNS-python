@@ -5,10 +5,12 @@ efficient set and SD clustering) comes from one test, a port of R's native
 ``sd_dom_pair``: the curves are compared on the merged sample points and, for
 TSD and continuous FSD, also at their closed-form extrema between those points
 (LPM2 is piecewise quadratic and the continuous ratio linear-fractional, so the
-difference can peak between knots). Differences up to ``64 * eps * S**d``
-(``S`` the largest absolute value of the two samples; ``d`` = 1 for SSD and the
-mean gate, 2 for TSD, a ratio analogue for continuous FSD) are ties, so rounding
-noise does not decide dominance; discrete FSD compares exact ECDF fractions.
+difference can peak between knots). Each pair is compared centred on its joint
+midrange, and differences up to ``64 * eps * S**d`` (``S`` the largest absolute
+centred value; ``d`` = 1 for SSD and the mean gate, 2 for TSD, a ratio analogue for
+continuous FSD), plus a term for the inputs' own rounding at their level, are ties,
+so rounding noise does not decide dominance and a common shift leaves the verdict
+unchanged; discrete FSD compares exact ECDF fractions.
 Equal curves are non-dominance (R's curve equality guard). Efficient-set output
 follows the R C++ routine's LPM-at-global-maximum ordering and original-index
 tie break.
@@ -34,7 +36,8 @@ from nns.core import _as_1d_values
 
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
 # R's native SD test ignores excesses up to 64 * DBL_EPSILON (relative to the data scale).
-_SD_EPS64 = 64.0 * float(np.finfo(np.float64).eps)
+_SD_EPS = float(np.finfo(np.float64).eps)
+_SD_EPS64 = 64.0 * _SD_EPS
 
 
 @dataclass(frozen=True)
@@ -613,20 +616,39 @@ def _dominates_sorted(
     the closed-form extremum of the curve difference inside each interval between
     thresholds is checked too, as the patched R does.
 
+    Except for discrete FSD the pair is first centred on its joint midrange ``c``.
     Curve values from prefix sums that are equal in exact arithmetic can differ by
-    rounding noise of order ``eps * S**degree`` (``S`` the largest absolute value of
-    the two samples), so differences up to ``64 * eps * S**d`` are ties: ``d`` = 1 for
-    SSD and the mean gate, 2 for TSD, and a ratio analogue for continuous FSD.
-    Discrete FSD compares exact ECDF fractions with no tolerance.
+    rounding noise of order ``eps * S**degree`` (``S`` the largest absolute centred
+    value), so differences up to ``64 * eps * S**d`` plus the inputs' rounding at
+    ``|c|`` are ties: ``d`` = 1 for SSD and the mean gate, 2 for TSD, and a ratio
+    analogue for continuous FSD. Discrete FSD compares exact ECDF fractions with no
+    tolerance.
     """
     x_count = x_sorted.size
     y_count = y_sorted.size
-    scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
     if not x_sorted[0] >= y_sorted[0]:
         return False
-    if degree > 1 and y_prefix1[-1] / y_count - x_prefix1[-1] / x_count > _SD_EPS64 * scale:
-        return False
     if x_count == y_count and np.array_equal(x_sorted, y_sorted):
+        return False
+    level = 0.0
+    if degree > 1 or not discrete:
+        # Dominance is translation invariant but the tolerances scale with |value|^d,
+        # so compare the pair centred on its joint midrange, as R does.
+        lo, hi = float(y_sorted[0]), float(max(x_sorted[-1], y_sorted[-1]))
+        gap = y_prefix1[-1] / y_count - x_prefix1[-1] / x_count
+        if degree > 1 and gap > 2.0 * _SD_EPS64 * max(abs(lo), abs(hi)):
+            return False
+        level = 0.5 * lo + 0.5 * hi
+        x_sorted, y_sorted = x_sorted - level, y_sorted - level
+        x_prefix1, y_prefix1 = _prefix_sum_1d(x_sorted), _prefix_sum_1d(y_sorted)
+        if degree == 3:
+            x_prefix2, y_prefix2 = _prefix_sum_1d(x_sorted**2), _prefix_sum_1d(y_sorted**2)
+        level = abs(level)
+    scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
+    # Summation rounding plus the inputs' own rounding at their level |c|.
+    din = 4.0 * _SD_EPS * level
+    e1 = _SD_EPS64 * scale + din
+    if degree > 1 and y_prefix1[-1] / y_count - x_prefix1[-1] / x_count > e1:
         return False
 
     thresholds, x_counts, y_counts = _merged_thresholds(x_sorted, y_sorted)
@@ -643,14 +665,14 @@ def _dominates_sorted(
         y_curve, y_total = _ratio_deg1(y_prefix1, y_counts, thresholds, y_count)
         total_min = np.minimum(x_total, y_total)
         with np.errstate(divide="ignore"):
-            tol = _SD_EPS64 * np.where(total_min > 0.0, np.maximum(1.0, scale / total_min), 1.0)
+            tol = np.where(total_min > 0.0, np.maximum(_SD_EPS64, e1 / total_min), _SD_EPS64)
         if not np.any(x_curve - y_curve > tol):
             interior_excess = _ratio_deg1_interior_excess(
-                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale
+                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, e1
             )
         if not interior_excess and not np.any(x_curve - y_curve > tol):
             midpoint = _ratio_deg1_midpoint_verdict(
-                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, scale,
+                x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, e1,
                 np.abs(x_curve - y_curve) > tol,
             )
             if midpoint is not None:
@@ -659,13 +681,14 @@ def _dominates_sorted(
         # LPM1 is piecewise linear with knots at the data: checking the knots is exact.
         x_curve = (x_counts * thresholds - x_prefix1[x_counts]) / x_count
         y_curve = (y_counts * thresholds - y_prefix1[y_counts]) / y_count
-        tol = _SD_EPS64 * scale
+        tol = e1
     else:
         if x_prefix2 is None or y_prefix2 is None:
             raise ValueError("degree 3 prefix evaluation requires second-moment prefixes.")
         x_curve = _lpm_deg2(x_prefix1, x_prefix2, x_counts, thresholds, x_count)
         y_curve = _lpm_deg2(y_prefix1, y_prefix2, y_counts, thresholds, y_count)
-        tol = _SD_EPS64 * scale * scale
+        tol = _tsd_tolerance(x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count,
+                             thresholds, scale, din)
         if not np.any(x_curve - y_curve > tol):
             interior_excess = _lpm_deg2_interior_excess(
                 x_prefix1,
@@ -678,6 +701,7 @@ def _dominates_sorted(
                 y_count,
                 thresholds,
                 scale,
+                din,
             )
 
     excess = x_curve - y_curve
@@ -738,7 +762,7 @@ def _ratio_deg1_interior_excess(
     y_counts: NDArray[np.intp],
     y_count: int,
     thresholds: NDArray[np.float64],
-    scale: float,
+    e1: float,
 ) -> bool:
     """Whether ratio_x - ratio_y peaks above 0 strictly inside an interval of thresholds.
 
@@ -768,7 +792,7 @@ def _ratio_deg1_interior_excess(
             return False
         ratio_x = (ax * ts + bx) / denom_x
         ratio_y = (ay * ts + by) / denom_y
-        tol = _SD_EPS64 * np.maximum(1.0, scale / np.minimum(denom_x, denom_y))
+        tol = np.maximum(_SD_EPS64, e1 / np.minimum(denom_x, denom_y))
         return bool(np.any(valid & (ratio_x - ratio_y > tol)))
 
 
@@ -780,7 +804,7 @@ def _ratio_deg1_midpoint_verdict(
     y_counts: NDArray[np.intp],
     y_count: int,
     thresholds: NDArray[np.float64],
-    scale: float,
+    e1: float,
     knot_differs: NDArray[np.bool_],
 ) -> bool | None:
     """The verdict when the ratios first differ at an interval midpoint, else None.
@@ -797,7 +821,7 @@ def _ratio_deg1_midpoint_verdict(
     x_ratio, x_total = _ratio_deg1(x_prefix1, kx, s, x_count)
     y_ratio, y_total = _ratio_deg1(y_prefix1, ky, s, y_count)
     d = x_ratio - y_ratio
-    tol = _SD_EPS64 * np.maximum(1.0, scale / np.minimum(x_total, y_total))
+    tol = np.maximum(_SD_EPS64, e1 / np.minimum(x_total, y_total))
     differs = np.abs(d) > tol
     first_knot = np.flatnonzero(knot_differs)
     if first_knot.size:
@@ -848,6 +872,7 @@ def _lpm_deg2_interior_excess(
     y_count: int,
     thresholds: NDArray[np.float64],
     scale: float,
+    din: float,
 ) -> bool:
     """Whether LPM2_x - LPM2_y peaks above 0 strictly inside an interval of thresholds.
 
@@ -874,7 +899,28 @@ def _lpm_deg2_interior_excess(
     excess = _lpm_deg2(x_prefix1, x_prefix2, kx, ts, x_count) - _lpm_deg2(
         y_prefix1, y_prefix2, ky, ts, y_count
     )
-    return bool(np.any(excess > _SD_EPS64 * scale * scale))
+    tol = _tsd_tolerance(x_prefix1, kx, x_count, y_prefix1, ky, y_count, ts, scale, din)
+    return bool(np.any(excess > tol))
+
+
+def _tsd_tolerance(
+    x_prefix1: NDArray[np.float64],
+    x_counts: NDArray[np.intp],
+    x_count: int,
+    y_prefix1: NDArray[np.float64],
+    y_counts: NDArray[np.intp],
+    y_count: int,
+    thresholds: NDArray[np.float64],
+    scale: float,
+    din: float,
+) -> NDArray[np.float64]:
+    """R's LPM2 tie bound: input rounding ``din`` moves each term by about ``2 (t - x) din``."""
+    x_lpm1 = (x_counts * thresholds - x_prefix1[x_counts]) / x_count
+    y_lpm1 = (y_counts * thresholds - y_prefix1[y_counts]) / y_count
+    return np.asarray(
+        _SD_EPS64 * scale * scale + 2.0 * din * (np.abs(x_lpm1) + np.abs(y_lpm1) + din),
+        dtype=np.float64,
+    )
 
 
 def _prefix_sum_1d(values: NDArray[np.float64]) -> NDArray[np.float64]:
