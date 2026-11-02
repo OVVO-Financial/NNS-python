@@ -233,7 +233,30 @@ def _matrix_names(column_count: int, names: Sequence[str] | None) -> list[str]:
     column_names = [str(name) for name in names]
     if len(column_names) != column_count:
         raise ValueError("names length must match the number of columns in variable.")
-    return column_names
+    # R keeps duplicate data.frame names; a dict cannot, so suffix them like make.unique.
+    return _make_unique(["CDF", *column_names])[1:]
+
+
+def _make_unique(names: list[str]) -> list[str]:
+    """R's ``make.unique``: later duplicates get the first free ``.1``, ``.2``, ... suffix."""
+    taken = set(names)
+    seen: set[str] = set()
+    counters: dict[str, int] = {}
+    out: list[str] = []
+    for name in names:
+        if name in seen:
+            suffix = counters.get(name, 0)
+            while True:
+                suffix += 1
+                candidate = f"{name}.{suffix}"
+                if candidate not in taken:
+                    break
+            counters[name] = suffix
+            taken.add(candidate)
+            name = candidate
+        seen.add(name)
+        out.append(name)
+    return out
 
 
 def _r_lpm_ratio(

@@ -118,7 +118,9 @@ uses R's lower-partial-moment frequency convention, and positive degrees use
 `LPM.ratio` deformation. Univariate output columns follow installed R (`x` plus
 `CDF`, `S(x)`, `h(x)`, or `H(x)`), while multivariate output keeps the final
 column named `CDF` for all types, including survival, hazard, and cumulative
-hazard. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
+hazard. Input column names that repeat each other or `CDF` get R
+`make.unique` suffixes (`CDF.1`, `a.1`), since a dict cannot hold the duplicate
+names R returns. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
 handled inside `nns_cdf` without loosening the global partial-moment APIs.
 
 ## Dependence

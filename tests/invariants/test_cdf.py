@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 import numpy as np
+import pytest
 
 from nns import nns_cdf
 
@@ -66,3 +67,32 @@ def test_nns_cdf_invalid_type_raises() -> None:
         assert "invalid type" in str(exc)
     else:
         raise AssertionError("expected invalid type to raise")
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (["CDF", "b"], ["CDF.1", "b"]),
+        (["a", "a"], ["a", "a.1"]),
+        (["CDF", "CDF.1"], ["CDF.2", "CDF.1"]),
+        (["a", "a", "a.1"], ["a", "a.2", "a.1"]),
+    ],
+)
+def test_nns_cdf_multivariate_names_never_drop_a_coordinate(
+    names: list[str], expected: list[str]
+) -> None:
+    matrix = np.array([[1.0, 2.0, 5.0], [2.0, 1.0, 4.0], [3.0, 3.0, 6.0]])[:, : len(names)]
+    function = cast(dict[str, np.ndarray], nns_cdf(matrix, names=names)["Function"])
+
+    assert list(function) == [*expected, "CDF"]
+    for col, name in enumerate(expected):
+        np.testing.assert_array_equal(function[name], matrix[:, col])
+
+
+def test_nns_cdf_dataframe_column_named_cdf_keeps_its_coordinate() -> None:
+    pd = pytest.importorskip("pandas")
+    frame = pd.DataFrame([[1.0, 2.0], [2.0, 1.0], [3.0, 3.0]], columns=["CDF", "b"])
+    function = cast(dict[str, np.ndarray], nns_cdf(frame)["Function"])
+
+    np.testing.assert_array_equal(function["CDF.1"], [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(function["CDF"], [1 / 3, 1 / 3, 1.0])
