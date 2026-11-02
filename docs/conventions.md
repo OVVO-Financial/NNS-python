@@ -144,8 +144,11 @@ uses R's lower-partial-moment frequency convention, and positive degrees use
 column named `CDF` for all types, including survival, hazard, and cumulative
 hazard. Input column names that repeat each other or `CDF` get R
 `make.unique` suffixes (`CDF.1`, `a.1`), since a dict cannot hold the duplicate
-names R returns. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
-handled inside `nns_cdf` without loosening the global partial-moment APIs.
+names R returns. Plotting is ignored. As in the patched R (see [parity](parity.md)), missing
+values are dropped first (complete rows for a matrix), so the CDF reaches 1, and
+infinite values raise `ValueError`. For `d >= 3` columns the survival, hazard and
+cumulative hazard use the joint survival `P(X_1 > t_1, ..., X_d > t_d)` by
+inclusion-exclusion over all column subsets.
 
 ## Dependence
 

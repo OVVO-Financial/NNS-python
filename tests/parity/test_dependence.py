@@ -191,3 +191,34 @@ def test_nns_dep_matrix_keeps_dataframe_labels_and_validates() -> None:
         nns_dep(frame.to_numpy()[:, 0])
     with pytest.raises(ValueError):
         nns_dep(frame.to_numpy()[:, :1])
+
+
+_NORMAL_300 = np.round(np.random.default_rng(1).standard_normal(300), 8)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("asym", [False, True])
+@pytest.mark.parametrize(
+    "x, y",
+    [
+        (_NORMAL_300, -_NORMAL_300),
+        (np.arange(1.0, 101.0), -np.arange(1.0, 101.0)),
+        (np.array([1.0, 2.0]), np.array([2.0, 1.0])),
+    ],
+    ids=["neg_linear", "int_seq_rev", "len2"],
+)
+def test_nns_dep_fallback_keeps_the_sign_of_fully_discordant_cells(
+    monkeypatch: pytest.MonkeyPatch, x: np.ndarray, y: np.ndarray, asym: bool
+) -> None:
+    # Patched R: a partition cell whose points are all discordant scores -1, not
+    # +1, so NNS.dep(x, -x) has Correlation -1. This pins the NumPy fallback.
+    import nns.dependence as dependence
+
+    monkeypatch.setattr(dependence, "native_fn", lambda name: None)
+    expected = nns("NNS.dep", x.tolist(), y.tolist(), asym, False, False)
+    assert isinstance(expected, dict)
+    actual = nns_dep(x, y, asym=asym)
+
+    np.testing.assert_allclose(actual["Correlation"], _scalar(expected["Correlation"]), atol=EXACT)
+    np.testing.assert_allclose(actual["Dependence"], _scalar(expected["Dependence"]), atol=EXACT)
+    assert actual["Correlation"] < 0.0

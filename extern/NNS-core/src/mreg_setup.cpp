@@ -29,7 +29,16 @@ double reduce_numeric(std::vector<double>& v, int reducer, bool is_class) {
           v.end());
   if (v.empty()) return kNaN;
   std::sort(v.begin(), v.end());
-  if (is_class || reducer == kMregMode) {
+  // noise.reduction = "mode" is the same estimator as R's pure-R reference
+  // (.nns_reg_reduce_value: NNS.mode(z, discrete = FALSE, multi = FALSE)), not
+  // the most frequent exact value; the exact-frequency mode is kept for class
+  // responses only (R fix "NNS.reg (multivariate): native mode reducer =
+  // NNS.mode", REG-11 / CORE-03).
+  if (!is_class && reducer == kMregMode) {
+    const std::vector<double> m = nns::mode(v.data(), v.size(), false, false);
+    return m.empty() ? kNaN : m.front();
+  }
+  if (is_class) {
     double best = v[0];
     int bestn = 0;
     for (std::size_t i = 0; i < v.size();) {

@@ -25,9 +25,10 @@ def test_r_nns_13_regression_points_smoke_value() -> None:
         multivariate_call=True,
     )
 
-    np.testing.assert_allclose(result["x"], np.array([1.0, 2.0]), atol=EXACT)
-    # Live R 13.1 regression points for this 2-point series.
-    np.testing.assert_allclose(result["y"], np.array([148.0, 138.25]), atol=EXACT)
+    # R 13.3 + patches (the x centroid of a cell is no longer
+    # rounded for integer-valued x, so the centre point stays at x = 1.5).
+    np.testing.assert_allclose(result["x"], np.array([1.0, 1.5, 2.0]), atol=EXACT)
+    np.testing.assert_allclose(result["y"], np.array([148.0, 141.5, 135.0]), atol=EXACT)
 
 
 @pytest.mark.parity
@@ -40,8 +41,12 @@ def test_r_nns_13_copula_smoke_values() -> None:
 
     np.testing.assert_allclose(nns_copula(a2, continuous=True), 1.0, atol=EXACT)
     np.testing.assert_allclose(nns_copula(a2, continuous=False), 1.0, atol=EXACT)
-    np.testing.assert_allclose(nns_copula(a3, continuous=True), 0.9660918, atol=COMPOUND)
-    np.testing.assert_allclose(nns_copula(a3, continuous=False), 0.9309493, atol=COMPOUND)
+    # R 13.3 + patches ("NNS.copula: dimension-generic perfect-dependence
+    # early return"): every pair of a3 is fully concordant about the column means
+    # (pair sum 3 = choose(3, 2)), so the copula is 1; R 13.3 compared the sum with
+    # 1 and gave 0.9660918 / 0.9309493.
+    np.testing.assert_allclose(nns_copula(a3, continuous=True), 1.0, atol=EXACT)
+    np.testing.assert_allclose(nns_copula(a3, continuous=False), 1.0, atol=EXACT)
 
 
 @pytest.mark.parity
@@ -92,10 +97,10 @@ def test_r_nns_13_arma_airline_smoke_values() -> None:
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
 
     np.testing.assert_allclose(seasonal, np.array([118, 134, 150, 141, 129, 163]), atol=EXACT)
-    # Live R 13.1 NNS.ARMA nonseasonal forecast.
+    # NNS.ARMA nonseasonal forecast from R 13.3 + patches.
     np.testing.assert_allclose(
         nonseasonal,
-        np.array([125.25, 107.75, 158.75, 213.66666666666666]),
+        np.array([122.0, 102.0, 162.0, 213.66666666666666]),
         atol=COMPOUND,
     )
 

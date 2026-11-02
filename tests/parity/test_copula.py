@@ -83,3 +83,54 @@ def test_nns_copula_default_target_uses_r_col_means() -> None:
 
     np.testing.assert_allclose(nns_copula(m), expected, atol=EXACT)
     np.testing.assert_allclose(nns_copula(x, y), expected, atol=EXACT)
+
+
+def _integer_matrices() -> list[np.ndarray]:
+    rng = np.random.default_rng(1)
+    draws = [rng.integers(1, 6, (10, 3)).astype(float) for _ in range(30)]
+    # Draws 6, 14 and 24 have a degree-0 pair sum of exactly 1 (an interior value
+    # for three variables), so the bivariate shortcut used to return 1 for them.
+    return [draws[6], draws[14], draws[24], draws[3]]
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("native", [True, False])
+@pytest.mark.parametrize("continuous", [True, False])
+@pytest.mark.parametrize("case", range(4))
+def test_nns_copula_perfect_dependence_shortcut_is_dimension_generic(
+    monkeypatch: pytest.MonkeyPatch, case: int, continuous: bool, native: bool
+) -> None:
+    # R fix "NNS.copula: dimension-generic perfect-dependence early
+    # return": the shortcut fires only when every pair is fully concordant.
+    m = _integer_matrices()[case]
+    expected = _scalar(nns("NNS.copula", m.tolist(), None, continuous, False, False))
+    if not native:
+        import nns.copula as copula
+
+        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+    actual = nns_copula(m, continuous=continuous)
+    np.testing.assert_allclose(actual, expected, atol=EXACT)
+    if case < 3:
+        assert actual < 1.0
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("native", [True, False])
+def test_nns_copula_degree0_ties_partition_the_sample(
+    monkeypatch: pytest.MonkeyPatch, native: bool
+) -> None:
+    # Columns of -1/0/1 with means exactly 0, so a third of each column
+    # ties the target; DPM_nD at degree 0 counts them as lower, not discordant.
+    rng = np.random.default_rng(2)
+    base = np.repeat([-1.0, 0.0, 1.0], 40)
+    m = np.column_stack([rng.permutation(base) for _ in range(3)])
+    cases = [m[:, :2], m]
+    expected = [
+        _scalar(nns("NNS.copula", c.tolist(), None, True, False, False)) for c in cases
+    ]
+    if not native:
+        import nns.copula as copula
+
+        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+    for c, want in zip(cases, expected, strict=True):
+        np.testing.assert_allclose(nns_copula(c), want, atol=EXACT)

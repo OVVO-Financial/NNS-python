@@ -646,9 +646,13 @@ double cupm_nd_impl(const double* data, std::size_t n, std::size_t d,
                     const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
+    // Strictly above in every coordinate, as Co.UPM (x > target) does: ties
+    // belong to the lower side (x <= target), so at degree 0 the CLPM, CUPM and
+    // DPM counts partition the sample (R fix "Co.UPM_nD/DPM_nD: degree-0 counts
+    // partition the sample").
     const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       for (std::size_t j = 0; j < d; ++j)
-        if (at(data, n, i, j) < target[j]) return 0.0;
+        if (at(data, n, i, j) <= target[j]) return 0.0;
       return 1.0;
     });
     return count / static_cast<double>(n);
@@ -670,11 +674,14 @@ double dpm_nd_impl(const double* data, std::size_t n, std::size_t d,
                    const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
+    // Discordant = neither all-lower (x <= target, the CLPM count) nor
+    // all-upper (x > target, the CUPM count); ties used to count as discordant
+    // and lower at the same time.
     const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       bool all_below = true, all_above = true;
       for (std::size_t j = 0; j < d; ++j) {
         const double diff = at(data, n, i, j) - target[j];
-        if (diff >= 0.0) all_below = false;
+        if (diff > 0.0) all_below = false;
         if (diff <= 0.0) all_above = false;
         if (!all_below && !all_above) break;
       }

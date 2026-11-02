@@ -85,6 +85,8 @@ def test_default_target_is_r_mean_for_a_constant_decimal_sample() -> None:
     assert upm_ratio(0.0, None, x) == 0.0
     assert co_lpm(0.0, x, x, None, None) == 1.0
     assert co_upm(0.0, x, x, None, None) == 0.0
+    assert lpm(0.0, None, x, excess_ret=True) == 1.0
+    assert upm(0.0, None, x, excess_ret=True) == 0.0
 
 
 def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
@@ -93,16 +95,20 @@ def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
     assert lpm_ratio(2, 0.0, x) + upm_ratio(2, 0.0, x) == pytest.approx(1.0, rel=EXACT)
 
 
-def test_partial_moment_ratios_degenerate_denominator_returns_nan_without_warning() -> None:
+def test_partial_moment_ratios_degenerate_denominator_use_degree0_ratio() -> None:
+    # Patched R: the 0/0 ratio (every observation equals the target) is the
+    # degree-0 ratio, i.e. the ECDF value: LPM.ratio 1, UPM.ratio 0.
     x = np.array([2.0, 2.0])
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
         lower = lpm_ratio(2, 2.0, x)
         upper = upm_ratio(2, 2.0, x)
+        lower_vector = lpm_ratio(1, np.array([2.0, 2.0]), x)
 
-    assert np.isnan(lower)
-    assert np.isnan(upper)
+    assert lower == 1.0
+    assert upper == 0.0
+    np.testing.assert_array_equal(lower_vector, [1.0, 1.0])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
@@ -144,6 +150,17 @@ def test_numpy_fallback_cdf_does_not_allocate_an_n_by_n_matrix(
         tracemalloc.stop()
 
     assert peak < n * n * 8
+
+
+@pytest.mark.parametrize("function", [lpm_ratio, upm_ratio])
+def test_partial_moment_ratios_reject_non_finite_targets(function: object) -> None:
+    # Patched R: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
+    x = np.array([1.0, 2.0, 3.0])
+    for target in (np.nan, np.array([1.0, np.inf])):
+        with pytest.raises(ValueError, match="target must contain only finite values"):
+            function(1, target, x)  # type: ignore[operator]
+    with pytest.raises(ValueError, match="x must contain only finite values"):
+        function(0, 2.0, np.array([1.0, np.nan]))  # type: ignore[operator]
 
 
 def test_lpm_upm_reject_non_finite_targets_like_r() -> None:

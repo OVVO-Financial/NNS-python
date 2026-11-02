@@ -35,6 +35,39 @@ def test_nns_causation_matches_r(
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("tau", [3, 3.0, 47])
+def test_nns_causation_integer_tau_matches_r(tau: float) -> None:
+    rng = np.random.default_rng(3)
+    x = rng.standard_normal(50)
+    y = x**2 + 0.1 * rng.standard_normal(50)
+
+    expected = nns("NNS.caus", x.tolist(), y.tolist(), False, tau, False, False)
+    actual = np.fromiter(nns_causation(x, y, tau=tau).values(), dtype=np.float64)
+
+    np.testing.assert_allclose(actual, _vector(expected), atol=EXACT)
+
+
+@pytest.mark.parametrize("tau", [1.5, -1, "3", "foo", 48, True, float("nan")])
+def test_nns_causation_rejects_invalid_tau(tau: object) -> None:
+    # Patched R: tau must be "cs", "ts" or a single non-negative integer
+    # smaller than length(x) - 2 (R used fractional subscripts, ignored -1, ...).
+    rng = np.random.default_rng(3)
+    x = rng.standard_normal(50)
+    with pytest.raises(ValueError, match="tau must be"):
+        nns_causation(x, x**2, tau=tau)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="tau must be"):
+        causal_matrix(np.column_stack((x, x**2)), tau=tau)  # type: ignore[arg-type]
+
+
+def test_nns_causation_rejects_constant_input() -> None:
+    x = np.linspace(-1.0, 1.0, 40)
+    with pytest.raises(ValueError, match="must not be constant"):
+        nns_causation(x, np.ones(40))
+    with pytest.raises(ValueError, match="must not be constant"):
+        causal_matrix(np.column_stack((x, np.ones(40))))
+
+
+@pytest.mark.parity
 def test_causal_matrix_matches_r() -> None:
     rng = np.random.default_rng(123)
     x = rng.normal(size=100)

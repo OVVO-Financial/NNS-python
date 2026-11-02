@@ -375,10 +375,11 @@ PartitionLabels partition_labels(const double* x, const double* y, std::size_t n
   return {std::move(quad), std::move(prior), depth};
 }
 
-// regression points grouped by prior.quadrant (sorted labels via std::map),
-// with the discrete half-up rounding of x that _is_discrete_like_r triggers.
+// regression points grouped by prior.quadrant (sorted labels via std::map): the
+// (x, y) gravity centroid of each cell. x is not rounded for integer-valued x
+// (R fix "NNS.part: do not round regression-point x for integer-valued x").
 void regression_points_from_prior(const double* x, const double* y, std::size_t n,
-                                  const std::vector<std::string>& prior, bool x_discrete,
+                                  const std::vector<std::string>& prior,
                                   std::vector<std::string>* rp_quadrant, std::vector<double>* rp_x,
                                   std::vector<double>* rp_y) {
   std::map<std::string, std::vector<std::size_t>> prior_groups;
@@ -398,23 +399,6 @@ void regression_points_from_prior(const double* x, const double* y, std::size_t 
     rp_x->push_back(gravity_exact_impl(gx.data(), gx.size()));
     rp_y->push_back(gravity_exact_impl(gy.data(), gy.size()));
   }
-  if (x_discrete) {
-    for (double& v : *rp_x) {
-      const double f = std::floor(v);
-      v = (v - f < 0.5) ? f : std::ceil(v);
-    }
-  }
-}
-
-bool x_is_discrete_like_r(const double* x, std::size_t n) {
-  bool any_finite = false;
-  for (std::size_t i = 0; i < n; ++i) {
-    if (std::isfinite(x[i])) {
-      any_finite = true;
-      if (x[i] != std::floor(x[i])) return false;
-    }
-  }
-  return any_finite;
 }
 
 nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_order, int obs_req,
@@ -433,8 +417,7 @@ nb::dict nns_part_off(const Vector& xa, const Vector& ya, bool xonly, int max_or
   {
     nb::gil_scoped_release release;
     pl = partition_labels(x, y, n, xonly, max_order, obs_req, min_obs_stop);
-    regression_points_from_prior(x, y, n, pl.prior, x_is_discrete_like_r(x, n), &rp_quadrant,
-                                 &rp_x, &rp_y);
+    regression_points_from_prior(x, y, n, pl.prior, &rp_quadrant, &rp_x, &rp_y);
   }
 
   std::vector<double> dt_x(x, x + n);
@@ -603,7 +586,10 @@ double nd_dpm_general(const double* data, std::size_t n, std::size_t d, const do
     double prod_abs = 1.0;
     for (std::size_t c = 0; c < d; ++c) {
       const double diff = data[i + c * n] - target[c];
-      if (!(diff < 0.0)) below = false;
+      // Degree 0 partitions the sample like CLPM (all <= target) and CUPM (all >
+      // target), as R's DPM_nD; at degree 1 a tied coordinate adds a
+      // zero factor either way.
+      if (!(diff <= 0.0)) below = false;
       if (!(diff > 0.0)) above = false;
       prod_abs *= std::abs(diff);
     }
@@ -631,7 +617,12 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
                  bool continuous) {
   const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false, call_threads());
   const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
-  if (disc_co == 1.0 || disc_co == 0.0) return 1.0;
+  // Perfect dependence: every pair fully concordant (sum = d(d-1)/2) or, for two
+  // variables, fully discordant (sum 0); R fix "NNS.copula: dimension-generic
+  // perfect-dependence early return". The old test (sum == 1 or 0) was
+  // the bivariate rule and fired for interior values when d >= 3.
+  const double n_pairs = 0.5 * static_cast<double>(d) * static_cast<double>(d - 1U);
+  if (std::abs(disc_co - n_pairs) < 1e-9 || (d == 2U && std::abs(disc_co) < 1e-9)) return 1.0;
   const double disc_d = nd_dpm_general(data, n, d, target, 0.0, true);
 
   double cont_co, cont_d;

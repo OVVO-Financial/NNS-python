@@ -6,14 +6,17 @@ import pytest
 from nns import nns_anova
 
 
-def test_nns_anova_identical_degenerate_groups_match_r_nan_convention() -> None:
+def test_nns_anova_identical_degenerate_groups_match_r_convention() -> None:
     x = np.linspace(-2.0, 2.0, 100)
     constant = np.ones_like(x)
 
     result = nns_anova(constant, constant, confidence_interval=None)
 
+    # The degree-1 ratios at a point mass are the degree-0 ratios, so
+    # the CDFs are 1 and the patched R reports Certainty 0 (13.3 gave NaN).
     assert isinstance(result, dict)
-    assert np.isnan(result["Certainty"])
+    assert result["Control_CDF"] == result["Treatment_CDF"] == 1.0
+    assert result["Certainty"] == 0.0
     assert result["Control"] == result["Treatment"]
 
 
@@ -53,7 +56,7 @@ def test_nns_anova_robust_degenerate_inputs_do_not_crash() -> None:
 
     assert isinstance(result, dict)
     assert "Robust Certainty Estimate" in result
-    assert np.isnan(result["Robust Certainty Estimate"])
+    assert result["Robust Certainty Estimate"] == 0.0
 
 
 @pytest.mark.stochastic

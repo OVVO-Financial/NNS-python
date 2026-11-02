@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from nns._native import native_fn
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
-from nns.central_tendencies import _nearest_int_half_up_array, nns_mode
+from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 
 NoiseReduction: TypeAlias = Literal["off", "mean", "median", "mode", "mode_class"]
@@ -237,8 +237,6 @@ def nns_part(
     regression_points = _regression_points(
         x_values, y_values, prior_group, all_prior_labels, noise
     )
-    if _is_discrete_like_r(x_values):
-        regression_points["x"] = _nearest_int_half_up_array(regression_points["x"])
 
     return {
         "order": depth,
@@ -439,11 +437,6 @@ def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
 def _mode(values: NDArray[np.float64]) -> float:
     """Private compatibility wrapper for NNS_part's discrete mode path."""
     return float(nns_mode(values, discrete=True, multi=False))
-
-
-def _is_discrete_like_r(values: NDArray[np.float64]) -> bool:
-    finite = values[np.isfinite(values)]
-    return bool(finite.size > 0 and np.all(finite == np.floor(finite)))
 
 
 def _validate_noise_reduction(value: str) -> NoiseReduction:

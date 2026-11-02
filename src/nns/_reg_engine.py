@@ -450,7 +450,10 @@ def _reduce_value(z: NDArray[np.float64], noise_reduction: str, is_class: bool =
     if noise_reduction == "median":
         return float(np.median(z))
     if noise_reduction == "mode":
-        return float(cast(float, nns_mode(z)))
+        # Numeric cells: NNS.mode(z, discrete = FALSE, multi = FALSE), as R's
+        # .nns_reg_reduce_value and NNS-core's mreg_setup; class
+        # responses use the exact-frequency mode above.
+        return float(cast(float, nns_mode(z, discrete=False, multi=False)))
     return float(nns_gravity(z))
 
 
