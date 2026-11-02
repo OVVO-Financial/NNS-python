@@ -120,3 +120,83 @@ def _scalar(value: RValue) -> float:
     if not isinstance(value, np.ndarray):
         raise AssertionError(f"Expected R scalar array, got {type(value)!r}")
     return float(value)
+
+
+@pytest.mark.parity
+def test_nns_meboot_scale_adjustment_uses_residual_scale_like_r() -> None:
+    # Patched R measures kappa against the residuals' mean and sd (it used the
+    # levels', which shrank every replicate toward mean(x)).
+    x = 2.0 * np.arange(60, dtype=np.float64) + 5.0 * np.sin(np.arange(60, dtype=np.float64))
+
+    expected = nns_meboot_diagnostics(x.tolist(), rho=0.0, reps=2, scl_adjustment=True, seed=1)
+    actual = nns_meboot(x, reps=2, rho=0.0, scl_adjustment=True, random_seed=1)
+
+    kappa = _scalar(cast(dict[str, RValue], expected)["kappa"])
+    assert actual["kappa"] == pytest.approx(kappa, abs=COMPOUND)
+    assert abs(kappa) < 0.1
+
+
+def test_nns_meboot_scale_adjustment_scales_the_residuals_not_the_levels() -> None:
+    t = np.arange(60, dtype=np.float64)
+    x = 2.0 * t + 5.0 * np.sin(t)
+    kwargs = {"reps": 2, "rho": 0.0, "expand_sd": False, "force_clt": False, "random_seed": 1}
+
+    adjusted = nns_meboot(x, scl_adjustment=True, **kwargs)
+    plain = nns_meboot(x, scl_adjustment=False, **kwargs)
+
+    time = t + 1.0
+    slope, intercept = np.polyfit(time, x, 1)
+    fitted = (intercept + slope * time)[:, np.newaxis]
+    residual_mean = float(np.mean(x - fitted[:, 0]))
+    kappa = adjusted["kappa"]
+    assert kappa is not None and abs(kappa) > 1e-3
+    np.testing.assert_allclose(
+        adjusted["replicates"] - plain["replicates"],
+        kappa * (plain["replicates"] - fitted - residual_mean),
+        atol=1e-5,
+    )
+
+
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.parametrize(("drift", "target_drift"), [(False, None), (True, 0.05)])
+def test_nns_meboot_changed_drift_keeps_residual_scale_like_r(
+    drift: bool, target_drift: float | None
+) -> None:
+    # Patched R skips the level-space sd expansion once the original drift is
+    # replaced, and centres the new baseline on mean(x).
+    t = np.arange(30, dtype=np.float64)
+    x = (0.3 * t + np.sin(t)).tolist()
+
+    expected = np.asarray(
+        nns_meboot_stat_summary(
+            x, rho=0.0, reps=100, seed=123, drift=drift, target_drift=target_drift
+        )
+    )
+    result = nns_meboot(
+        np.asarray(x), reps=100, rho=0.0, drift=drift, target_drift=target_drift, random_seed=123
+    )
+    replicates = result["replicates"]
+    actual = np.array(
+        [
+            np.mean(result["ensemble"]),
+            np.std(result["ensemble"], ddof=1),
+            np.median(np.mean(replicates, axis=0)),
+            np.median(np.std(replicates, axis=0, ddof=1)),
+        ]
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=0.35, atol=0.35)
+    assert actual[3] < 0.5 * float(np.std(x, ddof=1))
+    # force_clt spreads the replicate means as the new baseline plus the original
+    # residuals, not as x (whose sd includes the replaced drift).
+    time = np.arange(1.0, 31.0)
+    slope, intercept = np.polyfit(time, x, 1)
+    residuals = np.asarray(x) - (intercept + slope * time)
+    new_slope = 0.0 if target_drift is None else target_drift
+    reference = float(np.mean(x)) + new_slope * (time - 15.5) + residuals
+    np.testing.assert_allclose(
+        np.std(np.mean(replicates, axis=0), ddof=1),
+        np.std(reference, ddof=1) / np.sqrt(100.0),
+        rtol=1e-4,
+    )

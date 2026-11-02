@@ -504,8 +504,15 @@ def nns_meboot_stat_summary(
     rho: float,
     reps: int = 100,
     seed: int = 1,
+    drift: bool = True,
+    target_drift: float | None = None,
 ) -> RValue:
-    args = {"x": x, "rho": rho, "reps": reps, "seed": seed}
+    args: dict[str, Any] = {"x": x, "rho": rho, "reps": reps, "seed": seed}
+    # Only non-default options enter the payload, so existing cache keys are kept.
+    if not drift:
+        args["drift"] = False
+    if target_drift is not None:
+        args["target_drift"] = target_drift
     key = _cache_key("NNS.meboot.stat_summary", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -1618,7 +1625,8 @@ def _call_r_meboot_stat_summary(args: dict[str, Any]) -> RValue:
         "f <- get('FUN', envir = environment(NNS::NNS.meboot))\n"
         "set.seed(as.integer(args$seed))\n"
         "result <- f(x = as.numeric(unlist(args$x)), reps = as.integer(args$reps), "
-        "rho = as.numeric(args$rho))\n"
+        "rho = as.numeric(args$rho), drift = !isFALSE(args$drift), "
+        "target_drift = args$target_drift)\n"
         "replicates <- result$replicates\n"
         "summary <- c(mean_ensemble = mean(result$ensemble), sd_ensemble = sd(result$ensemble), "
         "median_rep_means = median(colMeans(replicates)), "
