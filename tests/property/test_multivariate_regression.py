@@ -19,6 +19,7 @@ matrix_arrays = arrays(
         max_value=1e3,
         allow_nan=False,
         allow_infinity=False,
+        allow_subnormal=False,  # see tests/property/test_regression.py
         width=64,
     ),
 )
