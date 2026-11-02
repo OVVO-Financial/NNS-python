@@ -71,7 +71,8 @@ def _nns_seas_compute(
         return _clone_result(result)
 
     mean_var = _seq_mean(values)
-    sd_var = _seq_sd(values, mean_var)
+    # Compare raw values: a repeated 0.1 need not centre to exactly 0.
+    sd_var = 0.0 if bool(np.all(values == values[0])) else _seq_sd(values, mean_var)
     # CV is meaningless for a mean that is zero up to rounding; compare sds instead.
     use_cv = abs(mean_var) > _SD_TOL * sd_var
     var_cov = abs(sd_var / mean_var) if use_cv else sd_var
@@ -140,7 +141,7 @@ def _seq_sd(values: NDArray[np.float64], mean: float) -> float:
 def _component_score(values: NDArray[np.float64], m: int, use_cv: bool) -> float:
     """Length-weighted mean CV (or sd) of the m component series ``values[j::m]``.
 
-    As R's NNS_seas_cpp: a constant component scores 0 and a near-zero component
+    As R's NNS_seas_cpp: a constant component (equal raw values) scores 0 and a near-zero component
     mean caps its CV at ``1 / _SD_TOL``. Column j of the padded matrix is component
     j; adding the rows one at a time keeps each column's sums in the C++ order, so
     the scores are bit-identical to R's. Only the last row has padding.
@@ -156,11 +157,14 @@ def _component_score(values: NDArray[np.float64], m: int, use_cv: bool) -> float
         total += row
     mean = total / lengths
     sum_sq = np.zeros(m, dtype=np.float64)
+    same = np.ones(m, dtype=bool)
     for row in block[:-1]:
         sum_sq += (row - mean) ** 2
+        same &= row == block[0]
     tail = lengths == width
     sum_sq[tail] += (block[-1, tail] - mean[tail]) ** 2
-    sd = np.sqrt(sum_sq / (lengths - 1.0))
+    same[tail] &= block[-1, tail] == block[0, tail]
+    sd = np.where(same, 0.0, np.sqrt(sum_sq / (lengths - 1.0)))
     if use_cv:
         with np.errstate(invalid="ignore", divide="ignore"):
             score = np.where(sd == 0.0, 0.0, sd / np.maximum(np.abs(mean), _SD_TOL * sd))

@@ -87,3 +87,9 @@ def test_nns_seas_component_scores_are_bit_identical_to_sequential_loop() -> Non
                 assert _component_score(values, m, use_cv) == _reference_component_score(
                     values, m, use_cv
                 )
+
+
+def test_constant_series_and_components_compare_raw_values() -> None:
+    # 0.1 repeated does not centre to exactly 0, so the sd was rounding noise.
+    assert nns_seas(np.full(20, 0.1))["best.period"] == 1
+    assert nns_seas(np.tile([0.1, 1.0], 10))["best.period"] == 2
