@@ -4,6 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
+from nns._rmean import r_mean
 
 # Targets per block in the NumPy fallback, so memory stays O(block * n) rather than n x n.
 _TARGET_BLOCK = 1024
@@ -150,7 +151,7 @@ def _as_targets(
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     if target is None:
-        return np.array([float(np.mean(values))], dtype=np.float64)
+        return np.array([r_mean(values)], dtype=np.float64)
     targets = np.asarray(target, dtype=np.float64)
     if targets.ndim == 0:
         targets = targets.reshape(1)
