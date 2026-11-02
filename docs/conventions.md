@@ -7,7 +7,26 @@ acceleration through `nns._nnscore` where available. Source builds use
 `scikit-build-core` and `nanobind` to compile the extension; published wheels
 should be preferred when available. Public APIs keep Python implementations and
 explicit fallback behavior, so native code remains a deliberate,
-benchmark-backed implementation detail rather than a public API.
+benchmark-backed implementation detail rather than a public API. Setting the
+environment variable `NNS_DISABLE_NATIVE=1` before importing `nns` forces the
+NumPy fallbacks, as when the extension is not built; CI runs the invariant and
+cached parity tests that way too.
+
+## Threads
+
+The native kernels (vectorised partial moments, the PM matrix, the n-dimensional
+co-moments and the copula) can use several threads. Inputs below a fixed amount of
+work always run serially, and results never depend on the thread count.
+`nns.set_num_threads(n)` sets the default; `n=None` restores the automatic choice,
+which is the `NNS_NUM_THREADS` environment variable when it is a positive integer
+and the number of hardware threads otherwise. `nns.get_num_threads()` returns the
+current default. The `ncores` argument of `nns_reg`, `nns_m_reg`, `nns_stack`,
+`nns_boost`, `nns_arma_optim` and `nns_var` caps the native threads for that call:
+`None` keeps the default, `1` runs serially, and anything other than `None` or a
+positive integer raises `ValueError`, as in R's `NNS.M.reg`. The cap applies per
+Python thread. R also uses `ncores` for its parallel `NNS.ARMA.optim` workers;
+NNS Python has no process-level parallelism. The heavy kernels release the GIL,
+so Python threads can run them concurrently.
 
 ## Degree-Zero Boundary
 
@@ -139,11 +158,11 @@ reverse). R's `p.value` option is not implemented. The bivariate path includes `
 for zero-range inputs and non-positive or non-finite bin widths. The gravity
 histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
 single outlier that makes R allocate millions of empty bins costs nothing and gives
-R's value. Like R, a bin count beyond the C `int` range collapses to one bin. The
-compiled `gravity_exact` kernel used by `nns_part`/`nns_dep` clips its dense
-histogram at 1e6 bins; NNS Python checks every gravity call of a native partition
-against that cap and recomputes in Python when it would bind, so results match R
-on such data too. `abs(Correlation) <= Dependence` is not guaranteed by
+R's value. The compiled kernel (NNS-core `nns::gravity`) and the NumPy fallback
+compute the same value bit for bit. They differ from R 13.3 only when the bin count
+exceeds the C `int` range: R's cast overflows there and the histogram collapses to
+one bin, while NNS Python (like the patched R) keeps the real histogram.
+`abs(Correlation) <= Dependence` is not guaranteed by
 `NNS.dep`; both R and NNS Python can return signed correlation magnitudes above the
 dependence component for near-binary inputs.
 
@@ -465,8 +484,8 @@ co-movement objective falls back to MSE when it is undefined for every Method 1
 candidate, as in R. Series whose observed minimum is
 positive have their interpolated values floored at zero. The `h == 0` path is normalized to
 a Python dictionary containing `interpolated_and_extrapolated` and `names`
-rather than R's bare data-frame return. `ncores` and `nowcast` (row labelling
-only in R) are accepted for API compatibility.
+rather than R's bare data-frame return. `nowcast` (row labelling only in R) is
+accepted for API compatibility; `ncores` caps the native threads (see Threads).
 
 ## Meboot
 

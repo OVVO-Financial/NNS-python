@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
+from nns._native import honours_ncores
 from nns.core import lpm_ratio, upm_ratio
 
 _R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
@@ -44,6 +45,7 @@ class _LagSpec(TypedDict):
     max: int
 
 
+@honours_ncores
 def nns_var(
     variables: Any,
     h: int,
@@ -75,10 +77,11 @@ def nns_var(
     dimension.
 
     For ``h == 0`` the result is a dictionary with ``interpolated_and_extrapolated``
-    and ``names`` instead of R's bare data frame. ``ncores`` and ``nowcast``
-    (row labelling only in R) are accepted for API compatibility.
+    and ``names`` instead of R's bare data frame. ``nowcast`` (row labelling only
+    in R) is accepted for API compatibility. ``ncores`` caps the native threads
+    (see :func:`nns.set_num_threads`); R uses it for parallel ARMA.optim workers.
     """
-    _warn_unsupported(ncores=ncores is not None, nowcast=bool(nowcast))
+    _warn_unsupported(nowcast=bool(nowcast))
     del status  # R console progress flag; NNS Python emits no console output.
 
     h_value = _var_validate_h(h)

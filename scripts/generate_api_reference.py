@@ -84,6 +84,8 @@ META: dict[str, ApiMeta] = {
     "dy_d": ApiMeta("Differentiation", "dy.d_", "partial", "Multivariate derivative helper."),
     "lpm_var": ApiMeta("VaR helpers", "LPM.VaR", "implemented", "Lower partial-moment VaR helper."),
     "upm_var": ApiMeta("VaR helpers", "UPM.VaR", "implemented", "Upper partial-moment VaR helper."),
+    "set_num_threads": ApiMeta("Native threads", "ncores", "Python-only", "Default native thread count."),
+    "get_num_threads": ApiMeta("Native threads", "", "Python-only", "Current default native thread count."),
 }
 
 AREA_ORDER = [
@@ -99,6 +101,7 @@ AREA_ORDER = [
     "Stochastic dominance, superiority, and simulation",
     "Differentiation",
     "VaR helpers",
+    "Native threads",
     "Other public exports",
 ]
 

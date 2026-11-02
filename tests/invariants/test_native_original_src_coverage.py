@@ -236,6 +236,36 @@ def test_public_pm_matrix_fallback_matches_native(
         np.testing.assert_allclose(actual[key], fallback[key])
 
 
+@pytest.mark.parametrize("degree", [3.0, 4.0, 8.0, 12.0])
+def test_many_target_partial_moments_match_scalar_and_fallback(
+    degree: float, disable_native: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # More than 32 targets select NNS-core's vectorised backend. Its old binomial
+    # prefix expansion (also in R 13.3) cancelled
+    # catastrophically for degree >= 3: SPY-like prices at degree 8 gave
+    # relative errors of 3e3 and negative UPMs.
+    del disable_native
+    rng = np.random.default_rng(20261101)
+    x = rng.normal(100.0, 5.0, 500)
+    targets = np.linspace(x.min() - 50.0, x.max() + 50.0, 100)
+    fallback_lpm = np.asarray(lpm(degree, targets, x))
+    fallback_upm = np.asarray(upm(degree, targets, x))
+
+    native_module = _native()
+    monkeypatch.setattr(core_module, "native_fn", lambda name: getattr(native_module, name, None))
+    native_lpm = np.asarray(lpm(degree, targets, x))
+    native_upm = np.asarray(upm(degree, targets, x))
+    scalar_lpm = np.array([native_module.lpm(degree, float(t), x) for t in targets])
+    scalar_upm = np.array([native_module.upm(degree, float(t), x) for t in targets])
+
+    assert np.all(native_lpm >= 0.0)
+    assert np.all(native_upm >= 0.0)
+    np.testing.assert_allclose(native_lpm, scalar_lpm, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(native_upm, scalar_upm, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(native_lpm, fallback_lpm, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(native_upm, fallback_upm, rtol=1e-12, atol=0.0)
+
+
 def test_public_api_fallback_works_without_native(disable_native: None) -> None:
     del disable_native
     x = _x()

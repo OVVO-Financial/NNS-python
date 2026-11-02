@@ -202,3 +202,32 @@ def mode(x: NDArray[np.float64], discrete: bool, multi: bool) -> Sequence[float]
 def stochastic_superiority(
     x: NDArray[np.float64], y: NDArray[np.float64]
 ) -> StochSupResult: ...
+def set_num_threads(n: int) -> None: ...
+def get_num_threads() -> int: ...
+def _set_call_threads(n: int) -> int: ...
+def mreg_predict(
+    rpm_x: NDArray[np.float64],
+    n: int,
+    p: int,
+    yhat: NDArray[np.float64],
+    xtest: NDArray[np.float64],
+    m: int,
+    k: int,
+    dist_code: int,
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+    is_class: bool,
+) -> Sequence[float]: ...
+def mreg_predict_path(
+    rpm_x: NDArray[np.float64],
+    n: int,
+    p: int,
+    yhat: NDArray[np.float64],
+    xtest: NDArray[np.float64],
+    m: int,
+    kmax: int,
+    dist_code: int,
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+    is_class: bool,
+) -> NDArray[np.float64]: ...

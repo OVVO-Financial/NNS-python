@@ -47,6 +47,7 @@ from nns._labels import (
     response_values,
     split_columns,
 )
+from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import (
     _mreg_predict_path,
     _mreg_prepare,
@@ -142,6 +143,7 @@ def _scalar_integer(
 # Main entry point
 # --------------------------------------------------------------------------
 
+@honours_ncores
 def nns_stack(
     ivs_train: NDArray[Any],
     dv_train: NDArray[Any],
@@ -240,7 +242,9 @@ def nns_stack(
     if auto_class and type is None:
         type = "class"
     if balance and type is None:
-        warnings.warn("type = 'CLASS' selected because balance = TRUE.", stacklevel=2)
+        warnings.warn(
+            "type = 'CLASS' selected because balance = TRUE.", stacklevel=external_stacklevel()
+        )
         type = "class"
     is_class = type == "class"
 
@@ -285,7 +289,7 @@ def nns_stack(
         warnings.warn(
             "Method 2 was removed because dimension reduction requires more than "
             "one original predictor.",
-            stacklevel=2,
+            stacklevel=external_stacklevel(),
         )
         methods = [m for m in methods if m != 2] or [1]
 
@@ -480,7 +484,7 @@ def nns_stack(
             if use_folds < folds_value:
                 warnings.warn(
                     f"Only {use_folds} non-overlapping chronological fold(s) are available.",
-                    stacklevel=2,
+                    stacklevel=external_stacklevel(),
                 )
             starts = n_obs - np.arange(use_folds, 0, -1) * ts_test_value
             out = []
@@ -544,7 +548,7 @@ def nns_stack(
         if use_folds < folds_value:
             warnings.warn(
                 f"Cross-validation folds reduced to {use_folds} for the available data.",
-                stacklevel=2,
+                stacklevel=external_stacklevel(),
             )
         fold_id = np.zeros(n_obs, dtype=np.int64)
         if is_class:

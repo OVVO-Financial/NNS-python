@@ -74,6 +74,10 @@
         ]
       ]
     },
+    "38611d39f1eb62529861e725364e4ead4131d7cd939acf8e2b8fd04302f4b0ae": {
+      "Correlation": 0.215232866845951,
+      "Dependence": 0.576540419155684
+    },
     "3ad744d8ae07d7cd93ce4c93b4360657aae295f9d1a0bb8221d2f11a68828922": {
       "Correlation": 0.0187526344148372,
       "Dependence": 0.759083016045322
@@ -93,6 +97,18 @@
     "5b0e61c67fc1b4a1ed17daa9aa25f54ff3a04733af69302ec634948cca361926": {
       "Correlation": 0.316399535402824,
       "Dependence": 0.339523946870805
+    },
+    "5bea2b461a70e3833258b12211bfeccda4eac337740ac0fca98b2a8fcd407609": {
+      "Correlation": 0.416901016086743,
+      "Dependence": 0.980695570825862
+    },
+    "61425bd0cf29f26764aa55e48845a15f29e1b5b7f4e7f232c7ac00a42dcefbe0": {
+      "Correlation": 0.0869676690728519,
+      "Dependence": 0.488261691508153
+    },
+    "79019ed53b65d276d15081e211b024fb1f39ec965e64f7db6172e39b6a96c54b": {
+      "Correlation": 0.416901016086743,
+      "Dependence": 0.980695570825862
     },
     "7a4ef6ef1118a258b1953895bbab6ac71120f3e94492adaf34bad98d21865d1a": {
       "Correlation": 0.316399535402824,
@@ -114,9 +130,25 @@
       "Correlation": 0.633952579088874,
       "Dependence": 0.633952579088874
     },
+    "8ca98a3b37455466e555406746f0612bc626509b4118f686b24e742413e80e0d": {
+      "Correlation": 0.215232866845951,
+      "Dependence": 0.543506327777043
+    },
+    "8de8f55d05bd421f39db4ceb2e182f97bd3ef5a8caea2dcc35b33addd5428046": {
+      "Correlation": 0.227167898933558,
+      "Dependence": 0.924658372780148
+    },
     "8e1b5384bb943863a57f13aa3dba7094b82ebf4427d3ee171b67182a5e2d64fd": {
       "Correlation": 0.394149567629753,
       "Dependence": 0.757875550354019
+    },
+    "8e9e7a651cbd1b8ebb796b73d25b776e590191a6faa727168cd3345e45d74abc": {
+      "Correlation": 0.25,
+      "Dependence": 0.25
+    },
+    "90535a64379705e2a58ed4bf6b95cbfaa64cefe5eeaf9f77b9603ed69e0d036e": {
+      "Correlation": 0.0869676690728519,
+      "Dependence": 0.488261691508153
     },
     "90935ed7b26578067dd41346473a121e63d7b80b3a4fe187acf1161129b4e0d5": {
       "Correlation": -0.026679176780182,
@@ -244,9 +276,17 @@
       "Correlation": 0.394149567629753,
       "Dependence": 0.757875550354019
     },
+    "f46e27c426aa1048c6aeb3aa71aabf7e252468f64daf2cc57f3033293f7ba2e9": {
+      "Correlation": 0.227167898933558,
+      "Dependence": 0.924658372780148
+    },
     "f5c58db90c3e64e6e462c069b1f93c5eb2e3ca95a824845ef6ce59174ce2568c": {
       "Correlation": -0.0812271004480446,
       "Dependence": 0.25366978250695
+    },
+    "f7a25f3997877a3b4ac7e7d0226555a2a0959c73aa53e8bcde6ca46eed8b137e": {
+      "Correlation": 0.25,
+      "Dependence": 0.25
     },
     "fbe5d60ed5d50aabf8a2db438c95151b24ec3da340d7ce6de3de1b3d364a952b": {
       "Correlation": 0.424702103711269,

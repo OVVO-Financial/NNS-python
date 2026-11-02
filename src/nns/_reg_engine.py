@@ -45,6 +45,7 @@ from nns._labels import (
     response_values,
     split_columns,
 )
+from nns._native import native_fn
 from nns._rmean import r_mean
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
@@ -53,6 +54,8 @@ Order = int | Literal["max"] | None
 NBest = int | Literal["all"] | None
 
 _EPS_INV = 1e-12
+# NNS-core MregDistance codes (R's dist argument of the M.reg kernels).
+_MREG_DIST_CODES = {"NNS": 0, "L2": 1, "L1": 2, "FACTOR": 3}
 
 
 # --------------------------------------------------------------------------
@@ -1221,6 +1224,15 @@ def _mreg_predict(
 
     n = rpm_x.shape[0]
     k = min(int(k), n)
+    native = native_fn("mreg_predict")
+    if native is not None and k >= 1 and _native_mreg_is_exact(xtest, mins, maxs, k, dist):
+        # R's NNS_mreg_predict_v2_cpp, ported to NNS-core; equal to the NumPy
+        # code below to floating-point rounding.
+        return np.asarray(
+            native(*_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs), k,
+                   _MREG_DIST_CODES[dist], *_native_mreg_ranges(mins, maxs), is_class),
+            dtype=np.float64,
+        )
     out = np.empty(xtest.shape[0], dtype=np.float64)
 
     chunk = max(1, int(1_000_000 // max(n, 1)))
@@ -1261,6 +1273,14 @@ def _mreg_predict_path(
     n = rpm_x.shape[0]
     kmax = min(int(kmax), n)
     m = xtest.shape[0]
+    native = native_fn("mreg_predict_path")
+    if native is not None and kmax >= 1 and _native_mreg_is_exact(xtest, mins, maxs, kmax, dist):
+        # R's NNS_mreg_predict_path_v2_cpp, ported to NNS-core.
+        return np.asarray(
+            native(*_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs), kmax,
+                   _MREG_DIST_CODES[dist], *_native_mreg_ranges(mins, maxs), False),
+            dtype=np.float64,
+        )
     out = np.empty((m, kmax), dtype=np.float64)
 
     # Stream the queries in row-chunks so the query-by-RPM distance matrix is
@@ -1282,6 +1302,77 @@ def _mreg_predict_path(
             w = _mreg_ensemble_weights(d_sorted[:, :k])
             out[rows, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
     return out
+
+
+def _native_mreg_is_exact(
+    xtest: NDArray[np.float64],
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+    kmax: int,
+    dist: str,
+) -> bool:
+    """Whether NNS-core's M.reg kernels reproduce R's to floating-point rounding.
+
+    The kernels evaluate the Student-t ensemble weight as the closed form
+    (1 + d^2/k)^(-(k+1)/2), while R (and the NumPy path, through SciPy) uses
+    Rmath's dt. The two differ only where the density underflows, i.e. for
+    distances far outside the training ranges. Bound every distance from the
+    per-column normalised deviations of the queries and keep the exponent well
+    away from the double underflow (about 745); otherwise use the NumPy path.
+    """
+    if dist == "FACTOR" or xtest.size == 0:
+        return True
+    ranges = maxs - mins
+    active = np.isfinite(ranges) & (ranges > 0)
+    if not np.any(active):
+        return True
+    test = xtest[:, active]
+    with np.errstate(over="ignore", invalid="ignore"):
+        dev = np.maximum(np.abs(test - mins[active]), np.abs(test - maxs[active])) / ranges[active]
+    z = float(np.max(dev))
+    count = int(np.count_nonzero(active))
+    if dist == "NNS":
+        bound = count * (z + z * z)
+    elif dist == "L1":
+        bound = count * z
+    else:
+        bound = math.sqrt(count) * z
+    if not math.isfinite(bound):
+        return False
+    k = max(int(kmax), 2)
+    return 0.5 * (k + 1) * math.log1p(bound * bound / k) < 500.0
+
+
+def _native_mreg_args(
+    rpm_x: NDArray[np.float64],
+    rpm_yhat: NDArray[np.float64],
+    xtest: NDArray[np.float64],
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+) -> tuple[Any, ...]:
+    """Leading (rpm_x, n, p, yhat, xtest, m) arguments of the native M.reg kernels."""
+    rpm = np.asarray(rpm_x, dtype=np.float64)
+    test = np.asarray(xtest, dtype=np.float64)
+    p = rpm.shape[1] if rpm.ndim == 2 else -1
+    if test.ndim != 2 or not p == test.shape[1] == mins.size == maxs.size:
+        raise ValueError("Prediction data and the fitted RPM have incompatible dimensions.")
+    return (
+        np.ascontiguousarray(rpm.ravel(order="F")),
+        rpm.shape[0],
+        rpm.shape[1],
+        np.ascontiguousarray(rpm_yhat, dtype=np.float64),
+        np.ascontiguousarray(test.ravel(order="F")),
+        test.shape[0],
+    )
+
+
+def _native_mreg_ranges(
+    mins: NDArray[np.float64], maxs: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    return (
+        np.ascontiguousarray(mins, dtype=np.float64),
+        np.ascontiguousarray(maxs, dtype=np.float64),
+    )
 
 
 def _find_interval(

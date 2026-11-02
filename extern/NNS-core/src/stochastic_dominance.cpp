@@ -219,7 +219,7 @@ std::vector<int> dom_matrix_for_order(const std::vector<ColPre>& cols,
                                    degree, discrete);
       }
     }
-  }, nthreads);
+  }, nthreads, p * (cols.empty() ? 1U : static_cast<std::size_t>(cols[0].m) + 1U));
   return dom;
 }
 

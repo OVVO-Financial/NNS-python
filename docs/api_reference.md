@@ -92,6 +92,8 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Differentiation | `dy_d` | `dy.d_` | partial | Multivariate derivative helper. |
 | VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR; scalar or vector `percentile`. |
 | VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR; scalar or vector `percentile`. |
+| Native threads | `set_num_threads` | `ncores` (per call) | Python-only | Default native thread count; `None` = `NNS_NUM_THREADS` or the hardware count. See conventions, Threads. |
+| Native threads | `get_num_threads` | - | Python-only | Current default native thread count. |
 
 ## Reference by API area
 

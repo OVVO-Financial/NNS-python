@@ -191,25 +191,34 @@ bool is_discrete(const double* x, std::size_t n) {
 
 // ---------- Vector Generation ----------
 
-TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* lags, std::size_t num_lags) {
+TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* lags, std::size_t num_lags,
+                                   long long len) {
+  if (len > static_cast<long long>(n))
+    throw std::invalid_argument("generate_vectors: `len` must not exceed the length of x");
+  if (len >= 0) n = static_cast<std::size_t>(len);
   TimeSeriesVectors res;
   res.series.resize(num_lags);
   res.index.resize(num_lags);
   
+  // Signed 64-bit arithmetic throughout: with size_t n, `n - start`
+  // underflowed for lag > n and requested a near-SIZE_MAX allocation.
+  const long long nn = static_cast<long long>(n);
   for (std::size_t t = 0; t < num_lags; ++t) {
-    int lag = lags[t];
+    const long long lag = lags[t];
     if (lag <= 0) continue;
     
-    int start = (n % lag) + 1;
-    int m = ((n - start) / lag) + 1;
+    // Positions start, start + lag, ... <= n (1-based). For lag > n the
+    // component is empty (start = n + 1).
+    const long long start = (nn % lag) + 1;
+    const long long m = (start > nn) ? 0 : ((nn - start) / lag) + 1;
     
-    std::vector<double> s(m);
-    std::vector<int> idx(m);
+    std::vector<double> s(static_cast<std::size_t>(m));
+    std::vector<int> idx(static_cast<std::size_t>(m));
     
-    int pos = start;
-    for (int i = 0; i < m; ++i, pos += lag) {
-      s[i] = x[pos - 1];
-      idx[i] = i + 1;
+    long long pos = start;
+    for (long long i = 0; i < m; ++i, pos += lag) {
+      s[static_cast<std::size_t>(i)] = x[pos - 1];
+      idx[static_cast<std::size_t>(i)] = static_cast<int>(i + 1);
     }
     res.series[t] = std::move(s);
     res.index[t] = std::move(idx);
@@ -218,20 +227,26 @@ TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* la
 }
 
 ForecastVectors generate_lin_vectors(const double* x, std::size_t n, int l, int h) {
+  // l is a modulus below (l = 0 is SIGFPE in R 13.3); a negative h used to
+  // resize the result vectors to a huge size_t.
+  if (l < 1) throw std::invalid_argument("generate_lin_vectors: `l` must be a positive integer");
+  if (h < 0) throw std::invalid_argument("generate_lin_vectors: `h` must be non-negative");
+  const long long nn = static_cast<long long>(n);
   int max_fcast = std::min(h, l);
   ForecastVectors res;
   res.series.resize(max_fcast);
   res.index.resize(max_fcast);
   
   for (int i = 1; i <= max_fcast; ++i) {
-    int start = ((n + i - 1) % l) + 1;
-    int m = ((n - start) / l) + 1;
-    std::vector<double> s(m);
-    std::vector<int> idx(m);
-    int pos = start;
-    for (int k = 0; k < m; ++k, pos += l) {
-      s[k] = x[pos - 1];
-      idx[k] = k + 1;
+    const long long start = ((nn + i - 1) % l) + 1;
+    // start > n (l > n): empty component, see generate_vectors.
+    const long long m = (start > nn) ? 0 : ((nn - start) / l) + 1;
+    std::vector<double> s(static_cast<std::size_t>(m));
+    std::vector<int> idx(static_cast<std::size_t>(m));
+    long long pos = start;
+    for (long long k = 0; k < m; ++k, pos += l) {
+      s[static_cast<std::size_t>(k)] = x[pos - 1];
+      idx[static_cast<std::size_t>(k)] = static_cast<int>(k + 1);
     }
     res.series[i - 1] = std::move(s);
     res.index[i - 1] = std::move(idx);

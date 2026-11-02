@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pip install -U pip
           python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy
-          python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install hypothesis pytest-benchmark pytest-xdist pandas
 
       - name: Install package editable
         run: python -m pip install -e .
@@ -50,6 +50,16 @@ jobs:
 
       - name: Run parity from committed R cache
         run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+
+      - name: Run invariants and cached parity with the pure-Python fallbacks
+        # NNS_DISABLE_NATIVE=1 makes nns._native report no extension, so every
+        # public function takes its NumPy fallback, as an install without the
+        # compiled extension would. Tests that call nns._nnscore
+        # directly still run against the extension.
+        env:
+          NNS_DISABLE_NATIVE: "1"
+          NNS_R_CACHE_ONLY: "1"
+        run: python -m pytest -q tests/invariants tests/parity
 
       - name: Run property tests
         run: python -m pytest -q tests/property

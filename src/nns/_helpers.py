@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import native_fn
+from nns._native import external_stacklevel, native_fn
 
 
 def _warn_unsupported(**was_set: bool) -> None:
@@ -20,7 +20,7 @@ def _warn_unsupported(**was_set: bool) -> None:
             f"{', '.join(ignored)}: accepted for R NNS API compatibility "
             "but not implemented in NNS Python; ignored.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=external_stacklevel(),
         )
 
 
