@@ -218,6 +218,8 @@ _TREND_SEASONAL = np.round(
         (_TREND_SEASONAL, 4, False, 2, 12, "nonlin", True),
         (_TREND_SEASONAL, 4, False, 2, None, "nonlin", True),
         (_TREND_SEASONAL, 3, True, None, None, "nonlin", False),
+        # A plain trend: NNS.seas returns only the no-seasonality row (lag 1).
+        (np.arange(1.0, 101.0), 2, True, 1, None, "nonlin", False),
     ],
 )
 def test_nns_arma_degenerate_weights_match_r(
