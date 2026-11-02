@@ -69,7 +69,7 @@ def _relationship(
 
 @pytest.mark.parity
 def test_nns_copula_default_target_uses_r_col_means() -> None:
-    # REG-10: np.mean(x) is 0.4999999999999999 here, R colMeans(x) is 0.5, and four
+    # np.mean(x) is 0.4999999999999999 here, R colMeans(x) is 0.5, and four
     # observations sit exactly on 0.5. The last ulp decides whether they count as
     # lower (all points concordant, R's shortcut returns 1) or upper (0.882).
     x = np.array(

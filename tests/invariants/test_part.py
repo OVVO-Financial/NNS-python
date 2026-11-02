@@ -92,7 +92,7 @@ def test_nns_part_rejects_non_numeric_order(bad: object) -> None:
 @pytest.mark.parametrize("part_type", [None, "XONLY"])
 def test_nns_part_huge_order_equals_reachable_depth(noise: str, part_type: str | None) -> None:
     # The depth is capped at floor(log2(n)); a huge requested order must give the
-    # same map without allocating labels as wide as the order (DEP-17).
+    # same map without allocating labels as wide as the order.
     rng = np.random.default_rng(5)
     x = rng.normal(size=1000)
     y = rng.normal(size=1000)

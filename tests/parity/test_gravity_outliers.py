@@ -1,4 +1,4 @@
-"""DEP-10: partitions on data whose gravity histogram exceeds 1e6 bins.
+"""Partitions on data whose gravity histogram exceeds 1e6 bins.
 
 The native gravity_exact kernel clips its dense histogram at 1e6 bins, which
 moves the mode term onto the outlier; R does not cap. These cases have a single

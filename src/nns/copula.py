@@ -166,7 +166,7 @@ def _r_col_means(values: NDArray[np.float64]) -> NDArray[np.float64]:
     R accumulates each column sequentially in long double and divides in long
     double before rounding to double. ``np.mean`` uses pairwise double summation
     and can differ in the last ulp, which is enough to flip the copula's
-    exact-equality shortcut when an observation sits on the mean (REG-10).
+    exact-equality shortcut when an observation sits on the mean.
     On platforms where ``np.longdouble`` is plain double this degrades to a
     sequential double sum.
     """

@@ -391,7 +391,7 @@ def _gravity(x: NDArray[np.float64]) -> float:
 
     The native ``gravity_exact`` kernel is bit-identical to the Python code below
     except that it clips its dense histogram at 1e6 bins (R does not), which moves
-    the mode term onto outliers (DEP-10). It is used only when the bin count is
+    the mode term onto outliers. It is used only when the bin count is
     provably below that cap.
     """
     values = np.asarray(x, dtype=np.float64).reshape(-1)
