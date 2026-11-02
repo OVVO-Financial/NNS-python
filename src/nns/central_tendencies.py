@@ -163,7 +163,9 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
             centers[t] = _weighted_bin_mean(names[lo : hi + 1], counts[lo : hi + 1])
         if multi:
             return np.sort(centers)
-        return np.array([centers[int(np.argmax(smoothed[kept]))]], dtype=np.float64)
+        # Equally high peaks are averaged, as the tied-bin rule below does.
+        heights = smoothed[kept]
+        return np.array([_long_double_mean(centers[heights == heights.max()])], dtype=np.float64)
 
     tied = np.flatnonzero(counts == max_count)
     if tied.size > 1:

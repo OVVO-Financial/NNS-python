@@ -55,10 +55,14 @@ def _vectors() -> list[np.ndarray]:
 
 @pytest.mark.parametrize("discrete", [False, True])
 @pytest.mark.parametrize("multi", [False, True])
-def test_mode_fallback_is_bit_identical_to_native(discrete: bool, multi: bool) -> None:
+def test_mode_fallback_is_bit_identical_to_native(
+    discrete: bool, multi: bool, request: pytest.FixtureRequest
+) -> None:
     native = native_fn("mode")
     if native is None:
         pytest.skip("native extension not available")
+    if not discrete and not multi:
+        request.applymarker(pytest.mark.xfail(strict=True, reason="needs core mode tie averaging"))
     fallback = _discrete_mode if discrete else _continuous_mode
     for x in _vectors():
         expected = np.asarray(native(np.ascontiguousarray(x), discrete, multi))
@@ -78,3 +82,12 @@ def test_gravity_fallback_keeps_signed_zeros_like_native() -> None:
         got = _gravity_python(values)
         assert got == expected
         assert np.signbit(got) == np.signbit(expected)
+
+
+def test_continuous_mode_averages_equally_high_peaks() -> None:
+    x = np.repeat(np.arange(20, dtype=np.float64), 400)
+
+    single = _continuous_mode(x, False)[0]
+
+    assert single == pytest.approx(float(np.mean(_continuous_mode(x, True))), rel=1e-12)
+    assert single == pytest.approx(9.441176, abs=1e-6)  # R's NNS.mode(x, multi = FALSE)
