@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import math
+from numbers import Real
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
-from nns._native import honours_ncores
+from nns._native import honours_ncores, native_fn
 from nns.co_moments import co_lpm, co_upm
 from nns.dependence import _gravity
 from nns.mc import nns_mc
@@ -77,7 +78,6 @@ def nns_arma_optim(
     previous_estimates: list[NDArray[np.float64]] = []
     overall_seasonals: list[NDArray[np.int64]] = []
     overall_estimates: list[float] = []
-    nonlin_predicted = np.array([], dtype=np.float64)
 
     for method in methods:
         current_seasonals: list[NDArray[np.int64]] = []
@@ -132,19 +132,20 @@ def nns_arma_optim(
                     negative_values,
                     None,
                 )
-                nonlin_predicted = predicted
                 estimates = np.asarray([float(objective_fn(predicted, actual))], dtype=np.float64)
             elif method == "both" and linear_approximation:
-                lin_predicted = _arma_optim_prediction(
+                # Score the model that is returned: NNS.ARMA(method="both")
+                # averages lin and nonlin inside the recursion, which differs from the
+                # average of the separately forecast lin and nonlin paths.
+                predicted = _arma_optim_prediction(
                     values,
                     train_n,
                     h_eval,
                     overall_seasonals[0],
-                    "lin",
+                    "both",
                     negative_values,
                     None,
                 )
-                predicted = (lin_predicted + nonlin_predicted) / 2.0
                 estimates = np.asarray([float(objective_fn(predicted, actual))], dtype=np.float64)
             else:
                 estimates = np.asarray(
@@ -229,23 +230,32 @@ def nns_arma_optim(
     bias_score = float(objective_fn(predicted_shifted, actual))
 
     if nns_periods.size > 1:
-        weight_score = float(objective_fn(predicted, actual))
-        if _improves(weight_score, nns_score, objective_l):
-            nns_weights = np.full(nns_periods.size, 1.0 / float(nns_periods.size), dtype=np.float64)
-            predicted = _arma_optim_prediction(
-                values,
-                train_n,
-                h_eval,
-                nns_periods,
-                nns_method,
-                negative_values,
-                nns_weights,
-            )
+        # Candidate: equal weights across the selected periods (the
+        # score used to come from the weights=None forecast, so equal weights could
+        # never be chosen).
+        equal_weights = np.full(nns_periods.size, 1.0 / float(nns_periods.size))
+        equal_predicted = _arma_optim_prediction(
+            values,
+            train_n,
+            h_eval,
+            nns_periods,
+            nns_method,
+            negative_values,
+            equal_weights,
+        )
+        weight_score = float(objective_fn(equal_predicted, actual))
+        if math.isnan(weight_score):
+            weight_score = math.inf if objective_l == "min" else -math.inf
+        if _improves_or_ties_bias(weight_score, nns_score, objective_l):
+            nns_weights = equal_weights
+            predicted = equal_predicted
             errors = predicted - actual
             bias = _finite_gravity(errors)
             predicted_shifted = predicted - bias
             bias_score = float(objective_fn(predicted_shifted, actual))
-            if not np.isfinite(bias_score) or not _improves(bias_score, weight_score, objective_l):
+            if math.isnan(bias_score) or (
+                bias_score > weight_score if objective_l == "min" else bias_score <= weight_score
+            ):
                 bias = 0.0
         elif not np.isfinite(bias_score) or not _improves_or_ties_bias(
             bias_score, nns_score, objective_l
@@ -287,10 +297,14 @@ def nns_arma_optim(
     smooth_score = float(objective_fn(smooth_predicted, actual))
     nns_regress = _improves(smooth_score, nns_score, objective_l)
     if nns_regress:
-        values = regressed_values
         final_predicted = smooth_predicted
+    del final_predicted
 
-    del final_predicted, values
+    # Apply the nns.regress decision: it was tested on the smoothed
+    # series with shrink=True, so the returned forecast uses the same inputs.
+    final_values = regressed_values if nns_regress else original_values
+    if nns_regress:
+        nns_shrink = True
 
     pi_width = (
         None
@@ -301,7 +315,7 @@ def nns_arma_optim(
     if h_oos is None:
         result_h = h_eval
         model_results = _arma_optim_prediction(
-            original_values,
+            final_values,
             train_n,
             result_h,
             nns_periods,
@@ -313,7 +327,7 @@ def nns_arma_optim(
     else:
         result_h = h_oos
         model_results = _arma_optim_prediction(
-            original_values,
+            final_values,
             None,
             result_h,
             nns_periods,
@@ -376,9 +390,7 @@ def nns_arma(
     """Autoregressive NNS forecast matching R's installed NNS.ARMA behavior."""
     del seasonal_plot  # R plotting side effect; NNS Python returns data instead.
 
-    horizon = int(h)
-    if horizon < 1:
-        raise ValueError("h must be a positive integer.")
+    horizon = _arma_horizon(h)
     values = _as_variable(variable)
     if seasonal_factor is None:
         # R: !is.numeric(NULL) with a non-NULL best.periods turns seasonal.factor into FALSE.
@@ -429,13 +441,6 @@ def nns_arma(
         )
 
     estimates = np.zeros(horizon, dtype=np.float64)
-    if not _is_numeric_seasonal(seasonal_factor) and np.ptp(values) == 0.0:
-        return _finish(_with_prediction_intervals(
-            estimates,
-            lin_residual=0.0,
-            pred_int=pred_int,
-            random_seed=random_seed,
-        ))
     lags, lag_weights = _resolve_lags_and_weights(
         values,
         seasonal_factor=seasonal_factor,
@@ -472,6 +477,9 @@ def nns_arma(
     buffer[: values.size] = values
     current_len = values.size
     lin_regression_estimates = np.array([], dtype=np.float64)
+    # 1..N for the component indices: a prefix slice holds the same values as
+    # np.arange(1, m + 1) without allocating one per lag and step.
+    index_pool = np.arange(1, buffer.size + 1, dtype=np.float64)
     for index in range(horizon):
         current = buffer[:current_len]
         if dynamic:
@@ -484,9 +492,11 @@ def nns_arma(
                 mod_only=mod_only,
             )
 
-        generated = _generate_vectors(current, lags)
-        component_index = generated["Component.index"]
-        component_series = generated["Component.series"]
+        needs_components = method_l in {"nonlin", "both", "means"} or shrink
+        if needs_components:
+            generated = _generate_vectors(current, lags)
+            component_index = generated["Component.index"]
+            component_series = generated["Component.series"]
 
         nonlin_estimate = math.nan
         if method_l in {"nonlin", "both"}:
@@ -497,20 +507,16 @@ def nns_arma(
                 ],
                 dtype=np.float64,
             )
-            regression_estimates = np.maximum(0.0, regression_estimates)
+            if not negative_values:
+                # Honour negative_values like the linear branch.
+                regression_estimates = np.maximum(0.0, regression_estimates)
             nonlin_estimate = float(np.sum(regression_estimates * lag_weights))
 
         lin_estimate = math.nan
         # R also runs the linear fits for method="nonlin" when pred.int is set: the
         # interval residual lin.resid comes from them.
         if method_l in {"lin", "both", "means"} or pred_int is not None:
-            linear_estimates = np.asarray(
-                [
-                    _linear_forecast_for_lag(component_index[i], component_series[i])
-                    for i in range(lags.size)
-                ],
-                dtype=np.float64,
-            )
+            linear_estimates = _linear_forecasts(current, lags, index_pool)
             if method_l == "means" or shrink:
                 means = np.asarray(
                     [_means_forecast_for_lag(series) for series in component_series],
@@ -526,14 +532,17 @@ def nns_arma(
                 lin_estimate = float(np.maximum(0.0, lin_estimate))
             lin_regression_estimates = linear_estimates
 
+        # lin_estimate / nonlin_estimate are already weighted sums over the lags
+        # (the weights used to be applied a second time here).
         if method_l == "lin":
-            estimate = float(np.sum(lin_estimate * lag_weights))
+            estimate = lin_estimate
         elif method_l == "both":
             estimate = float(np.mean(np.array([lin_estimate, nonlin_estimate], dtype=np.float64)))
         elif method_l == "nonlin":
-            estimate = float(np.sum(nonlin_estimate * lag_weights))
+            estimate = nonlin_estimate
         else:
-            estimate = 0.0
+            # method="means": the weighted seasonal means (was 0).
+            estimate = lin_estimate
 
         estimates[index] = estimate
         buffer[current_len] = estimate
@@ -756,6 +765,21 @@ def _format_r_percent(value: float) -> str:
     return text if text != "-0" else "0"
 
 
+def _arma_horizon(h: object) -> int:
+    """R's ``[h] must be a positive integer.`` check.
+
+    ``h`` must be one finite whole number >= 1: 13.3 ran ``for (j in 1:h)``, so
+    ``h = 0`` returned one forecast and a fractional ``h`` was silently truncated
+    (as ``int(h)`` did here).
+    """
+    if isinstance(h, (bool, np.bool_)) or not isinstance(h, Real):
+        raise ValueError("[h] must be a positive integer.")
+    value = float(h)
+    if not math.isfinite(value) or value < 1 or value != round(value):
+        raise ValueError("[h] must be a positive integer.")
+    return int(value)
+
+
 def _is_numeric_seasonal(value: object) -> bool:
     return not isinstance(value, (bool, np.bool_))
 
@@ -781,7 +805,7 @@ def _resolve_lags_and_weights(
         if weights is None:
             lag_weights = _numeric_seasonal_weights(variable, lags)
         elif isinstance(weights, str):
-            raise TypeError("non-numeric weights are not supported with numeric seasonal_factor.")
+            lag_weights = _equal_weights(lags)
         else:
             lag_weights = _user_lag_weights(weights, lags)
         return lags, lag_weights
@@ -797,9 +821,12 @@ def _resolve_lags_and_weights(
         varcoef = np.asarray(table["Variable.Coefficient.of.Variation"], dtype=np.float64).reshape(
             -1
         )
-        if bool(seasonal_factor):
+        if bool(seasonal_factor) and best_periods is None:
             lags, lag_weights = _arma_seas_weighting(True, periods, coef, varcoef)
         else:
+            # R turns seasonal.factor = TRUE into FALSE whenever best.periods is set
+            # (the default best.periods = 1 then selects the best period, as TRUE does),
+            # so TRUE with best_periods = k weights the k best periods.
             if best_periods is not None:
                 count = min(int(best_periods), periods.size)
                 periods = periods[:count]
@@ -809,22 +836,30 @@ def _resolve_lags_and_weights(
 
     if weights is not None:
         if isinstance(weights, str):
-            lag_weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+            lag_weights = _equal_weights(lags)
         else:
             lag_weights = _user_lag_weights(weights, lags)
     return lags, lag_weights
 
 
+def _equal_weights(lags: NDArray[np.int64]) -> NDArray[np.float64]:
+    return np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+
+
 def _user_lag_weights(
     weights: NDArray[np.float64] | float, lags: NDArray[np.int64]
 ) -> NDArray[np.float64]:
+    """One weight per lag, used as relative weights (rescaled to sum to 1) like R."""
     lag_weights = np.asarray(weights, dtype=np.float64).reshape(-1)
     if lag_weights.size != lags.size:
         raise ValueError(
             f"weights has {lag_weights.size} element(s) but there are {lags.size} seasonal "
             f"lag(s) {lags.tolist()}; supply one weight per lag."
         )
-    return lag_weights
+    total = float(np.sum(lag_weights))
+    if not np.all(np.isfinite(lag_weights)) or total == 0.0:
+        raise ValueError("weights must be finite and must not sum to 0.")
+    return lag_weights / total
 
 
 def _numeric_seasonal_weights(
@@ -850,13 +885,19 @@ def _numeric_seasonal_weights(
         # relative 0 -> 1/relative = Inf -> Inf/Inf = NaN in the normalisation below,
         # poisoning the forecast. Floor relative so that (maximally seasonal) lag gets a
         # large but finite weight. A fully constant series (baseline CV 0 -> relative
-        # NaN) is intentionally left to propagate NaN, matching the R reference.
+        # NaN) is handled after the normalisation.
         floor = np.finfo(np.float64).eps
         seasonal_weighting = 1.0 / np.maximum(relative, floor)
 
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
     denom = float(np.sum(observation_weighting * seasonal_weighting))
-    return (seasonal_weighting * observation_weighting) / denom
+    with np.errstate(invalid="ignore", divide="ignore"):
+        weights = (seasonal_weighting * observation_weighting) / denom
+    if not np.all(np.isfinite(weights)):
+        # A constant series has CV 0/0 for every lag: weight the lags equally instead
+        # of propagating NaN into the forecast, as the patched R does.
+        weights = np.full(lags.size, 1.0 / float(lags.size), dtype=np.float64)
+    return weights
 
 
 def _arma_seas_weighting(
@@ -876,10 +917,13 @@ def _arma_seas_weighting(
     lag_weighting = variable_coefficient[:m] - coefficient[:m]
     weights_product = lag_weighting * observation_weighting[:m]
     denom = float(np.sum(weights_product))
-    if denom == 0.0:
-        lag_weights = np.zeros(weights_product.size, dtype=np.float64)
-    else:
+    with np.errstate(invalid="ignore", divide="ignore"):
         lag_weights = weights_product / denom
+    if lag_weights.size and (np.all(lag_weights == 0.0) or not np.all(np.isfinite(lag_weights))):
+        # Every selected row has CV == VarCV (no-seasonality sentinel, modulo-added
+        # periods, a constant series): the weights are 0/0. The patched R uses
+        # equal weights instead of zeros, which forced a forecast of 0.
+        lag_weights = np.full(m, 1.0 / float(m), dtype=np.float64)
     return lags[:m], lag_weights
 
 
@@ -984,6 +1028,35 @@ def _linear_static_numeric_forecast(
     if not negative_values:
         output = np.maximum(0.0, output)
     return output, component_estimates
+
+
+def _linear_forecasts(
+    current: NDArray[np.float64],
+    lags: NDArray[np.int64],
+    index_pool: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """``_linear_forecast_for_lag`` over every lag, without the per-lag overhead.
+
+    Same component series, same index values and the same native ``fast_lm``
+    call as ``_generate_vectors`` + ``_linear_forecast_for_lag``, so the result is
+    bit-identical; only the Python-level copies and validation are skipped. Falls
+    back to the general path when the native kernel is missing or a component is
+    empty (which raises there).
+    """
+    native_fast_lm = native_fn("fast_lm")
+    n = current.size
+    out = np.empty(lags.size, dtype=np.float64)
+    for i, lag_raw in enumerate(lags.tolist()):
+        lag = int(lag_raw)
+        series = current[n % lag :: lag] if lag > 0 else current[:0]
+        m = series.size
+        if native_fast_lm is None or m == 0:
+            index = index_pool[:m] if m else np.array([], dtype=np.float64)
+            out[i] = _linear_forecast_for_lag(index, series.astype(np.float64, copy=True))
+            continue
+        coef = native_fast_lm(index_pool[:m], np.ascontiguousarray(series))["coef"]
+        out[i] = float(coef[0]) + float(coef[1]) * (float(m) + 1.0)
+    return out
 
 
 def _linear_forecast_for_lag(

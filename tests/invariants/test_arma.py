@@ -363,12 +363,36 @@ def test_arma_degenerate_objective_returns_nan_without_warning() -> None:
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
-def test_arma_constant_numeric_seasonal_weights_return_nan_without_warning() -> None:
+def test_arma_constant_numeric_seasonal_weights_are_equal_without_warning() -> None:
+    # Patched R: a constant series (CV 0/0 for every lag) gets equal weights.
     values = np.full(20, 5.0, dtype=np.float64)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
-        result = _numeric_seasonal_weights(values, np.array([4], dtype=np.int64))
+        result = _numeric_seasonal_weights(values, np.array([4, 6], dtype=np.int64))
 
-    assert np.isnan(result).all()
+    np.testing.assert_array_equal(result, [0.5, 0.5])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_linear_forecasts_match_component_path_bitwise(native: bool) -> None:
+    rng = np.random.default_rng(41)
+    current = np.cumsum(rng.normal(size=137)) + 50.0
+    lags = np.array([1, 2, 5, 12, 24, 136, 137], dtype=np.int64)
+    pool = np.arange(1, 400, dtype=np.float64)
+    generated = arma_module._generate_vectors(current, lags)
+    expected = [
+        arma_module._linear_forecast_for_lag(
+            generated["Component.index"][i], generated["Component.series"][i]
+        )
+        for i in range(lags.size)
+    ]
+    if native:
+        actual = arma_module._linear_forecasts(current, lags, pool)
+    else:
+        with mock.patch.object(arma_module, "native_fn", return_value=None):
+            actual = arma_module._linear_forecasts(current, lags, pool)
+    np.testing.assert_array_equal(actual, np.asarray(expected))
+    with pytest.raises(ValueError, match="non-empty"):
+        arma_module._linear_forecasts(current, np.array([200], dtype=np.int64), pool)

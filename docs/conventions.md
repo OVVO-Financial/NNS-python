@@ -437,16 +437,17 @@ recursive: each estimate is appended before the next horizon step. Plot
 arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`; exact
 stochastic parity with R is not expected because RNG streams differ.
 `random_seed` is a NNS Python-only convenience for reproducible interval tests.
-No-`pred_int` deterministic forecasts are parity-tested except where NNS Python
-intentionally uses a more direct seasonal-lag weighting convention.
-`seasonal_factor=True` uses only the first detected period from `nns_seas`,
-matching `ARMA.seas.weighting(TRUE, ...)`; `seasonal_factor=False` uses the
-selected `best_periods` rows. `dynamic=True` with numeric seasonal factors
-raises with R's static-seasonality error. Constant-series behavior follows
-installed R, including zero forecasts for automatic seasonality paths and `NaN`
-forecasts for some explicit numeric-lag paths. Character `weights` with numeric
-multi-lag seasonal factors is rejected because installed R errors during numeric
-multiplication on that path. Explicit numeric multi-lag seasonal factors weight
+No-`pred_int` deterministic forecasts are parity-tested against R.
+As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
+`seasonal_factor=False`: it weights the `best_periods` best periods from
+`nns_seas` (the default `best_periods=1` selects the best period).
+`seasonal_factor=True, best_periods=None` uses the first detected period
+(weight 1), and `seasonal_factor=False, best_periods=None` weights all periods. `dynamic=True` with numeric seasonal factors
+raises with R's static-seasonality error. Where the lag weights are `0/0` (a
+constant series, or selected periods whose CV equals the variable CV), the
+weights fall back to equal weights as in the patched R, so a constant series
+forecasts its constant. Character `weights` such as `"equal"` weight every lag
+equally, including with numeric multi-lag seasonal factors. Explicit numeric multi-lag seasonal factors weight
 each lag by the coefficient of variation of that lag's own reverse component
 series, as installed R does (`seasonal.factor[i]`).
 
@@ -478,8 +479,10 @@ variables are found as in NNS 11.6: the dimension reduction threshold is
 cross-validated on the last `max(2h, ceil(0.2 n))` lagged training rows, and
 the regressors whose coefficient meets it are kept. The multivariate estimate is
 `nns_stack(method=1, stack=False)` on exactly those regressors (`nns_reg` with
-each its own dimension and a cross-validated `n_best`), evaluated on the last
-`h` lagged training rows (R's `tail(IV, h)`). `relevant_variables` is that
+each its own dimension and a cross-validated `n_best`), trained on the observed
+lagged rows and evaluated on the `h` forecast-period rows of the lag matrix built
+from the series extended with the univariate forecasts (as in the patched R; 13.3
+evaluated on the last `h` observed rows, an in-sample refit). `relevant_variables` is that
 selection, so it lists exactly the regressors each multivariate estimate is
 built from. `obj_fn` (a `(predicted, actual) -> float` callable) and
 `objective` apply to both stages; without `obj_fn` the default MSE /

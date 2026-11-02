@@ -37,6 +37,15 @@ from nns import nns_arma, nns_arma_optim
         ),
         ("means", np.arange(1, 21, dtype=np.float64), 5, 4, "means", None, 1),
         (
+            "means-multi-lag",
+            np.sin(np.arange(1, 61, dtype=np.float64) / 2.0) + 3.0,
+            4,
+            [6, 12],
+            "means",
+            None,
+            1,
+        ),
+        (
             "auto-seasonal",
             np.sin(np.arange(1, 60, dtype=np.float64) / 3.0)
             + 0.1 * np.arange(1, 60, dtype=np.float64),
@@ -68,6 +77,16 @@ from nns import nns_arma, nns_arma_optim
         ("constant-auto", np.full(20, 5.0), 3, True, "nonlin", None, 1),
         ("constant-explicit", np.full(20, 5.0), 3, 4, "lin", None, 1),
         ("negative-both", np.sin(np.arange(1, 31, dtype=np.float64)), 3, 5, "both", None, 1),
+        (
+            "negative-nonlin-sine",
+            3.0 * np.sin(2.0 * np.pi * np.arange(1, 121, dtype=np.float64) / 12.0)
+            + 0.3 * np.cos(np.arange(1, 121, dtype=np.float64)),
+            12,
+            12,
+            "nonlin",
+            None,
+            1,
+        ),
     ],
 )
 def test_nns_arma_matches_r(
@@ -109,6 +128,142 @@ def test_nns_arma_matches_r(
     )
 
     np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND, equal_nan=True)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("method", ["lin", "nonlin", "both"])
+@pytest.mark.parametrize(
+    ("seasonal_factor", "weights"),
+    [([6, 12], [1.0, 1.0]), ([6, 12], [3.0, 1.0]), (12, [0.5]), ([6, 12], "equal")],
+)
+def test_nns_arma_weights_are_relative_and_applied_once_like_r(
+    method: str, seasonal_factor: Any, weights: Any
+) -> None:
+    # Patched R: weights are applied once, rescaled to sum to 1, and "equal" is
+    # accepted with numeric seasonal factors (c(1, 1) used to give 4x the forecast).
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0) + 0.05 * np.arange(1, 73)
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        3,
+        None,
+        seasonal_factor,
+        weights,
+        1,
+        None,
+        True,
+        False,
+        method,
+        False,
+        False,
+        False,
+        False,
+        None,
+    )
+    actual = nns_arma(
+        variable,
+        h=3,
+        seasonal_factor=seasonal_factor,
+        method=method,
+        weights=weights if isinstance(weights, str) else np.asarray(weights),
+    )
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+
+
+@pytest.mark.parametrize("h", [0, -1, 2.5, float("nan"), float("inf"), True, "3", [2, 3]])
+def test_nns_arma_requires_a_positive_integer_h(h: object) -> None:
+    # Patched R: h = 0 returned one forecast, h = 2.5 was truncated to 2 and
+    # h = -1 failed with "invalid 'length' argument"; R now stops with this message.
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    with pytest.raises(ValueError, match=r"^\[h\] must be a positive integer\.$"):
+        nns_arma(variable, h=h, seasonal_factor=12)  # type: ignore[arg-type]
+
+
+def test_nns_arma_accepts_whole_number_h() -> None:
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    expected = nns_arma(variable, h=3, seasonal_factor=12)
+    for h in (3.0, np.int64(3), np.float64(3.0)):
+        np.testing.assert_array_equal(nns_arma(variable, h=h, seasonal_factor=12), expected)  # type: ignore[arg-type]
+
+
+def test_nns_arma_rejects_bad_weights() -> None:
+    variable = 10.0 + np.sin(np.arange(1, 73, dtype=np.float64) / 2.0)
+    with pytest.raises(ValueError, match="one weight per lag"):
+        nns_arma(variable, h=2, seasonal_factor=[6, 12], weights=np.array([1.0]))
+    with pytest.raises(ValueError, match="must not sum to 0"):
+        nns_arma(variable, h=2, seasonal_factor=[6, 12], weights=np.array([1.0, -1.0]))
+
+
+_WHITE_NOISE = np.round(10.0 + np.random.default_rng(11).standard_normal(120), 6)
+_TREND_SEASONAL = np.round(
+    100.0
+    + 2.0 * np.arange(1, 97, dtype=np.float64)
+    + 15.0 * np.sin(2.0 * np.pi * np.arange(1, 97, dtype=np.float64) / 12.0),
+    6,
+)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("variable", "h", "seasonal_factor", "best_periods", "modulo", "method", "dynamic"),
+    [
+        (_WHITE_NOISE, 4, True, 1, 7, "nonlin", False),
+        (_WHITE_NOISE, 4, True, 1, 5, "lin", False),
+        (np.full(60, 5.0), 3, True, 1, None, "nonlin", False),
+        (np.full(60, 5.0), 3, 12, 1, None, "nonlin", False),
+        (np.full(60, 5.0), 3, [12, 24], 1, None, "both", False),
+        (np.full(60, 5.0), 3, [12, 24], 1, None, "means", False),
+        (np.full(30, -2.0), 2, 7, 1, None, "nonlin", False),
+        (_TREND_SEASONAL, 4, False, 2, 12, "nonlin", True),
+        (_TREND_SEASONAL, 4, False, 2, None, "nonlin", True),
+        (_TREND_SEASONAL, 3, True, None, None, "nonlin", False),
+    ],
+)
+def test_nns_arma_degenerate_weights_match_r(
+    variable: np.ndarray,
+    h: int,
+    seasonal_factor: Any,
+    best_periods: int | None,
+    modulo: int | None,
+    method: str,
+    dynamic: bool,
+) -> None:
+    # Patched R: all-zero seasonal weights (no-seasonality sentinel,
+    # modulo-added periods, constant series) and the NaN weights of a constant series
+    # with a numeric seasonal_factor fall back to equal weights instead of forecasting
+    # 0 or NaN; also the best period for best_periods=None and best_periods /
+    # modulo when dynamic=True (Python already did both).
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        h,
+        None,
+        seasonal_factor,
+        None,
+        best_periods,
+        modulo,
+        True,
+        False,
+        method,
+        dynamic,
+        False,
+        False,
+        False,
+        None,
+    )
+    actual = nns_arma(
+        variable,
+        h=h,
+        seasonal_factor=seasonal_factor,
+        best_periods=best_periods,
+        modulo=modulo,
+        method=method,
+        dynamic=dynamic,
+    )
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+    assert np.all(actual != 0.0)
 
 
 @pytest.mark.parity
@@ -308,6 +463,89 @@ def test_nns_arma_optim_matches_r(
         )
 
 
+def _two_cycle_series(seed: int) -> np.ndarray:
+    t = np.arange(1, 161, dtype=np.float64)
+    noise = np.round(np.random.default_rng(seed).normal(0.0, 1.5, t.size), 8)
+    return 50.0 + 5.0 * np.sin(2.0 * np.pi * t / 12.0) + 4.0 * np.sin(2.0 * np.pi * t / 7.0) + noise
+
+
+_AIR_PASSENGERS_132 = np.array(
+    [
+        112, 118, 132, 129, 121, 135, 148, 148, 136, 119, 104, 118, 115, 126, 141, 135, 125,
+        149, 170, 170, 158, 133, 114, 140, 145, 150, 178, 163, 172, 178, 199, 199, 184, 162,
+        146, 166, 171, 180, 193, 181, 183, 218, 230, 242, 209, 191, 172, 194, 196, 196, 236,
+        235, 229, 243, 264, 272, 237, 211, 180, 201, 204, 188, 235, 227, 234, 264, 302, 293,
+        259, 229, 203, 229, 242, 233, 267, 269, 270, 315, 364, 347, 312, 274, 237, 278, 284,
+        277, 317, 313, 318, 374, 413, 405, 355, 306, 271, 306, 315, 301, 356, 348, 355, 422,
+        465, 467, 404, 347, 305, 336, 340, 318, 362, 348, 363, 435, 491, 505, 404, 359, 310,
+        337, 360, 342, 406, 396, 420, 472, 548, 559, 463, 407, 362, 405,
+    ],
+    dtype=np.float64,
+)
+_AIR_PASSENGERS = np.concatenate(
+    [_AIR_PASSENGERS_132, [417, 391, 419, 461, 472, 535, 622, 606, 508, 461, 390, 432]]
+)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("name", "variable", "h", "training_set", "seasonal_factor", "objective", "approximation"),
+    [
+        # "both" is scored with NNS.ARMA(method="both").
+        ("both-scored", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", True),
+        # Here the separately averaged lin/nonlin paths would pick "both" instead.
+        ("both-scored-full", _AIR_PASSENGERS, 12, None, [1, 2, 12], "min", True),
+        # The equal-weights candidate is evaluated (and chosen here).
+        ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True),
+        # The nns.regress decision is applied to the results (shrink TRUE).
+        ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True),
+        # R now evaluates nonlin/both without the linear approximation.
+        ("exhaustive", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", False),
+    ],
+)
+def test_nns_arma_optim_selection_matches_patched_r(
+    name: str,
+    variable: np.ndarray,
+    h: int | None,
+    training_set: int | None,
+    seasonal_factor: list[int],
+    objective: str,
+    approximation: bool,
+) -> None:
+    del name
+    expected = _dict_any(
+        nns_arma_optim_custom(
+            variable.tolist(),
+            h=h,
+            training_set=training_set,
+            seasonal_factor=seasonal_factor,
+            objective=objective,
+            linear_approximation=approximation,
+        )
+    )
+    actual = nns_arma_optim(
+        variable,
+        h=h,
+        training_set=training_set,
+        seasonal_factor=seasonal_factor,
+        objective=objective,
+        linear_approximation=approximation,
+        print_trace=False,
+    )
+
+    assert actual["method"] == expected["method"]
+    assert bool(actual["shrink"]) == bool(_array_any(expected["shrink"]))
+    assert bool(actual["nns.regress"]) == bool(_array_any(expected["nns.regress"]))
+    if expected["weights"] is None:
+        assert actual["weights"] is None
+    else:
+        np.testing.assert_allclose(actual["weights"], _array_any(expected["weights"]))
+    for key in ("periods", "obj.fn", "bias.shift", "errors", "results", "lower.pred.int"):
+        np.testing.assert_allclose(
+            _array_any(actual[key]), _array_any(expected[key]), atol=COMPOUND, equal_nan=True
+        )
+
+
 @pytest.mark.parity
 def test_nns_arma_optim_without_pred_int_matches_r() -> None:
     # R 13.3 returns numeric(0) bounds for pred.int = NULL; Python used to raise TypeError.
@@ -369,3 +607,56 @@ def _array_any(value: object) -> np.ndarray:
     if isinstance(value, list):
         return np.asarray(value, dtype=np.float64)
     raise AssertionError(f"Unexpected value type: {type(value)!r}")
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("variable", "best_periods", "modulo", "method", "dynamic"),
+    [
+        (_AIR_PASSENGERS_132, 2, None, "nonlin", False),
+        (_AIR_PASSENGERS_132, 3, None, "lin", False),
+        (_AIR_PASSENGERS_132, 2, None, "both", False),
+        (_TREND_SEASONAL, 2, 12, "nonlin", False),
+        (_TREND_SEASONAL, 2, None, "nonlin", True),
+        (_WHITE_NOISE, 3, 7, "nonlin", False),
+    ],
+)
+def test_nns_arma_seasonal_true_honours_best_periods_like_r(
+    variable: np.ndarray,
+    best_periods: int,
+    modulo: int | None,
+    method: str,
+    dynamic: bool,
+) -> None:
+    # R sets seasonal.factor = TRUE to FALSE whenever best.periods is given, so
+    # TRUE with best.periods = k weights the k best periods (= seasonal_factor=False);
+    # Python used only the top period and ignored best_periods.
+    expected = nns(
+        "NNS.ARMA",
+        variable.tolist(),
+        4,
+        None,
+        True,
+        None,
+        best_periods,
+        modulo,
+        True,
+        False,
+        method,
+        dynamic,
+        False,
+        False,
+        False,
+        None,
+    )
+    kwargs: dict[str, Any] = {
+        "h": 4,
+        "best_periods": best_periods,
+        "modulo": modulo,
+        "method": method,
+        "dynamic": dynamic,
+    }
+    actual = nns_arma(variable, seasonal_factor=True, **kwargs)
+
+    np.testing.assert_allclose(actual, _array(expected), atol=COMPOUND)
+    np.testing.assert_array_equal(actual, nns_arma(variable, seasonal_factor=False, **kwargs))
