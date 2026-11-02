@@ -1,4 +1,4 @@
-"""noise_reduction = "mean" uses R's long-double means (REG-20).
+"""noise_reduction = "mean" uses R's long-double means.
 
 np.mean of 30 tied 19.58 values is 19.580000000000002; R returns 19.58. On
 Boston's ``indus`` that ulp moved a partition boundary above the tied
