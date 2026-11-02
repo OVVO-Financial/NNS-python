@@ -50,8 +50,9 @@ def test_native_threads_is_scoped_to_the_block_and_validates() -> None:
     # 0 / negative values were silently ignored before ncores was honoured; they now
     # mean "default" with a DeprecationWarning instead of raising.
     for legacy in (0, -1):
-        with pytest.warns(DeprecationWarning, match="ncores"), native_threads(legacy):
+        with pytest.warns(DeprecationWarning, match="ncores") as record, native_threads(legacy):
             pass
+        assert record[0].filename == __file__
 
 
 def test_thread_count_does_not_change_results() -> None:
@@ -84,8 +85,9 @@ def test_ncores_is_honoured_without_a_warning() -> None:
         serial = nns.nns_reg(x, y, ncores=1)["Fitted.xy"]["y.hat"]
         threaded = nns.nns_reg(x, y, ncores=4)["Fitted.xy"]["y.hat"]
     np.testing.assert_array_equal(serial, threaded)
-    with pytest.warns(DeprecationWarning, match="ncores"):
+    with pytest.warns(DeprecationWarning, match="ncores") as record:
         legacy = nns.nns_reg(x, y, ncores=0)["Fitted.xy"]["y.hat"]
+    assert record[0].filename == __file__
     np.testing.assert_array_equal(serial, legacy)
 
 
