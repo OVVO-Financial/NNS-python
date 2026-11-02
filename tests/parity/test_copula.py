@@ -100,7 +100,7 @@ def _integer_matrices() -> list[np.ndarray]:
 def test_nns_copula_perfect_dependence_shortcut_is_dimension_generic(
     monkeypatch: pytest.MonkeyPatch, case: int, continuous: bool, native: bool
 ) -> None:
-    # CORE-10, R fix "NNS.copula: dimension-generic perfect-dependence early
+    # R fix "NNS.copula: dimension-generic perfect-dependence early
     # return": the shortcut fires only when every pair is fully concordant.
     m = _integer_matrices()[case]
     expected = _scalar(nns("NNS.copula", m.tolist(), None, continuous, False, False))
@@ -119,7 +119,7 @@ def test_nns_copula_perfect_dependence_shortcut_is_dimension_generic(
 def test_nns_copula_degree0_ties_partition_the_sample(
     monkeypatch: pytest.MonkeyPatch, native: bool
 ) -> None:
-    # CORE-09: columns of -1/0/1 with means exactly 0, so a third of each column
+    # Columns of -1/0/1 with means exactly 0, so a third of each column
     # ties the target; DPM_nD at degree 0 counts them as lower, not discordant.
     rng = np.random.default_rng(2)
     base = np.repeat([-1.0, 0.0, 1.0], 40)

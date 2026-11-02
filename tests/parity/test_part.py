@@ -88,7 +88,7 @@ def test_nns_part_integer_x_keeps_the_cell_centroid_like_r(
     order: int | None,
     obs_req: int,
 ) -> None:
-    # REG-08, R fix "NNS.part: do not round regression-point x for integer-valued
+    # R fix "NNS.part: do not round regression-point x for integer-valued
     # x": the native nns_part_off kernel and the NumPy path both keep the x
     # centroid (1:20, (1:20)^2, order 2: x = 14.593, 4.625, not 15, 5).
     x = np.arange(1.0, 21.0)

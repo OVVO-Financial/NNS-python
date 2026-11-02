@@ -245,7 +245,7 @@ def _copula_moments(
     )
     # Discordant = neither co-lower nor co-upper, the same split as the concordant
     # count, so the degree-0 shares partition the cell (a tie used to count as
-    # co-lower and discordant at once; R fix for CORE-09).
+    # co-lower and discordant at once before the R tie fix).
     d0_co = float(concordant) * inv_n
     dpm_d0 = float(n - concordant) * inv_n
     return concordant, d0_co, dpm_d0, dx, dy
@@ -265,7 +265,7 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     # Every point concordant: perfect positive dependence; every point discordant:
     # perfect negative dependence (as in the patched R; this used to return +1 too). The
     # count is compared with n, not the share with 1: count * (1/n) is not exactly 1
-    # for many n (49 * (1/49) != 1), DEP-08.
+    # for many n (49 * (1/49) != 1).
     if concordant == n:
         return 1.0
     if concordant == 0:
@@ -320,7 +320,7 @@ def _dpm_nd(
     diff = data - target[np.newaxis, :]
     # Discordant = neither all-lower (x <= target, the CLPM count) nor all-upper
     # (x > target, the CUPM count), so the degree-0 counts partition the sample
-    # (CORE-09; ties used to count as discordant and lower at once). At degree > 0
+    # (ties used to count as discordant and lower at once). At degree > 0
     # a tied coordinate contributes a zero factor either way.
     all_below = np.all(diff <= 0.0, axis=1)
     all_above = np.all(diff > 0.0, axis=1)
@@ -356,7 +356,7 @@ def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     diff = data - target[np.newaxis, :]
     if degree == 0.0:
         # Strictly above in every coordinate, as Co.UPM (x > target): ties belong
-        # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0 (CORE-09).
+        # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0.
         return float(np.mean(np.all(diff > 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
     powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)

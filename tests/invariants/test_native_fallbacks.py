@@ -90,9 +90,9 @@ def _dep_pairs() -> list[tuple[np.ndarray, np.ndarray]]:
     binary = np.r_[np.zeros(51), np.ones(49)]
     ternary = np.repeat([-1.0, 0.0, 1.0], 100)
     pairs = [
-        (x, -x),  # every cell fully discordant (DEP-01)
-        (binary, binary),  # 49 * (1 / 49) != 1 (DEP-08)
-        (rng.permutation(ternary), rng.permutation(ternary)),  # ties at the mean (CORE-09)
+        (x, -x),  # every cell fully discordant
+        (binary, binary),  # 49 * (1 / 49) != 1
+        (rng.permutation(ternary), rng.permutation(ternary)),  # ties at the mean
     ]
     for trial in range(60):
         n = int(rng.integers(10, 200))
