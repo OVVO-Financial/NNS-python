@@ -51,9 +51,9 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Classical moments | `nns_moments` | `NNS.moments` | implemented | Bundled NNS moment diagnostics. |
 | Dependence | `nns_dep` | `NNS.dep` | implemented | Nonlinear dependence and correlation. |
 | Dependence | `nns_cor` | `NNS.cor` | implemented | Nonlinear correlation convenience API. |
-| Dependence | `nns_copula` | `NNS.copula` | implemented | Bivariate copula surface. |
+| Dependence | `nns_copula` | `NNS.copula` | implemented | Bivariate or multivariate copula dependence. |
 | Causation | `nns_causation` | `NNS.caus` | implemented | Directional causation. |
-| Causation | `causal_matrix` | `Causal.matrix` | implemented | Matrix form of causation relationships. |
+| Causation | `causal_matrix` | `NNS.caus` (matrix input) | implemented | Matrix form of causation relationships. |
 | Regression | `nns_reg` | `NNS.reg` | implemented | Bivariate regression, classification, and interval surfaces. |
 | Regression | `nns_m_reg` | `NNS.M.reg` | partial | Multivariate regression. Raw factor expansion is guarded. |
 | Regression | `nns_stack` | `NNS.stack` | implemented | Stacked ensemble path. |
@@ -197,7 +197,7 @@ Returns bundled NNS moment diagnostics.
 
 Closest R API: `NNS.dep`.
 
-Returns NNS nonlinear dependence and correlation for bivariate input, or matrix-style dependence and correlation results for matrix input.
+Returns NNS nonlinear dependence and correlation for bivariate input, or `Correlation` and `Dependence` matrices for a 2-D array or DataFrame (`y=None`). `asym=True` measures `y` as a function of `x` (matrix entry `[i, j]`: row variable -> column variable).
 
 #### `nns_cor`
 
@@ -209,7 +209,7 @@ Convenience API for the NNS nonlinear correlation surface.
 
 Closest R API: `NNS.copula`.
 
-Computes the bivariate scalar copula surface supported by NNS Python.
+Computes R's co-partial-moment copula dependence in `[0, 1]` for two vectors (`nns_copula(x, y)`) or a matrix with any number of columns (`nns_copula(X)`).
 
 #### `nns_causation`
 
@@ -219,9 +219,9 @@ Computes directional causation relationships, including supported numeric lag an
 
 #### `causal_matrix`
 
-Closest R API: `Causal.matrix`.
+Closest R API: `NNS.caus` with a matrix argument (internally `NNS.caus.matrix`; there is no `Causal.matrix`).
 
-Computes a matrix representation of causation relationships.
+Computes the antisymmetric net-causation matrix; entry `[i, j]` is the net causation of column `j` on column `i` (positive: `j` causes `i`). DataFrame input returns a labelled DataFrame.
 
 ### Regression, classification, and ensembles
 

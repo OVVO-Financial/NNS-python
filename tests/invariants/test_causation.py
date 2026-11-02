@@ -47,6 +47,19 @@ def test_causal_matrix_is_antisymmetric() -> None:
     np.testing.assert_allclose(result, -result.T)
 
 
+def test_causal_matrix_positive_entry_means_the_column_causes_the_row() -> None:
+    x = np.linspace(-2.0, 2.0, 100)
+    y = x * x
+    pair = nns_causation(x, y)
+    x_causes_y = pair["C(x--->y)"] if "C(x--->y)" in pair else -pair["C(y--->x)"]
+
+    result = causal_matrix(np.column_stack((x, y)))
+
+    assert x_causes_y > 0.0
+    assert result[1, 0] == pytest.approx(x_causes_y)
+    assert result[0, 1] == pytest.approx(-x_causes_y)
+
+
 def test_nns_causation_ts_tau_no_longer_raises() -> None:
     x = np.linspace(-2.0, 2.0, 100)
 
@@ -72,3 +85,18 @@ def test_causal_matrix_ts_tau_no_longer_raises() -> None:
 
     assert result.shape == (3, 3)
     np.testing.assert_allclose(np.diag(result), 0.0)
+
+
+@pytest.mark.parametrize("n", [5, 40, 600])
+def test_causation_native_asym_dep_matches_python_partition(n: int) -> None:
+    # _asym_dep now uses the native nns_dep(asym=True) kernel; it must equal the
+    # pure-Python X-only partition it replaced, bit for bit.
+    from nns.causation import _asym_dep, _asym_dep_python
+
+    rng = np.random.default_rng(n)
+    x = rng.normal(size=n)
+    for y in (x**2 + rng.normal(size=n), rng.normal(size=n), np.round(x), -x):
+        assert _asym_dep(x, y) == _asym_dep_python(x, y)
+        assert _asym_dep(y, x) == _asym_dep_python(y, x)
+    ints = rng.integers(0, 4, size=n).astype(float)
+    assert _asym_dep(ints, x) == _asym_dep_python(ints, x)
