@@ -17,7 +17,7 @@ finite_matrices = arrays(
         allow_nan=False,
         allow_infinity=False,
         width=64,
-    ),
+    ).filter(lambda v: v == 0.0 or abs(v) >= 1e-100),  # R's NNS.stack errors near underflow too
 )
 
 
