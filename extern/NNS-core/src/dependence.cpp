@@ -79,8 +79,8 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   }
   
   double inv_n = 1.0 / static_cast<double>(n);
-  // Compare counts, not count * (1/n): 49 * (1/49) != 1 (DEP-08). All
-  // concordant: perfect positive dependence; all discordant: negative (DEP-01).
+  // Compare counts, not count * (1/n): 49 * (1/49) != 1. All
+  // concordant: perfect positive dependence; all discordant: negative.
   double d0_concordant = d0_cupm + d0_clpm;
   double d0_Co = d0_concordant * inv_n;
   if (d0_concordant == static_cast<double>(n)) return 1.0;
