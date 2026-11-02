@@ -71,7 +71,10 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
   const int ni = static_cast<int>(n);
   const int half_n = ni / 2;
   const double mean_var = vec_mean(variable);
-  const double sd_var = vec_sd(variable);
+  // Compare raw values: a repeated 0.1 need not centre to exactly 0.
+  const bool constant = std::all_of(variable.begin(), variable.end(),
+                                    [&](double v) { return v == variable[0]; });
+  const double sd_var = constant ? 0.0 : vec_sd(variable);
   // CV is meaningless for a mean that is zero up to rounding; compare sds instead
   const double tol = std::sqrt(DBL_EPSILON);
   const bool use_cv = std::fabs(mean_var) > tol * sd_var;
@@ -85,13 +88,17 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
     for (int j = 0; j < m; ++j) {
       int len = (ni - 1 - j) / m + 1;
       double mu = 0.0, ss = 0.0;
-      for (int i = j; i < ni; i += m) mu += x[i];
+      bool same = true;
+      for (int i = j; i < ni; i += m) {
+        mu += x[i];
+        same = same && x[i] == x[j];
+      }
       mu /= static_cast<double>(len);
       for (int i = j; i < ni; i += m) {
         double d = x[i] - mu;
         ss += d * d;
       }
-      double sd = std::sqrt(ss / static_cast<double>(len - 1));
+      double sd = same ? 0.0 : std::sqrt(ss / static_cast<double>(len - 1));
       // a constant component has CV 0; a near-zero mean caps CV at 1/tol, where the series switches to sd
       wsum += len * (use_cv ? (sd == 0.0 ? 0.0 : sd / std::max(std::fabs(mu), tol * sd)) : sd);
     }
@@ -114,7 +121,8 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
     std::vector<int> ord(m);
     std::iota(ord.begin(), ord.end(), 0);
-    std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+    // Equal CVs keep the shorter period first.
+    std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
     std::vector<int> sortedP(m);
     std::vector<double> sortedCV(m);
@@ -174,7 +182,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
         std::vector<int> ord(m);
         std::iota(ord.begin(), ord.end(), 0);
-        std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+        std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
         std::vector<int> sortedP(m);
         std::vector<double> sortedCV(m);
@@ -203,7 +211,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
         int m = static_cast<int>(Period.size());
         std::vector<int> ord(m);
         std::iota(ord.begin(), ord.end(), 0);
-        std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+        std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
         std::vector<int> sortedP(m);
         std::vector<double> sortedCV(m);
@@ -238,7 +246,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
       std::vector<int> ord(m);
       std::iota(ord.begin(), ord.end(), 0);
-      std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+      std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
       std::vector<int> sortedP(m);
       std::vector<double> sortedCV(m);

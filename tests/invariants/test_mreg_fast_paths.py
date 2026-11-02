@@ -353,7 +353,6 @@ def test_native_mreg_predict_matches_numpy_path(
         np.testing.assert_allclose(path, expected_path, rtol=1e-12, atol=1e-14)
 
 
-@pytest.mark.xfail(strict=True, reason="needs core divide-by-range")
 def test_native_mreg_predict_breaks_distance_ties_like_numpy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

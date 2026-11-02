@@ -409,7 +409,8 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
   }
   
   if (!peak_idx.empty()) {
-    std::sort(peak_idx.begin(), peak_idx.end(), [&](int a, int b){ return cs[a] > cs[b]; });
+    // Equal heights keep bin order, so the kept peaks don't depend on the sort implementation.
+    std::stable_sort(peak_idx.begin(), peak_idx.end(), [&](int a, int b){ return cs[a] > cs[b]; });
     std::vector<int> kept;
     for (int idx : peak_idx) {
       bool too_close = false;
@@ -438,11 +439,14 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
         std::sort(out.begin(), out.end());
         return out;
       } else {
-        int best_t = 0;
-        for (std::size_t t = 1; t < kept.size(); ++t) {
-          if (cs[kept[t]] > cs[kept[best_t]]) best_t = t;
-        }
-        return {centers[best_t]};
+        // Equally high peaks are averaged, as the tied-bin fallback below does.
+        double best_h = cs[kept[0]];
+        for (std::size_t t = 1; t < kept.size(); ++t) best_h = std::max(best_h, cs[kept[t]]);
+        long double sum = 0.0L;
+        int nt = 0;
+        for (std::size_t t = 0; t < kept.size(); ++t)
+          if (cs[kept[t]] == best_h) { sum += static_cast<long double>(centers[t]); ++nt; }
+        return {static_cast<double>(sum / nt)};
       }
     }
   }

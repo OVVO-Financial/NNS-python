@@ -12,8 +12,9 @@
 //            continuous -> LPM1/(LPM1+UPM1) ratio compare, also between knots
 //       SSD  gates X.mn >= Y.mn and the mean; LPM degree-1 compare
 //       TSD  same gates; LPM degree-2 compare, also between knots
-//       (64 * DBL_EPSILON relative tie tolerance except for discrete FSD;
-//       coinciding curves never dominate)
+//       (64 * DBL_EPSILON relative tie tolerance except for discrete FSD,
+//       on the pair centred on its joint midrange; coinciding curves never
+//       dominate)
 //   - sd_dom_matrix (port of sd_dom_matrix_prefix_parallel)
 //   - the efficient-set sweep (port of NNS_SD_efficient_set_parallel_cpp):
 //       order columns by LPM(degree, tmax, .) ascending (stable tie-break by
@@ -83,15 +84,9 @@ inline void neumaier_add(double& sum, double& err, double v) {
   sum = t;
 }
 
-ColPre precompute_ptr(const double* x, std::size_t n, std::size_t stride_rows,
-                      std::size_t col) {
-  if (n == 0) throw std::invalid_argument("Each sample needs at least one observation.");
-  ColPre c;
-  c.m = static_cast<int>(n);
-  c.vals.resize(n);
-  for (std::size_t i = 0; i < n; ++i) c.vals[i] = at(x, stride_rows, i, col);
-  std::sort(c.vals.begin(), c.vals.end());
-
+// Prefix sums and stats of the already sorted c.vals.
+void finish_col(ColPre& c) {
+  const std::size_t n = c.vals.size();
   c.P1.assign(n + 1, 0.0);
   c.P2.assign(n + 1, 0.0);
   // Compensated: plain running sums drift by ~n * eps * |x|, which for large
@@ -108,7 +103,28 @@ ColPre precompute_ptr(const double* x, std::size_t n, std::size_t stride_rows,
   c.S2 = c.P2[n];
   c.mn = c.vals.front();
   c.mean = c.S1 / static_cast<double>(n);
+}
+
+ColPre precompute_ptr(const double* x, std::size_t n, std::size_t stride_rows,
+                      std::size_t col) {
+  if (n == 0) throw std::invalid_argument("Each sample needs at least one observation.");
+  ColPre c;
+  c.m = static_cast<int>(n);
+  c.vals.resize(n);
+  for (std::size_t i = 0; i < n; ++i) c.vals[i] = at(x, stride_rows, i, col);
+  std::sort(c.vals.begin(), c.vals.end());
+  finish_col(c);
   return c;
+}
+
+// Same sample shifted by s; subtraction keeps the sort order.
+ColPre shifted_col(const ColPre& c, double s) {
+  ColPre o;
+  o.m = c.m;
+  o.vals.resize(c.vals.size());
+  for (std::size_t i = 0; i < c.vals.size(); ++i) o.vals[i] = c.vals[i] - s;
+  finish_col(o);
+  return o;
 }
 
 ColPre precompute_vec(const double* x, std::size_t n) {
@@ -173,12 +189,24 @@ inline void ratio_deg1_coefs(const ColPre& c, int k, double& alpha, double& beta
 // degree: 1=FSD, 2=SSD, 3=TSD. 'discrete' only matters for FSD.
 // Returns 1 iff X dominates Y, else 0.
 // =====================================================================
-inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discrete) {
+// level: |shift| the pair was centred by (0 if not), whose rounding the data still carry.
+inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discrete,
+                       double level = 0.0) {
   // Curves equal in exact arithmetic differ by rounding of order
   // eps * S^degree (S = largest |value|); smaller differences are ties.
   const double S = std::max(std::max(std::fabs(X.vals.front()), std::fabs(X.vals.back())),
                             std::max(std::fabs(Y.vals.front()), std::fabs(Y.vals.back())));
   const double eps64 = 64.0 * DBL_EPSILON;
+  // Bounds add the inputs' own rounding at |level|; for LPM2 at t it moves
+  // each term by about 2 (t - x) din, so that bound uses LPM1 at t.
+  const double din = 4.0 * DBL_EPSILON * level;
+  const double E1 = eps64 * S + din;
+  auto E2 = [&](int kx, int ky, double t) {
+    double Lx, Ux, Ly, Uy;
+    lpm_upm_deg1(X, kx, t, Lx, Ux);
+    lpm_upm_deg1(Y, ky, t, Ly, Uy);
+    return eps64 * S * S + 2.0 * din * (std::fabs(Lx) + std::fabs(Ly) + din);
+  };
   if (degree == 1) {  // FSD
     if (!(X.mn >= Y.mn)) return 0;            // FSD gate
     if (identical_samples(X, Y)) return 0;    // identical series -> 0
@@ -200,7 +228,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
         Rx = (Ax > 0.0 ? Lx / Ax : static_cast<double>(kx) / static_cast<double>(X.m));
         Ry = (Ay > 0.0 ? Ly / Ay : static_cast<double>(ky) / static_cast<double>(Y.m));
         double Amin = std::min(Ax, Ay);
-        tol = eps64 * ((Amin > 0.0) ? std::max(1.0, S / Amin) : 1.0);
+        tol = (Amin > 0.0) ? std::max(eps64, E1 / Amin) : eps64;
       }
       if (Rx - Ry > tol) x_gt_y = true;
       if (std::fabs(Rx - Ry) > tol) curves_differ = true;
@@ -221,7 +249,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
               double Dx = gx * ts + dx, Dy = gy * ts + dy;
               if (Dx > 0.0 && Dy > 0.0) {
                 double Rxs = (ax * ts + bx) / Dx, Rys = (ay * ts + by) / Dy;
-                double tol_r = eps64 * std::max(1.0, S / std::min(Dx, Dy));
+                double tol_r = std::max(eps64, E1 / std::min(Dx, Dy));
                 if (Rxs - Rys > tol_r) { x_gt_y = true; curves_differ = true; }
               }
             }
@@ -235,7 +263,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
         lpm_upm_deg1(Y, ky, s, Ly, Uy);
         double Dx = Lx + Ux, Dy = Ly + Uy;
         double d = Lx / Dx - Ly / Dy;
-        double tol_m = eps64 * std::max(1.0, S / std::min(Dx, Dy));
+        double tol_m = std::max(eps64, E1 / std::min(Dx, Dy));
         if (std::fabs(d) > tol_m) curves_differ = true;
         if (d > tol_m) x_gt_y = true;
       }
@@ -245,7 +273,7 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
   }
 
   // SSD/TSD gates
-  if (!(X.mn >= Y.mn) || (Y.mean - X.mean > eps64 * S)) return 0;
+  if (!(X.mn >= Y.mn) || (Y.mean - X.mean > E1)) return 0;
   if (identical_samples(X, Y)) return 0;      // identical series -> 0
 
   if (degree == 2) {  // SSD: compare LPM degree 1, exact at the knots
@@ -255,8 +283,8 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
       (void)Ux; (void)Uy;  // not used beyond calc
       lpm_upm_deg1(X, kx, t, Lx, Ux);
       lpm_upm_deg1(Y, ky, t, Ly, Uy);
-      if (Lx - Ly > eps64 * S) x_gt_y = true;
-      if (std::fabs(Lx - Ly) > eps64 * S) curves_differ = true;
+      if (Lx - Ly > E1) x_gt_y = true;
+      if (std::fabs(Lx - Ly) > E1) curves_differ = true;
     });
     if (!curves_differ) return 0;
     return x_gt_y ? 0 : 1;                    // 1 iff "X SSD Y"
@@ -267,8 +295,9 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
   for_each_threshold(X, Y, [&](double t, int kx, int ky, double t_next) {
     double Lx2 = lpm_deg2(X, kx, t);
     double Ly2 = lpm_deg2(Y, ky, t);
-    if (Lx2 - Ly2 > eps64 * S * S) x_gt_y = true;
-    if (std::fabs(Lx2 - Ly2) > eps64 * S * S) curves_differ = true;
+    const double tol2 = E2(kx, ky, t);
+    if (Lx2 - Ly2 > tol2) x_gt_y = true;
+    if (std::fabs(Lx2 - Ly2) > tol2) curves_differ = true;
     // On (t, t_next) the difference is a*s^2 - 2*b*s + c; for a < 0 its
     // interior maximum at s = b / a is missed by the knots.
     if (std::isfinite(t_next) && !x_gt_y) {
@@ -279,13 +308,30 @@ inline int sd_dom_pair(const ColPre& X, const ColPre& Y, int degree, bool discre
         double ts = b / a;
         if (ts > t && ts < t_next) {
           double Dts = lpm_deg2(X, kx, ts) - lpm_deg2(Y, ky, ts);
-          if (Dts > eps64 * S * S) { x_gt_y = true; curves_differ = true; }
+          if (Dts > E2(kx, ky, ts)) { x_gt_y = true; curves_differ = true; }
         }
       }
     }
   });
   if (!curves_differ) return 0;
   return x_gt_y ? 0 : 1;                      // 1 iff "X TSD Y"
+}
+
+// Dominance is translation invariant but the tolerances scale with
+// |value|^degree, so compare the pair centred on its joint midrange.
+inline int sd_dom_pair_centred(const ColPre& X, const ColPre& Y, int degree, bool discrete) {
+  if (degree == 1 && discrete) return sd_dom_pair(X, Y, degree, discrete);
+  if (!(X.mn >= Y.mn) || identical_samples(X, Y)) return 0;
+  const double lo = std::min(X.vals.front(), Y.vals.front());
+  const double hi = std::max(X.vals.back(), Y.vals.back());
+  // A mean gap this large fails the centred gate too; skip the copies.
+  if (degree >= 2 &&
+      Y.mean - X.mean > 2.0 * 64.0 * DBL_EPSILON * std::max(std::fabs(lo), std::fabs(hi)))
+    return 0;
+  const double c = 0.5 * lo + 0.5 * hi;
+  // An infinite value makes the shifted copies NaN, and the threshold walk never ends on NaN.
+  if (!std::isfinite(c)) return sd_dom_pair(X, Y, degree, discrete);
+  return sd_dom_pair(shifted_col(X, c), shifted_col(Y, c), degree, discrete, std::fabs(c));
 }
 
 // Dominance matrix over an arbitrary column ordering (parallel over rows).
@@ -301,9 +347,9 @@ std::vector<int> dom_matrix_for_order(const std::vector<ColPre>& cols,
       for (std::size_t j = 0; j < p; ++j) {
         dom[j * p + i] =
             (i == j) ? 0
-                     : sd_dom_pair(cols[static_cast<std::size_t>(ord[i])],
-                                   cols[static_cast<std::size_t>(ord[j])],
-                                   degree, discrete);
+                     : sd_dom_pair_centred(cols[static_cast<std::size_t>(ord[i])],
+                                           cols[static_cast<std::size_t>(ord[j])],
+                                           degree, discrete);
       }
     }
   }, nthreads, p * (cols.empty() ? 1U : static_cast<std::size_t>(cols[0].m) + 1U));
@@ -418,7 +464,7 @@ int fsd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y,
   check_no_nan(y, n_y);
   ColPre X = precompute_vec(x, n_x);
   ColPre Y = precompute_vec(y, n_y);
-  return sd_dom_pair(X, Y, 1, discrete);
+  return sd_dom_pair_centred(X, Y, 1, discrete);
 }
 
 int ssd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y) {
@@ -426,7 +472,7 @@ int ssd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y) 
   check_no_nan(y, n_y);
   ColPre X = precompute_vec(x, n_x);
   ColPre Y = precompute_vec(y, n_y);
-  return sd_dom_pair(X, Y, 2, true);  // discrete flag irrelevant past FSD
+  return sd_dom_pair_centred(X, Y, 2, true);  // discrete flag irrelevant past FSD
 }
 
 int tsd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y) {
@@ -434,7 +480,7 @@ int tsd_uni(const double* x, std::size_t n_x, const double* y, std::size_t n_y) 
   check_no_nan(y, n_y);
   ColPre X = precompute_vec(x, n_x);
   ColPre Y = precompute_vec(y, n_y);
-  return sd_dom_pair(X, Y, 3, true);  // discrete flag irrelevant past FSD
+  return sd_dom_pair_centred(X, Y, 3, true);  // discrete flag irrelevant past FSD
 }
 
 // ---------- Multivariate Efficient-Set Wrappers ----------

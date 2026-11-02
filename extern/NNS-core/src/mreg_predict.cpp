@@ -23,6 +23,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "nns/central_tendencies.hpp"
@@ -288,7 +289,7 @@ class PredictKernel {
       const double range = maxs[j] - mins[j];
       if (std::isfinite(range) && range > 0.0) {
         active_.push_back(j);
-        inv_range_.push_back(1.0 / range);
+        col_range_.push_back(range);
       }
     }
     // Effectively 1-D design: all active columns identical in rpm_x and Xtest
@@ -311,10 +312,6 @@ class PredictKernel {
       }
       if (identical) {
         is_1d_ = true;
-        for (double v : inv_range_) {
-          sum_inv_ += v;
-          sum_inv2_ += v * v;
-        }
         std::vector<double> coord(n_);
         for (int i = 0; i < n_; ++i) coord[i] = rx(i, axis_);
         so_.resize(n_);
@@ -339,23 +336,17 @@ class PredictKernel {
         const double t = xt(r, axis_);
         if (only_k_ > 0) {
           if (only_k_ == 1) {
-            out(r, 0) = min_ties_1d(t, tied, one_weights);
+            out(r, 0) = min_ties_1d(r, t, tied, one_weights);
           } else {
-            topk_1d(t, only_k_, tk);
-            for (int i = 0; i < only_k_; ++i) {
-              dk[i] = distance_one_1d(tk[i], t);
-              yk[i] = yhat_[tk[i]];
-            }
+            topk_1d(r, t, only_k_, tk, dk);
+            for (int i = 0; i < only_k_; ++i) yk[i] = yhat_[tk[i]];
             out(r, 0) = predict_sorted_k(dk, yk, only_k_, is_class_, rank_, s);
           }
         } else {
-          out(r, 0) = min_ties_1d(t, tied, one_weights);
+          out(r, 0) = min_ties_1d(r, t, tied, one_weights);
           if (kmax_ >= 2) {
-            topk_1d(t, kmax_, tk);
-            for (int i = 0; i < kmax_; ++i) {
-              dk[i] = distance_one_1d(tk[i], t);
-              yk[i] = yhat_[tk[i]];
-            }
+            topk_1d(r, t, kmax_, tk, dk);
+            for (int i = 0; i < kmax_; ++i) yk[i] = yhat_[tk[i]];
             for (int k = 2; k <= kmax_; ++k)
               out(r, static_cast<std::size_t>(k - 1)) =
                   predict_sorted_k(dk, yk, k, is_class_, rank_, s);
@@ -391,62 +382,62 @@ class PredictKernel {
   double rx(int i, int j) const { return rpm_x_[static_cast<std::size_t>(i) + static_cast<std::size_t>(j) * n_]; }
   double xt(std::size_t i, int j) const { return Xtest_[i + static_cast<std::size_t>(j) * m_]; }
 
-  double distance_one_1d(int i, double t) const {
-    const double delta = rx(i, axis_) - t;
-    const double ad = std::fabs(delta);
-    if (dist_code_ == kMregDistNNS) return ad * sum_inv_ + delta * delta * sum_inv2_;
-    if (dist_code_ == kMregDistL2) return ad * std::sqrt(sum_inv2_);
-    return ad * sum_inv_;
+  // Range-normalised distance of training row i to query r. The 1-D path uses
+  // it too, so it selects neighbours and ties exactly as the generic path does.
+  double distance(int i, std::size_t r) const {
+    double acc = 0.0;
+    for (std::size_t a = 0; a < active_.size(); ++a) {
+      const int j = active_[a];
+      // Divide as R's reference does; a precomputed 1/range can flip exact ties.
+      const double z = (rx(i, j) - xt(r, j)) / col_range_[a];
+      if (dist_code_ == kMregDistL1) acc += std::fabs(z);
+      else if (dist_code_ == kMregDistNNS) acc += std::fabs(z) + z * z;
+      else acc += z * z;
+    }
+    return dist_code_ == kMregDistL2 ? std::sqrt(acc) : acc;
   }
 
-  void topk_1d(double t, int k, std::vector<int>& out_orig) const {
+  // distance() is non-decreasing in |coord - t|, so walking outward in that
+  // order and extending over distance() ties at the boundary finds the k nearest.
+  void topk_1d(std::size_t row, double t, int k, std::vector<int>& out_idx,
+               std::vector<double>& out_d) const {
     const int nn = static_cast<int>(sc_.size());
     k = std::min(k, nn);
     int r = static_cast<int>(std::lower_bound(sc_.begin(), sc_.end(), t) - sc_.begin());
     int lo = r - 1;
-    std::vector<int> win;
+    std::vector<std::pair<double, int>> win;
     while (static_cast<int>(win.size()) < k && (lo >= 0 || r < nn)) {
       const double dl = (lo >= 0) ? std::fabs(sc_[lo] - t) : kInf;
       const double dr = (r < nn) ? std::fabs(sc_[r] - t) : kInf;
-      if (dl <= dr) {
-        win.push_back(lo);
-        --lo;
-      } else {
-        win.push_back(r);
-        ++r;
-      }
+      const int pos = (dl <= dr) ? lo-- : r++;
+      win.emplace_back(distance(so_[pos], row), so_[pos]);
     }
-    if (!win.empty()) {
-      double thr = 0.0;
-      for (int pos : win) thr = std::max(thr, std::fabs(sc_[pos] - t));
-      while (lo >= 0 && std::fabs(sc_[lo] - t) == thr) {
-        win.push_back(lo);
-        --lo;
-      }
-      while (r < nn && std::fabs(sc_[r] - t) == thr) {
-        win.push_back(r);
-        ++r;
-      }
+    double thr = 0.0;
+    for (const auto& w : win) thr = std::max(thr, w.first);
+    for (double dd; lo >= 0 && (dd = distance(so_[lo], row)) <= thr; --lo)
+      win.emplace_back(dd, so_[lo]);
+    for (double dd; r < nn && (dd = distance(so_[r], row)) <= thr; ++r)
+      win.emplace_back(dd, so_[r]);
+    std::sort(win.begin(), win.end());  // (distance, original index)
+    out_idx.clear();
+    for (int i = 0; i < k; ++i) {
+      out_idx.push_back(win[i].second);
+      out_d[i] = win[i].first;
     }
-    std::sort(win.begin(), win.end(), [&](int a, int b) {
-      const double da = std::fabs(sc_[a] - t), db = std::fabs(sc_[b] - t);
-      return da < db || (da == db && so_[a] < so_[b]);
-    });
-    out_orig.clear();
-    for (int i = 0; i < k; ++i) out_orig.push_back(so_[win[i]]);
   }
 
-  double min_ties_1d(double t, std::vector<double>& tied, std::vector<double>& weights) const {
+  double min_ties_1d(std::size_t row, double t, std::vector<double>& tied,
+                     std::vector<double>& weights) const {
     const int nn = static_cast<int>(sc_.size());
     const int r = static_cast<int>(std::lower_bound(sc_.begin(), sc_.end(), t) - sc_.begin());
     const int lo = r - 1;
-    const double dl = (lo >= 0) ? std::fabs(sc_[lo] - t) : kInf;
-    const double dr = (r < nn) ? std::fabs(sc_[r] - t) : kInf;
+    const double dl = (lo >= 0) ? distance(so_[lo], row) : kInf;
+    const double dr = (r < nn) ? distance(so_[r], row) : kInf;
     const double mn = std::min(dl, dr);
     tied.clear();
-    for (int li = lo; li >= 0 && std::fabs(sc_[li] - t) == mn; --li)
+    for (int li = lo; li >= 0 && distance(so_[li], row) == mn; --li)
       if (std::isfinite(yhat_[so_[li]])) tied.push_back(yhat_[so_[li]]);
-    for (int ri = r; ri < nn && std::fabs(sc_[ri] - t) == mn; ++ri)
+    for (int ri = r; ri < nn && distance(so_[ri], row) == mn; ++ri)
       if (std::isfinite(yhat_[so_[ri]])) tied.push_back(yhat_[so_[ri]]);
     if (is_class_) {
       weights.assign(tied.size(), 1.0);
@@ -465,35 +456,8 @@ class PredictKernel {
       }
     } else if (active_.empty()) {
       std::fill(d.begin(), d.end(), 0.0);
-    } else if (dist_code_ == kMregDistL1) {
-      for (int i = 0; i < n_; ++i) {
-        double acc = 0.0;
-        for (std::size_t a = 0; a < active_.size(); ++a) {
-          const int j = active_[a];
-          acc += std::fabs((rx(i, j) - xt(r, j)) * inv_range_[a]);
-        }
-        d[i] = acc;
-      }
-    } else if (dist_code_ == kMregDistNNS) {
-      for (int i = 0; i < n_; ++i) {
-        double acc = 0.0;
-        for (std::size_t a = 0; a < active_.size(); ++a) {
-          const int j = active_[a];
-          const double z = (rx(i, j) - xt(r, j)) * inv_range_[a];
-          acc += std::fabs(z) + z * z;
-        }
-        d[i] = acc;
-      }
-    } else {  // kMregDistL2 (dist_code validated by the caller)
-      for (int i = 0; i < n_; ++i) {
-        double acc = 0.0;
-        for (std::size_t a = 0; a < active_.size(); ++a) {
-          const int j = active_[a];
-          const double z = (rx(i, j) - xt(r, j)) * inv_range_[a];
-          acc += z * z;
-        }
-        d[i] = std::sqrt(acc);
-      }
+    } else {
+      for (int i = 0; i < n_; ++i) d[i] = distance(i, r);
     }
   }
 
@@ -522,10 +486,9 @@ class PredictKernel {
   bool is_class_;
   const RankComponents& rank_;
   std::vector<int> active_;
-  std::vector<double> inv_range_;
+  std::vector<double> col_range_;
   bool is_1d_ = false;
   int axis_ = -1;
-  double sum_inv_ = 0.0, sum_inv2_ = 0.0;
   std::vector<double> sc_;
   std::vector<int> so_;
 };
