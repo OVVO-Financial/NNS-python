@@ -91,13 +91,9 @@ def _copula(
     discrete_co_pm = float(
         discrete_pm_cov["cupm"][upper].sum() + discrete_pm_cov["clpm"][upper].sum()
     )
-    # Perfect dependence: every pair fully concordant (the sum over the n(n-1)/2
-    # pairs equals n(n-1)/2) or, for two variables, fully discordant (sum 0).
-    # Comparing the sum with 1 was the bivariate rule and fired for interior
-    # values when n >= 3. The tolerance is far below one observation
-    # (1 / nrow), so float sums of count fractions do not decide it.
-    n_pairs = n * (n - 1) / 2
-    if abs(discrete_co_pm - n_pairs) < 1e-9 or (n == 2 and abs(discrete_co_pm) < 1e-9):
+    # Perfect dependence: every pair fully concordant (1) or fully discordant (0).
+    pair_co_pm = discrete_pm_cov["cupm"][upper] + discrete_pm_cov["clpm"][upper]
+    if np.all((np.abs(pair_co_pm - 1.0) < 1e-9) | (np.abs(pair_co_pm) < 1e-9)):
         return 1.0
 
     discrete_d_pm = _dpm_nd(values, target, 0.0, norm=True)

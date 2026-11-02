@@ -617,12 +617,18 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
                  bool continuous) {
   const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false, call_threads());
   const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
-  // Perfect dependence: every pair fully concordant (sum = d(d-1)/2) or, for two
-  // variables, fully discordant (sum 0); R fix "NNS.copula: dimension-generic
-  // perfect-dependence early return". The old test (sum == 1 or 0) was
-  // the bivariate rule and fired for interior values when d >= 3.
-  const double n_pairs = 0.5 * static_cast<double>(d) * static_cast<double>(d - 1U);
-  if (std::abs(disc_co - n_pairs) < 1e-9 || (d == 2U && std::abs(disc_co) < 1e-9)) return 1.0;
+  // Perfect dependence: every pair fully concordant (1) or fully discordant (0).
+  bool perfect = true;
+  for (std::size_t i = 0; i < d && perfect; ++i) {
+    for (std::size_t j = i + 1U; j < d; ++j) {
+      const double pair = disc.cupm[i + j * d] + disc.clpm[i + j * d];
+      if (!(std::abs(pair - 1.0) < 1e-9 || std::abs(pair) < 1e-9)) {
+        perfect = false;
+        break;
+      }
+    }
+  }
+  if (perfect) return 1.0;
   const double disc_d = nd_dpm_general(data, n, d, target, 0.0, true);
 
   double cont_co, cont_d;

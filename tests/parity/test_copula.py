@@ -134,3 +134,30 @@ def test_nns_copula_degree0_ties_partition_the_sample(
         monkeypatch.setattr(copula, "native_fn", lambda name: None)
     for c, want in zip(cases, expected, strict=True):
         np.testing.assert_allclose(nns_copula(c), want, atol=EXACT)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("native", [True, False])
+@pytest.mark.parametrize("continuous", [True, False])
+def test_nns_copula_mixed_sign_perfect_dependence_is_one(
+    monkeypatch: pytest.MonkeyPatch, continuous: bool, native: bool
+) -> None:
+    # Patched R checks each pair: fully concordant (1) or fully discordant (0).
+    # The pair-sum rule gave 0.5774 for (x, x, -x) and 0.2673 for (x, x, x, -x).
+    x = np.arange(1.0, 101.0)
+    b = np.tile([0.0, 1.0, 1.0, 0.0, 1.0], 8)
+    cases = [
+        np.column_stack([x, x, -x]),
+        np.column_stack([x, x, x, -x]),
+        np.column_stack([b, b, 1.0 - b]),
+    ]
+    expected = [
+        _scalar(nns("NNS.copula", c.tolist(), None, continuous, False, False)) for c in cases
+    ]
+    if not native:
+        import nns.copula as copula
+
+        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+    for c, want in zip(cases, expected, strict=True):
+        assert want == 1.0
+        assert nns_copula(c, continuous=continuous) == 1.0
