@@ -1,5 +1,39 @@
 {
   "entries": {
+    "007bb32249028ebc1bb839afac826fe659ec754e8988d5d99266fb9c5791e5bd": {
+      "NNS.dim.red.coefficients": null,
+      "NNS.dim.red.threshold": NaN,
+      "NNS.dim.red.variables": null,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.885714285714286,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.58,
+      "reg": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
+      ]
+    },
     "012c89c9b5789c8f3f78d89f2f6e73b27c6fc11e86a3274b895c6e3074468142": {
       "NNS.dim.red.coefficients": null,
       "NNS.dim.red.threshold": NaN,
@@ -564,6 +598,40 @@
       "weights": [
         0.4,
         0.6
+      ]
+    },
+    "48ae26018af688e5077de1ee05cb8e06e00fbed77421fadb941485d4a8ee1760": {
+      "NNS.dim.red.coefficients": null,
+      "NNS.dim.red.threshold": NaN,
+      "NNS.dim.red.variables": null,
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": NaN,
+      "OBJfn.reg": 0.857142857142857,
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "dim.red": NaN,
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.71,
+      "reg": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.0,
+        2.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        0.0
       ]
     },
     "4bf5fceeea00a070eb550db5527f5037303821f958b21e4b016ca4e50b74caed": {
@@ -1148,9 +1216,9 @@
       "NNS.dim.red.coefficients": null,
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
-      "NNS.reg.n.best": 6.0,
+      "NNS.reg.n.best": NaN,
       "OBJfn.dim.red": NaN,
-      "OBJfn.reg": 154.139813130114,
+      "OBJfn.reg": 177.289140053586,
       "class.levels": null,
       "dim.red": NaN,
       "dim.red.pred.int": null,

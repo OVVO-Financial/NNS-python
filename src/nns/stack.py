@@ -75,8 +75,8 @@ these are the only predictors behind ``stack``); names are the frame's column
 names, ``V1..Vp`` for an unnamed matrix and ``X1`` for a vector, as in R.
 ``NNS.dim.red.coefficients`` is a dict from encoded column name (factor
 dummies are ``<name>__<level>``) to its final coefficient. Both are ``None``
-when ``method`` excludes 2. ``NNS.reg.n.best`` is ``NaN`` when the all-points
-candidate wins with a single predictor (R's ``NA``)."""
+when ``method`` excludes 2. ``NNS.reg.n.best`` is ``NaN`` (R's ``NA``) for a
+single predictor, whose univariate ``nns_reg`` fit has no ``n_best`` to tune."""
 
 
 # --------------------------------------------------------------------------
@@ -957,7 +957,10 @@ def nns_stack(
             reg_component_threshold = float(fitted["reg_component_threshold"])
             reg_best_score = float(fitted.get("reg_best_score", float("nan")))
         else:
-            l_small = max(1, math.floor(math.sqrt(n_obs)))
+            # A single predictor's nns_reg fit has no neighbour count to tune (it
+            # ignores n_best), so ALL, the deployed fit, is its only candidate.
+            univariate = encoded_p == 1
+            l_small = 0 if univariate else max(1, math.floor(math.sqrt(n_obs)))
             candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
             sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
             count_list = {cid: np.zeros(n_obs, dtype=np.int64) for cid in candidate_ids}
@@ -971,17 +974,8 @@ def nns_stack(
                 train_design = train_design[balanced_idx]
                 train_y_fit = y_fit_all[train_idx][balanced_idx]
 
-                if train_design.shape[1] == 1:
-                    # Univariate: uniform k-NN cumulative means on |x - test|.
-                    train_x = train_design[:, 0]
-                    test_x = valid_design[:, 0]
-                    small_kmax = min(l_small, train_x.size)
-                    d = np.abs(train_x[None, :] - test_x[:, None])
-                    ord_idx = np.argsort(d, axis=1, kind="stable")
-                    cums = np.cumsum(train_y_fit[ord_idx], axis=1)[:, :small_kmax]
-                    pred_mat = cums / np.arange(1, small_kmax + 1)
-                    small_raw = [pred_mat[:, k] - _RESPONSE_OFFSET for k in range(small_kmax)]
-                else:
+                small_raw: list[NDArray[np.float64]] = []
+                if train_design.shape[1] > 1:
                     rpm_x_f, rpm_yhat_f = _mreg_prepare(
                         train_design, train_y_fit, order_value, "off", False
                     )
@@ -1004,8 +998,6 @@ def nns_stack(
                             sanitize_raw(small_path[:, k], y[train_idx])
                             for k in range(small_kmax)
                         ]
-                    else:
-                        small_raw = []
 
                 fold_small_kmax.append(len(small_raw))
 
@@ -1050,16 +1042,16 @@ def nns_stack(
                     print(f"Method 1 folds remaining = {len(splits) - b - 1}")
 
             common_small_kmax = min(fold_small_kmax) if fold_small_kmax else 0
-            if common_small_kmax < 1:
+            if not univariate and common_small_kmax < 1:
                 raise ValueError("No Method 1 local candidate was available in every fold.")
 
             candidate_scores = {cid: float("nan") for cid in candidate_ids}
             candidate_thresholds = {cid: 0.5 for cid in candidate_ids}
             candidate_raws: dict[str, NDArray[np.float64]] = {}
 
-            # Candidate k=1 defines the required complete OOF coverage pattern; a
+            # The first candidate defines the required complete OOF coverage pattern; a
             # candidate competes only when it covers exactly the same observations.
-            reference_count = count_list["1"]
+            reference_count = count_list[candidate_ids[0]]
 
             def score_method1_candidate(cid: str) -> bool:
                 count_vec = count_list[cid]
