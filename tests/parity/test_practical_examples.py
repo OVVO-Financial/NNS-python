@@ -252,7 +252,7 @@ def test_sunspots_arma_example_matches_installed_r() -> None:
     strict=False,
     reason=(
         "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
-        "forecast rows (TS-01); unpatched R 13.3 still refits the last h observed "
+        "forecast rows; unpatched R 13.3 still refits the last h observed "
         "rows, so this passes only against R with that patch."
     ),
 )
@@ -274,7 +274,7 @@ def test_var_macro_like_example_matches_installed_r() -> None:
     strict=False,
     reason=(
         "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
-        "forecast rows (TS-01); unpatched R 13.3 still refits the last h observed "
+        "forecast rows; unpatched R 13.3 still refits the last h observed "
         "rows, so this passes only against R with that patch."
     ),
 )
