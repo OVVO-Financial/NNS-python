@@ -488,9 +488,10 @@ R.
 
 `nns_arma_optim` is supported for the installed-R optimizer path. It greedily
 selects seasonal factors, evaluates the default co-moment-normalized objective,
-then applies the same equal-weight, bias-shift, shrink, and smooth-regressed
-variable checks as R. The optimizer's prediction intervals are deterministic
-VaR bands around the in-sample optimizer errors; they are separate from
+then applies the same equal-weight, shrink, smooth-regressed variable and
+bias-shift checks as R, the bias last, on the returned model. The optimizer's
+prediction intervals add the `lpm_var`/`upm_var` of that model's validation
+residuals (actual - forecast) to the results; they are separate from
 `nns_arma(pred_int=...)`, which uses the Monte Carlo path. Custom Python
 `obj_fn` callables may be supplied, but R expression objects are not part of the
 Python API. `nns_var` is implemented for numeric matrix-like inputs (a pandas

@@ -224,10 +224,6 @@ def nns_arma_optim(
         None,
     )
     nns_weights: NDArray[np.float64] | None = None
-    errors = predicted - actual
-    bias = _finite_gravity(errors)
-    predicted_shifted = predicted - bias
-    bias_score = float(objective_fn(predicted_shifted, actual))
 
     if nns_periods.size > 1:
         # Candidate: equal weights across the selected periods (the
@@ -250,22 +246,6 @@ def nns_arma_optim(
             nns_weights = equal_weights
             nns_score = weight_score
             predicted = equal_predicted
-            errors = predicted - actual
-            bias = _finite_gravity(errors)
-            predicted_shifted = predicted - bias
-            bias_score = float(objective_fn(predicted_shifted, actual))
-            if math.isnan(bias_score) or (
-                bias_score > weight_score if objective_l == "min" else bias_score <= weight_score
-            ):
-                bias = 0.0
-        elif not np.isfinite(bias_score) or not _improves_or_ties_bias(
-            bias_score, nns_score, objective_l
-        ):
-            bias = 0.0
-    elif not np.isfinite(bias_score) or not _improves_or_ties_bias(
-        bias_score, nns_score, objective_l
-    ):
-        bias = 0.0
 
     final_predicted = predicted
 
@@ -301,55 +281,47 @@ def nns_arma_optim(
     nns_regress = _improves(smooth_score, best_score, objective_l)
     if nns_regress:
         final_predicted = smooth_predicted
-    del final_predicted
+
+    # Decided after shrink and nns.regress so errors, bias and intervals describe the
+    # returned model.
+    errors = final_predicted - actual
+    bias = _finite_gravity(errors)
+    model_score = float(objective_fn(final_predicted, actual))
+    bias_score = float(objective_fn(final_predicted - bias, actual))
+    if not _improves_or_ties_bias(bias_score, model_score, objective_l):
+        bias = 0.0
+    final_predicted = final_predicted - bias
+    residuals = actual - final_predicted
 
     # Apply the nns.regress decision: it was tested on the smoothed
     # series with shrink=True, so the returned forecast uses the same inputs.
     if nns_regress:
         nns_shrink = True
 
-    pi_width = (
-        None
-        if pred_int is None
-        else abs(float(upm_var((1.0 - float(pred_int)) / 2.0, 0.0, errors))) + abs(bias)
-    )
-
     if h_oos is None:
-        result_h = h_eval
-        final_values = regressed_training if nns_regress else original_values
-        model_results = _arma_optim_prediction(
-            final_values,
-            train_n,
-            result_h,
-            nns_periods,
-            nns_method,
-            negative_values,
-            nns_weights,
-            shrink=nns_shrink,
-        )
+        model_results = final_predicted
     else:
-        result_h = h_oos
         final_values = (
             _smooth_regressed_variable(original_values) if nns_regress else original_values
         )
         model_results = _arma_optim_prediction(
             final_values,
             None,
-            result_h,
+            h_oos,
             nns_periods,
             nns_method,
             negative_values,
             nns_weights,
             shrink=nns_shrink,
-        )
-    model_results = model_results - bias
-    if pi_width is None:
+        ) - bias
+    if pred_int is None:
         # R returns numeric(0) bounds for pred.int = NULL.
         lower_pi = np.array([], dtype=np.float64)
         upper_pi = np.array([], dtype=np.float64)
     else:
-        lower_pi = model_results - pi_width
-        upper_pi = model_results + pi_width
+        alpha = (1.0 - float(pred_int)) / 2.0
+        lower_pi = model_results + float(lpm_var(alpha, 0.0, residuals))
+        upper_pi = model_results + float(upm_var(alpha, 0.0, residuals))
     if not negative_values:
         model_results = np.maximum(0.0, model_results)
         lower_pi = np.maximum(0.0, lower_pi)

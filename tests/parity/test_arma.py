@@ -547,16 +547,32 @@ _OPTIM_VALUE_KEYS = ("errors", "results", "lower.pred.int", "bias.shift")
         ),
         # Here the separately averaged lin/nonlin paths would pick "both" instead.
         ("both-scored-full", _AIR_PASSENGERS, 12, None, [1, 2, 12], "min", True, _OPTIM_VALUE_KEYS),
-        # The equal-weights candidate is evaluated (and chosen here); obj.fn is its
-        # score. The R values also carry the R optim-pi-from-returned-model change,
-        # so only the search outcome is compared here.
-        ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True, ()),
+        # The equal-weights candidate is evaluated (and chosen here); obj.fn is its score.
+        (
+            "equal-weights",
+            _two_cycle_series(33),
+            10,
+            None,
+            [4, 6, 7, 12, 14, 24],
+            "min",
+            True,
+            _OPTIM_VALUE_KEYS,
+        ),
         # The nns.regress decision on a training-window smooth, applied to the results.
-        ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True, ()),
+        (
+            "regress-max",
+            _AIR_PASSENGERS_132,
+            None,
+            120,
+            [6, 12, 24],
+            "max",
+            True,
+            _OPTIM_VALUE_KEYS,
+        ),
         # The smoothed candidate no longer sees the validation window: nns.regress
         # TRUE -> FALSE (walk 13); stays TRUE on a training-only smooth (walk 16).
-        ("walk-13", _random_walk(13), None, 80, [1, 2, 4, 6, 12], "min", True, ()),
-        ("walk-16", _random_walk(16), None, 80, [1, 2, 4, 6, 12], "min", True, ()),
+        ("walk-13", _random_walk(13), None, 80, [1, 2, 4, 6, 12], "min", True, _OPTIM_VALUE_KEYS),
+        ("walk-16", _random_walk(16), None, 80, [1, 2, 4, 6, 12], "min", True, _OPTIM_VALUE_KEYS),
         # R now evaluates nonlin/both without the linear approximation.
         (
             "exhaustive",
