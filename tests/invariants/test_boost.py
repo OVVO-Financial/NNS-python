@@ -339,3 +339,21 @@ def test_nns_boost_feature_importance_warns_and_obj_fn_checked() -> None:
         nns_boost(x, y, x[:3], obj_fn=lambda p, a: (p - a) ** 2, **kwargs)
     with pytest.raises(ValueError, match="random_seed"):
         nns_boost(x, y, x[:3], seed=7, random_seed=5, **kwargs)
+
+
+def test_objective_sees_response_values_for_a_two_valued_numeric_response() -> None:
+    rng = np.random.default_rng(1)
+    x = rng.normal(size=(80, 3))
+    y = np.where(x[:, 0] + rng.normal(scale=0.5, size=80) > 0, 5.0, -5.0)
+    for response, values in ((y, {-5.0, 5.0}), (np.where(y > 0, 0.2, -0.1), {-0.1, 0.2})):
+        seen: list[float] = []
+
+        def loss(predicted: np.ndarray, actual: np.ndarray, seen: list[float] = seen) -> float:
+            seen.extend(np.asarray(actual, dtype=np.float64).tolist())
+            return float(np.sum((predicted - actual) ** 2))
+
+        nns_boost(
+            x, response, x[:10], obj_fn=loss, learner_trials=3, epochs=0, threshold=1,
+            cv_size=0.25, seed=1, status=False,
+        )
+        assert set(seen) == values

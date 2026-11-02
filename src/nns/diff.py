@@ -42,6 +42,8 @@ def nns_diff(
 ) -> DiffResult:
     """Numerically differentiate a scalar callable, matching R's NNS.diff.
 
+    The search stops when the inferred ``h`` is below ``tol`` or when the bracket on
+    the y-intercept fixes the derivative to within about ``tol * max(1, |f'(point)|)``.
     ``plot=True`` also draws ``f`` around ``point`` with the secant lines
     (``nns.plotting.plot_nns_diff``), as R's ``plot = TRUE`` does.
     """
@@ -150,8 +152,9 @@ def _nns_diff(
                 lower_b = new_b
         new_b = float(np.mean([lower_b, upper_b]))
         # Converged once the bisection bracket on B is tight: inferred_h cannot reach
-        # |h| < tol in double precision once it is accurate.
-        if abs(upper_b - lower_b) <= tol * max(1.0, abs(new_b)):
+        # |h| < tol in double precision once it is accurate. The derivative is
+        # (f(x) - B) / point, so the bracket is scaled to the derivative, not to |B|.
+        if abs(upper_b - lower_b) <= tol * max(abs(point), abs(f_x - new_b)):
             converged = True
             termination_code = 0
             break

@@ -403,9 +403,8 @@ def _quantile_var(percentile: float, *, upper: bool, values: NDArray[np.float64]
 
 def _as_group(value: object, name: str) -> NDArray[np.float64]:
     values = np.asarray(value, dtype=np.float64).reshape(-1)
-    # Missing values (NaN) are dropped, as R's multi-group path does with na.omit
-    # (R's binary path propagates NaN instead). Infinite values have no partial-
-    # moment meaning and make R's VaR step fail, so they are rejected, not dropped.
+    # Missing values (NaN) are dropped, as R does with na.omit. Infinite values have
+    # no partial-moment meaning and make R's VaR step fail, so they are rejected.
     if np.isinf(values).any():
         raise ValueError(f"{name} must not contain infinite values.")
     values = values[~np.isnan(values)]

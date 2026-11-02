@@ -537,12 +537,17 @@ def nns_boost(
     replicated_test = z[:, replicated_cols]
     replicated_levels = [code_levels[j] for j in replicated_cols]
 
+    stack_obj_fn = obj_fn
+    two_valued = np.unique(y)
+    if not is_class and two_valued.size == 2:
+        stack_obj_fn = _decoded_objective(cast(Callable[..., Any], obj_fn), two_valued)
+
     final_stack = nns_stack(
         replicated_train,
         y,
         replicated_test,
         type="CLASS" if is_class else None,
-        obj_fn=obj_fn,
+        obj_fn=stack_obj_fn,
         objective=objective_value,
         optimize_threshold=False,
         dist=dist_value,
@@ -621,3 +626,18 @@ def _decode_stack_codes(values: Any, levels: Sequence[Any]) -> NDArray[np.float6
     codes = np.clip(np.round(out[ok]).astype(np.int64), 1, level_values.size)
     out[ok] = level_values[codes - 1]
     return out
+
+
+def _decoded_objective(
+    obj_fn: Callable[..., Any], values: NDArray[np.float64]
+) -> Callable[[NDArray[np.float64], NDArray[np.float64]], Any]:
+    """nns_stack codes a two-valued numeric response as 1/2; let ``obj_fn`` score
+    response values, as it does during learner selection."""
+
+    def decode(v: NDArray[np.float64]) -> NDArray[np.float64]:
+        out = np.array(v, dtype=np.float64)
+        ok = np.isfinite(out)
+        out[ok] = values[np.clip(np.round(out[ok]), 1, 2).astype(np.intp) - 1]
+        return out
+
+    return lambda predicted, actual: obj_fn(decode(predicted), decode(actual))

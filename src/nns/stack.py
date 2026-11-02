@@ -15,8 +15,7 @@ Inputs follow R's data-frame rules: pandas column names are kept and test
 columns are matched by name; categorical columns (and ``factor_levels``)
 give factors in declared level order, other label columns sorted levels;
 the response is coded in declared order (categorical, ``class_levels``) or
-sorted order. R codes character columns by first appearance instead, which
-makes its result depend on the row order.
+sorted order (R's factor order), as R does.
 """
 
 from __future__ import annotations
@@ -49,6 +48,7 @@ from nns._labels import (
 )
 from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import (
+    _mreg_predict,
     _mreg_predict_path,
     _mreg_prepare,
     _validate_dist,
@@ -1022,28 +1022,26 @@ def nns_stack(
 
                 # Mandatory all-points candidate, scored with the estimator deployed
                 # when ALL wins (it was a constant training mean): the
-                # univariate NNS.reg fit, or NNS.reg(n.best = "all").
+                # univariate NNS.reg fit, or NNS.reg(n.best = "all") from the fold RPM.
                 if train_design.shape[1] == 1:
                     all_raw = fit_univariate_raw(
                         train_design[:, 0], train_y_fit, valid_design[:, 0]
                     )["raw"]
                 else:
-                    all_fit = nns_reg_engine(
-                        train_design,
-                        train_y_fit,
-                        point_est=valid_design,
-                        n_best="all",
-                        order=order_value,
-                        type=None,
-                        factor_2_dummy=False,
-                        dist=dist_value,
-                        point_only=True,
+                    all_pred = cast(
+                        NDArray[np.float64],
+                        _mreg_predict(
+                            valid_design,
+                            rpm_x_f,
+                            rpm_yhat_f,
+                            rpm_x_f.shape[0],
+                            dist_value,
+                            train_design.min(axis=0),
+                            train_design.max(axis=0),
+                            False,
+                        ),
                     )
-                    all_raw = sanitize_raw(
-                        np.asarray(all_fit["Point.est"], dtype=np.float64).reshape(-1)
-                        - _RESPONSE_OFFSET,
-                        y[train_idx],
-                    )
+                    all_raw = sanitize_raw(all_pred - _RESPONSE_OFFSET, y[train_idx])
                 good = np.isfinite(all_raw)
                 rows = valid_idx[good]
                 sum_list["all"][rows] += all_raw[good]
@@ -1442,9 +1440,8 @@ def _prepare_inputs(
 
     Response: a pandas categorical, or ``class_levels``, is coded in declared
     order with unused levels dropped (R ``droplevels``); strings are coded in
-    sorted order; bool as ``False < True``; anything else is numeric. R codes
-    a character response by first appearance, so its results depend on the
-    row order; the sorted order is R's factor order and NNS.boost's.
+    sorted order (R's factor order, as R's NNS.stack and NNS.boost use); bool as
+    ``False < True``; anything else is numeric.
     """
     cols = split_columns(ivs_train)
     if np.ndim(ivs_train) > 2 or not cols.values:

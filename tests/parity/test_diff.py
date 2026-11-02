@@ -22,7 +22,9 @@ DY_D_PARITY = 5e-2
     [
         ("square", lambda x: x * x, 2.0),
         ("sin", np.sin, 1.0),
-        ("exp", np.exp, 0.5),
+        # libm exp, as R uses: np.exp's SIMD loops can differ by an ulp per CPU,
+        # and at h near 1e-9 that moves the inferred h.
+        ("exp", lambda x: cmath.exp(x) if isinstance(x, complex) else math.exp(x), 0.5),
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
         ("square", lambda x: x * x, 3.0),
@@ -46,6 +48,23 @@ def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
             assert np.isnan(value), key
             continue
         np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
+
+
+@pytest.mark.parity
+def test_nns_diff_constant_offset_does_not_loosen_the_stop() -> None:
+    # Patched R scales the B-bracket stop to the derivative, not to |B|: with
+    # tol * max(1, |B|) the offset stopped sin(x) + 1000 after 1 iteration at 0.5623.
+    expected = _r_nns_diff("sin_offset", 1.0, tol=1e-4)
+    actual = nns_diff(lambda x: np.sin(x) + 1000.0, 1.0, tol=1e-4)
+    plain = nns_diff(np.sin, 1.0, tol=1e-4)
+
+    for key, value in actual.items():
+        if key not in expected:  # R NA
+            assert np.isnan(value), key
+            continue
+        np.testing.assert_allclose(value, expected[key], rtol=EXACT, atol=0.0, err_msg=key)
+    assert actual["iterations"] == plain["iterations"]
+    assert abs(actual["DERIVATIVE"] - math.cos(1.0)) < 1e-4
 
 
 @pytest.mark.parametrize(
@@ -287,12 +306,14 @@ def test_dy_d_vectorized_wrt_numeric_eval_mixed_matches_scalar_python_calls() ->
     _assert_dy_d_dict_close(actual, expected, atol=1e-12)
 
 
-def _r_nns_diff(name: str, point: float) -> dict[str, float]:
-    return _r_nns_diff_h(name, point, None)
+def _r_nns_diff(name: str, point: float, tol: float | None = None) -> dict[str, float]:
+    return _r_nns_diff_h(name, point, None, tol)
 
 
-def _r_nns_diff_h(name: str, point: float, h: float | None) -> dict[str, float]:
-    result = nns_diff_custom(name, point, h)
+def _r_nns_diff_h(
+    name: str, point: float, h: float | None, tol: float | None = None
+) -> dict[str, float]:
+    result = nns_diff_custom(name, point, h=h, tol=tol)
     assert isinstance(result, dict)
     return {
         key: float(np.asarray(value).reshape(-1)[0])
