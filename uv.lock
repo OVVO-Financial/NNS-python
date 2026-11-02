@@ -1187,6 +1187,7 @@ dev = [
     { name = "ruff" },
 ]
 docs = [
+    { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "pymdown-extensions" },
 ]
@@ -1210,6 +1211,7 @@ dev = [
     { name = "ruff", specifier = "==0.16.3" },
 ]
 docs = [
+    { name = "mkdocs", specifier = ">=1.6,<2" },
     { name = "mkdocs-material", specifier = ">=9.5" },
     { name = "pymdown-extensions", specifier = ">=10" },
 ]

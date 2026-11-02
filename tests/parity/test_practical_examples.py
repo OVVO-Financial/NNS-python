@@ -119,7 +119,6 @@ def test_boston_housing_factor_path_matches_installed_r_example() -> None:
         obj_fn=_rmse,
         objective="min",
         method=(1, 2),
-        cv_size=0.25,
     )
 
     actual = {
@@ -130,9 +129,7 @@ def test_boston_housing_factor_path_matches_installed_r_example() -> None:
         },
         "params": {
             "n_best": float(actual_result["NNS.reg.n.best"]),
-            # R returns the winning rounded grid threshold, while NNS Python keeps the
-            # equivalent objective threshold that produced the same stack surface.
-            "threshold": float(expected["metrics"]["params"]["threshold"]),
+            "threshold": float(actual_result["NNS.dim.red.threshold"]),
         },
         "stack_head": np.asarray(actual_result["stack"], dtype=np.float64)[:5],
     }
@@ -161,7 +158,6 @@ def test_boston_housing_numeric_chas_path_matches_installed_r() -> None:
         obj_fn=_rmse,
         objective="min",
         method=(1, 2),
-        cv_size=0.25,
     )
     actual = {
         "rmse": {
@@ -171,7 +167,7 @@ def test_boston_housing_numeric_chas_path_matches_installed_r() -> None:
         },
         "params": {
             "n_best": float(actual_result["NNS.reg.n.best"]),
-            "threshold": float(expected["metrics"]["params"]["threshold"]),
+            "threshold": float(actual_result["NNS.dim.red.threshold"]),
         },
         "stack_head": np.asarray(actual_result["stack"], dtype=np.float64)[:5],
     }
