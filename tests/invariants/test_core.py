@@ -75,6 +75,18 @@ def test_lpm_ratio_bounds() -> None:
     assert 0 <= result <= 1
 
 
+def test_default_target_is_r_mean_for_a_constant_decimal_sample() -> None:
+    from nns import co_lpm, co_upm
+
+    # np.mean gives 0.6999999999999998 here; R's mean gives 0.7, so R reports 1 / 0.
+    x = np.full(3, 0.7)
+
+    assert lpm_ratio(0.0, None, x) == 1.0
+    assert upm_ratio(0.0, None, x) == 0.0
+    assert co_lpm(0.0, x, x, None, None) == 1.0
+    assert co_upm(0.0, x, x, None, None) == 0.0
+
+
 def test_lpm_ratio_and_upm_ratio_sum_to_one_when_defined() -> None:
     x = np.array([-2.0, -1.0, 0.5, 3.0])
 

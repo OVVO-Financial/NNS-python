@@ -20,6 +20,7 @@ R's native kernel (``NNS_mreg_predict_cpp``) to floating-point tolerance.
 
 from __future__ import annotations
 
+import functools
 import math
 import re
 from typing import Any, Literal, cast
@@ -27,6 +28,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rmean import r_mean
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -351,7 +353,7 @@ def _reduce_value(z: NDArray[np.float64], noise_reduction: str, is_class: bool =
         values, counts = np.unique(z, return_counts=True)
         return float(values[int(np.argmax(counts))])
     if noise_reduction == "mean":
-        return float(np.mean(z))
+        return r_mean(z)  # R's mean(): exact for tied values, unlike np.mean
     if noise_reduction == "median":
         return float(np.median(z))
     if noise_reduction == "mode":
@@ -424,28 +426,29 @@ def _default_order(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
 def _group_reduce_sorted(
     keys: NDArray[np.float64],
     values: NDArray[np.float64],
-    reducer: Any,
+    noise_reduction: str,
+    is_class: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Group values by key exactly as R's ``split(values, keys)`` does.
 
     R splits on ``as.character(keys)`` (15 significant digits), so keys that
     agree to 15 digits share a group and the returned key is the string
-    round-trip of the original value. Replicated here for parity.
+    round-trip of the original value. Replicated here for parity. Each group
+    is reduced with ``_reduce_value`` (via the exact vectorised ``_reduce_cells``).
     """
     order = np.argsort(keys, kind="stable")
     keys_sorted = keys[order]
-    values_sorted = values[order]
-    key_strings = [f"{v:.15g}" for v in keys_sorted]
-
-    out_keys: list[float] = []
-    reduced: list[float] = []
-    start = 0
-    for i in range(1, len(key_strings) + 1):
-        if i == len(key_strings) or key_strings[i] != key_strings[start]:
-            out_keys.append(float(key_strings[start]))
-            reduced.append(reducer(values_sorted[start:i]))
-            start = i
-    return np.asarray(out_keys, dtype=np.float64), np.asarray(reduced, dtype=np.float64)
+    values_sorted = np.asarray(values[order], dtype=np.float64)
+    # "+ 0.0": R prints -0 as "0", so -0.0 and 0.0 keys form one group.
+    key_strings = [f"{v + 0.0:.15g}" for v in keys_sorted]
+    if not key_strings:
+        return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
+    labels = np.asarray(key_strings)
+    starts = np.flatnonzero(np.concatenate(([True], labels[1:] != labels[:-1])))
+    counts = np.diff(np.append(starts, labels.size))
+    out_keys = np.asarray([float(key_strings[i]) for i in starts], dtype=np.float64)
+    reduced = _reduce_cells(values_sorted, starts, counts, noise_reduction, is_class)
+    return out_keys, reduced
 
 
 def _build_points(
@@ -461,7 +464,7 @@ def _build_points(
         return _reduce_value(z, noise_reduction, is_class)
 
     if order == "max":
-        xs, ys = _group_reduce_sorted(x, y, reducer)
+        xs, ys = _group_reduce_sorted(x, y, noise_reduction, is_class)
         rp_x, rp_y = xs, ys
     else:
         ord_value = _default_order(x, y) if order is None else int(order)
@@ -486,7 +489,7 @@ def _build_points(
     rp_x, rp_y = rp_x[order_idx], rp_y[order_idx]
 
     if np.unique(rp_x).size != rp_x.size:
-        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, reducer)
+        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, noise_reduction, is_class)
 
     xmin = float(np.min(x))
     xmax = float(np.max(x))
@@ -497,7 +500,7 @@ def _build_points(
     order_idx = np.argsort(rp_x, kind="stable")
     rp_x, rp_y = rp_x[order_idx], rp_y[order_idx]
     if np.unique(rp_x).size != rp_x.size:
-        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, reducer)
+        rp_x, rp_y = _group_reduce_sorted(rp_x, rp_y, noise_reduction, is_class)
 
     return {"x": rp_x, "y": rp_y}
 
@@ -899,26 +902,12 @@ def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
     m, k = dk.shape
     if k == 1:
         return np.ones((m, 1), dtype=np.float64)
-    ranks = np.arange(1, k + 1, dtype=np.float64)
 
     total = np.full((m, k), 1.0 / k, dtype=np.float64)  # uniform
     total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
     total += _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
-
-    exponential = _normalize_weights_rows(
-        np.broadcast_to(stats.expon.pdf(ranks, scale=k), (m, k)).copy()
-    )
-    total += exponential
-
-    rank_sd = float(np.std(ranks, ddof=1))
-    if math.isfinite(rank_sd) and rank_sd > 0:
-        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
-        lognormal = _normalize_weights_rows(
-            np.broadcast_to(lognormal_row, (m, k)).copy()
-        )[:, ::-1]
-        total += lognormal
-
-    total += _normalize_weights_rows(np.broadcast_to(ranks ** -2.0, (m, k)).copy())
+    for row in _rank_weight_rows(k):
+        total += row
 
     dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
     valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
@@ -939,6 +928,28 @@ def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
     return _normalize_weights_rows(total)
 
 
+@functools.lru_cache(maxsize=512)
+def _rank_weight_rows(k: int) -> tuple[NDArray[np.float64], ...]:
+    """Normalised rank-only ensemble components for k neighbours, in the order
+    they are added: exponential, reversed lognormal (when the rank sd is
+    positive) and inverse-square rank. They do not depend on the distances, so
+    they are computed once per k rather than per query chunk and per k of a
+    path; each row is normalised exactly as a row of the broadcast matrix was.
+    """
+    from scipy import stats
+
+    ranks = np.arange(1, k + 1, dtype=np.float64)
+    rows = [_normalize_weights_rows(stats.expon.pdf(ranks, scale=k)[None, :])[0]]
+    rank_sd = float(np.std(ranks, ddof=1))
+    if math.isfinite(rank_sd) and rank_sd > 0:
+        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
+        rows.append(_normalize_weights_rows(lognormal_row[None, :])[0, ::-1].copy())
+    rows.append(_normalize_weights_rows((ranks ** -2.0)[None, :])[0])
+    for row in rows:
+        row.flags.writeable = False
+    return tuple(rows)
+
+
 def _mreg_distances(
     rpm_x: NDArray[np.float64],
     xtest: NDArray[np.float64],
@@ -946,22 +957,48 @@ def _mreg_distances(
     mins: NDArray[np.float64],
     maxs: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """(m, n) distance matrix under the repaired metric."""
+    """(m, n) distance matrix under the repaired metric.
+
+    Accumulated one predictor column at a time in (m, n) buffers instead of
+    materialising (m, n, p) temporaries. The per-element arithmetic is
+    unchanged and the columns are summed sequentially in column order, which
+    is the order R's kernel uses and the order NumPy used on the former
+    broadcast tensor (its predictor axis had the largest stride, so the
+    reduction ran column by column), so results are bit-for-bit the same.
+    """
+    m, n = xtest.shape[0], rpm_x.shape[0]
     if dist == "FACTOR":
-        return cast(
-            NDArray[np.float64],
-            np.mean(rpm_x[None, :, :] != xtest[:, None, :], axis=2, dtype=np.float64),
-        )
+        # Mismatch counts are small integers, so their sum is exact in any order.
+        out = np.zeros((m, n), dtype=np.float64)
+        for j in range(rpm_x.shape[1]):
+            out += xtest[:, j, None] != rpm_x[None, :, j]
+        out /= rpm_x.shape[1]
+        return out
     ranges = maxs - mins
-    active = np.isfinite(ranges) & (ranges > 0)
-    if not np.any(active):
-        return np.zeros((xtest.shape[0], rpm_x.shape[0]), dtype=np.float64)
-    z = (xtest[:, None, active] - rpm_x[None, :, active]) / ranges[active]
-    if dist == "NNS":
-        return np.sum(np.abs(z) + z * z, axis=2)
-    if dist == "L1":
-        return np.sum(np.abs(z), axis=2)
-    return np.sqrt(np.sum(z * z, axis=2))
+    active = np.flatnonzero(np.isfinite(ranges) & (ranges > 0))
+    if active.size == 0:
+        return np.zeros((m, n), dtype=np.float64)
+
+    out = np.empty((m, n), dtype=np.float64)
+    buf = np.empty_like(out) if active.size > 1 else out
+    sq = np.empty_like(out) if dist == "NNS" else out
+    for a, j in enumerate(active):
+        z = out if a == 0 else buf
+        np.subtract(xtest[:, j, None], rpm_x[None, :, j], out=z)
+        z /= ranges[j]
+        if dist == "NNS":
+            np.multiply(z, z, out=sq)
+            np.abs(z, out=z)
+            z += sq
+        elif dist == "L1":
+            np.abs(z, out=z)
+        else:
+            np.multiply(z, z, out=z)
+        if a:
+            out += z
+    if dist == "L2":
+        np.sqrt(out, out=out)
+    return out
 
 
 def _stable_topk(d: NDArray[np.float64], k: int) -> NDArray[np.intp]:
@@ -975,16 +1012,98 @@ def _stable_topk(d: NDArray[np.float64], k: int) -> NDArray[np.intp]:
     captured), then a stable sort keeps original-index order among equal
     distances before truncating to k.
     """
-    c, n = d.shape
+    n = d.shape[1]
     if k >= n:
         return np.argsort(d, axis=1, kind="stable")
-    kth = np.partition(d, k - 1, axis=1)[:, k - 1]
-    out = np.empty((c, k), dtype=np.intp)
-    for i in range(c):
-        row = d[i]
-        cand = np.flatnonzero(row <= kth[i])
-        order = np.argsort(row[cand], kind="stable")
-        out[i] = cand[order][:k]
+    part = np.argpartition(d, k - 1, axis=1)
+    kth = np.take_along_axis(d, part[:, k - 1 : k], axis=1)
+    counts = np.count_nonzero(d <= kth, axis=1)
+    # Rows with exactly k candidates have no tie at the k-th distance, so the
+    # first k partitioned indices are exactly the candidates: sort them by
+    # index, then stable-sort by distance.
+    sel = np.sort(part[:, :k], axis=1)
+    order = np.argsort(np.take_along_axis(d, sel, axis=1), axis=1, kind="stable")
+    out = np.take_along_axis(sel, order, axis=1)
+    tied = np.flatnonzero(counts != k)
+    if tied.size:
+        out[tied] = _stable_topk_ties(d[tied], kth[tied, 0], counts[tied], k)
+    return out
+
+
+def _stable_topk_ties(
+    d: NDArray[np.float64], kth: NDArray[np.float64], counts: NDArray[np.intp], k: int
+) -> NDArray[np.intp]:
+    """``_stable_topk`` for rows with ties at (or NaN before) the k-th distance."""
+    c = d.shape[0]
+    if np.any(counts < k):  # NaN distances: keep the original per-row behaviour
+        out = np.empty((c, k), dtype=np.intp)
+        for i in range(c):
+            row = d[i]
+            cand = np.flatnonzero(row <= kth[i])
+            order = np.argsort(row[cand], kind="stable")
+            out[i] = cand[order][:k]
+        return out
+    # Candidates come out of nonzero() row-major with ascending column index,
+    # and lexsort is stable, so sorting by (row, distance) leaves equal
+    # distances in original-index order.
+    rows, cols = np.nonzero(d <= kth[:, None])
+    cols = cols[np.lexsort((d[rows, cols], rows))]
+    starts = np.cumsum(counts) - counts
+    return cast(NDArray[np.intp], cols[starts[:, None] + np.arange(k)])
+
+
+def _nearest_tie_values(
+    d: NDArray[np.float64], rpm_yhat: NDArray[np.float64], is_class: bool
+) -> NDArray[np.float64]:
+    """k = 1 rule per query row: aggregate the y.hat of every RPM row at the
+    exact minimum distance (gravity, or the unit-weight mode in class mode).
+
+    A unique nearest row (the usual case) is resolved without a reducer call:
+    the gravity or mode of one finite value is that value (gravity's np.median
+    maps -0.0 to +0.0, mirrored by ``+ 0.0``) and NaN when it is non-finite.
+    """
+    hit = d == d.min(axis=1, keepdims=True)
+    nhit = hit.sum(axis=1)
+    out = np.empty(d.shape[0], dtype=np.float64)
+    one = nhit == 1
+    v = rpm_yhat[np.argmax(hit[one], axis=1)]
+    out[one] = np.where(np.isfinite(v), v if is_class else v + 0.0, np.nan)
+    for i in np.flatnonzero(~one):
+        tied = rpm_yhat[hit[i]]
+        if is_class:
+            out[i] = _mreg_weighted_mode(tied, np.ones(tied.size))
+        else:
+            out[i] = float(nns_gravity(tied[np.isfinite(tied)]))
+    return out
+
+
+def _mreg_weighted_mode_rows(
+    values: NDArray[np.float64], weights: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """``_mreg_weighted_mode`` applied to every row of (c, k) arrays.
+
+    Per-row class totals are accumulated with one ``np.add.at`` over the
+    row-major entries, i.e. in the same order (and from the same 0.0) as the
+    per-row version, so ties between classes resolve identically.
+    """
+    c = values.shape[0]
+    out = np.full(c, np.nan, dtype=np.float64)
+    keep = np.isfinite(values) & np.isfinite(weights) & (weights >= 0)
+    rows, cols = np.nonzero(keep)
+    if rows.size == 0:
+        return out
+    kept = values[rows, cols]
+    classes = np.unique(kept)
+    code = np.searchsorted(classes, kept)
+    totals = np.zeros((c, classes.size), dtype=np.float64)
+    np.add.at(totals, (rows, code), weights[rows, cols])
+    present = np.zeros((c, classes.size), dtype=bool)
+    present[rows, code] = True
+    totals = np.where(present, totals, -np.inf)
+    best = totals.max(axis=1, keepdims=True)
+    winner = np.argmax(totals == best, axis=1)  # smallest tied class value
+    has = present.any(axis=1)
+    out[has] = classes[winner[has]]
     return out
 
 
@@ -1014,20 +1133,13 @@ def _mreg_predict(
     k = min(int(k), n)
     out = np.empty(xtest.shape[0], dtype=np.float64)
 
-    chunk = max(1, int(4_000_000 // max(n, 1)))
+    chunk = max(1, int(1_000_000 // max(n, 1)))
     for start in range(0, xtest.shape[0], chunk):
         rows = slice(start, min(start + chunk, xtest.shape[0]))
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
 
         if k == 1:
-            dmin = d.min(axis=1, keepdims=True)
-            for i in range(d.shape[0]):
-                tied = rpm_yhat[d[i] == dmin[i, 0]]
-                if is_class:
-                    out[start + i] = _mreg_weighted_mode(tied, np.ones(tied.size))
-                else:
-                    finite_tied = tied[np.isfinite(tied)]
-                    out[start + i] = float(nns_gravity(finite_tied))
+            out[rows] = _nearest_tie_values(d, rpm_yhat, is_class)
             continue
 
         idx = _stable_topk(d, k)
@@ -1035,8 +1147,7 @@ def _mreg_predict(
         yk = rpm_yhat[idx]
         w = _mreg_ensemble_weights(dk)
         if is_class:
-            for i in range(dk.shape[0]):
-                out[start + i] = _mreg_weighted_mode(yk[i], w[i])
+            out[rows] = _mreg_weighted_mode_rows(yk, w)
         else:
             out[rows] = np.sum(yk * w, axis=1)
 
@@ -1066,21 +1177,16 @@ def _mreg_predict_path(
     # never materialised in full, and select only the kmax nearest neighbours
     # (partial selection) rather than sorting every RPM row. Results are
     # byte-for-byte identical to a full stable sort of all rows.
-    chunk = max(1, int(4_000_000 // max(n, 1)))
+    chunk = max(1, int(1_000_000 // max(n, 1)))
     for start in range(0, m, chunk):
         rows = slice(start, min(start + chunk, m))
         d = _mreg_distances(rpm_x, xtest[rows], dist, mins, maxs)
-        c = d.shape[0]
         idx = _stable_topk(d, kmax)
         d_sorted = np.take_along_axis(d, idx, axis=1)
         y_sorted = rpm_yhat[idx]
 
         # k = 1 aggregates all exact nearest-distance ties.
-        dmin = d.min(axis=1, keepdims=True)
-        for i in range(c):
-            tied = rpm_yhat[d[i] == dmin[i, 0]]
-            finite_tied = tied[np.isfinite(tied)]
-            out[start + i, 0] = float(nns_gravity(finite_tied))
+        out[rows, 0] = _nearest_tie_values(d, rpm_yhat, False)
 
         for k in range(2, kmax + 1):
             w = _mreg_ensemble_weights(d_sorted[:, :k])
@@ -1151,22 +1257,66 @@ def _mreg_build_rpm(
         return x[order].astype(np.float64), y[order].astype(np.float64)
 
     ids_sorted = ids[order]
-    x_sorted = x[order]
-    y_sorted = y[order]
+    x_sorted = np.asarray(x[order], dtype=np.float64)
+    y_sorted = np.asarray(y[order], dtype=np.float64)
     _, starts = np.unique(ids_sorted, return_index=True)
     starts = np.sort(starts)
-    ends = np.append(starts[1:], ids_sorted.size)
-    rows = []
-    yhat = []
-    for s, e in zip(starts, ends, strict=True):
-        rows.append(
-            [
-                _reduce_value(x_sorted[s:e, j], noise_reduction, False)
-                for j in range(x.shape[1])
-            ]
-        )
-        yhat.append(_reduce_value(y_sorted[s:e], noise_reduction, is_class))
-    return np.asarray(rows, dtype=np.float64), np.asarray(yhat, dtype=np.float64)
+    counts = np.diff(np.append(starts, ids_sorted.size))
+    rpm_x = np.column_stack(
+        [
+            _reduce_cells(x_sorted[:, j], starts, counts, noise_reduction, False)
+            for j in range(x.shape[1])
+        ]
+    )
+    rpm_yhat = _reduce_cells(y_sorted, starts, counts, noise_reduction, is_class)
+    return rpm_x, rpm_yhat
+
+
+def _reduce_cells(
+    values: NDArray[np.float64],
+    starts: NDArray[np.intp],
+    counts: NDArray[np.intp],
+    noise_reduction: str,
+    is_class: bool,
+) -> NDArray[np.float64]:
+    """``_reduce_value`` over each cell ``values[s:s+c]``, vectorised where exact.
+
+    One- to three-member cells (most cells of a fine partition) have closed
+    forms that reproduce ``_reduce_value`` bit for bit: a lone finite value is
+    returned as is, and the median/gravity of two or three finite values is
+    ``(lo + hi) / 2`` or the middle value. NumPy's mean/median accumulate from
+    +0.0, so ``+ 0.0`` reproduces their -0.0 -> +0.0 normalisation. Larger
+    cells, non-finite members and the mode/class reducers use the reducer.
+    """
+    first = values[starts]
+    out = np.empty(starts.size, dtype=np.float64)
+    pending = np.ones(starts.size, dtype=bool)
+
+    single = counts == 1
+    if is_class or noise_reduction == "mode":
+        out[single] = np.where(np.isfinite(first[single]), first[single], np.nan)
+    else:
+        out[single] = np.where(np.isfinite(first[single]), first[single] + 0.0, np.nan)
+    pending[single] = False
+
+    if not is_class and noise_reduction in ("off", "median"):
+        for size in (2, 3):
+            cells = np.flatnonzero(counts == size)
+            if cells.size == 0:
+                continue
+            block = values[starts[cells, None] + np.arange(size)]
+            exact = np.all(np.isfinite(block), axis=1)
+            cells, block = cells[exact], np.sort(block[exact], axis=1)
+            if size == 2:
+                out[cells] = (block[:, 0] + block[:, 1]) / 2.0 + 0.0
+            else:
+                out[cells] = block[:, 1] + 0.0
+            pending[cells] = False
+
+    for g in np.flatnonzero(pending):
+        s = starts[g]
+        out[g] = _reduce_value(values[s : s + counts[g]], noise_reduction, is_class)
+    return out
 
 
 def _mreg_prepare(
@@ -1237,10 +1387,27 @@ def _m_reg(
         k = min(int(n_best), rpm_x.shape[0])
     k = max(1, k)
 
-    fitted_pred = cast(
-        NDArray[np.float64],
-        _mreg_predict(x, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class),
-    )
+    if point_only and confidence_interval is None:
+        # Fitted values are only reported (R2, Fitted.xy) or used (interval
+        # residual quantiles) when point.only is FALSE or an interval is
+        # requested; skip the n x nrow(RPM) training-row search otherwise.
+        fitted_pred = np.full(y.size, np.nan)
+    elif order == "max" and k == 1:
+        # R's exact limit shortcut (Multivariate_Regression.R): with order =
+        # "max" every distinct training row is its own regression point and
+        # duplicate rows share one, so the k = 1 rule returns that point's
+        # y.hat. Map rows to their RPM row (RPM rows are in sorted-ID order)
+        # instead of an n x nrow(RPM) distance search. "+ 0.0" mirrors the
+        # gravity of a single tied value (-0.0 -> +0.0) in regression mode.
+        _, rpm_index = np.unique(partition["ids"], return_inverse=True)
+        fitted_pred = np.asarray(rpm_yhat[rpm_index.reshape(-1)], dtype=np.float64)
+        if not is_class:
+            fitted_pred = fitted_pred + 0.0
+    else:
+        fitted_pred = cast(
+            NDArray[np.float64],
+            _mreg_predict(x, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class),
+        )
     point_pred = _mreg_predict(point_est, rpm_x, rpm_yhat, k, dist, mins, maxs, is_class)
 
     if is_class:
@@ -1249,7 +1416,9 @@ def _m_reg(
         if point_pred is not None:
             point_pred = _snap_class(point_pred, observed)
 
-    metric = float(np.mean(fitted_pred == y)) if is_class else _r2(y, fitted_pred)
+    metric: float | None = None
+    if not point_only:
+        metric = float(np.mean(fitted_pred == y)) if is_class else _r2(y, fitted_pred)
     intervals = _intervals(
         y, fitted_pred, point_pred, confidence_interval, is_class,
         np.unique(y) if is_class else None,
@@ -1287,7 +1456,7 @@ def _m_reg(
         fitted_xy["conf.int.pos"] = intervals["conf_upper"]
 
     out: dict[str, Any] = {
-        "R2": None if point_only else metric,
+        "R2": metric,
         "rhs.partitions": rhs_dict,
         "RPM": rpm_dict,
         "Point.est": point_pred,
