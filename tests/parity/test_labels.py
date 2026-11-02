@@ -357,7 +357,10 @@ def test_nns_stack_factor_predictor_levels_and_names() -> None:
     np.testing.assert_allclose(by_levels["stack"], actual["stack"])
 
 
-def test_nns_stack_univariate_all_n_best_is_na_like_r() -> None:
+def test_nns_stack_univariate_n_best_matches_r() -> None:
+    # R reports NA for n.best when the "all" candidate wins on a univariate
+    # design; now that the "all" candidate is scored with the model it deploys, a k
+    # candidate wins on this data, so compare with R either way.
     rs = np.random.RandomState(5)
     n = 200
     a = rs.normal(size=n)
@@ -374,8 +377,9 @@ def test_nns_stack_univariate_all_n_best_is_na_like_r() -> None:
     )
     assert isinstance(expected, dict)
     actual = nns_stack(train, y[:160], test)
-    assert np.isnan(_num(expected["nbest"]))
-    assert np.isnan(actual["NNS.reg.n.best"])
+    np.testing.assert_allclose(
+        float(actual["NNS.reg.n.best"]), float(_num(expected["nbest"])), equal_nan=True
+    )
     np.testing.assert_allclose(actual["reg"], _num(expected["reg"]), atol=COMPOUND)
 
 

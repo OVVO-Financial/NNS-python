@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -389,6 +390,48 @@ def test_nns_stack_dim_red_selection_matches_r(dim_red_method: str) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("folds", [3, 5])
+def test_nns_stack_boston_cor_partitions_match_r(folds: int) -> None:
+    # The cor coefficients and the X* projections feed NNS partitions, where a
+    # last-ulp difference can move a regression point. The port reproduces R's
+    # long-double cor and its summation orders so the folds partition alike.
+    data = np.genfromtxt(
+        Path(__file__).resolve().parents[1] / "data" / "boston_housing.csv",
+        delimiter=",",
+        skip_header=1,
+    )
+    x, y = data[:356, :-1], data[:356, -1]
+    x_test = data[356:380, :-1]
+
+    expected = nns_stack_numeric(
+        x.tolist(),
+        y.tolist(),
+        x_test.tolist(),
+        cv_size=0.25,
+        folds=folds,
+        method=[1, 2],
+        order=None,
+        stack=True,
+        dim_red_method="cor",
+        seed=123,
+    )
+    actual = nns_stack(
+        x,
+        y,
+        x_test,
+        cv_size=0.25,
+        folds=folds,
+        method=(1, 2),
+        stack=True,
+        dim_red_method="cor",
+        dist=None,
+        seed=123,
+    )
+
+    _assert_stack_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("method", [[1], [2], [1, 2]])
 def test_nns_stack_pred_int_matches_r(method: list[int]) -> None:
     x = np.linspace(-2.0, 2.0, 40)
@@ -672,6 +715,96 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
     )
 
     _assert_stack_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("columns", [1, 2])
+def test_nns_stack_all_candidate_is_scored_with_the_deployed_estimator(columns: int) -> None:
+    # The Method 1 "ALL" candidate was scored out of fold as the
+    # constant training mean, but the deployed model is the univariate NNS.reg fit
+    # or NNS.reg(n.best = "all"). On pure noise ALL used to win with the SSE of a
+    # constant (the same OBJfn.reg for one and two columns).
+    rng = np.random.default_rng(5)
+    variable = np.round(rng.standard_normal((200, 2)), 8)[:, :columns]
+    y = np.round(rng.standard_normal(200), 8)
+
+    expected = nns_stack_numeric(
+        variable[:160].tolist(),
+        y[:160].tolist(),
+        variable[160:].tolist(),
+        cv_size=0.25,
+        folds=5,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        seed=5,
+    )
+    actual = nns_stack(
+        variable[:160],
+        y[:160],
+        variable[160:],
+        cv_size=0.25,
+        folds=5,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        random_seed=5,
+        dist=None,
+    )
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(
+        actual["OBJfn.reg"], float(np.asarray(expected["OBJfn.reg"])), rtol=1e-10
+    )
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
+
+
+@pytest.mark.parity
+@pytest.mark.stochastic
+def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
+    # sample(g, k) on a one-member class g sampled from 1:g and
+    # dropped the rare class; R now indexes g[sample.int(length(g), k)], which is
+    # what NNS Python's R-sample emulation already did. Seeds now reach R's
+    # NNS.stack(seed =) (it re-seeded with its default 123).
+    x = np.linspace(-2.0, 2.0, 60)
+    variable = np.column_stack((x, np.sin(3.0 * x)))
+    y = np.where(x < -0.05, 1.0, 2.0)
+    y[[20, 45]] = 3.0
+    point = variable[[3, 20, 33, 45, 58]]
+
+    expected = nns_stack_numeric(
+        variable.tolist(),
+        y.tolist(),
+        point.tolist(),
+        cv_size=0.25,
+        folds=1,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        seed=1,
+    )
+    actual = nns_stack(
+        variable,
+        y,
+        point,
+        cv_size=0.25,
+        folds=1,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        random_seed=1,
+        dist=None,
+    )
+
+    _assert_stack_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
 
 
 @pytest.mark.parity

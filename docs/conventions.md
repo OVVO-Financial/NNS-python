@@ -582,16 +582,19 @@ rounds results to `digits`, matching R's default output convention.
 "overall")` path and returns the mean fitted gradient from unsmoothed
 `nns_reg`. Numeric `dy_dx` evaluation points use R's finite-difference grid
 around smooth `nns_reg` point estimates, stepping by
-`gravity(|diff(x)|) * h` for each bandwidth `h` in R's `h_s`, and return a
+`gravity(diff(sort(unique(x)))) * h` for each bandwidth `h` in R's `h_s` (the
+spacing of the sorted values, as in the patched R, so row order does not matter),
+and return a
 table-like dictionary with `eval.point`, `first.derivative`, and
 `second.derivative`. At `min(x)` or `max(x)` the first derivative is R's
 one-sided slope and the second derivative is NaN. As in R, bandwidths that
 repeat in `h_s` (n < 49) are skipped; below n = 16, where every bandwidth
 repeats and R's `dy.dx` fails, the port uses the distinct bandwidths.
 `eval_point` must be given (a number, a vector, or `"overall"`).
-`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")`
-(tolerance `.Machine$double.eps^0.25`), so iterations and convergence flags
-match R.
+`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")` with
+`tol = tol / 10`, and declares convergence when the bisection bracket on the
+intercept `B` is narrower than `tol * max(1, |B|)` (as in the patched R), so
+iterations and convergence flags match R.
 
 NNS Python derivative parity is defined at the public input/output level, while
 preserving R's cumulative finite-difference perturbation pattern for `dy_d`.

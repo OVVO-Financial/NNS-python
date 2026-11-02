@@ -42,6 +42,46 @@ def test_nns_boost_numeric_matches_r(depth: int | None) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("values", [(0.0, 1.0), (-5.0, 5.0)])
+def test_nns_boost_two_valued_numeric_response_returns_values(values: tuple[float, float]) -> None:
+    # Patched R: the final NNS.stack auto-classifies a two-valued numeric
+    # response and returns class codes 1/2, which boost passed through as
+    # regression estimates; they are now mapped back to the response values.
+    x = np.linspace(-2.0, 2.0, 40)
+    variable = np.column_stack((x, np.sin(x)))
+    y = np.where(x > 0.3, values[1], values[0])
+    point = variable[[1, 5, 20, 30, 38]]
+
+    expected = nns_boost_numeric(
+        variable.tolist(),
+        y.tolist(),
+        point.tolist(),
+        learner_trials=5,
+        cv_size=0.25,
+        depth=None,
+        features_only=False,
+        epochs=3,
+        seed=1,
+    )
+    actual = nns_boost(
+        variable,
+        y,
+        point,
+        learner_trials=5,
+        epochs=3,
+        cv_size=0.25,
+        feature_importance=False,
+        dist=None,
+        random_seed=1,
+    )
+
+    assert isinstance(expected, dict)
+    results = np.asarray(actual["results"], dtype=np.float64)
+    assert set(results.tolist()) <= set(values)
+    np.testing.assert_allclose(results, np.asarray(expected["results"], dtype=np.float64))
+
+
+@pytest.mark.parity
 def test_nns_boost_ivs_test_none_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     variable = np.column_stack((x, np.sin(x), np.cos(x)))

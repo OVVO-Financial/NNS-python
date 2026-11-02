@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -100,7 +101,9 @@ def nns_diff(
                 return math.nan
             return -f_x + ((f_x - _eval_real(f, point - x, "f(point - x)")) / x) * point + intercept
 
-        inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value)
+        # Solve for h to the convergence tolerance (uniroot's default
+        # tol of about 1.2e-4 made |inferred_h| < tol a test of its stopping point).
+        inferred_h = _uniroot_extend(new_f, -2.0 * h_value, 2.0 * h_value, tol=tol / 10.0)
         if not np.isfinite(inferred_h):
             termination_code = 2
             break
@@ -123,6 +126,12 @@ def nns_diff(
             else:
                 lower_b = new_b
         new_b = float(np.mean([lower_b, upper_b]))
+        # Converged once the bisection bracket on B is tight: inferred_h cannot reach
+        # |h| < tol in double precision once it is accurate.
+        if abs(upper_b - lower_b) <= tol * max(1.0, abs(new_b)):
+            converged = True
+            termination_code = 0
+            break
         iteration += 1
 
     final_b = float(np.mean([upper_b, lower_b]))
@@ -214,12 +223,18 @@ def dy_d(
     messages: bool = True,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Faithful Python port of R's ``dy.d_`` (NNS 13.2, reconciled).
+    """Partial derivatives of ``y`` with respect to column ``wrt`` (R's ``dy.d_``).
 
-    This is the reconciled finite-difference estimator that matches R's
-    ``NNS::dy.d_`` bit-for-bit: a locally-adaptive ``dy.dx`` step combined with
-    an ``NNS.stack`` fit on the equal-weight synthetic regressor. See
-    :func:`dy_d_best` for the full description of the algorithm.
+    Finite differences of the multivariate ``nns_reg`` fit on the actual
+    regressors, ``f(x +/- h e_wrt)``, with a locally-adaptive ``dy.dx`` step
+    ``h = VaR(p + H, 1, x_wrt) - VaR(p - H, 1, x_wrt)``, ``p = LPM.ratio(1, eval,
+    x_wrt)``. Bandwidths follow NNS 0.5.7: ``H`` in ``1/log(size(x), [2, 10])``
+    extended by ``10 * H`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First
+    and second derivatives use the central-difference forms
+    ``(upper - lower) / (2 h)`` and ``(upper - 2 f(x) + lower) / h ** 2``, averaged
+    over the bandwidths. This follows the patched R: NNS 13.3
+    estimated ``f`` from ``NNS.stack`` on the equal-weight index ``rowMeans(x)``,
+    so every regressor received about the index slope / p whatever its true effect.
 
     ``wrt`` uses R-style 1-based indexing and selects a column of the
     factor-expanded predictor matrix. A scalar/1-D ``eval_points`` evaluates
@@ -262,41 +277,13 @@ def dy_d_best(
     messages: bool = False,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Reconciled ``dy.d_`` partial-derivative estimator.
-
-    This is the reconciliation of the original NNS 0.5.7 ``dy.d_`` (Vinod & Viole
-    2020, SSRN 3681436) with the current regression engine. It keeps the v0.5.7
-    finite-difference scaffolding but makes two changes that make the estimates
-    uniform across identically-distributed regressors and independent of the old
-    data.table machinery:
-
-    * **Step (``h_step``) shares the ``dy.dx`` logic** - a locally-adaptive step
-      centred on the evaluation point's percentile,
-      ``h_step = VaR(p + H, 1, x) - VaR(p - H, 1, x)`` with
-      ``p = LPM.ratio(1, eval, x)`` - instead of a global quantile spacing with a
-      cumulative window. This is what removes the cross-regressor scatter.
-    * **Estimates come from** ``nns_stack`` on the equal-weight synthetic regressor
-      ``X*`` via the increased-dimension trick ``cbind(X*, X*)``, with
-      ``method=(1, 2)``, ``dim_red_method="equal"``, ``order="max"`` and
-      ``folds=5``. The stack's cross-validated ``n.best`` regularises the (sharper)
-      current engine back toward the paper's regime.
-
-    Bandwidths follow v0.5.7: ``h_s = 1/log(size(x), [2, 10])`` extended by
-    ``10 * h_s`` and doubled when ``nns_dep(x[:, wrt], y) < 0.5``. First and second
-    derivatives use the central-difference forms
-    ``First = (upper - lower) / (2 h_step)`` and
-    ``Second = (upper - 2 f(x) + lower) / h_step ** 2`` (matching ``dy.dx``),
-    blended across bandwidths with a plain ``nanmean``.
-
-    ``wrt`` uses R-style 1-based indexing into the factor-expanded predictor
-    matrix. A scalar/1-D ``eval_points`` evaluates only the selected regressor
-    (averaged over the distribution of the other regressors); a 2-D array
-    evaluates complete predictor tuples.
-
-    This is kept as an explicit alias of :func:`dy_d`; both share the same
-    reconciled engine and differ only in the default ``messages`` value.
-    """
-    return _dy_d_reconciled(
+    """Deprecated alias of :func:`dy_d` (they always returned the same numbers)."""
+    warnings.warn(
+        "dy_d_best is deprecated and will be removed; use dy_d (same estimator).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return dy_d(
         x,
         y,
         wrt,
@@ -317,7 +304,7 @@ def _dy_d_reconciled(
     messages: bool = False,
     factor_levels: Sequence[Sequence[Any] | None] | None = None,
 ) -> dict[str, NDArray[np.float64]]:
-    """Shared reconciled ``dy.d_`` engine backing :func:`dy_d`/:func:`dy_d_best`."""
+    """Shared ``dy.d_`` engine backing :func:`dy_d`."""
     raw_x = np.asarray(x)
     if raw_x.ndim != 2:
         raise ValueError("Please ensure (x) is a matrix or data.frame type object.")
@@ -337,11 +324,9 @@ def _dy_d_reconciled(
 
     wrt_values = _dy_d_validate_wrt(wrt, x_values.shape[1])
 
-    # Every regressor shares the same X* = rowMeans(x) training design, so the
-    # NNS.stack fit (CV n.best, dimension-reduction coefficients, blend weight)
-    # is identical for all of them and for every bandwidth. Gather the test
-    # blocks from all regressors and run a SINGLE NNS.stack fit + prediction,
-    # then hand each regressor's slice back to its reducer.
+    # Every regressor and bandwidth uses the same multivariate nns_reg fit on the
+    # actual regressors. Gather the test blocks from all regressors and run a
+    # SINGLE fit + prediction, then hand each regressor's slice back to its reducer.
     plans = [
         _dy_d_best_plan(
             x_values,
@@ -377,31 +362,22 @@ def _dy_d_best_reg_estimates(
     y: NDArray[np.float64],
     test_points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """f(x +/- h) via NNS.stack on the equal-weight synthetic regressor X*.
+    """f(x +/- h e_wrt) from the multivariate nns_reg fit on the actual regressors.
 
-    Reduces both the training design and the test points to the equal-weight
-    synthetic regressor X* = rowMeans(.), then estimates with the NNS
-    increased-dimension trick cbind(X*, X*) under
-    ``method=(1, 2), dim_red_method="equal", order="max", folds=5``. The
-    cross-validated ``n.best`` is what regularises the current engine.
+    Patched R: ``NNS.reg(x, y, point.est = pts, order = NULL)``. The previous
+    ``NNS.stack`` fit on the equal-weight index ``rowMeans(x)`` made every estimate
+    depend on ``mean(x)`` only (y = 2*x1 gave dy/dx2 of about 1).
     """
-    from nns.stack import nns_stack
+    from nns.regression import nns_reg
 
-    x_star = np.asarray(x, dtype=np.float64).mean(axis=1)
-    test_star = np.asarray(test_points, dtype=np.float64).mean(axis=1)
-    result = nns_stack(
-        ivs_train=np.column_stack([x_star, x_star]),
-        dv_train=y,
-        ivs_test=np.column_stack([test_star, test_star]),
-        method=(1, 2),
-        dim_red_method="equal",
-        status=False,
-        order="max",
-        folds=5,
-        ncores=1,
-        dist=None,
+    result = nns_reg(
+        np.asarray(x, dtype=np.float64),
+        y,
+        point_est=np.asarray(test_points, dtype=np.float64),
+        order=None,
+        plot=False,
     )
-    return np.asarray(result["stack"], dtype=np.float64).reshape(-1)
+    return np.asarray(result["Point.est"], dtype=np.float64).reshape(-1)
 
 
 def _r_seq(start: float, stop: float, by: float) -> NDArray[np.float64]:
@@ -704,7 +680,7 @@ def _dy_dx_numeric(
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
     h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5)))
-    # R steps by gravity(|diff(x)|) * h_s[index]. When h_s holds a repeated
+    # R steps by gravity(diff(sort(unique(x)))) * h_s[index]. When h_s holds a repeated
     # bandwidth (n < 49), R's `deriv.points[[index]] <- ...` with a length-2
     # index is a recursive assignment and rbind() drops those blocks, so R only
     # uses the bandwidths that occur once. Below n = 16 every bandwidth repeats
@@ -713,7 +689,10 @@ def _dy_dx_numeric(
     bandwidths = h_s[np.isin(h_s, values[counts == 1])]
     if bandwidths.size == 0:
         bandwidths = values
-    spacing = float(_gravity(np.abs(np.diff(x))))
+    # Typical spacing between neighbouring x values: diff() of x
+    # in row order measured the gap between consecutive rows, so unsorted input
+    # gave steps spanning the whole range and depended on row order.
+    spacing = float(_gravity(np.diff(np.unique(x))))
     x_min = float(np.min(x))
     x_max = float(np.max(x))
     rows: list[NDArray[np.float64]] = []
@@ -842,15 +821,16 @@ _DBL_EPS = float(np.finfo(float).eps)
 _DBL_MAX = float(np.finfo(float).max)
 
 
-def _uniroot_extend(fn: Callable[[float], float], lower: float, upper: float) -> float:
-    """Root of ``fn`` like R's ``uniroot(fn, c(lower, upper), extendInt = "yes")``.
+def _uniroot_extend(
+    fn: Callable[[float], float], lower: float, upper: float, *, tol: float = _DBL_EPS**0.25
+) -> float:
+    """Root of ``fn`` like R's ``uniroot(fn, c(lower, upper), extendInt = "yes", tol)``.
 
-    Uses R's default ``tol = .Machine$double.eps^0.25`` and ``maxiter = 1000``:
+    ``tol`` defaults to R's ``.Machine$double.eps^0.25``; ``maxiter = 1000``:
     the interval is widened additively on both sides until the end values
     bracket a root, then refined with Brent's method as in R's ``zeroin2``.
     Returns NaN where R's ``uniroot`` stops with an error.
     """
-    tol = _DBL_EPS**0.25
     maxiter = 1000
     try:
         f_lower = float(fn(lower))

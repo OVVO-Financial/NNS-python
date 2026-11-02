@@ -231,6 +231,28 @@ def test_nns_reg_mode_noise_reduction_matches_r(
     _assert_reg_matches(actual, expected)
 
 
+@pytest.mark.parity
+def test_nns_reg_multivariate_mode_noise_reduction_matches_r() -> None:
+    # R's native multivariate setup reduced noise_reduction="mode"
+    # cells with the exact most-frequent value, while the pure-R reference uses
+    # NNS.mode(discrete = FALSE); NNS Python follows the reference, which the
+    # patched R's default path now matches.
+    rng = np.random.default_rng(3)
+    x = np.round(rng.uniform(0.0, 5.0, (300, 2)), 0)
+    y = np.round(x[:, 0] + np.sin(x[:, 1]) + rng.normal(0.0, 0.5, 300), 1)
+
+    expected = _r_nns_reg(x, y, order=None, noise="mode", point_est=None)
+    actual = nns_reg(x, y, noise_reduction="mode")
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(actual["R2"], float(np.asarray(expected["R2"])), rtol=1e-10)
+    np.testing.assert_allclose(
+        actual["Fitted.xy"]["y.hat"],
+        np.asarray(expected["Fitted.xy"]["y.hat"], dtype=np.float64),
+        atol=1e-10,
+    )
+
+
 def test_nns_reg_mode_class_noise_reduction_rejected_like_r() -> None:
     # NNS 13.1 restricted noise.reduction to mean/median/mode/off; the legacy
     # "mode_class" option was removed and now raises in both languages.
