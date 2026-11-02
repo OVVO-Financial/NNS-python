@@ -237,7 +237,7 @@ def _anova_robust(
 ) -> AnovaResult:
     # R draws the resample indices first: replicate(100, sample.int(l, replace =
     # TRUE)) with l = min(length(treatment), length(control)). (Resampling only
-    # the first l observations of the longer group is shared with R; SDA-02.)
+    # the first l observations of the longer group is shared with R.)
     sample_size = min(control.size, treatment.size)
     draws = (rng.sample_int_replace(sample_size, sample_size * 100) - 1).reshape(100, -1)
     # R's treatment_matrix is cbind(resample 1, resamples 100, 99, ..., 1), so
