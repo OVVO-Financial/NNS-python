@@ -68,6 +68,8 @@ def _moment(
     values = _as_1d_values(x)
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
+    if not np.all(np.isfinite(targets)):
+        raise ValueError("`target` must be finite.")
 
     native = native_fn("lpm" if lower else "upm")
     if native is not None and targets.size > 0 and _native_safe(values, targets):
@@ -85,8 +87,6 @@ def _moment(
             deviations = grid - values if lower else values - grid
             block = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
         moments[start : start + _TARGET_BLOCK] = block
-    if degree == 0:
-        moments[np.isnan(targets)] = np.nan
     return _result_for_target(moments, target)
 
 
