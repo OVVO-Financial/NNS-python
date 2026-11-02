@@ -61,9 +61,8 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
     
     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
-    // Discordant = neither co-lower (<= target) nor co-upper (> target), the
-    // same split as the two counts above, so the degree-0 frequencies
-    // partition the cell (a tie used to count as co-lower AND discordant).
+    // Discordant = neither co-lower (<= target) nor co-upper (> target), so
+    // the degree-0 counts partition the cell.
     if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
       dpm_d0_count += 1.0;
     
@@ -80,10 +79,8 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   }
   
   double inv_n = 1.0 / static_cast<double>(n);
-  // Compare the concordant COUNT with n: the share (count * (1/n)) is not exactly
-  // 1 for many n (e.g. 49 * (1/49) != 1), DEP-08. Every point concordant: perfect
-  // positive dependence; every point discordant: perfect negative dependence
-  // (this used to return +1 too, so dep(x, -x) reported Correlation = +1, DEP-01).
+  // Compare counts, not count * (1/n): 49 * (1/49) != 1. All
+  // concordant: perfect positive dependence; all discordant: negative.
   double d0_concordant = d0_cupm + d0_clpm;
   double d0_Co = d0_concordant * inv_n;
   if (d0_concordant == static_cast<double>(n)) return 1.0;
@@ -95,12 +92,9 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   double dpm_d1 = c1_total > 0.0 ? c1_dpm / c1_total : 0.0;
   
   constexpr double indep_Co = 0.5;
-  // Independence null for the discordant partial moment (R 13.1). A point is
-  // concordant when it is all-below OR all-above the target (both aligned
-  // orthants), so under independence P(discordant) = 1 - 2 * 0.5^2 = 0.5 for
-  // the bivariate copula, not 1 - 0.5^2 = 0.75. The old 0.75 anchor left a
-  // fixed 1/3 residual in each discordant term (a ~0.41 dependence floor for
-  // independent data).
+  // Independence null for the discordant partial moment (R 13.1): a point is
+  // concordant when all-below OR all-above the target, so under independence
+  // P(discordant) = 1 - 2 * 0.5^2 = 0.5, not 0.75.
   constexpr double indep_D  = 0.5;
   
   double discrete_dep   = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
@@ -128,9 +122,8 @@ double copula_degree0_unsigned(const std::vector<double>& xv, const std::vector<
     double dy = yv[i] - ty;
     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
-    // Discordant = neither co-lower (<= target) nor co-upper (> target), the
-    // same split as the two counts above, so the degree-0 frequencies
-    // partition the cell (a tie used to count as co-lower AND discordant).
+    // Discordant = neither co-lower (<= target) nor co-upper (> target), so
+    // the degree-0 counts partition the cell.
     if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
       dpm_d0_count += 1.0;
   }
@@ -140,12 +133,9 @@ double copula_degree0_unsigned(const std::vector<double>& xv, const std::vector<
   double dpm_d0 = dpm_d0_count * inv_n;
   
   constexpr double indep_Co = 0.5;
-  // Independence null for the discordant partial moment (R 13.1). A point is
-  // concordant when it is all-below OR all-above the target (both aligned
-  // orthants), so under independence P(discordant) = 1 - 2 * 0.5^2 = 0.5 for
-  // the bivariate copula, not 1 - 0.5^2 = 0.75. The old 0.75 anchor left a
-  // fixed 1/3 residual in each discordant term (a ~0.41 dependence floor for
-  // independent data).
+  // Independence null for the discordant partial moment (R 13.1): a point is
+  // concordant when all-below OR all-above the target, so under independence
+  // P(discordant) = 1 - 2 * 0.5^2 = 0.5, not 0.75.
   constexpr double indep_D  = 0.5;
   
   double disc_dep = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));

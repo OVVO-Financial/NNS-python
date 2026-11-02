@@ -40,10 +40,8 @@ inline double repeat_multiplication(double value, int n) {
 
 inline bool is_integer(double v) { return v == static_cast<double>(static_cast<int>(v)); }
 
-// Partial moments are defined for degree >= 0 only. A negative degree used to
-// be silently evaluated as the degree-0 count on the integer fast path
-// (repeat_multiplication with n < 0 returns 1), and NaN reached
-// static_cast<int>(NaN), which is undefined behaviour.
+// Rejects negative and NaN degrees (NNS 13.3 returned the degree-0 count for a
+// negative degree).
 inline void check_degree(double degree, const char* what = "degree") {
   if (!(degree >= 0.0)) {
     throw std::invalid_argument(std::string("`") + what +
@@ -67,14 +65,10 @@ inline double upper_component(double diff, double degree, bool degree_is_int) {
 
 // --- sorted-anchor prefix backend (vectorised LPM/UPM, > 32 targets) -------
 //
-// NNS 13.0 introduced a prefix-power backend that expands
-//   sum_{x_i <= t} (t - x_i)^d
-// binomially around the sample median and evaluates it from running power
-// sums.  The alternating terms of that expansion cancel catastrophically for
-// d >= 3 (and for d = 2 in the tails), producing negative or grossly wrong
-// partial moments.  This backend keeps the O((n + m) log n) cost but anchors
-// every expansion at an adjacent order statistic, so that all terms are
-// non-negative and no cancellation can occur:
+// NNS 13.0-13.3 expanded sum_{x_i <= t} (t - x_i)^d binomially around the
+// sample median, which cancels catastrophically for d >= 3. This backend keeps
+// the O((n + m) log n) cost but anchors every expansion at an adjacent order
+// statistic, so all terms are non-negative:
 //
 //   lower_j(k) = sum_{i < k}  (x_(k-1) - x_(i))^j   (anchor = largest point <= t)
 //   upper_j(k) = sum_{i >= k} (x_(i) - x_(k))^j     (anchor = smallest point > t)
@@ -84,9 +78,7 @@ inline double upper_component(double diff, double degree, bool degree_is_int) {
 //   delta = x_(k) - x_(k-1) >= 0,
 // and a target t with k = #{x_i <= t} is evaluated as
 //   LPM = sum_j C(d,j) (t - x_(k-1))^(d-j) lower_j(k) / n
-//   UPM = sum_j C(d,j) (x_(k) - t)^(d-j)   upper_j(k) / n,
-// again a sum of non-negative terms.  The result agrees with the direct scan
-// to rounding for every supported degree.
+//   UPM = sum_j C(d,j) (x_(k) - t)^(d-j)   upper_j(k) / n.
 
 constexpr int kPrefixMaxDegree = 32;
 constexpr std::size_t kDirectPathMaxTargets = 32;  // NNS_DIRECT_PATH_MAX_TARGETS
@@ -646,10 +638,8 @@ double cupm_nd_impl(const double* data, std::size_t n, std::size_t d,
                     const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
-    // Strictly above in every coordinate, as Co.UPM (x > target) does: ties
-    // belong to the lower side (x <= target), so at degree 0 the CLPM, CUPM and
-    // DPM counts partition the sample (R fix "Co.UPM_nD/DPM_nD: degree-0 counts
-    // partition the sample").
+    // Strictly above, as Co.UPM does: ties go to the lower side so that at
+    // degree 0 CLPM + CUPM + DPM partition the sample.
     const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       for (std::size_t j = 0; j < d; ++j)
         if (at(data, n, i, j) <= target[j]) return 0.0;
@@ -674,9 +664,7 @@ double dpm_nd_impl(const double* data, std::size_t n, std::size_t d,
                    const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
-    // Discordant = neither all-lower (x <= target, the CLPM count) nor
-    // all-upper (x > target, the CUPM count); ties used to count as discordant
-    // and lower at the same time.
+    // Discordant = neither all-lower (x <= target) nor all-upper (x > target).
     const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       bool all_below = true, all_above = true;
       for (std::size_t j = 0; j < d; ++j) {

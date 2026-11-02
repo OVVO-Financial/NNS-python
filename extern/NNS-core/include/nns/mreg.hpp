@@ -29,7 +29,7 @@ std::vector<std::size_t> duplicate_column_map(const double* X, std::size_t n,
 enum MregReducer : int {
   kMregMean = 0,     // "mean"
   kMregMedian = 1,   // "median"
-  kMregMode = 2,     // "mode": most frequent exact value, ties -> smallest
+  kMregMode = 2,     // "mode": NNS.mode (class responses: most frequent value)
   kMregGravity = 3,  // "off": NNS.gravity
 };
 

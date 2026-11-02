@@ -4,12 +4,12 @@
   "r_version": "13.3",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
-  "core_commit": "cdf627d7fdeab7905effac3b723805b366388a7f",
+  "core_commit": "a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d",
   "python_repo": "OVVO-Financial/NNS-python",
   "python_commit": null,
   "vendored_core_path": "extern/NNS-core",
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache",
-  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the R 13.3 commit (82a92eb) whose behavior the parity cache encodes. core_commit is the vendored NNS-core snapshot (extern/NNS-core = CMakeLists.txt, include/, src/ of that commit); it ports the R 13.3 src tree (NNS-core sync/nns_r_source.json) plus the R bug fixes listed there and the core counterparts of the R patches for the mode reducer, the degree-0 nD/dependence tie split and the copula_signed sign and exact count compare. The vendored R snapshot (tools/NNS, r_src_tree_hash, tarball) is still the 13.0 tree; re-syncing it is a separate R snapshot update. Parity cache provenance: the shards in tests/_r_cache were regenerated from R NNS 13.3 plus the fixes in OVVO-Financial/NNS pull requests #73-#92; see docs/parity.md, 'Cache provenance: R 13.3 + patches'."
+  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the R 13.3 commit (82a92eb) whose behavior the parity cache encodes. core_commit is the vendored NNS-core snapshot (extern/NNS-core = CMakeLists.txt, include/, src/ of that commit); it ports the R 13.3 src tree (NNS-core sync/nns_r_source.json) plus the R bug fixes listed there and the core counterparts of the R patches for the mode reducer, the degree-0 nD/dependence tie split and the copula_signed sign and exact count compare, and the core ports of the later R fixes (pairwise SD test, NNS.seas scoring every component series, equal ARMA seasonal weights when they sum to zero, Rmath's dt in the M.reg kernels). The vendored R snapshot (tools/NNS, r_src_tree_hash, tarball) is still the 13.0 tree; re-syncing it is a separate R snapshot update. Parity cache provenance: the shards in tests/_r_cache were regenerated from R NNS 13.3 plus the fixes in OVVO-Financial/NNS pull requests #73-#92; see docs/parity.md, 'Cache provenance: R 13.3 + patches'."
 }

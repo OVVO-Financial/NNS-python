@@ -74,6 +74,7 @@ struct ARMAWeights {
 
 /// Computes ARMA seasonality weighting. 
 /// Replaces the dynamic R DataFrame lookup with explicit arrays.
+/// Weights are equal when (varcovar - covar) / sqrt(period) sums to 0.
 ARMAWeights arma_seas_weighting(const double* periods, const double* covar, const double* varcovar, std::size_t m);
 
 // --- Maximum Entropy Bootstrap (MEBoot) ---
