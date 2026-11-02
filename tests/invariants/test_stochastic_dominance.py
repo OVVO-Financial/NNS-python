@@ -150,3 +150,23 @@ def test_merged_thresholds_equal_union_and_searchsorted() -> None:
         np.testing.assert_array_equal(thresholds, expected)
         np.testing.assert_array_equal(x_counts, np.searchsorted(x, expected, side="right"))
         np.testing.assert_array_equal(y_counts, np.searchsorted(y, expected, side="right"))
+
+
+def test_a_common_shift_keeps_the_verdict_like_r() -> None:
+    from nns import sd_efficient_set
+
+    x = np.array([-0.0085, -0.0152, 0.0068])
+    y = np.array([-0.0021, -0.0033, -0.0167])
+    assert tsd_uni(x + 20000, y + 20000) == tsd_uni(x, y) == 0
+    x, y = np.array([0.01, 0.07]), np.array([0.0, 0.08])
+    assert tsd_uni(x + 1e6, y + 1e6) == 1
+    assert sd_efficient_set(np.column_stack([x, y]) + 1e6, degree=3) == [0]
+    x, y = np.array([0.01, 0.03]), np.array([0.0, 0.04])
+    assert (ssd_uni(x + 20000, y + 20000), tsd_uni(x + 20000, y + 20000)) == (1, 1)
+    body = np.arange(1, 997, dtype=np.float64)
+    x = np.r_[0.0, 0.01, 0.03, body, 1000.0]
+    y = np.r_[0.0, 0.02, 0.02, body, 999.0]
+    z = np.r_[0.0, 0.02, 0.02, body, 1000.0]
+    for shift in (20000.0, 1e6):
+        assert tsd_uni(x + shift, y + shift) == 0
+        assert tsd_uni(z + shift, x + shift) == 1
