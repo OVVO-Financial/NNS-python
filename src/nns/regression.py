@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast, ov
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _is_fcl
-from nns.categorical import factor_2_dummy_fr
 from nns.part import NoiseReduction
 
 Order = int | Literal["max"] | None
@@ -320,83 +318,21 @@ def prepare_factor_predictors(
     ``nns_reg(..., factor_2_dummy=True)``. The returned arrays are always
     two-dimensional so they can be passed directly to ``nns_m_reg``.
     """
-    train, points, feature_names = _expand_factor_predictors_with_names(
-        x,
-        point_est,
-        factor_levels=factor_levels,
-        names=names,
+    from nns._reg_engine import _encode_predictors
+
+    if np.ndim(x) == 0:
+        x = np.asarray(x).reshape(1)
+    n_columns = 1 if np.ndim(x) == 1 else int(np.shape(x)[1])
+    prefixes = _factor_column_prefixes(names, n_columns)
+    encoded = _encode_predictors(
+        x, point_est, True, factor_levels, names=None if prefixes is None else list(prefixes)
     )
+    points = encoded["point_est"]
     return FactorDesign(
-        x=_as_factor_design_matrix(train, "x"),
+        x=_as_factor_design_matrix(encoded["x"], "x"),
         point_est=None if points is None else _as_factor_design_matrix(points, "point_est"),
-        feature_names=tuple(feature_names),
+        feature_names=tuple(encoded["encoded_names"]),
     )
-
-
-def _expand_factor_predictors_with_names(
-    x: NDArray[Any],
-    point_est: NDArray[Any] | float | None,
-    *,
-    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None,
-    names: str | Sequence[str] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64] | None, list[str]]:
-    x_array = np.asarray(x)
-    point_array = None if point_est is None else np.asarray(point_est)
-    if x_array.ndim == 0:
-        x_array = x_array.reshape(1)
-    if x_array.ndim == 1:
-        prefixes = _factor_column_prefixes(names, 1)
-        combined = (
-            x_array
-            if point_array is None
-            else np.concatenate((x_array.reshape(-1), point_array.reshape(-1)))
-        )
-        levels = _levels_for_column(factor_levels, 0, x_array.ndim)
-        expanded, names = _dummy_matrix_for_column(
-            combined,
-            levels=levels,
-            prefix="x" if prefixes is None else prefixes[0],
-        )
-        n_train = x_array.shape[0]
-        train = expanded[:n_train]
-        points = None if point_array is None else expanded[n_train:]
-        if train.shape[1] == 1:
-            return train[:, 0], None if points is None else points[:, 0], names
-        return train, points, names
-
-    if x_array.ndim != 2:
-        raise ValueError("x must be a vector or 2D matrix.")
-    prefixes = _factor_column_prefixes(names, x_array.shape[1])
-    if point_array is not None:
-        if point_array.ndim == 1:
-            point_array = point_array.reshape(1, -1)
-        if point_array.ndim != 2:
-            raise ValueError("point_est must be a vector or 2D matrix.")
-        if point_array.shape[1] != x_array.shape[1]:
-            raise ValueError("point_est must have the same column count as x.")
-
-    train_blocks: list[NDArray[np.float64]] = []
-    point_blocks: list[NDArray[np.float64]] = []
-    variable_names: list[str] = []
-    for col in range(x_array.shape[1]):
-        column = x_array[:, col]
-        if point_array is None:
-            combined = column
-        else:
-            combined = np.concatenate((column, point_array[:, col]))
-        levels = _levels_for_column(factor_levels, col, x_array.ndim)
-        expanded, column_names = _dummy_matrix_for_column(
-            combined,
-            levels=levels,
-            prefix=f"X{col + 1}" if prefixes is None else prefixes[col],
-        )
-        train_blocks.append(expanded[: x_array.shape[0]])
-        variable_names.extend(column_names)
-        if point_array is not None:
-            point_blocks.append(expanded[x_array.shape[0] :])
-    train_matrix = np.column_stack(train_blocks)
-    point_matrix = None if point_array is None else np.column_stack(point_blocks)
-    return train_matrix, point_matrix, variable_names
 
 
 def _as_factor_design_matrix(values: NDArray[np.float64], label: str) -> NDArray[np.float64]:
@@ -422,41 +358,6 @@ def _factor_column_prefixes(
     if any(name == "" for name in prefixes):
         raise ValueError("names must contain non-empty values.")
     return prefixes
-
-
-def _dummy_matrix_for_column(
-    values: NDArray[Any],
-    *,
-    levels: Sequence[object] | None,
-    prefix: str,
-) -> tuple[NDArray[np.float64], list[str]]:
-    if levels is None:
-        try:
-            numeric = np.asarray(values, dtype=np.float64).reshape(-1, 1)
-        except (TypeError, ValueError):
-            if not _is_fcl(values):
-                raise
-        else:
-            return numeric, [prefix]
-    block = factor_2_dummy_fr(values, levels=levels)
-    columns = [np.asarray(column, dtype=np.float64).reshape(-1) for column in block.values()]
-    names = [prefix if name == "x" else f"{prefix}_{name}" for name in block]
-    return np.column_stack(columns), names
-
-
-def _levels_for_column(
-    factor_levels: Sequence[object] | Sequence[Sequence[object] | None] | None,
-    column: int,
-    x_ndim: int,
-) -> Sequence[object] | None:
-    if factor_levels is None:
-        return None
-    if x_ndim == 1:
-        return factor_levels
-    if column >= len(factor_levels):
-        raise ValueError("factor_levels must provide levels for every x column.")
-    levels = cast(Sequence[Sequence[object] | None], factor_levels)[column]
-    return levels
 
 
 def _normalize_type(type_value: str | None) -> str | None:

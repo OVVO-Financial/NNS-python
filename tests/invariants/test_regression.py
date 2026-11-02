@@ -6,7 +6,7 @@ from decimal import Decimal
 import numpy as np
 import pytest
 
-from nns import nns_reg
+from nns import nns_reg, prepare_factor_predictors
 
 
 def test_nns_reg_shapes_and_bounds() -> None:
@@ -328,3 +328,48 @@ def test_nns_reg_keeps_numeric_looking_strings_categorical() -> None:
 
     with pytest.raises(ValueError, match="unseen level"):
         nns_reg(x, y, order="max", point_est=["2.5"])
+
+
+def test_prepared_bool_factors_predict_like_direct_regression() -> None:
+    x = np.tile([False, True], 50)
+    y = np.arange(100.0)
+    point = np.array([False, True])
+
+    design = prepare_factor_predictors(x, point_est=point)
+    direct = nns_reg(x, y, point_est=point)["Point.est"]
+    prepared = nns_reg(design.x, y, point_est=design.point_est)["Point.est"]
+
+    assert design.feature_names == ("x_FALSE.", "x_TRUE.")
+    np.testing.assert_allclose(direct, [48.75, 48.75])
+    np.testing.assert_array_equal(prepared, direct)
+
+
+def test_prepared_mixed_factors_predict_like_direct_regression() -> None:
+    rng = np.random.default_rng(5)
+    label = rng.choice(["a", "b", "c"], size=60)
+    flag = rng.random(60) < 0.5
+    score = np.round(rng.normal(size=60), 6)
+    x = np.empty((60, 3), dtype=object)
+    x[:, 0], x[:, 1], x[:, 2] = label, flag, score
+    y = np.round(score + (label == "b") + 2.0 * flag, 6)
+    point = np.array([["c", True, 0.25], ["a", False, -0.5]], dtype=object)
+
+    design = prepare_factor_predictors(x, point_est=point)
+    direct = nns_reg(x, y, point_est=point)["Point.est"]
+    prepared = nns_reg(design.x, y, point_est=design.point_est)["Point.est"]
+
+    assert design.feature_names == ("V1_a", "V1_b", "V1_c", "V2_FALSE.", "V2_TRUE.", "V3")
+    np.testing.assert_array_equal(prepared, direct)
+
+
+def test_prepared_names_rename_outputs_and_keep_point_columns_aligned() -> None:
+    import pandas as pd
+
+    x = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]})
+    point = pd.DataFrame({"a": [2.5], "b": [25.0]})
+
+    for names in (["b", "a"], ["left", "b"]):
+        design = prepare_factor_predictors(x, point_est=point, names=names)
+        assert design.feature_names == tuple(names)
+        np.testing.assert_array_equal(design.x, x.to_numpy())
+        np.testing.assert_array_equal(design.point_est, [[2.5, 25.0]])

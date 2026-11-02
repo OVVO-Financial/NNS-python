@@ -261,7 +261,7 @@ Python helper dataclass used to hold prepared factor design matrices and metadat
 
 #### `prepare_factor_predictors`
 
-Builds a full-rank factor design matrix. Not needed for `nns_reg` / `nns_m_reg`, which encode raw factor columns themselves.
+Builds a full-rank factor design matrix with the encoder `nns_reg` uses (bool columns are factors; dummy names such as `x_TRUE.` and `V1_a`). Not needed for `nns_reg` / `nns_m_reg`, which encode raw factor columns themselves.
 
 #### `encode_factor_codes`
 

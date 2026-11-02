@@ -311,6 +311,7 @@ def _encode_predictors(
     point_est: Any,
     factor_2_dummy: bool,
     factor_levels: Any = None,
+    names: list[str] | None = None,
 ) -> dict[str, Any]:
     """R ``.nns_reg_encode_predictors``.
 
@@ -326,8 +327,9 @@ def _encode_predictors(
     cols = _train_columns(x)
     p = len(cols.values)
     raw_names = _raw_column_names(cols)
+    # Explicit names only prefix the outputs; point_est still matches the training columns.
+    column_names = _input_column_names(x, p) if names is None else r_make_unique(names, ".")
     points = _prepare_points(point_est, raw_names)
-    column_names = _input_column_names(x, p)
     declared = resolve_factor_levels(factor_levels, raw_names, cols.labels)
 
     n = cols.values[0].shape[0]
