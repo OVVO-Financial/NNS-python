@@ -248,6 +248,14 @@ def test_sunspots_arma_example_matches_installed_r() -> None:
     np.testing.assert_allclose(actual, _array(expected["estimates"]), atol=COMPOUND)
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
+        "forecast rows; unpatched R 13.3 still refits the last h observed "
+        "rows, so this passes only against R with that patch."
+    ),
+)
 @pytest.mark.parity
 @pytest.mark.practical
 def test_var_macro_like_example_matches_installed_r() -> None:
@@ -262,6 +270,14 @@ def test_var_macro_like_example_matches_installed_r() -> None:
         )
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
+        "forecast rows; unpatched R 13.3 still refits the last h observed "
+        "rows, so this passes only against R with that patch."
+    ),
+)
 @pytest.mark.parity
 @pytest.mark.practical
 def test_var_macro_like_multivariate_stage_matches_installed_r() -> None:
