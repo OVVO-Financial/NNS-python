@@ -163,8 +163,8 @@ input raises `ValueError` (R stops on missing values).
 numeric-vector path. It returns the two directional components and the named
 signed net log-ratio key selected by R, either `C(x--->y)` or `C(y--->x)`.
 `causal_matrix` maps to R's `NNS.caus` on a matrix (internally `NNS.caus.matrix`):
-an antisymmetric matrix whose entry `[i, j]` is the net causation of column `i` on
-column `j`. A DataFrame input returns a DataFrame labelled with its columns.
+an antisymmetric matrix whose entry `[i, j]` is the net causation of column `j` on
+column `i` (positive: `j` causes `i`). A DataFrame input returns a DataFrame labelled with its columns.
 `tau='ts'` uses `nns_seas(... )["periods"]` exactly like installed R: the first
 period not exceeding `sqrt(length(x))` is selected per variable, including
 harmonics when R selects them. Inputs with no eligible selected period follow

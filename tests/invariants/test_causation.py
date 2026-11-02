@@ -47,6 +47,19 @@ def test_causal_matrix_is_antisymmetric() -> None:
     np.testing.assert_allclose(result, -result.T)
 
 
+def test_causal_matrix_positive_entry_means_the_column_causes_the_row() -> None:
+    x = np.linspace(-2.0, 2.0, 100)
+    y = x * x
+    pair = nns_causation(x, y)
+    x_causes_y = pair["C(x--->y)"] if "C(x--->y)" in pair else -pair["C(y--->x)"]
+
+    result = causal_matrix(np.column_stack((x, y)))
+
+    assert x_causes_y > 0.0
+    assert result[1, 0] == pytest.approx(x_causes_y)
+    assert result[0, 1] == pytest.approx(-x_causes_y)
+
+
 def test_nns_causation_ts_tau_no_longer_raises() -> None:
     x = np.linspace(-2.0, 2.0, 100)
 

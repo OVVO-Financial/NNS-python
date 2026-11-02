@@ -73,8 +73,8 @@ def causal_matrix(
 ) -> Any:
     """Return R's NNS.caus.matrix antisymmetric net-causation matrix.
 
-    Entry ``[i, j]`` is the net causation of column ``i`` on column ``j``
-    (positive: i causes j). A DataFrame input returns a DataFrame labelled with
+    Entry ``[i, j]`` is the net causation of column ``j`` on column ``i``
+    (positive: j causes i). A DataFrame input returns a DataFrame labelled with
     its columns (R keeps the matrix dimnames); other input returns an ndarray.
     """
     labels = _column_labels(x)

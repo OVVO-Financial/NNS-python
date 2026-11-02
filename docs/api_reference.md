@@ -221,7 +221,7 @@ Computes directional causation relationships, including supported numeric lag an
 
 Closest R API: `NNS.caus` with a matrix argument (internally `NNS.caus.matrix`; there is no `Causal.matrix`).
 
-Computes the antisymmetric net-causation matrix; entry `[i, j]` is the net causation of column `i` on column `j`. DataFrame input returns a labelled DataFrame.
+Computes the antisymmetric net-causation matrix; entry `[i, j]` is the net causation of column `j` on column `i` (positive: `j` causes `i`). DataFrame input returns a labelled DataFrame.
 
 ### Regression, classification, and ensembles
 
