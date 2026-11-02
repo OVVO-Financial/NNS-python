@@ -588,6 +588,33 @@ def test_nns_arma_optim_selection_matches_patched_r(
 
 
 @pytest.mark.parity
+def test_nns_arma_optim_forecasts_from_the_training_only_smooth_like_r() -> None:
+    # The R values carry the optim-pi bias change, so compare the forecast before
+    # the bias shift; a smooth that sees the validation window moves it by ~0.14.
+    variable = _random_walk(16)
+    expected = _dict_any(
+        nns_arma_optim_custom(
+            variable.tolist(),
+            h=None,
+            training_set=80,
+            seasonal_factor=[1, 2, 4, 6, 12],
+            objective="min",
+            linear_approximation=True,
+        )
+    )
+    actual = nns_arma_optim(
+        variable, training_set=80, seasonal_factor=[1, 2, 4, 6, 12], print_trace=False
+    )
+
+    assert bool(actual["nns.regress"])
+    np.testing.assert_allclose(
+        np.asarray(actual["results"]) - actual["bias.shift"],
+        _array_any(expected["results"]) - _array_any(expected["bias.shift"]),
+        atol=COMPOUND,
+    )
+
+
+@pytest.mark.parity
 def test_nns_arma_optim_without_pred_int_matches_r() -> None:
     # R 13.3 returns numeric(0) bounds for pred.int = NULL; Python used to raise TypeError.
     variable = np.sin(np.arange(1, 41, dtype=np.float64) / 3.0) + 2.0
