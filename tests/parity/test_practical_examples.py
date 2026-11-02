@@ -107,7 +107,7 @@ def test_regression_residuals_example_matches_installed_r() -> None:
         "being coerced to a number; the extra column changes the last ulp of the "
         "Method-1 fold X* products (numpy @ vs R's column-sequential dgemv, and "
         "R's long-double cor), which moves an NNS partition: OBJfn.reg 5.2015 vs "
-        "R 5.2124, n.best 7 vs 5. Tracked as audit STK-06."
+        "R 5.2124, n.best 7 vs 5."
     ),
 )
 def test_boston_housing_factor_path_matches_installed_r_example() -> None:

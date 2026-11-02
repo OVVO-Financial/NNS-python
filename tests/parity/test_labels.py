@@ -82,7 +82,7 @@ def _flowers(seed: int = 3) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------
-# REG-03: point.est columns are matched by name
+# point.est columns are matched by name
 # --------------------------------------------------------------------------
 
 def test_nns_reg_point_est_columns_matched_by_name() -> None:
@@ -119,7 +119,7 @@ def test_point_est_partial_name_overlap_is_an_error() -> None:
 
 
 # --------------------------------------------------------------------------
-# REG-12 / REG-15: declared response and predictor levels
+# Declared response and predictor levels
 # --------------------------------------------------------------------------
 
 def test_nns_reg_categorical_response_uses_declared_levels() -> None:
@@ -226,7 +226,7 @@ def test_missing_values_in_categorical_columns_raise() -> None:
 
 
 # --------------------------------------------------------------------------
-# REG-15 / REG-16: nns_m_reg
+# nns_m_reg
 # --------------------------------------------------------------------------
 
 def test_nns_m_reg_raw_factor_frame_matches_r() -> None:
@@ -269,7 +269,7 @@ def test_nns_m_reg_class_levels_stay_classification() -> None:
 
 
 # --------------------------------------------------------------------------
-# STK-08 / STK-04 / STK-07: nns_stack
+# nns_stack
 # --------------------------------------------------------------------------
 
 def test_nns_stack_test_columns_matched_by_name_and_named_outputs() -> None:
@@ -380,7 +380,7 @@ def test_nns_stack_univariate_all_n_best_is_na_like_r() -> None:
 
 
 # --------------------------------------------------------------------------
-# STK-08: nns_boost feature names
+# nns_boost feature names
 # --------------------------------------------------------------------------
 
 def test_nns_boost_feature_names_are_column_names() -> None:
