@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import importlib
+import tracemalloc
 import warnings
 
 import numpy as np
 import pytest
 from _tolerances import EXACT
 
-from nns import lpm, lpm_ratio, upm, upm_ratio
+from nns import lpm, lpm_ratio, nns_cdf, upm, upm_ratio
+
+core_module = importlib.import_module("nns.core")
 
 
 def test_mean_decomposes_into_upm_minus_lpm() -> None:
@@ -88,3 +92,43 @@ def test_partial_moment_ratios_degenerate_denominator_returns_nan_without_warnin
     assert np.isnan(lower)
     assert np.isnan(upper)
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
+
+
+@pytest.mark.parametrize("degree", [0.0, 0.5, 2.0])
+def test_numpy_fallback_moments_are_blocked_over_targets_bit_identically(
+    monkeypatch: pytest.MonkeyPatch, degree: float
+) -> None:
+    monkeypatch.setattr(core_module, "native_fn", lambda name: None)
+    monkeypatch.setattr(core_module, "_TARGET_BLOCK", 64)
+    rng = np.random.default_rng(7)
+    x = rng.normal(size=301)
+    targets = np.concatenate([x, rng.normal(size=50)])
+    deviations = targets[:, np.newaxis] - x
+    if degree == 0.0:
+        dense_lower = np.mean(deviations >= 0.0, axis=1)
+        dense_upper = np.mean(deviations < 0.0, axis=1)
+    else:
+        dense_lower = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
+        dense_upper = np.mean(np.maximum(0.0, -deviations) ** degree, axis=1)
+
+    np.testing.assert_array_equal(lpm(degree, targets, x), dense_lower)
+    np.testing.assert_array_equal(upm(degree, targets, x), dense_upper)
+    if degree > 0.0:
+        dense_ratio = dense_lower / (dense_lower + dense_upper)
+        np.testing.assert_array_equal(lpm_ratio(degree, targets, x), dense_ratio)
+
+
+def test_numpy_fallback_cdf_does_not_allocate_an_n_by_n_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(core_module, "native_fn", lambda name: None)
+    monkeypatch.setattr(core_module, "_TARGET_BLOCK", 64)
+    n = 2000
+    tracemalloc.start()
+    try:
+        nns_cdf(np.linspace(-1.0, 1.0, n), degree=2)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert peak < n * n * 8

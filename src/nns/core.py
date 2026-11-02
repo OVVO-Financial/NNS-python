@@ -5,6 +5,9 @@ from numpy.typing import NDArray
 
 from nns._native import native_fn
 
+# Targets per block in the NumPy fallback, so memory stays O(block * n) rather than n x n.
+_TARGET_BLOCK = 1024
+
 
 def lpm(
     degree: float,
@@ -72,15 +75,18 @@ def _moment(
         native_result = native(degree, native_target, np.ascontiguousarray(values))
         return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
 
+    moments = np.empty(targets.size, dtype=np.float64)
+    for start in range(0, targets.size, _TARGET_BLOCK):
+        grid = targets[start : start + _TARGET_BLOCK, np.newaxis]
+        if degree == 0:
+            # R convention: equality with the target counts toward the lower moment.
+            block = np.mean(values <= grid if lower else values > grid, axis=1)
+        else:
+            deviations = grid - values if lower else values - grid
+            block = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
+        moments[start : start + _TARGET_BLOCK] = block
     if degree == 0:
-        # R convention: equality with the target counts toward the lower moment.
-        grid = targets[:, np.newaxis]
-        moments = np.mean(values <= grid if lower else values > grid, axis=1)
         moments[np.isnan(targets)] = np.nan
-        return _result_for_target(moments, target)
-
-    deviations = targets[:, np.newaxis] - values if lower else values - targets[:, np.newaxis]
-    moments = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
     return _result_for_target(moments, target)
 
 
