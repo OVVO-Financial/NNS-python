@@ -482,6 +482,9 @@ _AIR_PASSENGERS_132 = np.array(
     ],
     dtype=np.float64,
 )
+_AIR_PASSENGERS = np.concatenate(
+    [_AIR_PASSENGERS_132, [417, 391, 419, 461, 472, 535, 622, 606, 508, 461, 390, 432]]
+)
 
 
 @pytest.mark.parity
@@ -490,6 +493,8 @@ _AIR_PASSENGERS_132 = np.array(
     [
         # "both" is scored with NNS.ARMA(method="both").
         ("both-scored", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", True),
+        # Here the separately averaged lin/nonlin paths would pick "both" instead.
+        ("both-scored-full", _AIR_PASSENGERS, 12, None, [1, 2, 12], "min", True),
         # The equal-weights candidate is evaluated (and chosen here).
         ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True),
         # The nns.regress decision is applied to the results (shrink TRUE).
