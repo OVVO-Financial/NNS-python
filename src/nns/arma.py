@@ -248,6 +248,7 @@ def nns_arma_optim(
             weight_score = math.inf if objective_l == "min" else -math.inf
         if _improves_or_ties_bias(weight_score, nns_score, objective_l):
             nns_weights = equal_weights
+            nns_score = weight_score
             predicted = equal_predicted
             errors = predicted - actual
             bias = _finite_gravity(errors)
@@ -280,12 +281,14 @@ def nns_arma_optim(
     )
     shrink_score = float(objective_fn(shrink_predicted, actual))
     nns_shrink = _improves(shrink_score, nns_score, objective_l)
+    best_score = shrink_score if nns_shrink else nns_score
     if nns_shrink:
         final_predicted = shrink_predicted
 
-    regressed_values = _smooth_regressed_variable(values)
+    # Smooth the training window only, so the validation score never sees the validation data.
+    regressed_training = _smooth_regressed_variable(values[:train_n])
     smooth_predicted = _arma_optim_prediction(
-        regressed_values,
+        regressed_training,
         train_n,
         h_eval,
         nns_periods,
@@ -295,14 +298,13 @@ def nns_arma_optim(
         shrink=True,
     )
     smooth_score = float(objective_fn(smooth_predicted, actual))
-    nns_regress = _improves(smooth_score, nns_score, objective_l)
+    nns_regress = _improves(smooth_score, best_score, objective_l)
     if nns_regress:
         final_predicted = smooth_predicted
     del final_predicted
 
     # Apply the nns.regress decision: it was tested on the smoothed
     # series with shrink=True, so the returned forecast uses the same inputs.
-    final_values = regressed_values if nns_regress else original_values
     if nns_regress:
         nns_shrink = True
 
@@ -314,6 +316,7 @@ def nns_arma_optim(
 
     if h_oos is None:
         result_h = h_eval
+        final_values = regressed_training if nns_regress else original_values
         model_results = _arma_optim_prediction(
             final_values,
             train_n,
@@ -326,6 +329,9 @@ def nns_arma_optim(
         )
     else:
         result_h = h_oos
+        final_values = (
+            _smooth_regressed_variable(original_values) if nns_regress else original_values
+        )
         model_results = _arma_optim_prediction(
             final_values,
             None,
@@ -413,6 +419,12 @@ def nns_arma(
             'Nothing dynamic about static seasonal factors!  Please set "dynamic = FALSE" '
             'or "seasonal.factor = FALSE"'
         )
+    if weights is not None and not isinstance(weights, str) and dynamic:
+        raise ValueError(
+            'Numeric "weights" cannot be used with "dynamic = TRUE", which re-selects the '
+            'seasonal lags at every step.  Please set "weights" to NULL or "equal", or '
+            '"dynamic = FALSE"'
+        )
 
     method_l = method.lower()
     if method_l not in {"lin", "nonlin", "both", "means"}:
@@ -486,7 +498,7 @@ def nns_arma(
             lags, lag_weights = _resolve_lags_and_weights(
                 current,
                 seasonal_factor=seasonal_factor,
-                weights=None,
+                weights=weights,
                 best_periods=best_periods,
                 modulo=modulo,
                 mod_only=mod_only,

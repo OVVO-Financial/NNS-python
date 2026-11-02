@@ -487,20 +487,60 @@ _AIR_PASSENGERS = np.concatenate(
 )
 
 
+def _random_walk(seed: int) -> np.ndarray:
+    return np.round(30.0 + np.cumsum(np.random.default_rng(seed).normal(0.0, 1.0, 100)), 6)
+
+
+_OPTIM_VALUE_KEYS = ("errors", "results", "lower.pred.int", "bias.shift")
+
+
 @pytest.mark.parity
 @pytest.mark.parametrize(
-    ("name", "variable", "h", "training_set", "seasonal_factor", "objective", "approximation"),
+    (
+        "name",
+        "variable",
+        "h",
+        "training_set",
+        "seasonal_factor",
+        "objective",
+        "approximation",
+        "value_keys",
+    ),
     [
         # "both" is scored with NNS.ARMA(method="both").
-        ("both-scored", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", True),
+        (
+            "both-scored",
+            _AIR_PASSENGERS_132,
+            None,
+            120,
+            [6, 12, 18, 24],
+            "min",
+            True,
+            _OPTIM_VALUE_KEYS,
+        ),
         # Here the separately averaged lin/nonlin paths would pick "both" instead.
-        ("both-scored-full", _AIR_PASSENGERS, 12, None, [1, 2, 12], "min", True),
-        # The equal-weights candidate is evaluated (and chosen here).
-        ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True),
-        # The nns.regress decision is applied to the results (shrink TRUE).
-        ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True),
+        ("both-scored-full", _AIR_PASSENGERS, 12, None, [1, 2, 12], "min", True, _OPTIM_VALUE_KEYS),
+        # The equal-weights candidate is evaluated (and chosen here); obj.fn is its
+        # score. The R values also carry the R optim-pi-from-returned-model change,
+        # so only the search outcome is compared here.
+        ("equal-weights", _two_cycle_series(33), 10, None, [4, 6, 7, 12, 14, 24], "min", True, ()),
+        # The nns.regress decision on a training-window smooth, applied to the results.
+        ("regress-max", _AIR_PASSENGERS_132, None, 120, [6, 12, 24], "max", True, ()),
+        # The smoothed candidate no longer sees the validation window: nns.regress
+        # TRUE -> FALSE (walk 13); stays TRUE on a training-only smooth (walk 16).
+        ("walk-13", _random_walk(13), None, 80, [1, 2, 4, 6, 12], "min", True, ()),
+        ("walk-16", _random_walk(16), None, 80, [1, 2, 4, 6, 12], "min", True, ()),
         # R now evaluates nonlin/both without the linear approximation.
-        ("exhaustive", _AIR_PASSENGERS_132, None, 120, [6, 12, 18, 24], "min", False),
+        (
+            "exhaustive",
+            _AIR_PASSENGERS_132,
+            None,
+            120,
+            [6, 12, 18, 24],
+            "min",
+            False,
+            _OPTIM_VALUE_KEYS,
+        ),
     ],
 )
 def test_nns_arma_optim_selection_matches_patched_r(
@@ -511,6 +551,7 @@ def test_nns_arma_optim_selection_matches_patched_r(
     seasonal_factor: list[int],
     objective: str,
     approximation: bool,
+    value_keys: tuple[str, ...],
 ) -> None:
     del name
     expected = _dict_any(
@@ -540,10 +581,37 @@ def test_nns_arma_optim_selection_matches_patched_r(
         assert actual["weights"] is None
     else:
         np.testing.assert_allclose(actual["weights"], _array_any(expected["weights"]))
-    for key in ("periods", "obj.fn", "bias.shift", "errors", "results", "lower.pred.int"):
+    for key in ("periods", "obj.fn", *value_keys):
         np.testing.assert_allclose(
             _array_any(actual[key]), _array_any(expected[key]), atol=COMPOUND, equal_nan=True
         )
+
+
+@pytest.mark.parity
+def test_nns_arma_optim_forecasts_from_the_training_only_smooth_like_r() -> None:
+    # The R values carry the optim-pi bias change, so compare the forecast before
+    # the bias shift; a smooth that sees the validation window moves it by ~0.14.
+    variable = _random_walk(16)
+    expected = _dict_any(
+        nns_arma_optim_custom(
+            variable.tolist(),
+            h=None,
+            training_set=80,
+            seasonal_factor=[1, 2, 4, 6, 12],
+            objective="min",
+            linear_approximation=True,
+        )
+    )
+    actual = nns_arma_optim(
+        variable, training_set=80, seasonal_factor=[1, 2, 4, 6, 12], print_trace=False
+    )
+
+    assert bool(actual["nns.regress"])
+    np.testing.assert_allclose(
+        np.asarray(actual["results"]) - actual["bias.shift"],
+        _array_any(expected["results"]) - _array_any(expected["bias.shift"]),
+        atol=COMPOUND,
+    )
 
 
 @pytest.mark.parity
