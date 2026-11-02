@@ -17,6 +17,7 @@ import numbers
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -132,7 +133,8 @@ def is_missing(value: Any) -> bool:
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (numbers.Real, np.bool_)) and not isinstance(value, str)
+    # Decimal is registered only as numbers.Number, not numbers.Real.
+    return isinstance(value, (numbers.Real, Decimal, np.bool_)) and not isinstance(value, str)
 
 
 def is_text(values: NDArray[Any]) -> bool:

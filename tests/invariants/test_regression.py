@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from decimal import Decimal
 
 import numpy as np
 import pytest
@@ -309,3 +310,21 @@ def test_nns_reg_factor_predictor_dimred_expands_before_projection() -> None:
     assert len(result["equation"]["Variable"]) == 5
     assert result["x.star"]["x"].shape == y.shape
     assert np.asarray(result["Point.est"]).shape == (2,)
+
+
+def test_nns_reg_treats_decimal_predictors_as_numeric() -> None:
+    x = np.array([Decimal(i) for i in range(1, 9)], dtype=object)
+    y = 2.0 * np.arange(1.0, 9.0)
+
+    actual = nns_reg(x, y, order="max", point_est=[2.5])["Point.est"]
+    expected = nns_reg(x.astype(np.float64), y, order="max", point_est=[2.5])["Point.est"]
+
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_nns_reg_keeps_numeric_looking_strings_categorical() -> None:
+    x = np.array([str(i) for i in range(1, 9)], dtype=object)
+    y = 2.0 * np.arange(1.0, 9.0)
+
+    with pytest.raises(ValueError, match="unseen level"):
+        nns_reg(x, y, order="max", point_est=["2.5"])
