@@ -136,6 +136,27 @@ def test_nns_meboot_scale_adjustment_uses_residual_scale_like_r() -> None:
     assert abs(kappa) < 0.1
 
 
+def test_nns_meboot_scale_adjustment_scales_the_residuals_not_the_levels() -> None:
+    t = np.arange(60, dtype=np.float64)
+    x = 2.0 * t + 5.0 * np.sin(t)
+    kwargs = {"reps": 2, "rho": 0.0, "expand_sd": False, "force_clt": False, "random_seed": 1}
+
+    adjusted = nns_meboot(x, scl_adjustment=True, **kwargs)
+    plain = nns_meboot(x, scl_adjustment=False, **kwargs)
+
+    time = t + 1.0
+    slope, intercept = np.polyfit(time, x, 1)
+    fitted = (intercept + slope * time)[:, np.newaxis]
+    residual_mean = float(np.mean(x - fitted[:, 0]))
+    kappa = adjusted["kappa"]
+    assert kappa is not None and abs(kappa) > 1e-3
+    np.testing.assert_allclose(
+        adjusted["replicates"] - plain["replicates"],
+        kappa * (plain["replicates"] - fitted - residual_mean),
+        atol=1e-5,
+    )
+
+
 @pytest.mark.parity
 @pytest.mark.stochastic
 @pytest.mark.parametrize(("drift", "target_drift"), [(False, None), (True, 0.05)])
@@ -167,3 +188,15 @@ def test_nns_meboot_changed_drift_keeps_residual_scale_like_r(
 
     np.testing.assert_allclose(actual, expected, rtol=0.35, atol=0.35)
     assert actual[3] < 0.5 * float(np.std(x, ddof=1))
+    # force_clt spreads the replicate means as the new baseline plus the original
+    # residuals, not as x (whose sd includes the replaced drift).
+    time = np.arange(1.0, 31.0)
+    slope, intercept = np.polyfit(time, x, 1)
+    residuals = np.asarray(x) - (intercept + slope * time)
+    new_slope = 0.0 if target_drift is None else target_drift
+    reference = float(np.mean(x)) + new_slope * (time - 15.5) + residuals
+    np.testing.assert_allclose(
+        np.std(np.mean(replicates, axis=0), ddof=1),
+        np.std(reference, ddof=1) / np.sqrt(100.0),
+        rtol=1e-4,
+    )
