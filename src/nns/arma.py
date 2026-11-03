@@ -55,9 +55,6 @@ def nns_arma_optim(
             "Please use the length of the variable less the desired forecast period as the "
             "[training.set] value, or provide a value for [h]."
         )
-    if float(np.min(values)) < 0.0:
-        negative_values = True
-
     h_oos = int(h) if h is not None and int(h) > 0 else None
     train_n = math.floor(0.8 * n) if training_set is None else int(training_set)
     h_eval = int(n - train_n)
@@ -70,6 +67,10 @@ def nns_arma_optim(
         )
     if h_eval < 1:
         raise ValueError("training_set must leave at least one validation observation.")
+    # Validation forecasts see only the training window; out-of-sample ones the whole series.
+    if float(np.min(values[:train_n])) < 0.0:
+        negative_values = True
+    results_negative_values = negative_values or (h_oos is not None and float(np.min(values)) < 0.0)
 
     seasonals = _valid_arma_optim_seasonals(seasonal_factor, train_n)
     methods = ["lin"] if lin_only else ["lin", "nonlin", "both"]
@@ -310,7 +311,7 @@ def nns_arma_optim(
             h_oos,
             nns_periods,
             nns_method,
-            negative_values,
+            results_negative_values,
             nns_weights,
             shrink=nns_shrink,
         ) - bias
@@ -322,7 +323,7 @@ def nns_arma_optim(
         alpha = (1.0 - float(pred_int)) / 2.0
         lower_pi = model_results + float(lpm_var(alpha, 0.0, residuals))
         upper_pi = model_results + float(upm_var(alpha, 0.0, residuals))
-    if not negative_values:
+    if not results_negative_values:
         model_results = np.maximum(0.0, model_results)
         lower_pi = np.maximum(0.0, lower_pi)
         upper_pi = np.maximum(0.0, upper_pi)
@@ -403,8 +404,6 @@ def nns_arma(
         raise ValueError("method must be one of 'lin', 'nonlin', 'both', or 'means'.")
     if method_l == "means":
         shrink = False
-    if float(np.min(values)) < 0.0:
-        negative_values = True
 
     if training_set is not None:
         train_n = int(training_set)
@@ -415,6 +414,8 @@ def nns_arma(
         values = values[:train_n].astype(np.float64, copy=True)
     else:
         values = values.astype(np.float64, copy=True)
+    if float(np.min(values)) < 0.0:
+        negative_values = True
     if values.size < 2:
         raise ValueError("[y] must contain at least two observations.")
     if not _is_numeric_seasonal(seasonal_factor) and values.size < 5:

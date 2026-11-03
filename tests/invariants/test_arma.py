@@ -420,3 +420,42 @@ def test_linear_forecasts_match_component_path_bitwise(native: bool) -> None:
     np.testing.assert_array_equal(actual, np.asarray(expected))
     with pytest.raises(ValueError, match="non-empty"):
         arma_module._linear_forecasts(current, np.array([200], dtype=np.int64), pool)
+
+
+def _lin_arma(x: list[float], **kwargs: Any) -> np.ndarray:
+    return np.asarray(
+        nns_arma(np.asarray(x, dtype=np.float64), h=3, seasonal_factor=1, method="lin", **kwargs)
+    )
+
+
+def test_nns_arma_held_out_negative_values_do_not_change_the_clamp() -> None:
+    # R NNS.ARMA decides negative_values from variable[1:training.set]; this gave [0, -1, -2].
+    down = [float(v) for v in range(20, 0, -1)]
+    np.testing.assert_array_equal(_lin_arma([*down, -1.0], training_set=20), _lin_arma(down))
+    np.testing.assert_array_equal(_lin_arma(down), [0.0, 0.0, 0.0])
+    assert np.all(_lin_arma([*down, -1.0]) < 0.0)
+
+
+def test_nns_arma_optim_clamps_validation_forecasts_from_a_nonnegative_training_window() -> None:
+    x = np.r_[np.arange(58.0, 1.0, -2.0), 1.0, 0.5, 0.2, 0.1, -0.1]
+
+    def run(**kwargs: Any) -> dict[str, Any]:
+        return nns_arma_optim(
+            x,
+            training_set=29,
+            seasonal_factor=[1, 2],
+            ncores=1,
+            obj_fn=lambda predicted, actual: float(np.mean((predicted - actual) ** 2)),
+            **kwargs,
+        )
+
+    o = run()
+    assert np.all(o["errors"] + x[-5:] >= 0.0)
+    assert np.all(o["results"] >= 0.0)
+    # R main gives these validation values; R 13.3 forecast below 0 from the held-out -0.1.
+    np.testing.assert_allclose(
+        o["errors"], [-0.77795363490564584, -0.5, -0.2, -0.1, 0.1], rtol=1e-12
+    )
+    assert o["bias.shift"] == pytest.approx(0.32960245291969226, rel=1e-12)
+    # The out-of-sample forecast is fitted on the whole series, which is negative.
+    assert np.any(run(h=3)["results"] < 0.0)
