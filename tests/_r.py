@@ -1645,15 +1645,26 @@ def _call_r_meboot_stat_summary(args: dict[str, Any]) -> RValue:
 
 
 def _call_r_mc_grid(args: dict[str, Any]) -> RValue:
+    # NNS.MC's rho grid as R main (pull request #146) builds it.
     script = (
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
-        "rhos <- seq(as.numeric(args$lower_rho), as.numeric(args$upper_rho), "
-        "as.numeric(args$by))\n"
-        "neg_rhos <- abs(rhos[rhos <= 0])\n"
-        "pos_rhos <- rhos[rhos > 0]\n"
-        "exp_rhos <- rev(c((neg_rhos^as.numeric(args$exp)) * -1, "
-        "pos_rhos^(1/as.numeric(args$exp))))\n"
+        "lower_rho <- as.numeric(args$lower_rho); upper_rho <- as.numeric(args$upper_rho)\n"
+        "exp <- as.numeric(args$exp)\n"
+        "rhos <- seq(lower_rho, upper_rho, as.numeric(args$by))\n"
+        "if (exp != 1) {\n"
+        "  pivot <- min(max(0, lower_rho), upper_rho)\n"
+        "  low <- rhos <= pivot\n"
+        "  if (pivot > lower_rho) {\n"
+        "    w <- ((pivot - rhos[low]) / (pivot - lower_rho))^exp\n"
+        "    rhos[low] <- (1 - w) * pivot + w * lower_rho\n"
+        "  }\n"
+        "  if (upper_rho > pivot) {\n"
+        "    w <- ((rhos[!low] - pivot) / (upper_rho - pivot))^(1/exp)\n"
+        "    rhos[!low] <- (1 - w) * pivot + w * upper_rho\n"
+        "  }\n"
+        "}\n"
+        "exp_rhos <- rev(rhos)\n"
         "result <- list(values = as.numeric(exp_rhos), names = paste0('rho = ', exp_rhos))\n"
         "cat(jsonlite::toJSON(result, auto_unbox = TRUE, digits = NA))\n"
     )

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from nns import nns_mc
+from nns.mc import _generate_mc_rhos
 
 pytestmark = pytest.mark.stochastic
 
@@ -92,3 +93,31 @@ def test_nns_mc_rejects_target_drift_longer_than_rho_grid() -> None:
 
     with pytest.raises(ValueError, match="rho grid"):
         nns_mc(x, reps=3, by=1.0, target_drift=[0.1, 0.2, 0.3, 0.4])
+
+
+def _mc_rhos(**kwargs: float) -> np.ndarray:
+    x = np.random.default_rng(3).normal(size=20)
+    keys = nns_mc(x, reps=2, drift=False, **kwargs)["replicates"].keys()
+    return np.array([float(key.removeprefix("rho = ")) for key in keys])
+
+
+@pytest.mark.parametrize("bounds", [(0.2, 0.8), (-0.8, -0.2), (-0.5, 0.5)])
+def test_nns_mc_exp_keeps_the_rho_grid_inside_the_bounds(bounds: tuple[float, float]) -> None:
+    # R NNS.MC warped |rho| about 0, so exp = 2 on [0.2, 0.8] gave 0.447 to 0.894.
+    r = _mc_rhos(lower_rho=bounds[0], upper_rho=bounds[1], by=0.2, exp=2)
+    assert (r.min(), r.max()) == bounds
+
+
+def test_nns_mc_exp_moves_the_grid_towards_upper_rho() -> None:
+    # R main: 0.8, 0.689897948556636, 0.546410161513775, 0.2
+    r = _mc_rhos(lower_rho=0.2, upper_rho=0.8, by=0.2, exp=2)
+    np.testing.assert_allclose(r, [0.8, 0.689897948556636, 0.546410161513775, 0.2], rtol=1e-14)
+    r = _mc_rhos(lower_rho=-0.8, upper_rho=-0.2, by=0.2, exp=2)
+    np.testing.assert_allclose(r, [-0.2, -0.266666666666667, -0.466666666666667, -0.8], rtol=1e-14)
+
+
+@pytest.mark.parametrize("exp", [1.0, 2.0])
+def test_nns_mc_keeps_its_default_full_range_grid(exp: float) -> None:
+    r = -1.0 + 0.01 * np.arange(201)
+    old = np.concatenate((-(np.abs(r[r <= 0.0]) ** exp), r[r > 0.0] ** (1.0 / exp)))[::-1]
+    np.testing.assert_array_equal(_generate_mc_rhos(-1.0, 1.0, 0.01, exp), old)

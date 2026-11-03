@@ -121,7 +121,8 @@ refilled from the same build plus that change. The two NNS.copula entries
 where every margin lies on one side of its target carry pull request #143 the same way,
 the two univariate hazard and cumulative hazard NNS.CDF target values
 carry #123, and the NNS.SD.cluster entries where nothing is peeled and the
-dendrogram's leaf order carry #126.
+dendrogram's leaf order carry #126. The NNS.MC.grid helper builds the grid as
+R main does after #146.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
