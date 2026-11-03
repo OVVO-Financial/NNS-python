@@ -11,9 +11,10 @@ centred value; ``d`` = 1 for SSD and the mean gate, 2 for TSD, a ratio analogue 
 continuous FSD), plus a term for the inputs' own rounding at their level, are ties,
 so rounding noise does not decide dominance and a common shift leaves the verdict
 unchanged; discrete FSD compares exact ECDF fractions.
-Equal curves are non-dominance (R's curve equality guard). Efficient-set output
-follows the R C++ routine's LPM-at-global-maximum ordering and original-index
-tie break.
+Equal curves are non-dominance (R's curve equality guard). The efficient set
+is every column that no column outside its dominance cycle dominates, so it does
+not depend on column order; its output follows the R C++ routine's
+LPM-at-global-maximum ordering and original-index tie break.
 
 Pairwise tests accept samples of unequal length: each sample's curve is
 evaluated on the merged threshold grid with its own length, as R's
@@ -30,6 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 from scipy.cluster.hierarchy import linkage  # type: ignore[import-untyped]
+from scipy.sparse.csgraph import connected_components  # type: ignore[import-untyped]
 from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
 from nns.core import _as_1d_values
@@ -188,6 +190,7 @@ def nns_sd_cluster(
         order_stat_dominance_matrix = _dominance_matrix_from_order_stats(order_stat_precomputed)
     else:
         prefix_precomputed = _prefix_sd_precompute(values, degree_int, discrete=discrete)
+    verdicts: dict[tuple[int, int], bool] = {}
     active = list(range(column_count))
     clusters: dict[str, list[str]] = {}
     iteration = 1
@@ -202,11 +205,12 @@ def nns_sd_cluster(
             )
         else:
             assert prefix_precomputed is not None
-            sd_set_indices = _sd_efficient_active_indices_from_prefix_kept(
+            sd_set_indices = _sd_efficient_active_indices_from_prefix(
                 prefix_precomputed,
                 active,
                 degree_int,
                 discrete=discrete,
+                verdicts=verdicts,
             )
         sd_set = [all_names[index] for index in sd_set_indices]
         if not sd_set:
@@ -357,7 +361,7 @@ def sd_efficient_set(
             dominance_matrix,
         )
     prefix_precomputed = _prefix_sd_precompute(values, degree, discrete=discrete)
-    return _sd_efficient_active_indices_from_prefix_kept(
+    return _sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         degree,
@@ -456,24 +460,54 @@ def _sd_efficient_active_indices_from_matrix(
             key=lambda position: (order_lpm[position], active[position]),
         )
     ]
-
-    keep: list[int] = []
-    for index in order:
-        dominated = any(dominance_matrix[kept, index] for kept in keep)
-        if not dominated:
-            keep.append(index)
-    return keep
+    efficient = _undominated_components(dominance_matrix[np.ix_(order, order)])
+    return [index for index, keep in zip(order, efficient, strict=True) if keep]
 
 
-def _sd_efficient_active_indices_from_prefix_kept(
+def _undominated_components(
+    dominates: NDArray[np.bool_], entered_from_outside: NDArray[np.bool_] | None = None
+) -> NDArray[np.bool_]:
+    """Members of dominance-cycle components (SCCs) that no column outside them dominates.
+
+    Equal to "not dominated by any column" unless tolerance-level ties make
+    dominance cyclic, as in R's NNS_SD_efficient_set_parallel_cpp.
+    """
+    _, labels = connected_components(dominates, directed=True, connection="strong")
+    component = np.asarray(labels, dtype=np.intp)
+    _, target = np.nonzero(dominates & (component[:, np.newaxis] != component))
+    entered = np.zeros(int(component.max()) + 1, dtype=np.bool_)
+    entered[component[target]] = True
+    if entered_from_outside is not None:
+        entered[component[entered_from_outside]] = True
+    return np.logical_not(entered[component])
+
+
+def _sd_efficient_active_indices_from_prefix(
     precomputed: _SDPrefixPrecomputed,
     active: Sequence[int],
     degree: int,
     *,
     discrete: bool,
+    verdicts: dict[tuple[int, int], bool] | None = None,
 ) -> list[int]:
+    """The matrix path's efficient set, testing only the pairs it needs.
+
+    A column nothing dominates is efficient, and one that such a column dominates
+    is not. Only columns dominated by dominated columns alone can be left in an
+    undominated cycle, so only their pairs are all tested. ``verdicts`` caches pair
+    tests across calls, since a verdict does not depend on the other columns.
+    """
     if not active:
         return []
+    cache: dict[tuple[int, int], bool] = {} if verdicts is None else verdicts
+
+    def dominates(source: int, target: int) -> bool:
+        key = (source, target)
+        if key not in cache:
+            cache[key] = _dominates_from_prefix_pair(
+                precomputed, source, target, degree, discrete=discrete
+            )
+        return cache[key]
 
     active_array = np.asarray(active, dtype=np.intp)
     tmax = float(np.max(precomputed.values[:, active_array]))
@@ -485,19 +519,23 @@ def _sd_efficient_active_indices_from_prefix_kept(
             key=lambda position: (order_lpm[position], active[position]),
         )
     ]
-
-    keep: list[int] = []
-    for index in order:
-        dominated = _any_prefix_source_dominates(
-            precomputed,
-            keep,
-            index,
-            degree,
-            discrete=discrete,
-        )
-        if not dominated:
-            keep.append(index)
-    return keep
+    # LPM order puts likely dominators first, so the search for one usually stops early.
+    free = [
+        not any(dominates(source, target) for source in order if source != target)
+        for target in order
+    ]
+    roots = [index for index, is_free in zip(order, free, strict=True) if is_free]
+    rest = [index for index, is_free in zip(order, free, strict=True) if not is_free]
+    entered = [any(dominates(source, target) for source in roots) for target in rest]
+    if all(entered):
+        return roots
+    # Paths between the rest never pass through a root, which nothing dominates.
+    sub = np.array([[i != j and dominates(i, j) for j in rest] for i in rest], dtype=np.bool_)
+    rest_efficient = _undominated_components(sub, np.asarray(entered, dtype=np.bool_))
+    efficient = set(roots) | {
+        index for index, keep in zip(rest, rest_efficient, strict=True) if keep
+    }
+    return [index for index in order if index in efficient]
 
 
 def _dominance_matrix_from_order_stats(
@@ -517,26 +555,6 @@ def _dominance_matrix_from_order_stats(
     dominates &= np.logical_not(precomputed.identical)
     np.fill_diagonal(dominates, False)
     return dominates
-
-
-def _any_prefix_source_dominates(
-    precomputed: _SDPrefixPrecomputed,
-    source_indices: Sequence[int],
-    target_index: int,
-    degree: int,
-    *,
-    discrete: bool,
-) -> bool:
-    return any(
-        _dominates_from_prefix_pair(
-            precomputed,
-            source_index,
-            target_index,
-            degree,
-            discrete=discrete,
-        )
-        for source_index in source_indices
-    )
 
 
 def _dominates_from_prefix_pair(
