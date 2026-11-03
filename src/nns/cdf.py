@@ -113,24 +113,16 @@ def _univariate_cdf(
         pv = np.array([], dtype=np.float64)
     else:
         pv = _r_lpm_ratio(degree, np.array([target_value], dtype=np.float64), values)
+        # The same transformation of the survival at target as the curve uses at each x.
         if type_value == "survival":
             pv = 1.0 - pv
         elif type_value == "hazard":
             if fit is None:
                 raise RuntimeError("hazard fit was not computed.")
             point = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1)
-            nearest = int(np.argmin(np.abs(x - target_value)))
-            pv = point / np.maximum(1.0 - pval[nearest], 1e-10)
+            pv = np.minimum(np.maximum(point / np.maximum(1.0 - pv, 1e-10), 0.0), 1e6)
         elif type_value == "cumulative hazard":
-            point_fit = nns_reg(
-                x,
-                y,
-                order=None,
-                n_best=1,
-                point_est=float(target_value),
-                plot=False,
-            )
-            pv = np.asarray(point_fit["Point.est"], dtype=np.float64).reshape(-1)
+            pv = np.maximum(-np.log(np.maximum(1.0 - pv, 1e-10)), 0.0)
 
     return {"Function": {"x": x, column_name: y}, "target.value": np.asarray(pv, dtype=np.float64)}
 
