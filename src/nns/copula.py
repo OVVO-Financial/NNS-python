@@ -100,8 +100,16 @@ def _copula(
         discrete_pm_cov["cupm"][upper].sum() + discrete_pm_cov["clpm"][upper].sum()
     )
     # Perfect dependence: every pair fully concordant (1) or fully discordant (0).
+    # A margin with every observation on one side of its target makes that trivially true.
+    p0 = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
+    # Every co-partial moment then equals its independence product.
+    one_sided = (p0 == 0.0) | (p0 == 1.0)
+    if np.all(one_sided):
+        return 0.0
     pair_co_pm = discrete_pm_cov["cupm"][upper] + discrete_pm_cov["clpm"][upper]
-    if np.all((np.abs(pair_co_pm - 1.0) < 1e-9) | (np.abs(pair_co_pm) < 1e-9)):
+    if not np.any(one_sided) and np.all(
+        (np.abs(pair_co_pm - 1.0) < 1e-9) | (np.abs(pair_co_pm) < 1e-9)
+    ):
         return 1.0
 
     discrete_d_pm = _dpm_nd(values, target, 0.0, norm=True)
@@ -117,7 +125,6 @@ def _copula(
         continuous_d_pm = discrete_d_pm
 
     # Independence anchors from each margin's own lower-tail share at its target.
-    p0 = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
     p1 = (
         np.array([float(lpm_ratio(1.0, target[j], values[:, j])) for j in range(n)])
         if continuous

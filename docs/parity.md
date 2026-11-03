@@ -117,7 +117,8 @@ patches do not touch came out unchanged. Where Python has not mirrored one of
 those fixes yet, the parity tests that depend on it are marked xfail until it is.
 The entries that tied discrete modes reach (NNS.mode, NNS.part, NNS.reg and
 NNS.boost) also carry the discrete NNS.mode tie rule of pull request #111,
-refilled from the same build plus that change.
+refilled from the same build plus that change. The two NNS.copula entries
+where every margin lies on one side of its target carry pull request #143 the same way.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
