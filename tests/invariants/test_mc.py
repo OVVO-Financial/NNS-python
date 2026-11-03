@@ -121,3 +121,12 @@ def test_nns_mc_keeps_its_default_full_range_grid(exp: float) -> None:
     r = -1.0 + 0.01 * np.arange(201)
     old = np.concatenate((-(np.abs(r[r <= 0.0]) ** exp), r[r > 0.0] ** (1.0 / exp)))[::-1]
     np.testing.assert_array_equal(_generate_mc_rhos(-1.0, 1.0, 0.01, exp), old)
+
+
+def test_nns_mc_exactly_linear_series() -> None:
+    # R NNS.MC(1:20) raised through NNS.meboot's rho search.
+    result = nns_mc(np.arange(1, 21, dtype=np.float64), reps=3, by=0.5, random_seed=1)
+
+    assert len(result["replicates"]) == 5
+    for matrix in result["replicates"].values():
+        assert np.all(np.isfinite(matrix))

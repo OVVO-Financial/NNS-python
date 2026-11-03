@@ -95,7 +95,7 @@ def _omit_nan_numeric(x: NDArray[np.float64]) -> NDArray[np.float64]:
 def _bootstrap(
     values: NDArray[np.float64], reps: int, rho: float, seed: int | None
 ) -> NDArray[np.float64]:
-    # A constant group's bootstrap is the constant itself; NNS.meboot cannot rescale it.
+    # A constant group's bootstrap is the constant itself.
     if np.all(values == values[0]):
         return np.tile(values[:, np.newaxis], (1, reps))
     boot = nns_meboot(values, reps=reps, rho=rho, random_seed=seed)

@@ -153,3 +153,56 @@ def test_nns_meboot_recycles_vectorised_arguments_elementwise() -> None:
         )
     assert isinstance(recycled, list)
     assert len(recycled) == 3
+
+
+def _linear_fit_slopes_and_residual(replicates: np.ndarray) -> tuple[np.ndarray, float]:
+    t = np.arange(1, replicates.shape[0] + 1, dtype=np.float64)
+    fits = [np.polyfit(t, column, 1) for column in replicates.T]
+    slopes = np.array([fit[0] for fit in fits])
+    residual = max(
+        float(np.max(np.abs(column - np.polyval(fit, t))))
+        for column, fit in zip(replicates.T, fits, strict=True)
+    )
+    return slopes, residual
+
+
+@pytest.mark.parametrize("type_", ["spearman", "pearson", "nnsdep"])
+@pytest.mark.parametrize("rho", [-1.0, 0.0, 0.5, 1.0])
+def test_nns_meboot_exactly_linear_series_bootstraps_like_a_nearly_linear_one(
+    type_: str, rho: float
+) -> None:
+    # R test-meboot-zero-residuals.R; R raised "function cannot be evaluated at
+    # initial parameters" for every rho and type.
+    x = np.arange(1, 11, dtype=np.float64)
+    near = x + 1e-9 * np.random.default_rng(5).standard_normal(10)
+
+    replicates = nns_meboot(x, reps=5, rho=rho, type=type_, random_seed=1)["replicates"]
+    slopes, residual = _linear_fit_slopes_and_residual(replicates)
+    assert residual < 1e-6
+    assert np.all((slopes > 1.0 - 1e-6) & (slopes < 1.05 + 1e-6))
+    near_replicates = nns_meboot(near, reps=5, rho=rho, type=type_, random_seed=1)["replicates"]
+    np.testing.assert_allclose(
+        np.sort(replicates.mean(axis=0)), np.sort(near_replicates.mean(axis=0)), atol=1e-6
+    )
+
+
+def test_nns_meboot_exactly_linear_series_options() -> None:
+    x = np.arange(1, 11, dtype=np.float64)
+
+    adjusted = nns_meboot(x, reps=5, rho=1.0, scl_adjustment=True, random_seed=1)
+    assert np.all(np.isfinite(adjusted["replicates"]))
+    assert adjusted["kappa"] is None
+    single = nns_meboot(x, reps=1, rho=1.0, random_seed=1)["replicates"]
+    np.testing.assert_array_equal(single, x[:, np.newaxis])
+    flat = nns_meboot(x, reps=5, rho=1.0, drift=False, random_seed=1)["replicates"]
+    np.testing.assert_allclose(flat.mean(axis=0), np.full(5, 5.5), atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{}, {"type": "nnsdep"}, {"scl_adjustment": True}, {"target_drift": 0.0}]
+)
+def test_nns_meboot_constant_series_bootstraps_to_constant_columns(
+    kwargs: dict[str, object],
+) -> None:
+    result = nns_meboot(np.full(10, 3.0), reps=5, rho=0.5, random_seed=1, **kwargs)
+    np.testing.assert_array_equal(result["replicates"], np.full((10, 5), 3.0))
