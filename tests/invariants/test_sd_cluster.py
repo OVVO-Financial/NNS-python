@@ -27,11 +27,39 @@ def test_nns_sd_cluster_covers_columns_once_and_is_deterministic() -> None:
     assert len(members) == len(set(members))
 
 
-def test_nns_sd_cluster_min_cluster_above_columns_is_empty() -> None:
+def test_nns_sd_cluster_variables_left_when_peeling_stops_at_once_form_the_final_cluster() -> None:
+    # R NNS.SD.cluster returned no clusters here.
     data = np.arange(12, dtype=np.float64).reshape(4, 3)
+    every = {"Cluster_1": ["X_1", "X_2", "X_3"]}
 
-    assert nns_sd_cluster(data, min_cluster=3) == {"Clusters": {}}
-    assert nns_sd_cluster(data, min_cluster=4) == {"Clusters": {}}
+    assert nns_sd_cluster(data, min_cluster=3) == {"Clusters": every}
+    assert nns_sd_cluster(data, min_cluster=4) == {"Clusters": every}
+    pair = np.column_stack([np.arange(1.0, 6.0), np.arange(2.0, 7.0)])
+    assert nns_sd_cluster(pair, min_cluster=2, names=["A", "B"]) == {
+        "Clusters": {"Cluster_1": ["A", "B"]}
+    }
+    assert nns_sd_cluster(pair[:, :1], names=["A"]) == {"Clusters": {"Cluster_1": ["A"]}}
+    with pytest.warns(UserWarning, match="Not enough variables"):
+        single = nns_sd_cluster(pair[:, :1], dendrogram=True, names=["A"])
+    assert single == {"Clusters": {"Cluster_1": ["A"]}, "Order": None}
+    both = nns_sd_cluster(pair, min_cluster=2, dendrogram=True, names=["A", "B"])
+    assert both["Clusters"] == {"Cluster_1": ["A", "B"]}
+    assert both["Dendrogram"]["labels"].tolist() == ["A", "B"]
+
+
+def test_nns_sd_cluster_dendrogram_keeps_hclust_leaf_order() -> None:
+    # R NNS.SD.cluster overwrote hclust's order with the original column positions,
+    # which is not a leaf order of the tree. R main values.
+    rows = np.arange(1, 10)
+    data = np.column_stack([((j * 7 + rows * 5) % 11) - j % 4 for j in range(1, 13)])
+    names = [f"V{j}" for j in range(1, 13)]
+    result = nns_sd_cluster(data.astype(np.float64), min_cluster=2, dendrogram=True, names=names)
+    dendrogram = result["Dendrogram"]
+    assert dendrogram["order"].tolist() == [1, 2, 3, 4, 9, 10, 11, 12, 5, 6, 7, 8]
+    leaves = dendrogram["labels"][dendrogram["order"] - 1].tolist()
+    assert leaves == "V4 V8 V12 V1 V7 V10 V3 V11 V5 V9 V2 V6".split()
+    # The order lists each leaf once, left to right through the merges.
+    assert sorted(dendrogram["order"].tolist()) == list(range(1, 13))
 
 
 def test_nns_sd_cluster_validates_name_count() -> None:

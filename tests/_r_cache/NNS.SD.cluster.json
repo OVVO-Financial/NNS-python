@@ -19,7 +19,14 @@
       }
     },
     "30b4f843dd7928a0dba2510e2b3142070b163acc686854cfbebfeac9ba0ac572": {
-      "Clusters": []
+      "Clusters": {
+        "Cluster_1": [
+          "X_1",
+          "X_2",
+          "X_3",
+          "X_4"
+        ]
+      }
     },
     "36782b88edda85fcc9d1cef84aaaf0d72cb8ac42dfc5fa04b9c1bdc3f1ae872a": {
       "Clusters": {
@@ -84,7 +91,14 @@
       }
     },
     "e5d2943eabbee4302b1f400306a7afe128e503658bc4672a90a3af263f85999d": {
-      "Clusters": []
+      "Clusters": {
+        "Cluster_1": [
+          "X_1",
+          "X_2",
+          "X_3",
+          "X_4"
+        ]
+      }
     }
   },
   "label": "NNS.SD.cluster",

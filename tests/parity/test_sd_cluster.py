@@ -65,7 +65,8 @@ def test_nns_sd_cluster_min_cluster_at_or_above_columns_matches_r(min_cluster: i
 
     actual = nns_sd_cluster(data, degree=1, min_cluster=min_cluster)
 
-    assert actual == expected == {"Clusters": {}}
+    # Nothing is peeled, and the variables left form the final cluster.
+    assert actual == expected == {"Clusters": {"Cluster_1": ["X_1", "X_2", "X_3", "X_4"]}}
 
 
 @pytest.mark.parity
@@ -150,12 +151,13 @@ def test_nns_sd_cluster_dendrogram_matches_r_hclust_shape() -> None:
 
 @pytest.mark.parity
 def test_nns_sd_cluster_dendrogram_too_few_variables_matches_r() -> None:
-    data = _known_matrix()
-    expected = _normalize_dendrogram(nns_sd_cluster_dendrogram(data.tolist(), 1, "discrete", 4))
+    data = _known_matrix()[:, :1]
+    expected = _normalize_dendrogram(nns_sd_cluster_dendrogram(data.tolist(), 1, "discrete", 1))
 
-    actual = nns_sd_cluster(data, degree=1, min_cluster=4, dendrogram=True)
+    with pytest.warns(UserWarning, match="Not enough variables"):
+        actual = nns_sd_cluster(data, degree=1, min_cluster=1, dendrogram=True)
 
-    assert actual == expected == {"Clusters": {}, "Order": None}
+    assert actual == expected == {"Clusters": {"Cluster_1": ["X_1"]}, "Order": None}
 
 
 def _known_matrix() -> np.ndarray:

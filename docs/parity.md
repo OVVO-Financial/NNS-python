@@ -119,8 +119,9 @@ The entries that tied discrete modes reach (NNS.mode, NNS.part, NNS.reg and
 NNS.boost) also carry the discrete NNS.mode tie rule of pull request #111,
 refilled from the same build plus that change. The two NNS.copula entries
 where every margin lies on one side of its target carry pull request #143 the same way,
-and the two univariate hazard and cumulative hazard NNS.CDF target values
-carry #123.
+the two univariate hazard and cumulative hazard NNS.CDF target values
+carry #123, and the NNS.SD.cluster entries where nothing is peeled and the
+dendrogram's leaf order carry #126.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
