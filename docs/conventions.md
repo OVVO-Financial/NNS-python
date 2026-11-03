@@ -59,12 +59,12 @@ NNS Python raises `ValueError`.
 
 Rationale: empty arrays in Python are upstream bugs, and NumPy convention is to warn or fail on empty reductions rather than silently produce a meaningful statistic.
 
-## Co-Moment Length Mismatch Divergence From R
+## Co-Moment Lengths
 
-R NNS warns when `x` and `y` lengths differ, computes over the shorter length, and divides by the longer length.
-NNS Python raises `ValueError`.
-
-Rationale: mismatched co-moment inputs lose observations silently in R. Python callers should fix alignment before computing a bivariate statistic.
+`co_lpm`, `co_upm`, `d_lpm` and `d_upm` raise `ValueError` unless `x` and `y` are
+non-empty and the same length, and `target_x` and `target_y` are non-empty and the
+same length or one of them length 1. R's `Co.LPM`, `Co.UPM`, `D.LPM` and `D.UPM`
+check the same rules.
 
 ## PM Matrix Target Defaults
 

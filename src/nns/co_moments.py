@@ -23,7 +23,8 @@ def co_lpm(
     both variables at or below their targets (degree 0 counts ``x <= target_x`` and
     ``y <= target_y``). ``degree_y`` defaults to ``degree_lpm``. Targets may be
     scalars (returns a float) or 1D arrays (returns an array); ``None`` uses the mean.
-    ``x`` and ``y`` must have the same length (R recycles; NNS Python raises).
+    ``x`` and ``y`` must be non-empty and the same length, and ``target_x`` and
+    ``target_y`` non-empty and the same length or one of them length 1.
     """
     degree_y = degree_lpm if degree_y is None else degree_y
     return _co_moment(_lower, _lower, degree_lpm, degree_y, x, y, target_x, target_y)
@@ -98,6 +99,12 @@ def _co_moment(
     # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
     x_targets = _as_targets(target_x, x_values)
     y_targets = _as_targets(target_y, y_values)
+    if x_targets.size == 0 or y_targets.size == 0:
+        raise ValueError("target_x and target_y must be non-empty.")
+    if x_targets.size != y_targets.size and 1 not in (x_targets.size, y_targets.size):
+        raise ValueError(
+            "target_x and target_y must have the same length, or one of them length 1."
+        )
     # As R's Co.LPM/Co.UPM/D.LPM/D.UPM: NaN would be counted in n but in no quadrant.
     _require_finite(x_targets, "target_x")
     _require_finite(y_targets, "target_y")
@@ -105,7 +112,7 @@ def _co_moment(
     degree_y = _as_degree(degree_y)
 
     native, swap_degrees = _native_co_moment(x_side, y_side)
-    if native is not None and x_targets.size > 0 and y_targets.size > 0:
+    if native is not None:
         first_degree, second_degree = (
             (degree_y, degree_x) if swap_degrees else (degree_x, degree_y)
         )
@@ -157,6 +164,8 @@ def _as_pair(
         raise ValueError("x and y must be 1D.")
     if x_values.size != y_values.size:
         raise ValueError("x and y must have the same length.")
+    if x_values.size == 0:
+        raise ValueError("x and y must be non-empty.")
     _require_finite(x_values, "x")
     _require_finite(y_values, "y")
     return x_values, y_values
