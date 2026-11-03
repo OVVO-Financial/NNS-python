@@ -227,7 +227,7 @@ def nns_sd_cluster(
                 clusters[f"Cluster_{iteration}"] = [all_names[index] for index in active]
             break
 
-    if len(active) > min_cluster and f"Cluster_{iteration}" not in clusters:
+    if active and f"Cluster_{iteration}" not in clusters:
         clusters[f"Cluster_{iteration}"] = [all_names[index] for index in active]
 
     if clusters:
@@ -281,12 +281,10 @@ def _sd_cluster_hclust(
     merge = _r_hclust_merge(linked, len(all_vars))
     if draw_degree is not None:
         _draw_sd_dendrogram(linked, all_vars, draw_degree)
-    original_positions = {name: index + 1 for index, name in enumerate(original_names)}
-    order = np.asarray([original_positions[name] for name in all_vars], dtype=np.int64)
     return {
         "merge": merge,
         "height": linked[:, 2].astype(np.float64),
-        "order": order,
+        "order": _r_hclust_order(merge),
         "labels": np.asarray(all_vars, dtype=str),
         "method": "complete",
         "call": 'hclust(d = dist_matrix, method = "complete")',
@@ -307,6 +305,19 @@ def _draw_sd_dendrogram(linked: NDArray[np.float64], labels: list[str], degree: 
     ax.set_title(f"Hierarchical Clustering of Stochastic Dominance Sets\nSD Degree: {degree}")
     ax.set_xlabel("Variables")
     ax.set_ylabel("SD Distance")
+
+
+def _r_hclust_order(merge: NDArray[np.int64]) -> NDArray[np.int64]:
+    """R hclust's leaf order (hcass2): expand the last merge, left before right."""
+    order: list[int] = []
+    stack = [int(merge.shape[0])]
+    while stack:
+        node = stack.pop()
+        if node < 0:
+            order.append(-node)
+        else:
+            stack.extend((int(merge[node - 1, 1]), int(merge[node - 1, 0])))
+    return np.asarray(order, dtype=np.int64)
 
 
 def _r_hclust_merge(linked: NDArray[np.float64], n_obs: int) -> NDArray[np.int64]:
