@@ -19,8 +19,6 @@ from nns._helpers import _warn_unsupported
 from nns._native import honours_ncores
 from nns.core import lpm_ratio, upm_ratio
 
-_R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
-
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
 
 _METHOD1_GUARD_MESSAGE = (
@@ -1002,7 +1000,7 @@ def _lpm_var_integer_interval(
 
     interval_prefix = prefix_power[:, interval - 1]
 
-    def root_value(t: float) -> float:
+    def raw_moments(t: float) -> tuple[float, float]:
         lpm_raw = 0.0
         upm_raw = 0.0
         for j in range(degree + 1):
@@ -1010,33 +1008,42 @@ def _lpm_var_integer_interval(
             lpm_raw += coef * (-1.0) ** j * t ** (degree - j) * float(interval_prefix[j])
             suffix = float(total_power[j]) - float(interval_prefix[j])
             upm_raw += coef * (-1.0) ** (degree - j) * t ** (degree - j) * suffix
+        return lpm_raw, upm_raw
+
+    def root_value(t: float) -> float:
+        lpm_raw, upm_raw = raw_moments(t)
         return (1.0 - pct) * lpm_raw - pct * upm_raw
+
+    # The ratio residual is dimensionless, unlike root_value, whose size scales with x**degree.
+    def ratio_gap(t: float) -> float:
+        lpm_raw, upm_raw = raw_moments(t)
+        total = lpm_raw + upm_raw
+        return lpm_raw / total - pct if total != 0.0 else math.nan
 
     f_lower = root_value(lower)
     f_upper = root_value(upper)
-    tol = _UNIROOT_TOL
+    g_lower = ratio_gap(lower)
+    g_upper = ratio_gap(upper)
+    tol = _VAR_RATIO_TOL
 
-    if math.isfinite(f_lower) and abs(f_lower) <= tol:
+    if math.isfinite(g_lower) and abs(g_lower) <= tol:
         return lower + shift
-    if math.isfinite(f_upper) and abs(f_upper) <= tol:
+    if math.isfinite(g_upper) and abs(g_upper) <= tol:
         return upper + shift
 
     if math.isfinite(f_lower) and math.isfinite(f_upper) and f_lower * f_upper <= 0.0:
-        from scipy.optimize import brentq  # type: ignore[import-untyped]
+        from nns.diff import _zeroin2
 
-        root = float(brentq(root_value, lower, upper, xtol=tol))
+        # A tolerance on t does not bound the residual where the ratio is steep.
+        root_tol = float(np.finfo(float).eps) ** 2 * (upper - lower)
+        root = _zeroin2(root_value, lower, upper, f_lower, f_upper, root_tol, 1000)
         return min(max(root, lower), upper) + shift
 
-    # Numerical safety fallback, mirroring R's optimize() on |f|.
-    from scipy.optimize import minimize_scalar
+    # No sign change, from rounding at a break: take the closer endpoint.
+    return (lower if abs(g_lower) <= abs(g_upper) else upper) + shift
 
-    result = minimize_scalar(
-        lambda t: abs(root_value(t)),
-        bounds=(lower, upper),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return min(max(float(result.x), lower), upper) + shift
+
+_VAR_RATIO_TOL = float(np.finfo(float).eps ** 0.75)
 
 
 def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
