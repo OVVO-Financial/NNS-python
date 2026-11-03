@@ -118,3 +118,69 @@ def test_degree_zero_survival_beyond_three_columns_is_the_joint_upper_share() ->
     hazard = cast(dict[str, np.ndarray], result["Function"])["CDF"]
 
     np.testing.assert_array_equal(hazard, np.maximum(-np.log(np.maximum(share, 1e-10)), 0.0))
+
+
+_CDF_TYPES = ["CDF", "survival", "hazard", "cumulative hazard"]
+
+
+def _cdf_target_data() -> list[np.ndarray]:
+    rng = np.random.default_rng(11)
+    return [np.arange(1.0, 21.0), np.sort(np.round(rng.lognormal(size=30), 2))]
+
+
+def _cdf_curve(x: np.ndarray, degree: int, type_name: str) -> np.ndarray:
+    function = cast(dict[str, np.ndarray], nns_cdf(x, degree, type=type_name)["Function"])
+    return np.asarray(list(function.values())[1], dtype=np.float64)
+
+
+def _cdf_at(x: np.ndarray, degree: int, type_name: str, target: float) -> float:
+    value = nns_cdf(x, degree, target=target, type=type_name)["target.value"]
+    return float(np.asarray(value, dtype=np.float64).reshape(-1)[0])
+
+
+@pytest.mark.parametrize("type_name", _CDF_TYPES)
+@pytest.mark.parametrize("degree", [0, 1])
+def test_nns_cdf_target_value_equals_the_curve_at_each_data_point(
+    type_name: str, degree: int
+) -> None:
+    # R NNS.CDF: hazard used the survival at the nearest x, and cumulative hazard
+    # refit the curve through NNS.reg, so neither matched the returned curve.
+    for x in _cdf_target_data():
+        curve = _cdf_curve(x, degree, type_name)
+        at = [_cdf_at(x, degree, type_name, float(t)) for t in np.sort(x)]
+        np.testing.assert_allclose(at, curve, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("type_name", ["CDF", "survival", "cumulative hazard"])
+@pytest.mark.parametrize("degree", [0, 1])
+def test_nns_cdf_target_value_lies_between_neighbouring_curve_values(
+    type_name: str, degree: int
+) -> None:
+    for x in _cdf_target_data():
+        xs = np.unique(x)
+        sorted_x = np.sort(x)
+        first = np.r_[True, sorted_x[1:] != sorted_x[:-1]]
+        curve = _cdf_curve(x, degree, type_name)[first]
+        mid = (xs[1:] + xs[:-1]) / 2.0
+        at = np.array([_cdf_at(x, degree, type_name, float(t)) for t in mid])
+        lo = np.minimum(curve[1:], curve[:-1])
+        hi = np.maximum(curve[1:], curve[:-1])
+        assert np.all((at >= lo - 1e-12) & (at <= hi + 1e-12))
+
+
+@pytest.mark.parametrize("degree", [0, 1])
+def test_nns_cdf_hazard_target_value_between_data_points_is_clamped(degree: int) -> None:
+    for x in _cdf_target_data():
+        xs = np.unique(x)
+        mid = (xs[1:] + xs[:-1]) / 2.0
+        at = np.array([_cdf_at(x, degree, "hazard", float(t)) for t in mid])
+        assert np.all(np.isfinite(at) & (at >= 0.0) & (at <= 1e6))
+
+
+def test_nns_cdf_cumulative_hazard_at_a_target_is_minus_log_survival() -> None:
+    x = np.arange(1.0, 21.0)
+    assert _cdf_at(x, 0, "cumulative hazard", 19.0) == pytest.approx(-np.log(0.05), rel=1e-14)
+    assert _cdf_at(x, 0, "cumulative hazard", 10.0) == pytest.approx(-np.log(0.5), rel=1e-14)
+    at_max = _cdf_at(x, 0, "cumulative hazard", 20.0)
+    assert np.isfinite(at_max)
+    assert at_max == _cdf_curve(x, 0, "cumulative hazard")[19]
