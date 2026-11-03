@@ -115,6 +115,9 @@ the fixes in OVVO-Financial/NNS pull requests #73-#92, not from the unpatched
 was rebuilt from that R build with the full test suite; shards for functions the
 patches do not touch came out unchanged. Where Python has not mirrored one of
 those fixes yet, the parity tests that depend on it are marked xfail until it is.
+The entries that tied discrete modes reach (NNS.mode, NNS.part, NNS.reg and
+NNS.boost) also carry the discrete NNS.mode tie rule of pull request #111,
+refilled from the same build plus that change.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
