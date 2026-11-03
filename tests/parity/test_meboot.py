@@ -81,9 +81,6 @@ def test_nns_meboot_errors_match_r_categories() -> None:
     with pytest.raises(ValueError):
         nns_meboot(np.array([1.0, np.inf, 3.0]), rho=0.0)
 
-    with pytest.raises(ValueError, match="initial parameters"):
-        nns_meboot(np.full(5, 5.0), reps=2, rho=0.0)
-
 
 @pytest.mark.parity
 @pytest.mark.stochastic

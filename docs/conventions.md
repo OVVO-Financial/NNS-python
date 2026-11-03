@@ -528,7 +528,10 @@ returns plain Python dictionaries instead of R's vectorized list-matrix wrapper.
 `Vectorize`/`mapply`: the given arguments are recycled elementwise (not crossed)
 and a list of result dictionaries is returned in that order; when all of them are
 scalars a single result dictionary is returned. `rho=None` follows installed R's empty
-output behavior, and length-one input returns only `{"x": x}`.
+output behavior, and length-one input returns only `{"x": x}`. When the detrended
+residuals are all exactly zero (a constant or exactly linear series) `rho` has no
+effect, as in R: the replicates are copies of the trend with their means spread by
+`force_clt`, and a constant series gives constant columns.
 
 Exact replicate parity with R is not expected because NNS Python uses NumPy's random
 number generator and SciPy's optimizer while R uses its global RNG and

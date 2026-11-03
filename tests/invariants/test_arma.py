@@ -185,12 +185,16 @@ def test_nns_arma_static_linear_pred_int_returns_intervals() -> None:
     assert np.all(result["Upper 90% pred.int"] >= point)
 
 
-def test_nns_arma_static_linear_pred_int_exact_line_matches_installed_r_error() -> None:
-    # An exactly linear forecast path has constant meboot residuals; R fails the same way.
+def test_nns_arma_static_linear_pred_int_exact_line() -> None:
+    # An exactly linear forecast path has all-zero meboot residuals; R raised until
+    # NNS.meboot skipped the rho search for them.
     variable = np.arange(1, 21, dtype=np.float64)
 
-    with pytest.raises(ValueError, match="cannot be evaluated at initial parameters"):
-        nns_arma(variable, h=5, seasonal_factor=4, method="lin", pred_int=0.95)
+    result = nns_arma(variable, h=5, seasonal_factor=4, method="lin", pred_int=0.95, random_seed=1)
+    assert isinstance(result, dict)
+    np.testing.assert_array_equal(result["Estimates"], np.arange(21, 26, dtype=np.float64))
+    assert np.all(result["Lower 95% pred.int"] < result["Estimates"])
+    assert np.all(result["Upper 95% pred.int"] > result["Estimates"])
 
 
 def test_nns_arma_pred_int_h_one_returns_lin_residual_band() -> None:

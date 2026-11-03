@@ -68,3 +68,11 @@ def test_nns_ss_interval_for_two_constant_groups_is_the_point_estimate() -> None
     assert (r["lower"], r["upper"]) == (1.0, 1.0)
     r = nns_ss(np.ones(10), np.ones(15), confidence_interval=True, reps=9)
     assert (r["lower"], r["upper"]) == (0.5, 0.5)
+
+
+def test_nns_ss_interval_with_an_exactly_linear_group() -> None:
+    x = np.random.default_rng(1).normal(5.0, 1.0, 10)
+    y = np.arange(1, 11, dtype=np.float64)
+    r = nns_ss(x, y, confidence_interval=True, reps=49, random_seed=2)
+    assert np.all(np.isfinite(r["boot_vals"]))
+    assert r["lower"] <= r["p_star"] <= r["upper"]

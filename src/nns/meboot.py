@@ -61,6 +61,9 @@ def nns_meboot(
     ``Vectorize``/``mapply``: given arguments are recycled elementwise to the longest
     length (not crossed) and a list with one result per position is returned. If all
     of them are scalars (or length 1) a single result is returned.
+
+    When the detrended residuals are all exactly zero (a constant or exactly linear
+    series) there is nothing to align and ``rho`` has no effect.
     """
     del elaps  # R elapsed-time printout flag; NNS Python emits no console output.
     values = np.asarray(x, dtype=np.float64)
@@ -146,6 +149,8 @@ def _nns_meboot_one(
     time = np.arange(1, n + 1, dtype=np.float64)
     intercept, orig_drift = _fast_lm(time, x)
     orig_res = x - (intercept + orig_drift * time)
+    # All-zero residuals have no ranks for a rho target and no spread to rescale.
+    zero_res = bool(np.all(orig_res == 0.0))
 
     if target_drift is not None or target_drift_scale is not None:
         drift = True
@@ -198,11 +203,12 @@ def _nns_meboot_one(
     qseq = np.sort(res_mat, axis=0)
     res_mat[ordxx_zero, :] = qseq
 
-    res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
+    if not zero_res:
+        res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
     res_mat = _meboot_expand_sd(orig_res, res_mat, rng)
 
     # The ME density lives on the residuals, so scale them against their own mean and sd.
-    if scl_adjustment:
+    if scl_adjustment and not zero_res:
         zz = np.concatenate(([xmin], z, [xmax]))
         v = np.diff(zz**2) / 12.0
         xb = r_mean(orig_res)
@@ -227,7 +233,9 @@ def _nns_meboot_one(
     if expand_sd and keeps_drift:
         ensemble = _meboot_expand_sd(x, ensemble, rng)
     if force_clt and reps > 1:
-        ensemble = _force_clt(x if keeps_drift else baseline + orig_res, ensemble)
+        clt_ref = x if keeps_drift else baseline + orig_res
+        if _sample_sd(clt_ref) > 0.0:
+            ensemble = _force_clt(clt_ref, ensemble)
 
     if xmin_arg is not None:
         ensemble = np.maximum(float(xmin_arg), ensemble)
