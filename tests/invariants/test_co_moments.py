@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pytest
 from _tolerances import EXACT
@@ -126,3 +129,41 @@ def test_partial_moments_reject_nan_and_negative_degrees(degree: float) -> None:
     for call in calls:
         with pytest.raises(ValueError, match="degree must be non-negative"):
             call()
+
+
+_CO_MOMENTS: list[Callable[..., Any]] = [
+    lambda x, y, tx, ty: co_lpm(1, x, y, tx, ty),
+    lambda x, y, tx, ty: co_upm(1, x, y, tx, ty),
+    lambda x, y, tx, ty: d_lpm(1, 1, x, y, tx, ty),
+    lambda x, y, tx, ty: d_upm(1, 1, x, y, tx, ty),
+]
+
+
+@pytest.mark.parametrize("function", _CO_MOMENTS, ids=["co_lpm", "co_upm", "d_lpm", "d_upm"])
+def test_co_moments_reject_unequal_lengths_empty_input_and_recycled_targets(
+    function: Callable[..., Any],
+) -> None:
+    # R test-co-moments.R. Both backends used to recycle [0, 1, 2] against [0, 1]
+    # and raise ZeroDivisionError on an empty target; the fallback gave nan for
+    # empty x and y.
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal(100)
+    y = rng.standard_normal(99)
+    empty = np.array([], dtype=np.float64)
+    five = np.arange(1.0, 6.0)
+
+    for tx, ty in [(0.0, 0.0), (None, None), (np.linspace(-1.0, 1.0, 200), 0.0)]:
+        with pytest.raises(ValueError, match="same length"):
+            function(x, y, tx, ty)
+    for tx, ty in [(0.0, 0.0), (None, None)]:
+        with pytest.raises(ValueError, match="x and y must be non-empty"):
+            function(empty, empty, tx, ty)
+    for tx, ty in [(empty, 0.0), (0.0, empty), (empty, empty)]:
+        with pytest.raises(ValueError, match="target_x and target_y must be non-empty"):
+            function(five, five, tx, ty)
+    with pytest.raises(ValueError, match="length 1"):
+        function(x, x, np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0]))
+    np.testing.assert_array_equal(
+        function(x, x, np.array([-1.0, 0.0, 1.0]), 0.5),
+        [function(x, x, -1.0, 0.5), function(x, x, 0.0, 0.5), function(x, x, 1.0, 0.5)],
+    )

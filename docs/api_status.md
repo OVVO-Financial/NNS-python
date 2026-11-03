@@ -38,7 +38,7 @@ invariant, and property coverage.
 |---|---|---|---|
 | Core partial moments: `lpm`, `upm`, `lpm_ratio`, `upm_ratio` | implemented | high | Matches R partial-moment conventions, including degree-zero equality handling. |
 | Partial-moment matrices and n-dimensional wrappers: `pm_matrix`, `co_lpm_nd`, `co_upm_nd`, `dpm_nd` | implemented | high | Public matrix and n-dimensional partial-moment surfaces are covered. |
-| Pairwise co-moments: `co_lpm`, `co_upm`, `d_lpm`, `d_upm` | implemented | high | Python raises on length mismatch instead of silently truncating like R. |
+| Pairwise co-moments: `co_lpm`, `co_upm`, `d_lpm`, `d_upm` | implemented | high | Unequal or empty inputs and targets raise, as in R. |
 | Classical helpers: `ecdf_pm`, `mean_pm`, `var_pm`, `skew_pm`, `kurt_pm`, `nns_moments` | implemented | high | Population-normalized defaults are documented in `docs/conventions.md`. |
 | VaR helpers: `lpm_var`, `upm_var` | implemented | high | Used by deterministic confidence and prediction interval paths. |
 | Central tendencies: `nns_gravity`, `nns_mode`, `nns_rescale` | implemented | high | Public helper behavior is covered through direct and dependent tests. |
