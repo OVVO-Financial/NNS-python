@@ -617,8 +617,26 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
                  bool continuous) {
   const nns::PMMatrixResult disc = nns::pm_matrix(0.0, 0.0, target, data, n, d, false, false, call_threads());
   const double disc_co = upper_tri_pairwise(disc.cupm, d) + upper_tri_pairwise(disc.clpm, d);
+  // Each margin's lower-tail share at its target, also the independence anchors.
+  std::vector<double> p0(d), p1(d);
+  for (std::size_t c = 0; c < d; ++c) {
+    const double* col = data + c * n;
+    double below = 0.0, lower = 0.0, upper = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      const double diff = target[c] - col[i];
+      if (diff >= 0.0) below += 1.0;
+      if (diff > 0.0) lower += diff; else upper -= diff;
+    }
+    p0[c] = below / static_cast<double>(n);
+    p1[c] = lower / (lower + upper);
+  }
+  // With every margin on one side of its target each co-partial moment equals its
+  // independence product, and every pair is trivially concordant or discordant.
+  std::size_t one_sided = 0;
+  for (double p : p0) one_sided += (p == 0.0 || p == 1.0) ? 1U : 0U;
+  if (one_sided == d) return 0.0;
   // Perfect dependence: every pair fully concordant (1) or fully discordant (0).
-  bool perfect = true;
+  bool perfect = one_sided == 0;
   for (std::size_t i = 0; i < d && perfect; ++i) {
     for (std::size_t j = i + 1U; j < d; ++j) {
       const double pair = disc.cupm[i + j * d] + disc.clpm[i + j * d];
@@ -641,19 +659,6 @@ double copula_nd(const double* data, std::size_t n, std::size_t d, const double*
     cont_d = disc_d;
   }
 
-  // Independence anchors from each margin's own lower-tail share at its target.
-  std::vector<double> p0(d), p1(d);
-  for (std::size_t c = 0; c < d; ++c) {
-    const double* col = data + c * n;
-    double below = 0.0, lower = 0.0, upper = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-      const double diff = target[c] - col[i];
-      if (diff >= 0.0) below += 1.0;
-      if (diff > 0.0) lower += diff; else upper -= diff;
-    }
-    p0[c] = below / static_cast<double>(n);
-    p1[c] = lower / (lower + upper);
-  }
   const auto co_anchor = [d](const std::vector<double>& p) {
     std::vector<double> terms;
     for (std::size_t j = 1; j < d; ++j)
