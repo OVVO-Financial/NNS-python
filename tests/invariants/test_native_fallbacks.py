@@ -55,10 +55,15 @@ def _vectors() -> list[np.ndarray]:
 
 @pytest.mark.parametrize("discrete", [False, True])
 @pytest.mark.parametrize("multi", [False, True])
-def test_mode_fallback_is_bit_identical_to_native(discrete: bool, multi: bool) -> None:
+def test_mode_fallback_is_bit_identical_to_native(
+    discrete: bool, multi: bool, request: pytest.FixtureRequest
+) -> None:
     native = native_fn("mode")
     if native is None:
         pytest.skip("native extension not available")
+    if discrete and not multi:
+        reason = "the vendored NNS-core still averages tied discrete modes"
+        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
     fallback = _discrete_mode if discrete else _continuous_mode
     for x in _vectors():
         expected = np.asarray(native(np.ascontiguousarray(x), discrete, multi))
@@ -66,6 +71,20 @@ def test_mode_fallback_is_bit_identical_to_native(discrete: bool, multi: bool) -
         assert got.shape == expected.shape
         assert np.array_equal(got, expected)
         assert np.array_equal(np.signbit(got), np.signbit(expected))
+
+
+@pytest.mark.parametrize("multi", [False, True])
+@pytest.mark.xfail(strict=True, reason="the vendored NNS-core still averages tied discrete modes")
+def test_discrete_mode_fallback_matches_native_on_tiny_samples(multi: bool) -> None:
+    native = native_fn("mode")
+    if native is None:
+        pytest.skip("native extension not available")
+    for values in ([1.0, 3.0], [1.0, 2.0], [2.0, 2.0, 7.0], [4.0], [1.0, 1.0, 3.0, 3.0]):
+        x = np.asarray(values)
+        expected = np.asarray(native(np.ascontiguousarray(x), True, multi))
+        got = _discrete_mode(x, multi)
+        assert got.shape == expected.shape
+        assert np.array_equal(got, expected)
 
 
 def test_gravity_fallback_keeps_signed_zeros_like_native() -> None:

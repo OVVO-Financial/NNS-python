@@ -23,6 +23,15 @@ def test_nns_reg_shapes_and_bounds() -> None:
     assert result["derivative"]["Coefficient"].size == result["regression.points"]["x"].size - 1
 
 
+def test_nns_reg_class_predicts_one_of_a_cells_tied_classes() -> None:
+    # The cell x = 1:4 holds classes 1, 1, 3, 3; the mean of the tied modes made it class 2.
+    x = np.arange(1.0, 9.0)
+    y = np.array([1.0, 1.0, 3.0, 3.0, 2.0, 2.0, 2.0, 2.0])
+    result = nns_reg(x, y, type="CLASS", order=2)
+    assert set(result["Fitted.xy"]["y.hat"][:4].tolist()) <= {1.0, 3.0}
+    np.testing.assert_array_equal(result["Fitted.xy"]["y.hat"], [1, 1, 1, 1, 2, 2, 2, 2])
+
+
 def test_nns_reg_degenerate_run_derivative_without_warning() -> None:
     from nns._reg_engine import _derivative
 

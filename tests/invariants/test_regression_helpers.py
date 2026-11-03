@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nns import lpm_var, nns_mode, nns_rescale, upm_var
+from nns import lpm_var, nns_gravity, nns_mode, nns_rescale, upm_var
 from nns._helpers import _fast_lm, _is_fcl
 
 
@@ -61,6 +61,28 @@ def test_nns_mode_outputs_finite_value_for_finite_input() -> None:
     result = nns_mode(values)
 
     assert np.all(np.isfinite(np.asarray(result, dtype=np.float64)))
+
+
+@pytest.mark.invariant
+def test_discrete_nns_mode_breaks_ties_by_gravity_not_their_mean() -> None:
+    def nearest(x: np.ndarray) -> float:
+        modes = np.asarray(nns_mode(x, discrete=True, multi=True))
+        return float(modes[np.argmin(np.abs(modes - nns_gravity(x)))])  # ties: the lower
+
+    cases = ([1, 1, 3, 3], [1, 1, 2, 2], np.repeat(np.arange(20), 400), [1, 3], [1, 2])
+    for case in cases:
+        x = np.asarray(case, dtype=np.float64)
+        result = nns_mode(x, discrete=True, multi=False)
+        assert result in x
+        assert result == nearest(x)
+    assert nns_mode(np.array([1.0, 1.0, 3.0, 3.0]), discrete=True) == 1.0  # 2 before
+    assert nns_mode(np.repeat(np.arange(20.0), 400), discrete=True) == 9.0
+    np.testing.assert_array_equal(
+        nns_mode(np.array([1.0, 3.0]), discrete=True, multi=True), [1.0, 3.0]
+    )
+    beyond_int = np.array([3e9, 3e9, -5e9, -5e9, 1.0])
+    np.testing.assert_array_equal(nns_mode(beyond_int, discrete=True, multi=True), [-5e9, 3e9])
+    assert nns_mode(beyond_int, discrete=True, multi=False) == -5e9
 
 
 @pytest.mark.invariant

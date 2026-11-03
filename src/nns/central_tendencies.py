@@ -60,7 +60,8 @@ def nns_mode(
 ) -> float | NDArray[np.float64]:
     """Mode of a distribution matching R's ``NNS.mode``.
 
-    ``discrete=True`` returns the most frequent value after rounding to integers;
+    ``discrete=True`` returns the most frequent value after rounding to integers,
+    and of tied values the one nearest ``nns_gravity(x)``, then the lower;
     otherwise the mode of a fixed-width histogram. ``multi=True`` returns every
     detected mode as an array and ``multi=False`` a single float.
 
@@ -75,7 +76,8 @@ def nns_mode(
         return np.array([np.nan], dtype=np.float64) if multi else float("nan")
 
     native_mode = native_fn("mode")
-    if native_mode is not None:
+    # The vendored NNS-core still averages tied discrete modes: use the port until re-vendored.
+    if native_mode is not None and not discrete:
         native_result = np.asarray(
             native_mode(np.ascontiguousarray(finite), discrete, multi), dtype=np.float64
         )
@@ -110,16 +112,15 @@ def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
 
 def _discrete_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float64]:
     """NumPy port of NNS-core ``nns::mode(discrete=True)`` (R ``NNS.mode``)."""
-    n = values.size
-    if n <= 3:
-        return np.array([_nearest_int_half_up(_small_median(values))], dtype=np.float64)
     # Keyed on the rounded value; "+ 0.0" folds -0.0 into 0.0.
     integerized = _nearest_int_half_up_array(values) + 0.0
     modes, counts = np.unique(integerized, return_counts=True)
     sorted_modes: NDArray[np.float64] = modes[counts == int(np.max(counts))].astype(np.float64)
-    if multi:
+    if multi or sorted_modes.size == 1:
         return sorted_modes
-    return np.array([_long_double_mean(sorted_modes)], dtype=np.float64)
+    # Tied modes: the one nearest the gravity, then the lower; a mean of tied classes is no class.
+    gravity = nns_gravity(values)
+    return sorted_modes[[int(np.argmin(np.abs(sorted_modes - gravity)))]]
 
 
 def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float64]:
