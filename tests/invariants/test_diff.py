@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 
-from nns import dy_d, dy_dx, nns_diff
+from nns import dy_d, dy_dx, nns_diff, nns_gravity, nns_reg
 
 
 def test_nns_diff_constant_derivative_is_zero() -> None:
@@ -275,3 +277,44 @@ def test_mreg_predict_path_chunking_is_exact(monkeypatch: pytest.MonkeyPatch) ->
             b = _mreg_predict_path(xt, rpm_x, rpm_y, kmax, "NNS", mins, maxs)
         np.testing.assert_allclose(a, b, rtol=0, atol=0)
         np.testing.assert_allclose(native, b, rtol=1e-12, atol=1e-14)
+
+
+def _band_means(x: np.ndarray, y: np.ndarray, p: float) -> list[float]:
+    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(np.floor(np.sqrt(x.size))), 5)))
+    h_step = nns_gravity(np.diff(np.unique(x))) * h_s
+    lo = np.maximum(x.min(), p - h_step)
+    hi = np.minimum(x.max(), p + h_step)
+    point_est = np.concatenate((lo, np.full(5, p), hi))
+    fit = nns_reg(x, y, point_est=point_est, point_only=True, smooth=True, plot=False, dist=None)
+    est = np.asarray(fit["Point.est"], dtype=np.float64).reshape(3, -1).T
+    run_1, run_2 = hi - p, p - lo
+    rise_1, rise_2 = est[:, 2] - est[:, 1], est[:, 1] - est[:, 0]
+    return [
+        float(np.mean((rise_1 + rise_2) / (run_1 + run_2))),
+        float(np.mean((rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0))),
+    ]
+
+
+def _dy_dx_at(x: np.ndarray, p: float) -> list[float]:
+    d = cast(dict[str, np.ndarray], dy_dx(x, x**2, eval_point=p))
+    return [float(np.ravel(d["first.derivative"])[0]), float(np.ravel(d["second.derivative"])[0])]
+
+
+@pytest.mark.parametrize("n", [10, 12])
+def test_dy_dx_works_when_small_samples_repeat_a_bandwidth(n: int) -> None:
+    first, second = _dy_dx_at(np.linspace(0.0, 3.0, n), 1.5)
+    assert np.isfinite(first) and np.isfinite(second)
+    assert first == pytest.approx(3.0, rel=0.05)
+
+
+@pytest.mark.parametrize("n", [20, 30, 50, 10])
+def test_dy_dx_averages_over_all_five_bandwidth_positions(n: int) -> None:
+    # R dy.dx dropped repeated bandwidths (n < 49) and failed below n = 16.
+    x = np.linspace(0.0, 3.0, n)
+    np.testing.assert_allclose(_dy_dx_at(x, 1.5), _band_means(x, x**2, 1.5), rtol=1e-12)
+
+
+def test_dy_dx_small_sample_matches_r_main() -> None:
+    first, second = _dy_dx_at(np.linspace(0.0, 3.0, 10), 1.5)
+    assert first == pytest.approx(2.9186064885499259, rel=1e-10)
+    assert second == pytest.approx(0.16054270561702205, rel=1e-10)

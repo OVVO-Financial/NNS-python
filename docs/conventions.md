@@ -608,9 +608,9 @@ spacing of the sorted values, as in the patched R, so row order does not matter)
 and return a
 table-like dictionary with `eval.point`, `first.derivative`, and
 `second.derivative`. At `min(x)` or `max(x)` the first derivative is R's
-one-sided slope and the second derivative is NaN. As in R, bandwidths that
-repeat in `h_s` (n < 49) are skipped; below n = 16, where every bandwidth
-repeats and R's `dy.dx` fails, the port uses the distinct bandwidths.
+one-sided slope and the second derivative is NaN. As in R, every position in
+`h_s` counts once, so a bandwidth that repeats (n < 49) is averaged in each
+time it appears.
 `eval_point` must be given (a number, a vector, or `"overall"`).
 `nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")` with
 `tol = tol / 10`, and declares convergence when the bisection bracket on the
