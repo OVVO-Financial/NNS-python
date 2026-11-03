@@ -122,7 +122,8 @@ where every margin lies on one side of its target carry pull request #143 the sa
 the two univariate hazard and cumulative hazard NNS.CDF target values
 carry #123, and the NNS.SD.cluster entries where nothing is peeled and the
 dendrogram's leaf order carry #126. The NNS.MC.grid helper builds the grid as
-R main does after #146.
+R main does after #146, and the three dy.dx entries with repeated bandwidths
+carry #147.
 
 To reproduce, install the patched package and point `R_LIBS` at it when
 regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the

@@ -125,8 +125,7 @@ def test_dy_dx_numeric_eval_points_match_r(eval_point: list[float]) -> None:
 @pytest.mark.parametrize("size", [30, 60, 250])
 def test_dy_dx_numeric_bandwidths_match_r(size: int) -> None:
     # R steps by gravity(diff(sort(unique(x)))) * h_s (the bandwidth value, not its
-    # index; the patched R sorts x first); for n < 49 R keeps only the bandwidths
-    # that occur once in h_s.
+    # index; the patched R sorts x first), over all five positions of h_s, repeats included.
     # x on a 1/1024 grid makes x * x * x exact, so the cache key matches on every numpy build.
     rng = np.random.default_rng(size)
     x = rng.integers(-2048, 2049, size) / 1024.0
