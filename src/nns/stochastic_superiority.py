@@ -40,13 +40,8 @@ def nns_ss(
         rng = np.random.default_rng(random_seed)
         x_seed, y_seed = [int(seed) for seed in rng.integers(0, np.iinfo(np.int32).max, size=2)]
 
-    x_boot = nns_meboot(x_values, reps=reps, rho=rho, random_seed=x_seed)
-    y_boot = nns_meboot(y_values, reps=reps, rho=rho, random_seed=y_seed)
-    if not isinstance(x_boot, dict) or not isinstance(y_boot, dict):
-        raise ValueError("NNS.meboot returned an unexpected vectorized result.")
-
-    x_reps = _replicate_matrix(x_boot)
-    y_reps = _replicate_matrix(y_boot)
+    x_reps = _bootstrap(x_values, int(reps), rho, x_seed)
+    y_reps = _bootstrap(y_values, int(reps), rho, y_seed)
     boot_vals = np.empty(int(reps), dtype=np.float64)
     for index in range(int(reps)):
         boot_vals[index] = _stoch_superiority(x_reps[:, index], y_reps[:, index])["p_star"]
@@ -95,6 +90,18 @@ def _stoch_superiority(
 def _omit_nan_numeric(x: NDArray[np.float64]) -> NDArray[np.float64]:
     values = np.asarray(x, dtype=np.float64).reshape(-1)
     return np.asarray(values[~np.isnan(values)], dtype=np.float64)
+
+
+def _bootstrap(
+    values: NDArray[np.float64], reps: int, rho: float, seed: int | None
+) -> NDArray[np.float64]:
+    # A constant group's bootstrap is the constant itself; NNS.meboot cannot rescale it.
+    if np.all(values == values[0]):
+        return np.tile(values[:, np.newaxis], (1, reps))
+    boot = nns_meboot(values, reps=reps, rho=rho, random_seed=seed)
+    if not isinstance(boot, dict):
+        raise ValueError("NNS.meboot returned an unexpected vectorized result.")
+    return _replicate_matrix(boot)
 
 
 def _replicate_matrix(result: MebootResult) -> NDArray[np.float64]:
