@@ -280,7 +280,7 @@ def test_order_stat_active_subset_matches_prefix_matrix() -> None:
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(degree: int) -> None:
+def test_lazy_prefix_efficient_set_matches_matrix_path_on_active_subset(degree: int) -> None:
     returns = _large_fixture()
     active = [0, 1, 2, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
     discrete = True
@@ -293,7 +293,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(deg
         degree,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         degree,
@@ -303,7 +303,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(deg
     assert actual == expected
 
 
-def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns() -> None:
+def test_lazy_prefix_efficient_set_matches_matrix_path_for_repeated_returns() -> None:
     returns = np.asarray(
         [
             [0.0, 0.0, 0.0, 1.0, -1.0, 2.0],
@@ -325,7 +325,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
         2,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         2,
@@ -336,7 +336,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
+def test_lazy_prefix_efficient_set_matches_matrix_path_for_random_fixture(
     degree: int,
 ) -> None:
     rng = np.random.default_rng(1701 + degree)
@@ -354,7 +354,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
         degree,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         degree,

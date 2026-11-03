@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from nns import fsd, fsd_uni, lpm, ssd, ssd_uni, tsd, tsd_uni
+from nns import fsd, fsd_uni, lpm, nns_sd_cluster, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
 
 
 def _r_sd_reference(x: NDArray[np.float64], y: NDArray[np.float64], degree: int) -> int:
@@ -170,3 +170,49 @@ def test_a_common_shift_keeps_the_verdict_like_r() -> None:
     for shift in (20000.0, 1e6):
         assert tsd_uni(x + shift, y + shift) == 0
         assert tsd_uni(z + shift, x + shift) == 1
+
+
+def test_sd_efficient_set_does_not_depend_on_column_order() -> None:
+    # R NNS.SD.efficient.set: Y sorts first by LPM(1, tmax) and was kept, so the set was
+    # [Y, X] in this order and [X] in the other.
+    x = np.array([-1.0, -1.0, 2.0])
+    y = np.array([-2.0, 1.0, 1.0])
+    assert fsd_uni(x, y, "continuous") == 1
+    assert sd_efficient_set(np.column_stack([y, x]), 1, "continuous") == [1]
+    assert sd_efficient_set(np.column_stack([x, y]), 1, "continuous") == [0]
+    yx = nns_sd_cluster(np.column_stack([y, x]), 1, "continuous", names=["Y", "X"])
+    xy = nns_sd_cluster(np.column_stack([x, y]), 1, "continuous", names=["X", "Y"])
+    assert yx["Clusters"] == xy["Clusters"] == {"Cluster_1": ["X"], "Cluster_2": ["Y"]}
+
+
+def test_sd_efficient_set_keeps_every_member_of_a_dominance_cycle() -> None:
+    # Tolerance-level ties make A > B > C > A at second order; the scan kept whichever came
+    # first. R main returns all three, in LPM order, for every column order.
+    a = np.arange(6.0)
+    h = 3 * 2.0**-44
+    m = np.column_stack(
+        [a, a + h * np.array([0, -2, 3, 0, -1, 0]), a + h * np.array([0, -1, 0, 3, -2, 0])]
+    )
+    for perm, expected in [
+        ([0, 1, 2], [0, 1, 2]),
+        ([1, 2, 0], [1, 2, 0]),
+        ([2, 1, 0], [2, 1, 0]),
+        ([1, 0, 2], [1, 0, 2]),
+    ]:
+        assert [perm[i] for i in sd_efficient_set(m[:, perm], 2)] == expected
+    # A column below the cycle leaves it efficient; one above it dominates all three.
+    assert sorted(sd_efficient_set(np.column_stack([a - 1.0, m]), 2)) == [1, 2, 3]
+    assert sd_efficient_set(np.column_stack([m, a + 1.0]), 2) == [3]
+
+
+@pytest.mark.parametrize(
+    ("degree", "type_"), [(1, "discrete"), (1, "continuous"), (2, "discrete"), (3, "discrete")]
+)
+def test_sd_efficient_set_membership_is_permutation_invariant(degree: int, type_: str) -> None:
+    rng = np.random.default_rng(127)
+    for _ in range(100):
+        columns = int(rng.integers(4, 7))
+        m = rng.integers(-3, 4, size=(5, columns)).astype(np.float64)
+        perm = rng.permutation(columns)
+        permuted = {int(perm[i]) for i in sd_efficient_set(m[:, perm], degree, type_)}
+        assert permuted == set(sd_efficient_set(m, degree, type_))
