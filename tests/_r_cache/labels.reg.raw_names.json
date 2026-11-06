@@ -4,9 +4,9 @@
       "fitted": [
         "my wt",
         "2nd",
+        "my cyl_eight",
         "my cyl_four",
         "my cyl_six",
-        "my cyl_eight",
         "y",
         "y.hat",
         "NNS.ID",
@@ -15,14 +15,14 @@
       "rpm": [
         "my wt",
         "2nd",
+        "my cyl_eight",
         "my cyl_four",
         "my cyl_six",
-        "my cyl_eight",
         "y.hat"
       ]
     }
   },
   "label": "labels.reg.raw_names",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

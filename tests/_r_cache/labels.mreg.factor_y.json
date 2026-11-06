@@ -7,17 +7,17 @@
         "setosa"
       ],
       "pe": [
-        1.0,
+        2.0,
         3.0,
         2.0,
         3.0,
         3.0,
         1.0
       ],
-      "r2": 0.916666666666667
+      "r2": 0.9
     }
   },
   "label": "labels.mreg.factor_y",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

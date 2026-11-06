@@ -1,5 +1,44 @@
 {
   "entries": {
+    "009ddb58ff93b4c660461e9e62d9a62355acfa9df87cc269a9b5aed98126f0c8": {
+      "Certainty": 0.243904237195757,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.6,
+      "Effect_Size_LB": -0.459277107184918,
+      "Effect_Size_UB": 1.77139427166617,
+      "Grand_Statistic": 0.287007762032465,
+      "Treatment": 0.495159650226013,
+      "Treatment_CDF": 0.391304347826087
+    },
+    "0b9a79ce2cef9fc6504fcfcdf87655b175053f62a8da7aece1b5f20f42329c13": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.5%": -0.602697539079004,
+      "Effect_Size_UB.95%": 0.575715309989984,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 90% CI": 0.230882446916982,
+      "Robust Certainty Estimate": 0.523071248170439,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 90% CI": 0.649312141823947
+    },
+    "13bbf30c97bef372dbd8f0a28daa9436aa5e876fc56d4a6c5404dcd264935a78": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Effect_Size_LB.5%": -1.1524463383183,
+      "Effect_Size_UB.95%": 1.02531051658005,
+      "Grand_Statistic": -0.171612051778942,
+      "Lower 90% CI": 0.338940886843964,
+      "Robust Certainty Estimate": 0.533675402507761,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 90% CI": 0.659965113450742
+    },
     "170acc88547eb09440c1deabd2593ed582d2e6a4d169f4c7b99f143cf906278d": {
       "Certainty": 0.722892277608824,
       "Control": 0.0191268165633628,
@@ -8,21 +47,123 @@
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534
     },
-    "17c3ef3798fc44bf2a139e8d8bd4697d7e79371102c5146c293015518027db77": {
+    "1ca661516ecb4af2116fd5645129e3339ed280ecbb3f7921381ae64c3b88c103": {
       "Certainty": 0.614235794289578,
       "Confidence_Level": 0.95,
       "Control": 0.0191268165633628,
       "Control_CDF": 0.559051831188266,
-      "Effect_Size_LB.2.5%": -0.589693562063213,
-      "Effect_Size_UB.97.5%": 1.06833595204897,
+      "Effect_Size_LB.5%": -0.45052326764372,
+      "Effect_Size_UB": Infinity,
       "Grand_Statistic": 0.142983064395218,
-      "Lower 95% CI": 0.152774273020275,
-      "Robust Certainty Estimate": 0.570726724883802,
+      "Lower 95% bound": 0.166953573982277,
+      "Robust Certainty Estimate": 0.601136750448706,
       "Treatment": 0.266839312227074,
-      "Treatment_CDF": 0.439774510459534,
-      "Upper 95% CI": 0.865010512177701
+      "Treatment_CDF": 0.439774510459534
+    },
+    "26871d4e1dd3c1592929cdb72c35f315fcd8722a5b0b21dd2f0fc9c60d09785d": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB.10%": -0.299741034954616,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Lower 90% bound": 0.259637954133639,
+      "Robust Certainty Estimate": 0.601136750448706,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "3392263a9df071638ec41115a9ee2b623ef70de08a676d0775065b7f0586d826": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Effect_Size_LB.2.5%": -1.38136589271216,
+      "Effect_Size_UB.97.5%": 1.27653996466716,
+      "Grand_Statistic": -0.171612051778942,
+      "Lower 95% CI": 0.207933518239939,
+      "Robust Certainty Estimate": 0.533675402507761,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 95% CI": 0.668491149730744
+    },
+    "4c3cbd2c82c961039d409151accff77859f0b64698c5e8130dec5f2c9bba501f": 0.140284258092666,
+    "4de4b84626028a4e4bb06e1bead01fa37cda372af67af58f721ee28a05f376bb": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Effect_Size_LB.2.5%": -1.46653262098799,
+      "Effect_Size_UB.97.5%": 1.26344717786784,
+      "Grand_Statistic": -0.171612051778942,
+      "Lower 95% CI": 0.246445790931134,
+      "Robust Certainty Estimate": 0.553302618867482,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 95% CI": 0.672232319863315
     },
     "50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
+    "5445f1cf349065ffbccfcdbaddf5d3eac1c00a72b1ae66b6a76ca705a0bd3f6f": {
+      "Certainty": 0.614235794289578,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "58539d1fd2413525683dd9ef265ebd09917c123bf9a3b8611b71db8b6602f1ca": {
+      "Certainty": 0.0524519470202307,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.657014121599316,
+      "Effect_Size_LB": 0.0657230853216882,
+      "Effect_Size_UB": 1.54559077938875,
+      "Grand_Statistic": 0.359002798188493,
+      "Treatment": 0.802319295960401,
+      "Treatment_CDF": 0.154571915684601
+    },
+    "66185be7dcec1e619e0245b9ac01e7a5b2737f8d68bba4d592d12abbd8339795": {
+      "Certainty": 0.243904237195757,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.6,
+      "Effect_Size_LB": -0.386630171818387,
+      "Effect_Size_UB": 1.662551731423,
+      "Grand_Statistic": 0.287007762032465,
+      "Treatment": 0.495159650226013,
+      "Treatment_CDF": 0.391304347826087
+    },
+    "69096c9a771874399239c8099e03ed238625663433926e32f539b446b76c752c": {
+      "Certainty": 0.593734812147184,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Grand_Statistic": 0.00234967743372432,
+      "Robust Certainty Estimate": 0.519175291872943,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363
+    },
+    "6b6b74ec51f07d66018942eab9be19b3c0fd3baea32ea85e3b294c0c74fbe53a": {
+      "Certainty": 0.614235794289578,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "754184c57acd3890ecdc1514b47873f91663b79c4caf9ae1181b595cbe40fb95": {
+      "Certainty": 0.559869943266573,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Effect_Size_LB.5%": -1.21754617766322,
+      "Effect_Size_UB.95%": 1.02531051658005,
+      "Grand_Statistic": -0.171612051778942,
+      "Lower 90% CI": 0.278951492251007,
+      "Robust Certainty Estimate": 0.553302618867482,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538,
+      "Upper 90% CI": 0.656061199699447
+    },
     "771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
       "Certainty": 0.652075214441377,
       "Control": 0.00119721507214105,
@@ -30,6 +171,44 @@
       "Grand_Statistic": 0.126074487943006,
       "Treatment": 0.250951760813872,
       "Treatment_CDF": 0.437988436552643
+    },
+    "784d5447784315c1b9ef23b4ac4e255ed84ac06c1f8c2acebadf54e150479f1a": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -0.442821391022809,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "78e5c083ff88ad6be3b8c2ad4ae0bdfa980bfb61ee8f6b3b8084f9c8a6d554c9": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.5%": -0.648999141263324,
+      "Effect_Size_UB.95%": 0.549551297763615,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 90% CI": 0.201181884959021,
+      "Robust Certainty Estimate": 0.519175291872943,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 90% CI": 0.642182867065756
+    },
+    "82d9cf99aa540e6faaa16758b1272842fcd6610f8ebfab6de2cebb9c6a94080b": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB.95%": 0.953137035117179,
+      "Grand_Statistic": 0.142983064395218,
+      "Robust Certainty Estimate": 0.601136750448706,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534,
+      "Upper 95% bound": 0.837985734174412
     },
     "869e561b5396396d491cae5660ac70152520d16e79d9ce87de1d8dc32242b603": {
       "Certainty": 0.672263700439154,
@@ -39,6 +218,8 @@
       "Treatment": 0.135570325200169,
       "Treatment_CDF": 0.46
     },
+    "86ffa8f403b7b44ef22cd76ef81e87165ee91b481d12d0e35fca038671009fa8": 0.183173936235859,
+    "886c39803f1b185e454a611588b6ddb2cb407d59c717bc914d4da7e727e58e7c": 0.831979434044297,
     "88bbaab2914e15c7b3224e345de1a3bd8881246cdeea7558d165a6867ebd9fdb": {
       "Certainty": 0.764269209628382,
       "Control": 0.00119721507214105,
@@ -54,6 +235,31 @@
       "Grand_Statistic": -0.120416441730208,
       "Treatment": -0.290180865105623,
       "Treatment_CDF": 0.614122107233681
+    },
+    "8affe104440ee3803271f809f649dfc444240553e85a5d96f615e2d741e28108": {
+      "Certainty": 0.0,
+      "Confidence_Level": 0.95,
+      "Control": 3.75452998490414,
+      "Control_CDF": 0.333239512877029,
+      "Effect_Size_LB.2.5%": -4.28257810632323,
+      "Effect_Size_UB.97.5%": -3.23266878714651,
+      "Grand_Statistic": 3.00377013771587,
+      "Lower 95% CI": 0.0,
+      "Robust Certainty Estimate": 0.0,
+      "Treatment": 0.000730748962808379,
+      "Treatment_CDF": 1.0,
+      "Upper 95% CI": 0.0
+    },
+    "8c39594ed7003f7ec012b77d5311f75ca4046631dae84ca0e7f475343d30f969": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -0.297426616903692,
+      "Effect_Size_UB": Infinity,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
     },
     "9da8bc56ddaf6f4048144e571a875f06166e114ae7a13ed7dd111a153805d1e0": {
       "Certainty": 0.701397538807624,
@@ -72,7 +278,46 @@
       "Treatment_CDF": 0.437373319363984
     },
     "a251861f51c69e3640a831f54acf1a3d1515159a5e2ff463438a71dfe0e9d7e1": 0.493476594721539,
+    "a3860e6ad0de2a35ab4e917b07add2f330338012c4636f105828e7ede22870d7": {
+      "Certainty": 0.0524519470202307,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.657014121599316,
+      "Effect_Size_LB": 0.0297369710931776,
+      "Effect_Size_UB": 1.57485791973444,
+      "Grand_Statistic": 0.359002798188493,
+      "Treatment": 0.802319295960401,
+      "Treatment_CDF": 0.154571915684601
+    },
+    "a57d669a68cd8b0ac5188b679d138974573554a2f3003b0600867dfc750c1255": {
+      "Certainty": 0.243904237195757,
+      "Confidence_Level": 0.9,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.6,
+      "Effect_Size_LB": -0.301463443542555,
+      "Effect_Size_UB": 1.66663203427694,
+      "Grand_Statistic": 0.287007762032465,
+      "Treatment": 0.495159650226013,
+      "Treatment_CDF": 0.391304347826087
+    },
+    "a9f51326ad0959601c0d312d37b08bc4ab8edbe4e8c0c5a921060e0acb3007c9": {
+      "Certainty": 0.883190211365696,
+      "Control": -0.000682369842929705,
+      "Control_CDF": 0.52556379254861,
+      "Grand_Statistic": -0.000120276444910316,
+      "Treatment": 0.000441816953109073,
+      "Treatment_CDF": 0.476110909755618
+    },
     "aa80ea315c2bc295798a7f5daab339df310cc632a45a3835ce041c9343518ca0": 0.479160301265411,
+    "b0e1f1a32d510c0868ca4b6d16a01f75eaaa8afe5f89c1f48c9818fff64a9f77": {
+      "Certainty": 0.593734812147184,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Grand_Statistic": 0.00234967743372432,
+      "Robust Certainty Estimate": 0.523071248170439,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363
+    },
     "b2c5a8971c7cca149de6076c4dbad3547e31643d0a4d522e6f7c86a720415465": {
       "Certainty": 0.749954566494758,
       "Control": 0.00351158733384534,
@@ -81,6 +326,19 @@
       "Treatment": 0.255934316991368,
       "Treatment_CDF": 0.437373319363984
     },
+    "b55ca3489c1648f1844b107d19fda921febf3920bfd28350a077850506b31a38": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB.90%": 0.789848593011295,
+      "Grand_Statistic": 0.142983064395218,
+      "Robust Certainty Estimate": 0.601136750448706,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534,
+      "Upper 90% bound": 0.802809000097423
+    },
     "c3b8b15b7e66a481f92a53f4d277f9132ac76d05cadef357b0506c11a407d19d": {
       "Certainty": 0.650680858554691,
       "Control": -0.0978939595880533,
@@ -88,6 +346,17 @@
       "Grand_Statistic": 0.0035504818952302,
       "Treatment": 0.103800669480219,
       "Treatment_CDF": 0.466666666666667
+    },
+    "ca47f322afb6913063cd31a7339d4a46122791211815adfee047e0c91488914a": {
+      "Certainty": 0.0524519470202307,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.657014121599316,
+      "Effect_Size_LB": 0.150222468094382,
+      "Effect_Size_UB": 1.43984514641725,
+      "Grand_Statistic": 0.359002798188493,
+      "Treatment": 0.802319295960401,
+      "Treatment_CDF": 0.154571915684601
     },
     "cd3963cc80a8e0f7bdad17850c7504aa71319936395e39f62750a43cde5d8a4e": [
       [
@@ -106,6 +375,49 @@
         1.0
       ]
     ],
+    "d0b3d73df2545912608e4d633e8809bd597a256ba172ca0d2a29c80f027c3fbc": {
+      "Certainty": 0.559869943266573,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Grand_Statistic": -0.171612051778942,
+      "Robust Certainty Estimate": 0.533675402507761,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538
+    },
+    "d3295db46db9a5142fe6913d63a7dd856b470bb8450f326c31caf6568720d590": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB": 0.959168007934833,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "e6072467aed71515ac6affca8a36c592ded1469670b095fbae39128585ccb774": {
+      "Certainty": 0.559869943266573,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.466666666666667,
+      "Grand_Statistic": -0.171612051778942,
+      "Robust Certainty Estimate": 0.553302618867482,
+      "Treatment": -0.204031575160562,
+      "Treatment_CDF": 0.538461538461538
+    },
+    "e6c0adbe3212225ca0cc0c9cb455064aa1e985181b9cfa9ce7e0c625cc350fd9": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.2.5%": -0.742158584608995,
+      "Effect_Size_UB.97.5%": 0.663779474900624,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 95% CI": 0.156489605389752,
+      "Robust Certainty Estimate": 0.519175291872943,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 95% CI": 0.661928966614469
+    },
     "f129e7aa1783f152f8b2657be872b2b6e85c4ac404e699e8e749847c1d0f4c64": {
       "Certainty": 0.614235794289578,
       "Control": 0.0191268165633628,
@@ -113,6 +425,70 @@
       "Grand_Statistic": 0.142983064395218,
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534
+    },
+    "f2d1a00391d71ef7c87489e52b0f0b262b94be4cb98a0fdeaa25b659156a3aa6": [
+      [
+        1.0,
+        0.883190211365696,
+        0.879200520611474
+      ],
+      [
+        0.883190211365696,
+        1.0,
+        0.890564450518338
+      ],
+      [
+        0.879200520611474,
+        0.890564450518338,
+        1.0
+      ]
+    ],
+    "f99514f884af74819e8520a1d49f38c4d171195e7f13b8de056b87e9774c2c03": {
+      "Certainty": 0.614235794289578,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.559051831188266,
+      "Effect_Size_LB": -Infinity,
+      "Effect_Size_UB": 0.786044098158566,
+      "Grand_Statistic": 0.142983064395218,
+      "Treatment": 0.266839312227074,
+      "Treatment_CDF": 0.439774510459534
+    },
+    "fa7174a124977d2d8e5a55562c0f3079e04a9f6dfc7f3531811ebf4b63faef6c": {
+      "Certainty": 0.593734812147184,
+      "Confidence_Level": 0.95,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.491919858164409,
+      "Effect_Size_LB.2.5%": -0.698807431215037,
+      "Effect_Size_UB.97.5%": 0.672736401845141,
+      "Grand_Statistic": 0.00234967743372432,
+      "Lower 95% CI": 0.144858777920978,
+      "Robust Certainty Estimate": 0.523071248170439,
+      "Treatment": -0.0170085600235508,
+      "Treatment_CDF": 0.514428021607363,
+      "Upper 95% CI": 0.667140990892541
+    },
+    "fae2e566924bc047e62669c53c845d9f1de5b7b18bd1d7f7ca5cf398c1baef0c": {
+      "Certainty": 0.0524519470202307,
+      "Confidence_Level": 0.9,
+      "Control": 0.0191268165633628,
+      "Control_CDF": 0.657014121599316,
+      "Effect_Size_LB": 0.141694899214721,
+      "Effect_Size_UB": 1.41828514336016,
+      "Grand_Statistic": 0.359002798188493,
+      "Treatment": 0.802319295960401,
+      "Treatment_CDF": 0.154571915684601
+    },
+    "fcab41aa9a39fce207f5278ace8294b33ee40086e027b38677408f281bb370db": {
+      "Certainty": 0.243904237195757,
+      "Confidence_Level": 0.95,
+      "Control": -0.0978939595880533,
+      "Control_CDF": 0.6,
+      "Effect_Size_LB": -0.542314667253856,
+      "Effect_Size_UB": 1.71901315297156,
+      "Grand_Statistic": 0.287007762032465,
+      "Treatment": 0.495159650226013,
+      "Treatment_CDF": 0.391304347826087
     }
   },
   "label": "NNS.ANOVA.custom",
