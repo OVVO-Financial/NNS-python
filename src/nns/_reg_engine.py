@@ -1704,6 +1704,19 @@ def nns_reg_engine(
     if task["is_xonly"] and ex.shape[1] != 1:
         raise ValueError("[type = 'XONLY'] is only valid for a single encoded predictor.")
 
+    # R14 nominal classes are probability-valued indicators, never numeric
+    # regression on arbitrary class codes. This branch precedes NNS.M.reg and
+    # the former univariate class interpolation. NNS.M.reg's standalone
+    # `multivariate_only` mode retains its own separate public contract.
+    if task["is_class"] and not multivariate_only and not multivariate_call:
+        from nns._class_r14 import classify
+
+        return classify(
+            encoded, task, order=order, n_best=n_best, dist=dist,
+            dim_red_method=dim_red_method, tau=tau, threshold=threshold,
+            point_only=point_only, confidence_interval=confidence_interval,
+        )
+
     # Full multivariate regression.
     if ex.shape[1] > 1 and dim_red_method is None:
         return _m_reg(
