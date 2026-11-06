@@ -200,7 +200,9 @@ def r14_seasonality(
             current = kept
         else:
             added.add(1)
-        for lag in added:
+        # R std::set iterates in ascending integer order. In a stable sort
+        # over equal-VarCV injected rows, insertion order is user-visible.
+        for lag in sorted(added):
             if lag not in current and lag <= n // 2:
                 if lag in scored:
                     score = scored[lag]
