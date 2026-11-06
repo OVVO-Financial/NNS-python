@@ -153,10 +153,10 @@ def test_nd_degree0_fallback_matches_native_and_partitions_the_sample() -> None:
             assert got == want
 
 
-def test_continuous_mode_averages_equally_high_peaks() -> None:
+def test_continuous_mode_selects_r14_discrete_value_not_a_mean() -> None:
+    # R 14.0 treats evenly spaced discrete-valued samples as exact values;
+    # an average of tied modes would yield 9.5, which is not observed.
     x = np.repeat(np.arange(20, dtype=np.float64), 400)
-
-    single = _continuous_mode(x, False)[0]
-
-    assert single == pytest.approx(float(np.mean(_continuous_mode(x, True))), rel=1e-12)
-    assert single == pytest.approx(9.441176, abs=1e-6)  # R's NNS.mode(x, multi = FALSE)
+    modes = _continuous_mode(x, True)
+    np.testing.assert_array_equal(modes, np.arange(20, dtype=np.float64))
+    assert _continuous_mode(x, False)[0] == pytest.approx(9.0, abs=1e-12)
