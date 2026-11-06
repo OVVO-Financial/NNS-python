@@ -479,15 +479,24 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     if np.unique(x).size < 2 or np.unique(y).size < 2:
         return 0.1
     try:
-        d1 = float(nns_dep(x, y, asym=True)["Dependence"])
+        # R14 Regression.R .nns_reg_dependence deliberately uses the
+        # finest-cell/local statistic, *not* public NNS.dep's max-level score.
+        from nns._dep_r14 import dep_local_r14
+
+        d1 = float(dep_local_r14(x, y, asym=True))
     except Exception:
         d1 = float("nan")
     try:
         from nns.copula import _copula, _r_col_means
 
         m = np.column_stack((_rescale_01(x), _rescale_01(x), _rescale_01(y)))
-        target = _r_col_means(m)
-        d2 = float(_copula(m, target, continuous=True))
+        reflected = m.copy()
+        reflected[:, 2] = 1.0 - reflected[:, 2]
+        # R14 takes both orientations to make the depth independent of the
+        # sign convention for the response.
+        d2_forward = float(_copula(m, _r_col_means(m), continuous=True))
+        d2_reverse = float(_copula(reflected, _r_col_means(reflected), continuous=True))
+        d2 = 0.5 * (d2_forward + d2_reverse)
     except Exception:
         d2 = float("nan")
     parts = [v for v in (d1, d2) if math.isfinite(v)]
