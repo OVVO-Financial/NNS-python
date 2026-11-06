@@ -102,10 +102,9 @@ def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     if bool(np.all(finite == finite[0])):
         return float(finite[0])
 
-    native_gravity = native_fn("gravity")
-    if native_gravity is not None:
-        return float(native_gravity(np.ascontiguousarray(finite), discrete))
-
+    # NNS-core's vendored gravity still follows the 13.3 bin-edge and quartile
+    # algorithm. R 14.0's observation-centered type-7 gravity is authoritative
+    # until an accepted native core snapshot implements it.
     out = _gravity_python(finite)
     return _nearest_int_half_up(out) if discrete else out
 
