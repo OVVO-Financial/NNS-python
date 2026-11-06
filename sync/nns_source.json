@@ -4,12 +4,12 @@
   "r_version": "14.0",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
-  "core_commit": "cfc25a3469df6460f9224fb976fcb58de9d58068",
+  "core_commit": "a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d",
   "python_repo": "OVVO-Financial/NNS-python",
   "python_commit": null,
   "vendored_core_path": "extern/NNS-core",
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache",
-  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the 13.2 Beta commit carrying the reconciled NNS.boost (LPM.VaR probability threshold, replicated multivariate final stack) that generated the committed parity cache. The vendored native snapshot (tools/NNS, r_src_tree_hash, tarball) and NNS-core commit are left at their prior values; re-syncing the native snapshot is a separate NNS-core snapshot update."
+  "notes": "R 14.0 parity cache was freshly generated in OVVO-Financial/NNS-python PR #190, from OVVO-Financial/NNS commit 7b07a837c130ba7220dbe16c584221508757d5ae (NNS_14.0.tar.gz). This integration branch overlays those 59 generated cache shards onto the cumulative Python implementation stack through #189, preserving its newer parity helper and its accepted vendored NNS-core commit a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d. R 14.0 parity is under evaluation; regeneration and cache-only parity currently fail on Python main, and some oracle entries are missing. The vendored R snapshot, r_src_tree_hash, and tarball remain at their older 13.0 lineage pending separate sync, and do not identify the live-R behavioral oracle."
 }
