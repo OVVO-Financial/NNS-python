@@ -159,6 +159,7 @@ def classify(
     *, order: Any, n_best: Any, dist: str,
     dim_red_method: Any, tau: Any, threshold: Any,
     point_only: bool, confidence_interval: float | None,
+    dim_count: int | None = None,
 ) -> dict[str, Any]:
     """R .nns_reg_classify: return nominal posterior probabilities and sets."""
     from nns._reg_engine import _dimred_coefficients, _dimreduce
@@ -195,6 +196,13 @@ def classify(
             coefficients = _dimred_coefficients(
                 X, indicators[:, c], dim_red_method, tau, threshold_values[c]
             )
+            if dim_count is not None and dim_count < coefficients.size:
+                # R/Classification.R: retain the first dim_count columns
+                # in decreasing |coefficient| order (stable original order).
+                keep = np.argsort(-np.abs(coefficients), kind="stable")[:dim_count]
+                narrowed = np.zeros_like(coefficients)
+                narrowed[keep] = coefficients[keep]
+                coefficients = narrowed
             if not np.any(np.abs(coefficients) > 0):
                 coefficients[:] = 1.0
             reduced = _dimreduce(
