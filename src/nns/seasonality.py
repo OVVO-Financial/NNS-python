@@ -37,9 +37,25 @@ def nns_seas(
     modulo: int | list[int] | NDArray[np.int64] | None = None,
     mod_only: bool = True,
     plot: bool = False,
+    *,
+    detrend: bool = True,
+    max_period: int | None = None,
+    dispersion: str = "auto",
 ) -> SeasonalityResult:
-    """Seasonality test matching R's NNS.seas; ``plot=True`` renders the figure."""
-    result = _nns_seas_compute(variable, modulo=modulo, mod_only=mod_only)
+    """R 14.0 Gini-dispersion seasonal candidates and fundamental period.
+
+    The R14 estimator changed its statistics (Gini rather than SD), trend
+    adjustment and scan cap; it must not reuse the earlier R13 cached statistic.
+    """
+    from nns._seas_r14 import r14_seasonality
+
+    result = cast(
+        SeasonalityResult,
+        r14_seasonality(
+            variable, modulo, mod_only,
+            detrend=detrend, max_period=max_period, dispersion=dispersion,
+        ),
+    )
     if plot:
         from nns.plotting.seasonality import plot_nns_seas
 
