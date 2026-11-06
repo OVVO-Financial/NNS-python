@@ -307,3 +307,77 @@ def dep_levels_r14(x: FloatArray, y: FloatArray) -> list[float]:
         0.0, True, _has_ties(x), _has_ties(y), scores,
     )
     return scores
+
+
+def _local_dir(
+    u: FloatArray, v: FloatArray, labels: Sequence[str],
+    u_ties: bool, v_ties: bool,
+) -> float:
+    """R local_dep_dir: signed-square-root finest-cell dependence."""
+    n = int(u.size)
+
+    def score(uu: FloatArray, vv: FloatArray) -> float:
+        _, magnitude, kind = _cell(uu, vv, u_ties, v_ties, legacy=True)
+        if kind == 2:
+            return 1.0
+        if kind == 1:
+            return 0.0
+        return math.copysign(math.sqrt(abs(magnitude)), magnitude)
+
+    global_score = score(u, v)
+    if not math.isfinite(global_score):
+        global_score = 0.0
+    indices = sorted(range(n), key=lambda i: labels[i])
+    dep = 0.0
+    lo = 0
+    while lo < n:
+        hi = lo + 1
+        while hi < n and labels[indices[hi]] == labels[indices[lo]]:
+            hi += 1
+        cell_ids = indices[lo:hi]
+        value = score(u[cell_ids], v[cell_ids])
+        if not math.isfinite(value):
+            value = global_score
+        dep += value * (float(hi - lo) / float(n))
+        lo = hi
+    return max(0.0, dep)
+
+
+def _copula_degree0_unsigned(x: FloatArray, y: FloatArray) -> float:
+    n = int(x.size)
+    if n < 2:
+        return 0.0
+    mx = _sum_ordered(x) / n
+    my = _sum_ordered(y) / n
+    lo_x, lo_y = (x - mx) <= 0.0, (y - my) <= 0.0
+    concordant = int(np.count_nonzero(lo_x == lo_y))
+    p = float(concordant) / n
+    q = float(n - concordant) / n
+    disc_dep = min(1.0, max(0.0, abs(p - 0.5) / 0.5))
+    nd_disc = abs(q - 0.5) / 0.5
+    return math.sqrt((disc_dep + nd_disc) / 2.0)
+
+
+def dep_local_r14(x: FloatArray, y: FloatArray, asym: bool = True) -> float:
+    """R .nns_dep_local / NNS_dep_local_cpp for default regression depth.
+
+    Unlike the R14 public NNS.dep, this is intentionally the legacy
+    *finest-cell* signed-square-root statistic; R14 retains it solely for
+    the regression-order / differentiation heuristics.
+    """
+    n = int(x.size)
+    if n < 2 or bool(np.all(x == x[0])) or bool(np.all(y == y[0])):
+        return 0.0
+    obs = max(8, n // 8)
+    xtie, ytie = _has_ties(x), _has_ties(y)
+    dep = _local_dir(x, y, _labels(x, y, xonly=True, obs=obs), xtie, ytie)
+    if not asym:
+        dep = max(dep, _local_dir(
+            y, x, _labels(y, x, xonly=True, obs=obs), ytie, xtie
+        ))
+    if np.unique(x).size < math.sqrt(n) and np.unique(y).size < math.sqrt(n):
+        disc = _copula_degree0_unsigned(x, y)
+        if not math.isfinite(disc):
+            disc = dep
+        dep = 0.5 * (dep + disc)
+    return dep
