@@ -75,16 +75,10 @@ def nns_mode(
     if n == 0:
         return np.array([np.nan], dtype=np.float64) if multi else float("nan")
 
-    native_mode = native_fn("mode")
-    # The vendored NNS-core still averages tied discrete modes: use the port until re-vendored.
-    if native_mode is not None and not discrete:
-        native_result = np.asarray(
-            native_mode(np.ascontiguousarray(finite), discrete, multi), dtype=np.float64
-        )
-        if multi:
-            return native_result
-        return float(native_result[0])
-
+    # The vendored NNS-core still implements R 13.3's continuous mode: it
+    # excludes endpoint peaks, centers modes at bin edges, and averages tied
+    # peaks. R 14.0 uses actual observations and gravity-based tie breaking.
+    # Use the source-faithful Python implementation until native sync.
     result = _discrete_mode(finite, multi) if discrete else _continuous_mode(finite, multi)
     return result if multi else float(result[0])
 
@@ -123,60 +117,125 @@ def _discrete_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float
 
 
 def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float64]:
-    """NumPy port of NNS-core ``nns::mode`` (R ``NNS_mode_cpp``), continuous.
-
-    Same histogram as gravity, kept as NNS-core keeps it: runs of more than 16
-    empty bins shortened to their first and last 8 bins, so the
-    smoothing, peak search and bin indices see exactly NNS-core's bin list. Sums
-    are long double, as in R.
-    """
+    """R 14.0 NNS_mode_cpp: discrete-valued peaks and observed-bin centers."""
     n = values.size
     if n <= 3:
         return np.array([_small_median(values)], dtype=np.float64)
     if bool(np.all(values == values[0])):
         return np.array([values[0]], dtype=np.float64)
 
-    sorted_values = np.sort(values)
-    value_range = abs(float(sorted_values[-1]) - float(sorted_values[0]))
-    if value_range == 0.0:
-        return np.array([sorted_values[0]], dtype=np.float64)
+    ordered = np.sort(values)
+    span = abs(float(ordered[-1]) - float(ordered[0]))
+    if span == 0.0:
+        return np.array([ordered[0]], dtype=np.float64)
 
-    q1, _, q3 = _quartiles_like_r_code(sorted_values)
+    # Mode's histogram width intentionally still uses R's original quartiles;
+    # gravity, which chooses among tied modes, uses type-7 quartiles separately.
+    q1, _, q3 = _quartiles_like_r_code(ordered)
     width = (q3 - q1) * n**-0.5
     if not (width > 0.0 and math.isfinite(width)):
-        width = value_range / 128.0
+        width = span / 128.0
 
-    origin = float(sorted_values[0])
-    names, counts = _core_bin_list(sorted_values, width, origin)
+    distinct, frequencies = np.unique(ordered, return_counts=True)
+    if distinct.size >= 2 and bool(np.all(np.diff(distinct) > width)):
+        # R #114: when bins merely separate discrete observations, detect
+        # contiguous plateaux in the exact frequency sequence, including ends.
+        mode_indices: list[int] = []
+        i = 0
+        while i < distinct.size:
+            j = i + 1
+            while j < distinct.size and frequencies[j] == frequencies[i]:
+                j += 1
+            above_left = i == 0 or frequencies[i - 1] < frequencies[i]
+            above_right = j == distinct.size or frequencies[j] < frequencies[i]
+            if above_left and above_right:
+                mode_indices.extend(range(i, j))
+            i = j
+        idx = np.asarray(mode_indices, dtype=np.intp)
+        modes = distinct[idx]
+        if multi:
+            return np.asarray(modes, dtype=np.float64)
+        top = int(np.max(frequencies[idx]))
+        candidates = modes[frequencies[idx] == top]
+        gravity = nns_gravity(ordered)
+        return np.asarray([candidates[int(np.argmin(np.abs(candidates - gravity)))]])
+ 
+    names, counts = _core_bin_list(ordered, width, float(ordered[0]))
     lz = counts.size
     max_count = int(np.max(counts))
-    smoothed = _smooth_counts_tri7(counts)
+    # Truncated empty runs have count zero; the prefix exactly indexes the
+    # contiguous observations in each histogram window.
+    starts = np.r_[0, np.cumsum(counts, dtype=np.int64)]
 
-    peaks = _peak_indices(smoothed)
-    if peaks.size:
-        # Peaks are strict maxima over +-3 bins, so none is within 3 bins of a
-        # higher one and NNS-core's suppression step keeps them all.
-        kept = peaks[np.argsort(-smoothed[peaks], kind="stable")]
-        centers = np.empty(kept.size, dtype=np.float64)
-        for t, center in enumerate(kept.tolist()):
-            lo, hi = max(0, center - 3), min(lz - 1, center + 3)
-            centers[t] = _weighted_bin_mean(names[lo : hi + 1], counts[lo : hi + 1])
+    def observed_center(lo: int, hi: int) -> float:
+        a = int(starts[lo])
+        e = int(starts[hi + 1])
+        if e <= a:
+            return float(names[lo])
+        if ordered[a] == ordered[e - 1]:
+            return float(ordered[a])
+        vals = ordered[a:e].astype(np.longdouble)
+        return float(np.cumsum(vals)[-1] / np.longdouble(e - a))
+
+    cs = _smooth_counts_tri7(counts)
+    candidates: list[int] = []
+    if lz >= 7:
+        max_height = float(np.max(cs))
+        for i in range(lz):
+            height = float(cs[i])
+            if height <= 0.0:
+                continue
+            if (i < 3 or i > lz - 4) and height < max_height:
+                continue
+            left_max = max((cs[i - d] for d in (1, 2, 3) if i - d >= 0),
+                           default=-math.inf)
+            right_max = max((cs[i + d] for d in (1, 2, 3) if i + d < lz),
+                            default=-math.inf)
+            if not (height > left_max and height > right_max):
+                continue
+            left = cs[i - 1] if i > 0 else cs[i + 1]
+            right = cs[i + 1] if i + 1 < lz else cs[i - 1]
+            if left - 2.0 * height + right < 0.0:
+                candidates.append(i)
+
+    if candidates:
+        # Stable highest-first ordering, suppress peaks within three bins.
+        ranked = sorted(candidates, key=lambda i: -cs[i])
+        kept: list[int] = []
+        for i in ranked:
+            if all(abs(i - j) > 3 for j in kept):
+                kept.append(i)
+        centers = np.array(
+            [observed_center(max(0, i - 3), min(lz - 1, i + 3)) for i in kept],
+            dtype=np.float64,
+        )
         if multi:
             return np.sort(centers)
-        # Equally high peaks are averaged, as the tied-bin rule below does.
-        heights = smoothed[kept]
-        return np.array([_long_double_mean(centers[heights == heights.max()])], dtype=np.float64)
+        highest = max(cs[i] for i in kept)
+        top = centers[np.array([cs[i] == highest for i in kept])]
+        gravity = nns_gravity(ordered)
+        return np.asarray(
+            [sorted(top, key=lambda v: (abs(v - gravity), v))[0]], dtype=np.float64
+        )
 
-    tied = np.flatnonzero(counts == max_count)
-    if tied.size > 1:
-        modes = names[tied]
+    winners = np.flatnonzero(counts == max_count)
+    if winners.size > 1:
+        centers = np.array(
+            [observed_center(int(i), int(i)) for i in winners],
+            dtype=np.float64,
+        )
         if multi:
-            return np.sort(modes)
-        return np.array([_long_double_mean(modes)], dtype=np.float64)
+            return np.sort(centers)
+        gravity = nns_gravity(ordered)
+        return np.asarray(
+            [sorted(centers, key=lambda v: (abs(v - gravity), v))[0]], dtype=np.float64
+        )
 
-    center = int(tied[0])
-    lo, hi = max(0, center - 1), min(lz - 1, center + 1)
-    return np.array([_weighted_bin_mean(names[lo : hi + 1], counts[lo : hi + 1])], dtype=np.float64)
+    center = int(winners[0])
+    return np.array(
+        [observed_center(max(0, center - 1), min(lz - 1, center + 1))],
+        dtype=np.float64,
+    )
 
 
 def _core_bin_list(
