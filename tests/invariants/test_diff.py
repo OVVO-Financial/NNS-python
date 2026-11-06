@@ -72,15 +72,17 @@ def test_dy_d_vectorized_wrt_obs_is_implemented() -> None:
     assert result["Second"].shape == (40, 2)
 
 
-def test_dy_d_vectorized_wrt_mixed_three_column_input_falls_back_to_first_second() -> None:
+def test_dy_d_vectorized_wrt_mixed_three_column_input_is_rejected_like_r14() -> None:
     x = np.random.RandomState(1).randn(40, 3)
     y = x[:, 0] + x[:, 1] + x[:, 2]
 
-    result = dy_d(x, y, wrt=np.array([1, 2]), eval_points="mean", mixed=True)
-
-    assert result.keys() == {"First", "Second"}
-    assert result["First"].shape == (1, 2)
-    assert result["Second"].shape == (1, 2)
+    # R 14.0 dy_d_wrt.R rejects mixed derivatives for more than two
+    # expanded predictors; silently falling back would conceal a bad request.
+    with pytest.raises(
+        ValueError,
+        match="Mixed derivatives require two predictors and explicit matrix evaluation points",
+    ):
+        dy_d(x, y, wrt=np.array([1, 2]), eval_points="mean", mixed=True)
 
 
 def test_dy_d_vectorized_wrt_mixed_two_column_input_returns_mixed() -> None:
@@ -114,7 +116,7 @@ def test_dy_d_vectorized_wrt_apd_mixed_remains_invalid() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Mixed Derivatives are only for 2 IV",
+        match="Mixed derivatives require two predictors and explicit matrix evaluation points",
     ):
         dy_d(x, y, wrt=np.array([1, 2]), eval_points="apd", mixed=True)
 
