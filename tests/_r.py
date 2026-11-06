@@ -24,7 +24,8 @@ _NNS_VERSION = '14.0'
 _KEY_SEPARATOR = "|"
 JsonValue: TypeAlias = str | float | list["JsonValue"] | dict[str, "JsonValue"] | None
 RValue: TypeAlias = (
-    float | str | list[str | None] | NDArray[np.float64] | dict[str, "RValue"] | None
+    float | str | list[str | None] | list["RValue"] | NDArray[np.float64]
+    | dict[str, "RValue"] | None
 )
 Cache: TypeAlias = dict[str, JsonValue]
 
@@ -2158,36 +2159,25 @@ def _decode(value: JsonValue) -> RValue:
     if isinstance(value, dict):
         return {key: _decode(item) for key, item in value.items()}
     if isinstance(value, str):
-        if value == "NA":
-            return float("nan")
-        if value == "NaN":
+        if value in ("NA", "NaN"):
             return float("nan")
         if value == "Inf":
             return float("inf")
         if value == "-Inf":
             return float("-inf")
         return value
-    if isinstance(value, list) and all(isinstance(item, str) or item is None for item in value):
-        return cast(list[str | None], [None if item is None else item for item in value])
     if isinstance(value, list):
-        if any(isinstance(item, list | dict) for item in value):
-            return np.asarray([_decode(item) for item in value], dtype=np.float64)
-        converted: list[JsonValue] = []
-        has_numeric_special = False
-        for item in value:
-            if item == "NA":
-                converted.append(float("nan"))
-                has_numeric_special = True
-            elif item == "Inf":
-                converted.append(float("inf"))
-                has_numeric_special = True
-            elif item == "-Inf":
-                converted.append(float("-inf"))
-                has_numeric_special = True
-            else:
-                converted.append(item)
-        if has_numeric_special:
-            return np.asarray(converted, dtype=np.float64)
+        # Keep character vectors as labels, not floating-point arrays.
+        if all(isinstance(item, str) or item is None for item in value):
+            return cast(list[str | None], value)
+        decoded = [_decode(item) for item in value]
+        # A JSON array can represent either an R numeric matrix or a genuinely
+        # heterogeneous R list (e.g. [[1, 2], 2]).  Never discard a successful
+        # R call merely because its list is ragged or has named members.
+        try:
+            return np.asarray(decoded, dtype=np.float64)
+        except (TypeError, ValueError):
+            return cast(list[RValue], decoded)
     return np.asarray(value, dtype=np.float64)
 
 
@@ -2201,6 +2191,8 @@ def _encode(value: RValue) -> JsonValue:
     if isinstance(value, float):
         return value
     if isinstance(value, list):
-        return cast(JsonValue, value)
+        # Ragged list members can contain decoded ndarray values; recurse so
+        # the committed fixture remains plain JSON rather than numpy objects.
+        return cast(JsonValue, [_encode(item) for item in value])
     encoded = value.tolist()
     return cast(JsonValue, encoded)
