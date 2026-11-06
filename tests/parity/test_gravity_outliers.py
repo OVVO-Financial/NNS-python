@@ -79,31 +79,19 @@ def test_nns_dep_with_outlier_matches_r(asym: bool) -> None:
     )
 
 
-def test_python_gravity_is_bit_identical_to_native() -> None:
-    from nns._native import native_fn
+def test_python_gravity_uses_r14_type7_and_observation_centers() -> None:
+    # R 14.0: type-7 quartiles, with modal centers drawn from observations.
+    # The older vendored native gravity_exact is deliberately NOT a reference
+    # until NNS-core has been synchronized with the R 14.0 implementation.
+    x = np.array([1.0, 2.0, 3.0, 4.0])
+    assert _gravity_python(x) == pytest.approx(2.5, abs=1e-12)
+    assert _gravity(x) == pytest.approx(2.5, abs=1e-12)
 
-    native = native_fn("gravity_exact")
-    if native is None:
-        pytest.skip("native extension not available")
-    rng = np.random.default_rng(0)
-    for trial in range(900):
-        n = int(rng.integers(1, 300))
-        kind = trial % 6
-        if kind == 0:
-            x = rng.normal(size=n)
-        elif kind == 1:
-            x = rng.integers(0, 5, n).astype(float)
-        elif kind == 2:
-            x = np.round(rng.standard_t(2, size=n), 2)
-        elif kind == 3:
-            x = np.concatenate((np.full(n, 0.1), rng.normal(size=3), [np.nan]))
-        elif kind == 4:
-            # More than 1e6 bins, or more than INT_MAX.
-            x = np.append(rng.normal(size=n), -(10.0 ** rng.integers(5, 10)))
-        else:
-            # Tight IQR plus one far value.
-            x = np.append(5.0 + 1e-7 * rng.normal(size=n), 6.0)
-        assert _gravity_python(x) == float(native(np.ascontiguousarray(x)))
+    # Modal neighborhood contains the three zero observations; the mean and
+    # type-7 upper quartile still incorporate the distant observation.
+    y = np.array([0.0, 0.0, 0.0, 100.0])
+    assert _gravity_python(y) == pytest.approx(9.375, abs=1e-12)
+    assert _gravity(y) == pytest.approx(9.375, abs=1e-12)
 
 
 def test_sparse_gravity_needs_no_dense_histogram() -> None:
