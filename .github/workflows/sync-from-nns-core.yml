@@ -1,0 +1,193 @@
+name: Sync from NNS-core
+
+# Receiver side of the nns-core-updated contract (NNS-core
+# .github/workflows/notify-python.yml and docs/r-source-sync.md). When an
+# accepted NNS-core commit lands, NNS-core dispatches nns-core-updated with
+# client_payload.{core_commit, r_repo, r_commit, r_version, r_src_tree_hash}.
+# This workflow re-vendors extern/NNS-core from that commit, rebuilds the
+# extension, runs the native and fallback test gates and opens a pull request.
+# The PR is a draft unless every gate passed.
+#
+# This file must stay in workflow-baseline.yml's protected list, otherwise the
+# baseline guard deletes it from pull requests and NNS-core's notify job stops
+# dispatching (it checks for this receiver first).
+
+on:
+  repository_dispatch:
+    types: [nns-core-updated]
+  workflow_dispatch:
+    inputs:
+      core_commit:
+        description: Full 40-character OVVO-Financial/NNS-core commit SHA to vendor
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-from-nns-core
+  cancel-in-progress: false
+
+jobs:
+  sync-core:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out NNS-python
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and validate payload
+        id: payload
+        shell: bash
+        # Event fields reach the shell only through env: and are validated
+        # before use (no ${{ }} expansion inside run:).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_CORE_COMMIT: ${{ github.event.client_payload.core_commit }}
+          DISPATCH_R_REPO: ${{ github.event.client_payload.r_repo }}
+          DISPATCH_R_COMMIT: ${{ github.event.client_payload.r_commit }}
+          DISPATCH_R_VERSION: ${{ github.event.client_payload.r_version }}
+          DISPATCH_R_HASH: ${{ github.event.client_payload.r_src_tree_hash }}
+          INPUT_CORE_COMMIT: ${{ inputs.core_commit }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            core_commit="$DISPATCH_CORE_COMMIT"
+            r_repo="${DISPATCH_R_REPO:-}"
+            r_commit="${DISPATCH_R_COMMIT:-}"
+            r_version="${DISPATCH_R_VERSION:-}"
+            r_hash="${DISPATCH_R_HASH:-}"
+          else
+            core_commit="$INPUT_CORE_COMMIT"
+            r_repo=""; r_commit=""; r_version=""; r_hash=""
+          fi
+          [[ "$core_commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::core_commit must be a full lowercase 40-character SHA"; exit 1; }
+          [[ -z "$r_repo" || "$r_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::bad r_repo"; exit 1; }
+          [[ -z "$r_commit" || "$r_commit" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "::error::bad r_commit"; exit 1; }
+          [[ -z "$r_version" || "$r_version" =~ ^[0-9A-Za-z._-]{1,32}$ ]] || { echo "::error::bad r_version"; exit 1; }
+          [[ -z "$r_hash" || "$r_hash" =~ ^[0-9a-fA-F]{0,64}$ ]] || { echo "::error::bad r_src_tree_hash"; exit 1; }
+          {
+            echo "core_commit=$core_commit"
+            echo "core_short=${core_commit:0:7}"
+            echo "r_repo=${r_repo:-unknown}"
+            echo "r_commit=${r_commit:-unknown}"
+            echo "r_version=${r_version:-unknown}"
+            echo "r_src_tree_hash=${r_hash:-unknown}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the NNS-core commit
+        shell: bash
+        env:
+          CORE_COMMIT: ${{ steps.payload.outputs.core_commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p upstream/NNS-core
+          cd upstream/NNS-core
+          git init -q
+          git remote add origin https://github.com/OVVO-Financial/NNS-core.git
+          git fetch --depth 1 origin "$CORE_COMMIT"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CORE_COMMIT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Re-vendor extern/NNS-core
+        shell: bash
+        env:
+          CORE_COMMIT: ${{ steps.payload.outputs.core_commit }}
+        run: |
+          set -euo pipefail
+          # Only core_commit is recorded: the manifest's r_commit/r_version
+          # describe the R package the parity cache encodes, which an NNS-core
+          # update does not change. The R provenance of the core is listed in
+          # the PR body.
+          python scripts/sync_nns_core_snapshot.py \
+            --core-checkout upstream/NNS-core \
+            --core-commit "$CORE_COMMIT"
+          rm -rf upstream
+          git status --short
+
+      - name: Install the package (builds the native extension)
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python -m pip install -U pip &&
+            python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy &&
+            python -m pip install hypothesis pytest-benchmark pytest-xdist pandas &&
+            python -m pip install -e . &&
+            python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
+          } 2>&1 | tee nns-core-sync-build.log
+
+      - name: Run native and fallback gates
+        id: gates
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            python -m pytest -q tests/invariants &&
+            NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity &&
+            NNS_DISABLE_NATIVE=1 NNS_R_CACHE_ONLY=1 python -m pytest -q tests/invariants tests/parity &&
+            python -m pytest -q tests/tools
+          } 2>&1 | tee nns-core-sync-gates.log
+
+      - name: Upload gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nns-core-sync-${{ steps.payload.outputs.core_short }}
+          path: |
+            nns-core-sync-build.log
+            nns-core-sync-gates.log
+          if-no-files-found: warn
+
+      - name: Open or update the NNS-core sync PR
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
+          branch: automation/nns-core-${{ steps.payload.outputs.core_short }}
+          delete-branch: true
+          draft: ${{ steps.gates.outcome != 'success' }}
+          commit-message: "native: re-vendor NNS-core ${{ steps.payload.outputs.core_short }}"
+          title: "native: re-vendor NNS-core ${{ steps.payload.outputs.core_short }}"
+          body: |
+            Automatic re-vendor of `extern/NNS-core` from an accepted NNS-core commit.
+
+            - NNS-core commit: `${{ steps.payload.outputs.core_commit }}`
+            - R source the core was ported from: `${{ steps.payload.outputs.r_repo }}@${{ steps.payload.outputs.r_commit }}` (NNS ${{ steps.payload.outputs.r_version }}, src tree `${{ steps.payload.outputs.r_src_tree_hash }}`)
+            - Build and native import: `${{ steps.build.outcome }}`
+            - Gates (invariants, cached parity, the same with `NNS_DISABLE_NATIVE=1`, tools): `${{ steps.gates.outcome }}`
+
+            Only `extern/NNS-core` and `sync/nns_source.json` (`core_commit`) change here. If the build or a gate failed this PR is a draft: check the build and gate logs. Any parity shard whose R reference itself changed must be regenerated from R.
+          add-paths: |
+            extern/NNS-core/**
+            sync/nns_source.json
+
+      - name: Match the existing PR's draft state to the gates
+        if: steps.cpr.outputs.pull-request-number != '' && steps.cpr.outputs.pull-request-operation != 'created'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
+          PR: ${{ steps.cpr.outputs.pull-request-number }}
+          READY: ${{ steps.gates.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          # create-pull-request leaves an existing PR's draft state as it was, even on an unchanged rerun.
+          draft=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$READY" = "true" ] && [ "$draft" = "true" ]; then
+            gh pr ready "$PR" --repo "$GITHUB_REPOSITORY"
+          elif [ "$READY" != "true" ] && [ "$draft" = "false" ]; then
+            gh pr ready "$PR" --repo "$GITHUB_REPOSITORY" --undo
+          fi
