@@ -9,14 +9,6 @@ from nns import causal_matrix, nns_causation
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "independent", "quadratic", "sin", "asymmetric"]
-TS_TOLERANCE = 7e-2
-# Net causation is a log-ratio of the two directional estimates. A modest
-# directional difference can therefore be amplified substantially while the
-# underlying causation estimates remain close. Keep directional checks tight
-# and give only the derived net statistic a wider tolerance.
-TS_NET_TOLERANCE = 5e-1
-TS_MATRIX_TOLERANCE = 3e-1
-
 
 @pytest.mark.parity
 @pytest.mark.parametrize("size", SIZES)
@@ -93,8 +85,11 @@ def test_nns_causation_ts_tau_matches_r(case: str) -> None:
     expected = _vector(nns("NNS.caus", x.tolist(), y.tolist(), False, "ts", False, False))
     actual = np.fromiter(nns_causation(x, y, tau="ts").values(), dtype=np.float64)
 
-    np.testing.assert_allclose(actual[:2], expected[:2], atol=TS_TOLERANCE)
-    np.testing.assert_allclose(actual[2], expected[2], atol=TS_NET_TOLERANCE)
+    # R14 returns exactly two complementary directional indices, not the
+    # old signed log-ratio as a third element.
+    assert actual.shape == (2,)
+    np.testing.assert_allclose(actual, expected, atol=EXACT)
+    np.testing.assert_allclose(actual.sum(), 1.0, atol=EXACT)
 
 
 @pytest.mark.parity
@@ -111,7 +106,7 @@ def test_causal_matrix_ts_tau_matches_r() -> None:
     expected = nns("NNS.caus", variable.tolist(), None, False, "ts", False, False)
     actual = causal_matrix(variable, tau="ts")
 
-    np.testing.assert_allclose(actual, _matrix(expected), atol=TS_MATRIX_TOLERANCE)
+    np.testing.assert_allclose(actual, _matrix(expected), atol=EXACT)
 
 
 def _vector(value: object) -> np.ndarray:
