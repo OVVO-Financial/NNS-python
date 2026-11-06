@@ -987,11 +987,28 @@ def _assert_selection_matches(
         assert expected is None or expected == {} or np.asarray(expected).size == 0
         return
     if key == "NNS.dim.red.coefficients":
-        # A dict keyed by the encoded column names (R's named vector; the R
-        # reference serializes only the values, in the same order).
+        # Regression has a single named numeric coefficient vector, whereas
+        # R 14.0 classification returns a class-keyed list of *equations*.
+        # Compare every equation's variables and numerical coefficients;
+        # silently flattening class indices would lose their identity.
         assert isinstance(actual, dict)
-        actual_coef = np.asarray(list(actual.values()), dtype=np.float64)
-        np.testing.assert_allclose(actual_coef, _numeric(expected), atol=COMPOUND)
+        if isinstance(expected, dict) and all(
+            isinstance(v, dict) for v in expected.values()
+        ):
+            assert set(actual) == set(expected)
+            for class_name, reference in expected.items():
+                equation = actual[class_name]
+                assert isinstance(equation, dict)
+                assert set(equation) == set(reference)
+                assert list(equation["Variable"]) == list(reference["Variable"])
+                np.testing.assert_allclose(
+                    np.asarray(equation["Coefficient"], dtype=np.float64),
+                    _numeric(reference["Coefficient"]),
+                    atol=COMPOUND,
+                )
+        else:
+            actual_coef = np.asarray(list(actual.values()), dtype=np.float64)
+            np.testing.assert_allclose(actual_coef, _numeric(expected), atol=COMPOUND)
         return
     # Predictor names, as R reports them: V1..Vp for an unnamed matrix. Where
     # the R reference used a named data.frame, map the port's positional

@@ -237,9 +237,11 @@ def classify_stack_r14(
             "pred.int.pos": np.asarray([max(s) for s in sets], dtype=np.float64),
         }
 
-    def output(prob: F | None, candidate: dict[str, Any] | None) -> F:
+    def output(prob: F | None, candidate: dict[str, Any] | None) -> F | None:
+        # An unavailable classification component is NULL/NA in R, not a
+        # one-element prediction vector. It has no pointwise predictions.
         if prob is None or candidate is None:
-            return np.asarray([np.nan], dtype=np.float64)
+            return None
         return decode(choose(prob, float(candidate["threshold"])))
 
     selected: list[str] | None = None
