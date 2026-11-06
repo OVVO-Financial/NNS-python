@@ -54,22 +54,14 @@ def nns_dep(
         return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
 
-    native_dep_pair = native_fn("nns_dep_pair")
-    if native_dep_pair is not None:
-        res = native_dep_pair(
-            np.ascontiguousarray(x_values),
-            np.ascontiguousarray(y_values),
-            bool(asym),
-        )
-        return {"Correlation": float(res["Correlation"]), "Dependence": float(res["Dependence"])}
+    # Native NNS-core currently exposes the R 13.3 finest-cell estimator.
+    # R 14.0 is *not* the same statistic: each distinct prefix-partition
+    # level is debiased under its permutation null and the strongest of the
+    # conditional / joint partitions is selected. Do not call the old native
+    # kernel until the upstream NNS-core sync is approved and rebuilt.
+    from nns._dep_r14 import dep_pair_r14
 
-    if _is_constant(x_values) or _is_constant(y_values):
-        return {"Correlation": 0.0, "Dependence": 0.0}
-
-    obs_req = max(8, x_values.size // 8)
-    quad_xy = _xonly_partition(x_values, obs_req)
-    quad_yx = _xonly_partition(y_values, obs_req)
-    correlation, dependence = _dep_pair(x_values, y_values, quad_xy, quad_yx, asym)
+    correlation, dependence = dep_pair_r14(x_values, y_values, asym)
     return {"Correlation": correlation, "Dependence": dependence}
 
 
