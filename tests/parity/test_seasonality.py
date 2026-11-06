@@ -85,7 +85,14 @@ def test_nns_seas_scores_every_component_series_like_r(
 
     _assert_seas_matches(actual, expected)
     if periods is not None:
-        assert sorted(cast(np.ndarray, actual["periods"]).tolist()) == sorted(periods)
+        # The listed periods describe the historical R13 SD-based scan.
+        # R14 uses detrended Gini dispersion and n/5 minimum-cell support;
+        # those older period vectors are not valid R14 reference values.
+        # Keep the strict full-table and period-by-period R14 oracle above.
+        np.testing.assert_array_equal(
+            cast(np.ndarray, actual["periods"]),
+            _array(expected["periods"]).astype(np.int64),
+        )
 
 
 @pytest.mark.parity
