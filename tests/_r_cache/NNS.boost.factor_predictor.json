@@ -2,35 +2,23 @@
   "entries": {
     "7e2569b9f43465396769eb0f98df139c14d3e3446f4de92ec8c009909d0f2397": {
       "class.levels": null,
-      "feature.frequency": [
-        46.0,
-        22.0
-      ],
-      "feature.weights": [
-        0.676470588235294,
-        0.323529411764706
-      ],
+      "feature.frequency": 48.0,
+      "feature.weights": 1.0,
       "pred.int": null,
       "results": [
         -1.75,
-        -1.48913043478261,
-        -1.48913043478261,
-        -1.05434782608696,
+        -1.57608695652174,
+        -1.40217391304348,
+        -1.22826086956522,
         -1.05434782608696
       ]
     },
     "bce87272f22e3e8a9fcf164a01abb0405342977706e2b714fa18c8451e64eeb4": {
-      "feature.frequency": [
-        46.0,
-        22.0
-      ],
-      "feature.weights": [
-        0.676470588235294,
-        0.323529411764706
-      ]
+      "feature.frequency": 48.0,
+      "feature.weights": 1.0
     }
   },
   "label": "NNS.boost.factor_predictor",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

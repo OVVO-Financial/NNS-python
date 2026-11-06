@@ -6,22 +6,22 @@
       "NNS.dim.red.variables": {},
       "NNS.reg.n.best": 1.0,
       "OBJfn.dim.red": NaN,
-      "OBJfn.reg": 0.765625,
+      "OBJfn.reg": 0.0,
       "class.levels": {},
       "dim.red": NaN,
       "dim.red.pred.int": {},
       "pred.int": {},
       "probability.threshold": 0.5,
       "reg": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "reg.pred.int": {},
       "stack": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "weights": [
         1.0,
@@ -34,22 +34,22 @@
       "NNS.dim.red.variables": {},
       "NNS.reg.n.best": 1.0,
       "OBJfn.dim.red": NaN,
-      "OBJfn.reg": 0.765625,
+      "OBJfn.reg": 0.0,
       "class.levels": {},
       "dim.red": NaN,
       "dim.red.pred.int": {},
       "pred.int": {},
       "probability.threshold": 0.5,
       "reg": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "reg.pred.int": {},
       "stack": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "weights": [
         1.0,
@@ -62,22 +62,22 @@
       "NNS.dim.red.variables": {},
       "NNS.reg.n.best": 1.0,
       "OBJfn.dim.red": NaN,
-      "OBJfn.reg": 0.765625,
+      "OBJfn.reg": 0.0,
       "class.levels": {},
       "dim.red": NaN,
       "dim.red.pred.int": {},
       "pred.int": {},
       "probability.threshold": 0.5,
       "reg": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "reg.pred.int": {},
       "stack": [
-        1.90585740209614,
-        1.90585740209614,
-        1.90585740209614
+        1.25,
+        3.75,
+        2.5
       ],
       "weights": [
         1.0,
@@ -86,6 +86,6 @@
     }
   },
   "label": "NNS.stack.factor_predictor.v2",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }
