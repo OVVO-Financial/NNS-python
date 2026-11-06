@@ -436,7 +436,9 @@ def _aggregate_x(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     if finite.size == 0:
         return float("nan")
     if noise == "mode":
-        return _mode(finite)
+        # R14 NNS_part.cpp Agg::for_x uses the *continuous* data mode, not
+        # the rounded integer-class mode used for classification responses.
+        return float(nns_mode(finite, discrete=False, multi=False))
     return _gravity(finite)
 
 
@@ -448,7 +450,9 @@ def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         return float("nan")
-    if noise in {"mode", "mode_class"}:
+    if noise == "mode":
+        return float(nns_mode(finite, discrete=False, multi=False))
+    if noise == "mode_class":
         return _mode(finite)
     return _gravity(finite)
 
