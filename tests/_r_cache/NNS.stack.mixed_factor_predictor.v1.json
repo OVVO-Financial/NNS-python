@@ -10,7 +10,7 @@
       "NNS.dim.red.threshold": 0.755928946018455,
       "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": NaN,
-      "OBJfn.dim.red": 0.00206611570247933,
+      "OBJfn.dim.red": 0.000976562500000056,
       "OBJfn.reg": NaN,
       "class.levels": {},
       "dim.red": [
@@ -43,8 +43,8 @@
       "NNS.dim.red.threshold": 0.755928946018455,
       "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": 1.0,
-      "OBJfn.dim.red": 0.00206611570247933,
-      "OBJfn.reg": 0.8515625,
+      "OBJfn.dim.red": 0.000976562500000056,
+      "OBJfn.reg": 0.0,
       "class.levels": {},
       "dim.red": [
         1.25,
@@ -66,12 +66,12 @@
         2.5
       ],
       "weights": [
-        0.04,
-        0.96
+        1.0,
+        0.0
       ]
     }
   },
   "label": "NNS.stack.mixed_factor_predictor.v1",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

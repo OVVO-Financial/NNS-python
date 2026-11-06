@@ -13,14 +13,14 @@
       "Confidence_Level": 0.95,
       "Control": 0.0191268165633628,
       "Control_CDF": 0.559051831188266,
-      "Effect_Size_LB.2.5%": -0.582780571373545,
-      "Effect_Size_UB.97.5%": 1.09407110103691,
+      "Effect_Size_LB.2.5%": -0.589693562063213,
+      "Effect_Size_UB.97.5%": 1.06833595204897,
       "Grand_Statistic": 0.142983064395218,
-      "Lower 95% CI": 0.134129885947543,
-      "Robust Certainty Estimate": 0.580150268520339,
+      "Lower 95% CI": 0.152774273020275,
+      "Robust Certainty Estimate": 0.570726724883802,
       "Treatment": 0.266839312227074,
       "Treatment_CDF": 0.439774510459534,
-      "Upper 95% CI": 0.886414320951287
+      "Upper 95% CI": 0.865010512177701
     },
     "50a986ab7b389af9e02c2d01bf0a6657e1bc1d6647be86d11680ff8ee2d1bbef": 0.492466490606361,
     "771fc3d8efd7eb4d9bc316118de82186577b70f2e3d0ade6ea96abc24cff1b50": {
@@ -32,12 +32,12 @@
       "Treatment_CDF": 0.437988436552643
     },
     "869e561b5396396d491cae5660ac70152520d16e79d9ce87de1d8dc32242b603": {
-      "Certainty": 0.630393828439154,
+      "Certainty": 0.672263700439154,
       "Control": -0.0701922297703009,
-      "Control_CDF": 0.53,
-      "Grand_Statistic": 0.0326890477149341,
+      "Control_CDF": 0.54,
+      "Grand_Statistic": 0.09204529107712,
       "Treatment": 0.135570325200169,
-      "Treatment_CDF": 0.43
+      "Treatment_CDF": 0.46
     },
     "88bbaab2914e15c7b3224e345de1a3bd8881246cdeea7558d165a6867ebd9fdb": {
       "Certainty": 0.764269209628382,
@@ -56,10 +56,10 @@
       "Treatment_CDF": 0.614122107233681
     },
     "9da8bc56ddaf6f4048144e571a875f06166e114ae7a13ed7dd111a153805d1e0": {
-      "Certainty": 0.698395184350024,
+      "Certainty": 0.701397538807624,
       "Control": -0.0044371503906452,
-      "Control_CDF": 0.53,
-      "Grand_Statistic": 0.122470212841542,
+      "Control_CDF": 0.528,
+      "Grand_Statistic": 0.112212472869732,
       "Treatment": 0.24937757607373,
       "Treatment_CDF": 0.472
     },
@@ -85,7 +85,7 @@
       "Certainty": 0.650680858554691,
       "Control": -0.0978939595880533,
       "Control_CDF": 0.533333333333333,
-      "Grand_Statistic": 0.00295335494608286,
+      "Grand_Statistic": 0.0035504818952302,
       "Treatment": 0.103800669480219,
       "Treatment_CDF": 0.466666666666667
     },
@@ -116,6 +116,6 @@
     }
   },
   "label": "NNS.ANOVA.custom",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

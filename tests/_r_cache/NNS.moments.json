@@ -3,7 +3,7 @@
     "4a13cf392285e68bf67581527cedadc997caff9088a51b20b27747b64b102366": {
       "kurtosis": 1.67492109156106,
       "mean": 1.66666666666667,
-      "skewness": 1.61281677390665,
+      "skewness": 1.2269112891547,
       "variance": 12.7666666666667
     },
     "7e99ff48b0e8c146756687d3f6c7c989a14d5c19bc30bc69852e22c77093f460": {
@@ -32,6 +32,6 @@
     }
   },
   "label": "NNS.moments",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }
