@@ -314,11 +314,33 @@ def test_nns_arma_optim_returns_forecast_dictionary() -> None:
     assert result["bias.validation"]["policy"] == "none"
     assert result["bias.validation"]["applied.shift"] == 0.0
     assert result["raw.results"].shape == (3,)
-    assert result["validation.forecast"].shape == (7,)
+    assert result["validation.forecast"].shape == (8,)
     assert result["results"].shape == (3,)
     assert result["lower.pred.int"].shape == (3,)
     assert result["upper.pred.int"].shape == (3,)
     assert np.all(np.isfinite(result["results"]))
+
+
+def test_nns_arma_optim_bias_policy_matches_r14_chronological_split() -> None:
+    raw = np.array([2., 4., 6., 8., 10., 12.])
+    actual = raw + 1.
+    objective = lambda predicted, target: float(np.mean((predicted - target) ** 2))
+
+    no_bias = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "none")
+    assert no_bias["policy"] == "none"
+    assert no_bias["applied.shift"] == 0.0
+    assert no_bias["status"] == "disabled"
+    assert no_bias["estimate.rows"].size == no_bias["acceptance.rows"].size == 0
+
+    split = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "split")
+    np.testing.assert_array_equal(split["estimate.rows"], [1, 2, 3])
+    np.testing.assert_array_equal(split["acceptance.rows"], [4, 5, 6])
+    assert split["estimated.shift"] == pytest.approx(1.0)
+    assert split["applied.shift"] == pytest.approx(1.0)
+    assert split["raw.score"] == pytest.approx(1.0)
+    assert split["adjusted.score"] == pytest.approx(0.0)
+    assert split["accepted"] is True
+    assert split["status"] == "accepted"
 
 
 def test_nns_arma_optim_validation_matches_installed_r() -> None:
