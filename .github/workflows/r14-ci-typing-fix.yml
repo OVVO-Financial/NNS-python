@@ -1,0 +1,104 @@
+name: Verify R14 CI typing correction
+
+on:
+  push:
+    branches: [automation/r14-publish-20261107]
+    paths: [.github/workflows/r14-ci-typing-fix.yml]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d2fb4b3de179980348108fd602ba1672ee12c193
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply exact annotation correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          path = Path('src/nns/_stack_class_r14.py')
+          raw = path.read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == '2a562263ab5c53e94b578e267b8d4ba8f7a0d184da86d65ca52c28e7187db1e5'
+          old = '''        if class_count == 2:
+                      return np.where(
+                          probabilities[:, tie_order[1]] > threshold,
+                          values[tie_order[1]],
+                          values[tie_order[0]],
+                      )'''
+          new = '''        if class_count == 2:
+                      selected: F = np.where(
+                          probabilities[:, tie_order[1]] > threshold,
+                          values[tie_order[1]],
+                          values[tie_order[0]],
+                      )
+                      return selected'''
+          # The YAML block indentation leaves the literal Python code intact.
+          old = '\n'.join(line[10:] if i else line for i, line in enumerate(old.splitlines()))
+          new = '\n'.join(line[10:] if i else line for i, line in enumerate(new.splitlines()))
+          text = raw.decode()
+          assert text.count(old) == 1
+          result = text.replace(old, new).encode()
+          assert hashlib.sha256(result).hexdigest() == '82e4f9995e4b4a737f2583209a1860f0280cec525be8130b4b6f9238a99b1958'
+          path.write_bytes(result)
+          PY
+      - name: Check with pinned CI type checker
+        run: |
+          python -m pip install mypy==2.3.1 'numpy<2.5' scipy matplotlib pandas
+          mypy
+      - name: Prepare verified commit object without moving release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          repo = 'OVVO-Financial/NNS-python'
+          parent = 'd2fb4b3de179980348108fd602ba1672ee12c193'
+          path = 'src/nns/_stack_class_r14.py'
+          data = pathlib.Path(path).read_bytes()
+          assert hashlib.sha256(data).hexdigest() == '82e4f9995e4b4a737f2583209a1860f0280cec525be8130b4b6f9238a99b1958'
+          def api(suffix, body=None):
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + repo + suffix,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json'},
+                  method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          pr = api('/pulls/192')
+          assert pr['head']['sha'] == parent and pr['base']['ref'] == 'main'
+          tree_base = subprocess.check_output(['git', 'rev-parse', parent + '^{tree}']).decode().strip()
+          tree = api('/git/trees', {'base_tree': tree_base, 'tree': [
+              {'path': path, 'mode': '100644', 'type': 'blob', 'content': data.decode()}]})
+          commit = api('/git/commits', {
+              'message': 'Annotate nominal class selection for pinned mypy 2.3.1\n\nPreserve identical NumPy selection behavior while making the float64 array return explicit. Verified with the CI-pinned type checker; no ignores or gate relaxations.',
+              'tree': tree['sha'], 'parents': [parent]})
+          out = pathlib.Path('/tmp/r14-typing-evidence')
+          out.mkdir()
+          receipt = {'parent': parent, 'candidate_sha': commit['sha'],
+                     'tree_sha': tree['sha'], 'path': path,
+                     'sha256': hashlib.sha256(data).hexdigest(),
+                     'mypy': '2.3.1 passed', 'release_branch_updated': False}
+          (out / 'candidate.json').write_text(json.dumps(receipt, indent=2))
+          print(json.dumps(receipt, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r14-typing-candidate-evidence
+          path: /tmp/r14-typing-evidence/
+          retention-days: 30
+          if-no-files-found: error
