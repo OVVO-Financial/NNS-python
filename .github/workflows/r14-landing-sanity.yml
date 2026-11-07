@@ -1,0 +1,29 @@
+name: R14 landing documentation and provenance checks
+
+on:
+  push:
+    branches: [automation/r14-publish-20261107]
+    paths: [.github/workflows/r14-landing-sanity.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f2bda92aa006503d5f1ee26c8f9085e2bae0ee7c
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify version and recorded upstream bytes
+        run: |
+          python scripts/check_version_consistency.py
+          python scripts/check_release_provenance.py
+          python scripts/verify_release_provenance.py
+      - name: Build documentation with the existing Docs workflow dependencies
+        run: |
+          python -m pip install 'mkdocs-material>=9.5' 'pymdown-extensions>=10'
+          mkdocs build --strict
