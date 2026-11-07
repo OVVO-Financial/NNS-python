@@ -159,10 +159,17 @@ def _task(
     """
     if type_value is not None:
         if not isinstance(type_value, str):
-            raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
+            raise ValueError("[type] must be NULL, 'REG', 'CLASS', or 'XONLY'.")
         type_value = type_value.lower()
-        if type_value not in {"class", "xonly"}:
-            raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
+        if type_value not in {"reg", "class", "xonly"}:
+            raise ValueError("[type] must be NULL, 'REG', 'CLASS', or 'XONLY'.")
+        # R .nns_reg_type explicitly permits REG to override automatic
+        # binary (0/1) classification, but rejects a nonnumeric response.
+        if type_value == "reg" and (
+            categories is not None or class_levels is not None
+            or y.dtype.kind == "b" or is_text(y)
+        ):
+            raise ValueError("[type = 'REG'] requires a numeric response.")
 
     declared = class_levels if class_levels is not None else categories
     what = "class_levels" if class_levels is not None else "y categories"
