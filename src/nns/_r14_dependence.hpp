@@ -1,0 +1,472 @@
+// R14 multilevel dependence with explicit non-R numerical adapters.
+// Source: OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae
+// src/NNS_dep.cpp: null corrections, constant-cell rules and level selection.
+// Rcpp marshalling uses vectors, normal probabilities use erfc, and the
+// initial hypergeometric mass uses long-double binomial products. The
+// remaining selection/null-correction arithmetic follows the pinned source.
+// SPDX-License-Identifier: GPL-3.0-only
+#pragma once
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
+#include <cstring>
+#include <functional>
+#include <numeric>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace nns_r14 {
+struct DepResult {
+  double correlation;
+  double dependence;
+};
+
+// ------------------------------------------------------------
+// Per-cell dependence with the independence floor removed (#70).
+//
+// Inside a partition cell of m points, around the cell means, two concordance
+// terms are measured:
+//   T0 = |2 p0 - 1|, p0 = share of points in the co-lower or co-upper orthant
+//        (degree 0: frequency)
+//   T1 = |sum dx dy| / sum |dx dy|  (degree 1: area)
+// (the discordant terms are exactly 1 - p0 and 1 - p1, so they add nothing).
+// Each term is measured against its own expectation under the within-cell
+// permutation null,
+//   T* = (T - E0[T]) / (1 - E0[T]),
+// which keeps perfect dependence at 1 and centres independence near 0. The
+// cell's dependence is (T0* + T1*) / 2: no square root, which would turn the
+// sampling noise of an unbiased estimate of 0 back into a floor of order
+// n^(-1/4).
+// E0[T0] uses the hypergeometric distribution (a normal approximation for
+// cells larger than 400). E0[T1] is exact whenever the distinct
+// arrangements of the cell can be enumerated cheaply (every cell of up to 6
+// points, and larger cells with heavily tied values) and uses the permutation
+// variance of sum dx dy otherwise.
+// ------------------------------------------------------------
+
+// A plain aggregate, so `return {a, b};` compiles as C++11 too: the package
+// sets no C++ standard, and older R (4.2 on Windows, for one) builds as C++11.
+struct CellCopula {
+  double signed_value;  // debiased dependence times the sign of the cell covariance
+  double magnitude;     // debiased dependence; may be negative below chance
+};
+
+// E0|2 p0 - 1| for a cell of m points with a points at or below the x mean and
+// b points at or below the y mean, under random pairing: the co-lower count K
+// is hypergeometric and the concordant count is m - a - b + 2K.
+static double null_T0(int m, int a, int b) {
+  const int k_lo = std::max(0, a + b - m);
+  const int k_hi = std::min(a, b);
+  if (k_lo >= k_hi) {  // a single possible count: the term carries no information
+    return 1.0;
+  }
+  const double md = static_cast<double>(m);
+  if (m > 400) {
+    // Normal approximation with the exact hypergeometric mean and variance.
+    const double ad = a, bd = b;
+    const double mean_k = ad * bd / md;
+    const double var_k = bd * (ad / md) * ((md - ad) / md) * ((md - bd) / (md - 1.0));
+    const double mu = (2.0 * (md - ad - bd + 2.0 * mean_k) - md) / md;
+    const double sd = 4.0 * std::sqrt(std::max(var_k, 0.0)) / md;
+    if (sd <= 0.0) return std::abs(mu);
+    const double z = mu / sd;
+    return sd * std::sqrt(2.0 / 3.14159265358979323846264338327950288) * std::exp(-0.5 * z * z) +
+      mu * (1.0 - 2.0 * (0.5 * std::erfc(z / std::sqrt(2.0))));
+  }
+  // Hypergeometric probabilities by the ratio recurrence from the lowest count.
+  // The first hypergeometric mass, evaluated as long-double binomial
+  // products; the following double recurrence is the pinned R14 one.
+  const auto choose = [](int n, int k) {
+    k = std::min(k, n - k);
+    long double out = 1.0L;
+    for (int j = 1; j <= k; ++j) out = out * (n - k + j) / j;
+    return out;
+  };
+  double pk = static_cast<double>(choose(a, k_lo) * choose(m - a, b - k_lo) / choose(m, b));
+  double e = 0.0;
+  for (int k = k_lo; k <= k_hi; ++k) {
+    const double conc = static_cast<double>(m - a - b + 2 * k);
+    e += pk * std::abs(2.0 * conc / md - 1.0);
+    if (k < k_hi) {
+      pk *= (static_cast<double>(a - k) * static_cast<double>(b - k)) /
+            (static_cast<double>(k + 1) * static_cast<double>(m - a - b + k + 1));
+    }
+  }
+  return e;
+}
+
+// log of the number of distinct arrangements of v: m! / prod(multiplicity!).
+static double log_arrangements(std::vector<double> v) {
+  std::sort(v.begin(), v.end());
+  const int m = static_cast<int>(v.size());
+  double out = std::lgamma(static_cast<double>(m) + 1.0);
+  for (int i = 0; i < m;) {
+    int j = i;
+    while (j < m && v[j] == v[i]) ++j;
+    out -= std::lgamma(static_cast<double>(j - i) + 1.0);
+    i = j;
+  }
+  return out;
+}
+
+// Enumerate up to this many distinct arrangements exactly (6! = 720, so every
+// cell of up to 6 points is exact, and so are larger cells with heavy ties,
+// such as 7 points of which 6 are tied).
+static const double kLogExactArrangements = std::log(720.0) + 1e-9;
+static const int kExactCellSize = 6;
+
+// E0[ |sum dx dy| / sum |dx dy| ] under random pairing of dx and dy. The
+// arrangement counts are only worth computing when a variable has ties.
+// legacy = true keeps the rule NNS.dep used before #95 (exact only for cells of
+// at most 6 points), for the local measure behind NNS.reg's default order.
+static double null_T1(const std::vector<double>& dx, const std::vector<double>& dy,
+                      bool x_ties, bool y_ties, bool legacy = false) {
+  const int m = static_cast<int>(dx.size());
+  // Pairing dy with a random permutation of dx is the same null as the reverse,
+  // so permute whichever has fewer distinct arrangements. Every distinct
+  // arrangement of a multiset is equally likely under a uniform permutation.
+  double lx = 1e300, ly = 1e300;
+  if (m <= kExactCellSize || (x_ties && !legacy)) lx = log_arrangements(dx);
+  if (m <= kExactCellSize || (y_ties && !legacy)) ly = log_arrangements(dy);
+  if (std::min(lx, ly) <= kLogExactArrangements) {
+    std::vector<double> v = (lx <= ly) ? dx : dy;
+    const std::vector<double>& w = (lx <= ly) ? dy : dx;
+    std::sort(v.begin(), v.end());
+    double total = 0.0;
+    double count = 0.0;
+    do {
+      double s = 0.0, d = 0.0;
+      for (int i = 0; i < m; ++i) {
+        const double p = w[i] * v[i];
+        s += p;
+        d += std::abs(p);
+      }
+      total += d > 0.0 ? std::abs(s) / d : 0.0;
+      count += 1.0;
+    } while (std::next_permutation(v.begin(), v.end()));
+    return total / count;
+  }
+  double sx2 = 0.0, sy2 = 0.0, sax = 0.0, say = 0.0;
+  for (int i = 0; i < m; ++i) {
+    sx2 += dx[i] * dx[i];
+    sy2 += dy[i] * dy[i];
+    sax += std::abs(dx[i]);
+    say += std::abs(dy[i]);
+  }
+  if (sax <= 0.0 || say <= 0.0) return 1.0;
+  // sum dx dy has mean 0 and variance sx2 * sy2 / (m - 1) under permutation;
+  // sum |dx dy| has mean sax * say / m.
+  const double md = static_cast<double>(m);
+  const double e = std::sqrt(2.0 / 3.14159265358979323846264338327950288) * std::sqrt(sx2 * sy2 / (md - 1.0)) * md / (sax * say);
+  return std::min(1.0, e);
+}
+
+static inline double debias_term(double t, double e0) {
+  if (!(e0 < 1.0 - 1e-12)) return 0.0;
+  return (t - e0) / (1.0 - e0);
+}
+
+// Constancy of a cell, for the rules applied by the partition (best_level).
+enum CellKind { CELL_VARYING = 0, CELL_X_CONST = 1, CELL_BOTH_CONST = 2 };
+
+static CellCopula cell_dependence(const std::vector<double>& xv,
+                                  const std::vector<double>& yv,
+                                  bool x_ties, bool y_ties, CellKind& kind,
+                                  bool legacy_null = false) {
+  const int n = static_cast<int>(xv.size());
+  kind = CELL_VARYING;
+  if (n < 2) return {0.0, 0.0};
+
+  // Measure from the cell minimum, so deviations round at the cell's spread rather than its level.
+  double rx = 0.0, ry = 0.0;
+  if (!legacy_null) {
+    rx = *std::min_element(xv.begin(), xv.end());
+    ry = *std::min_element(yv.begin(), yv.end());
+  }
+  double tx = 0.0, ty = 0.0, ax = 0.0, ay = 0.0;
+  for (int i = 0; i < n; ++i) {
+    tx += xv[i] - rx; ty += yv[i] - ry;
+    ax = std::max(ax, xv[i] - rx); ay = std::max(ay, yv[i] - ry);
+  }
+  tx /= n; ty /= n;
+  // Bound on the mean's rounding, which depends on row order: a value equal to the mean can't fall either side.
+  const double tie_x = legacy_null ? 0.0 : (n + 1) * DBL_EPSILON * ax;
+  const double tie_y = legacy_null ? 0.0 : (n + 1) * DBL_EPSILON * ay;
+
+  std::vector<double> dx(n), dy(n);
+  int a = 0, b = 0;
+  double conc = 0.0, s = 0.0, d = 0.0;
+  for (int i = 0; i < n; ++i) {
+    dx[i] = (xv[i] - rx) - tx;
+    dy[i] = (yv[i] - ry) - ty;
+    const bool lo_x = dx[i] <= tie_x, lo_y = dy[i] <= tie_y;
+    a += lo_x;
+    b += lo_y;
+    // Concordant = co-lower (<= target) or co-upper (> target); the degree-0
+    // counts partition the cell.
+    if (lo_x == lo_y) conc += 1.0;
+    const double p = dx[i] * dy[i];
+    s += p;
+    d += std::abs(p);
+  }
+
+  // x constant in the cell (discrete x): there is no within-cell variation to
+  // test, only whether y is determined there. The partition scores that (see
+  // best_level). Compare the raw values: a repeated 0.1 need not centre to
+  // exactly 0.
+  bool x_const = true, y_const = true;
+  for (int i = 1; i < n; ++i) {
+    if (xv[i] != xv[0]) x_const = false;
+    if (yv[i] != yv[0]) y_const = false;
+  }
+  if (x_const) {
+    kind = y_const ? CELL_BOTH_CONST : CELL_X_CONST;
+    return {0.0, 0.0};
+  }
+
+  // s is summed in partition order, so a zero covariance can round either way.
+  const double s_tol = legacy_null ? 0.0 : 1e-12 * d;
+  const double slope_sign = (s > s_tol) ? 1.0 : (s < -s_tol) ? -1.0 : 0.0;
+  const double e0 = null_T0(n, a, b);
+
+  // All concordant or all discordant is perfect dependence, unless the cell is
+  // too small for that to be informative (a single attainable count).
+  // Compare counts, not count * (1/n): 49 * (1/49) != 1.
+  if (e0 < 1.0 - 1e-12) {
+    if (conc == static_cast<double>(n)) return {1.0, 1.0};
+    if (conc == 0.0) return {-1.0, 1.0};
+  }
+
+  const double md = static_cast<double>(n);
+  const double t0 = std::abs(2.0 * conc / md - 1.0);
+  const double t1 = d > 0.0 ? std::abs(s) / d : 0.0;
+  const double e1 = null_T1(dx, dy, x_ties, y_ties, legacy_null);
+
+  const double dep = 0.5 * (debias_term(t0, e0) + debias_term(t1, e1));
+  if (slope_sign == 0.0) return {0.0, 0.0};
+  return {dep * slope_sign, dep};
+}
+
+struct LevelBest {
+  double dependence;
+  double correlation;
+};
+
+enum PartitionKind { CONDITIONAL, JOINT };
+
+// Probability that m values drawn without replacement from v are all equal,
+// i.e. that y is constant in a cell of m points under the permutation null.
+// counts holds the multiplicities of v's distinct values, largest first.
+static double p_constant(int m, const std::vector<int>& counts, int n,
+                         std::vector<double>& cache) {
+  if (cache[m] >= 0.0) return cache[m];
+  const double lchoose_n = std::lgamma(n + 1.0) - std::lgamma(m + 1.0) - std::lgamma(n - m + 1.0);
+  double p = 0.0;
+  for (int c : counts) {
+    if (c < m) break;
+    p += std::exp(std::lgamma(c + 1.0) - std::lgamma(m + 1.0) - std::lgamma(c - m + 1.0) - lchoose_n);
+  }
+  cache[m] = std::min(1.0, p);
+  return cache[m];
+}
+
+static std::vector<int> value_counts(std::vector<double> v) {
+  std::sort(v.begin(), v.end());
+  std::vector<int> counts;
+  for (size_t i = 0; i < v.size();) {
+    size_t j = i;
+    while (j < v.size() && v[j] == v[i]) ++j;
+    counts.push_back(static_cast<int>(j - i));
+    i = j;
+  }
+  std::sort(counts.begin(), counts.end(), std::greater<int>());
+  return counts;
+}
+
+// A partition label: a view of the R string, which stays alive with the
+// CharacterVector it was read from. (std::string_view needs C++17.)
+// Comparisons are bytewise, as std::string_view's are.
+struct Label {
+  const char* p;
+  std::size_t n;
+  std::size_t size() const { return n; }
+};
+
+static inline bool operator<(const Label& a, const Label& b) {
+  const int c = std::memcmp(a.p, b.p, std::min(a.n, b.n));
+  return c < 0 || (c == 0 && a.n < b.n);
+}
+
+static inline bool operator==(const Label& a, const Label& b) {
+  return a.n == b.n && std::memcmp(a.p, b.p, a.n) == 0;
+}
+
+// The first len characters of a and b agree (a shorter label counts whole).
+static inline bool same_prefix(const Label& a, const Label& b, std::size_t len) {
+  const std::size_t la = std::min(a.n, len), lb = std::min(b.n, len);
+  return la == lb && std::memcmp(a.p, b.p, la) == 0;
+}
+
+static std::vector<Label> as_labels(const std::vector<std::string>& q) {
+  std::vector<Label> out(q.size());
+  for (std::size_t i = 0; i < q.size(); ++i) {
+    out[i].p = q[i].c_str();
+    out[i].n = std::strlen(out[i].p);
+  }
+  return out;
+}
+
+// Dependence of v on u over every level of a recursive mean-split partition
+// whose cell labels are prefix codes ("q", "q1", "q12", ...): the cells at level
+// l are the label prefixes of length l + 1. Each level's dependence is the
+// cell-size weighted average of the cell dependences; the strongest level is
+// returned (ties go to the finer level), with the signed average at that level
+// as the correlation.
+//
+// Cells constant in u: in a conditional partition (on u alone) such a cell
+// asks whether v is determined at that value of u. Its score is 1 when v is
+// constant there and 0 otherwise, measured against p0, the chance that v is
+// constant in a cell of that size under the permutation null:
+// (score - p0) / (1 - p0). In the joint partition a constant cell is constant
+// by construction, so it carries no information and scores 0.
+static LevelBest best_level(const std::vector<double>& u,
+                            const std::vector<double>& v,
+                            const std::vector<Label>& lab,
+                            double between_sign, PartitionKind kind,
+                            bool u_ties, bool v_ties,
+                            std::vector<double>* levels = nullptr) {
+  const int n = static_cast<int>(u.size());
+  std::vector<int> ord(n);
+  std::iota(ord.begin(), ord.end(), 0);
+  std::stable_sort(ord.begin(), ord.end(), [&](int i, int j) { return lab[i] < lab[j]; });
+  size_t L = 1;
+  for (const auto& s : lab) L = std::max(L, s.size());
+
+  std::vector<int> v_counts;
+  std::vector<double> p0_cache;
+  if (kind == CONDITIONAL && v_ties) {
+    v_counts = value_counts(v);
+    p0_cache.assign(n + 1, -1.0);
+  }
+
+  LevelBest best{-1e300, 0.0};
+  int prev_cells = -1;
+  std::vector<double> uq, vq;
+  std::vector<int> starts;
+  for (size_t len = 1; len <= L; ++len) {
+    // Cells at this level are runs of equal prefixes in label order.
+    starts.clear();
+    starts.push_back(0);
+    for (int k = 1; k < n; ++k) {
+      if (!same_prefix(lab[ord[k]], lab[ord[k - 1]], len)) starts.push_back(k);
+    }
+    const int cells = static_cast<int>(starts.size());
+    if (cells == prev_cells) continue;  // nested partition unchanged: same value
+    prev_cells = cells;
+    starts.push_back(n);
+
+    double dep = 0.0, corr = 0.0;
+    for (int c = 0; c < cells; ++c) {
+      const int lo = starts[c], hi = starts[c + 1], m = hi - lo;
+      uq.resize(m); vq.resize(m);
+      for (int k = 0; k < m; ++k) { uq[k] = u[ord[lo + k]]; vq[k] = v[ord[lo + k]]; }
+      CellKind ck;
+      CellCopula cop = cell_dependence(uq, vq, u_ties, v_ties, ck);
+      if (ck != CELL_VARYING) {
+        double mag = 0.0;
+        if (kind == CONDITIONAL) {
+          const double p0 = v_ties ? p_constant(m, v_counts, n, p0_cache) : 0.0;
+          const double score = (ck == CELL_BOTH_CONST) ? 1.0 : 0.0;
+          if (p0 < 1.0 - 1e-12) mag = (score - p0) / (1.0 - p0);
+        }
+        // A constant cell has no within-cell sign; it takes the sign of the
+        // overall covariance, read as 0 when that is within rounding of 0.
+        cop = {between_sign * mag, mag};
+      }
+      if (!std::isfinite(cop.signed_value) || !std::isfinite(cop.magnitude)) cop = {0.0, 0.0};
+      const double w = static_cast<double>(m) / static_cast<double>(n);
+      dep += w * cop.magnitude;
+      corr += w * cop.signed_value;
+    }
+    if (levels) levels->push_back(dep);
+    if (dep >= best.dependence) best = {dep, corr};
+  }
+  // Below-chance levels can make every average negative; dependence is a
+  // magnitude, so it is floored at 0, and |Correlation| is kept within it.
+  best.dependence = std::max(0.0, best.dependence);
+  best.correlation = std::min(best.dependence, std::max(-best.dependence, best.correlation));
+  return best;
+}
+
+static bool has_ties(std::vector<double> v) {
+  std::sort(v.begin(), v.end());
+  return std::adjacent_find(v.begin(), v.end()) != v.end();
+}
+
+inline DepResult dep_pair(const std::vector<double>& x,
+                      const std::vector<double>& y,
+                      const std::vector<std::string>& quad_xy,
+                      const std::vector<std::string>& quad_yx,
+                      const std::vector<std::string>& quad_joint,
+                      bool asym) {
+  const int n = x.size();
+  if (y.size() != n || quad_xy.size() != n) {
+    throw std::invalid_argument("x, y and quad_xy must all have the same length");
+  }
+  if (!asym && (quad_yx.size() != n || quad_joint.size() != n)) {
+    throw std::invalid_argument("quad_yx and quad_joint must have the length of x when asym = FALSE");
+  }
+
+  std::vector<double> xv(x.begin(), x.end());
+  std::vector<double> yv(y.begin(), y.end());
+
+  bool cx = true, cy = true;
+  for (int i = 1; i < n; ++i) {
+    if (xv[i] != xv[0]) cx = false;
+    if (yv[i] != yv[0]) cy = false;
+    if (!cx && !cy) break;
+  }
+  if (n < 2 || cx || cy) {
+    return {0.0, 0.0};
+  }
+
+  // Sign of the overall covariance, accumulated from the first observation so
+  // a large common level doesn't round away.
+  const double x0 = xv[0], y0 = yv[0];
+  double mx = 0.0, my = 0.0, cov = 0.0, cov_abs = 0.0;
+  for (int i = 0; i < n; ++i) { mx += xv[i] - x0; my += yv[i] - y0; }
+  mx /= n; my /= n;
+  for (int i = 0; i < n; ++i) {
+    const double p = ((xv[i] - x0) - mx) * ((yv[i] - y0) - my);
+    cov += p;
+    cov_abs += std::abs(p);
+  }
+  const double cov_tol = 1e-12 * cov_abs;
+  const double between_sign = (cov > cov_tol) ? 1.0 : (cov < -cov_tol) ? -1.0 : 0.0;
+
+  const bool x_ties = has_ties(xv), y_ties = has_ties(yv);
+
+  // y on x: the partition on x.
+  LevelBest best = best_level(xv, yv, as_labels(quad_xy), between_sign, CONDITIONAL,
+                              x_ties, y_ties);
+  if (!asym) {
+    // Symmetric: the strongest of the joint quadrants of (x, y), which carry
+    // relations such as a circle or y = x * noise, and the two conditional
+    // partitions, which carry functions of either variable. The joint
+    // partition wins ties.
+    LevelBest joint = best_level(xv, yv, as_labels(quad_joint), between_sign, JOINT,
+                                 x_ties, y_ties);
+    LevelBest on_y = best_level(yv, xv, as_labels(quad_yx), between_sign, CONDITIONAL,
+                                y_ties, x_ties);
+    LevelBest out = joint;
+    if (best.dependence > out.dependence) out = best;
+    if (on_y.dependence > out.dependence) out = on_y;
+    best = out;
+  }
+
+  return {best.correlation, best.dependence};
+}
+
+
+} // namespace nns_r14

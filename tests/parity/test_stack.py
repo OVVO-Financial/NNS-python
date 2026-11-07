@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -389,6 +390,48 @@ def test_nns_stack_dim_red_selection_matches_r(dim_red_method: str) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("folds", [3, 5])
+def test_nns_stack_boston_cor_partitions_match_r(folds: int) -> None:
+    # The cor coefficients and the X* projections feed NNS partitions, where a
+    # last-ulp difference can move a regression point. The port reproduces R's
+    # long-double cor and its summation orders so the folds partition alike.
+    data = np.genfromtxt(
+        Path(__file__).resolve().parents[1] / "data" / "boston_housing.csv",
+        delimiter=",",
+        skip_header=1,
+    )
+    x, y = data[:356, :-1], data[:356, -1]
+    x_test = data[356:380, :-1]
+
+    expected = nns_stack_numeric(
+        x.tolist(),
+        y.tolist(),
+        x_test.tolist(),
+        cv_size=0.25,
+        folds=folds,
+        method=[1, 2],
+        order=None,
+        stack=True,
+        dim_red_method="cor",
+        seed=123,
+    )
+    actual = nns_stack(
+        x,
+        y,
+        x_test,
+        cv_size=0.25,
+        folds=folds,
+        method=(1, 2),
+        stack=True,
+        dim_red_method="cor",
+        dist=None,
+        seed=123,
+    )
+
+    _assert_stack_matches(actual, expected)
+
+
+@pytest.mark.parity
 @pytest.mark.parametrize("method", [[1], [2], [1, 2]])
 def test_nns_stack_pred_int_matches_r(method: list[int]) -> None:
     x = np.linspace(-2.0, 2.0, 40)
@@ -675,6 +718,96 @@ def test_nns_stack_balance_binary_class_matches_r_structure(method: list[int]) -
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("columns", [1, 2])
+def test_nns_stack_all_candidate_is_scored_with_the_deployed_estimator(columns: int) -> None:
+    # The Method 1 "ALL" candidate was scored out of fold as the
+    # constant training mean, but the deployed model is the univariate NNS.reg fit
+    # or NNS.reg(n.best = "all"). On pure noise ALL used to win with the SSE of a
+    # constant (the same OBJfn.reg for one and two columns).
+    rng = np.random.default_rng(5)
+    variable = np.round(rng.standard_normal((200, 2)), 8)[:, :columns]
+    y = np.round(rng.standard_normal(200), 8)
+
+    expected = nns_stack_numeric(
+        variable[:160].tolist(),
+        y[:160].tolist(),
+        variable[160:].tolist(),
+        cv_size=0.25,
+        folds=5,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        seed=5,
+    )
+    actual = nns_stack(
+        variable[:160],
+        y[:160],
+        variable[160:],
+        cv_size=0.25,
+        folds=5,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        random_seed=5,
+        dist=None,
+    )
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(
+        actual["OBJfn.reg"], float(np.asarray(expected["OBJfn.reg"])), rtol=1e-10
+    )
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
+
+
+@pytest.mark.parity
+@pytest.mark.stochastic
+def test_nns_stack_balance_keeps_a_single_member_class_like_r() -> None:
+    # sample(g, k) on a one-member class g sampled from 1:g and
+    # dropped the rare class; R now indexes g[sample.int(length(g), k)], which is
+    # what NNS Python's R-sample emulation already did. Seeds now reach R's
+    # NNS.stack(seed =) (it re-seeded with its default 123).
+    x = np.linspace(-2.0, 2.0, 60)
+    variable = np.column_stack((x, np.sin(3.0 * x)))
+    y = np.where(x < -0.05, 1.0, 2.0)
+    y[[20, 45]] = 3.0
+    point = variable[[3, 20, 33, 45, 58]]
+
+    expected = nns_stack_numeric(
+        variable.tolist(),
+        y.tolist(),
+        point.tolist(),
+        cv_size=0.25,
+        folds=1,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        seed=1,
+    )
+    actual = nns_stack(
+        variable,
+        y,
+        point,
+        cv_size=0.25,
+        folds=1,
+        method=(1,),
+        stack=False,
+        dim_red_method="cor",
+        type="class",
+        balance=True,
+        random_seed=1,
+        dist=None,
+    )
+
+    _assert_stack_class_structure(actual, expected, point_rows=point.shape[0], classes=np.unique(y))
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))
+
+
+@pytest.mark.parity
 @pytest.mark.stochastic
 def test_nns_stack_balance_multiclass_and_factor_structure() -> None:
     x = np.linspace(-2.0, 2.0, 45)
@@ -854,22 +987,36 @@ def _assert_selection_matches(
         assert expected is None or expected == {} or np.asarray(expected).size == 0
         return
     if key == "NNS.dim.red.coefficients":
-        actual_coef = np.asarray(actual, dtype=np.float64)
-        expected_coef = _numeric(expected)
-        if predictor_names is not None:
-            # Factor designs: the port orders a factor's level columns by first
-            # appearance, R by its declared levels, so compare the values only.
-            actual_coef, expected_coef = np.sort(actual_coef), np.sort(expected_coef)
-        np.testing.assert_allclose(actual_coef, expected_coef, atol=COMPOUND)
+        # Regression has a single named numeric coefficient vector, whereas
+        # R 14.0 classification returns a class-keyed list of *equations*.
+        # Compare every equation's variables and numerical coefficients;
+        # silently flattening class indices would lose their identity.
+        assert isinstance(actual, dict)
+        if isinstance(expected, dict) and all(isinstance(v, dict) for v in expected.values()):
+            assert set(actual) == set(expected)
+            for class_name, reference in expected.items():
+                equation = actual[class_name]
+                assert isinstance(equation, dict)
+                assert set(equation) == set(reference)
+                assert list(equation["Variable"]) == list(reference["Variable"])
+                np.testing.assert_allclose(
+                    np.asarray(equation["Coefficient"], dtype=np.float64),
+                    _numeric(reference["Coefficient"]),
+                    atol=COMPOUND,
+                )
+        else:
+            actual_coef = np.asarray(list(actual.values()), dtype=np.float64)
+            np.testing.assert_allclose(actual_coef, _numeric(expected), atol=COMPOUND)
         return
-    # The port reports 0-based predictor indices; R reports predictor names
-    # (V1..Vp for an unnamed matrix, otherwise the data.frame column names).
+    # Predictor names, as R reports them: V1..Vp for an unnamed matrix. Where
+    # the R reference used a named data.frame, map the port's positional
+    # V<i> names to those R names.
     expected_names = [str(v) for v in np.atleast_1d(np.asarray(expected, dtype=object))]
-    indices = [int(i) for i in np.asarray(actual).tolist()]
+    assert all(isinstance(v, str) for v in actual)
     if predictor_names is None:
-        assert [f"V{i + 1}" for i in indices] == expected_names
+        assert list(actual) == expected_names
     else:
-        assert [predictor_names[i] for i in indices] == expected_names
+        assert [predictor_names[int(v[1:]) - 1] for v in actual] == expected_names
 
 
 def _assert_stack_matches(
@@ -915,21 +1062,62 @@ def _assert_stack_matches(
             np.testing.assert_allclose(actual_weights, _numeric(expected[key]), atol=COMPOUND)
         elif key == "class.levels":
             assert [str(v) for v in actual[key]] == [str(v) for v in expected[key]]
-        elif isinstance(actual[key], dict):
-            assert isinstance(expected[key], dict)
-            assert set(actual[key]) == set(expected[key])
-            for column, values in actual[key].items():
-                np.testing.assert_allclose(
-                    np.asarray(values, dtype=np.float64),
-                    _numeric(expected[key][column]),
-                    atol=COMPOUND,
-                )
         else:
-            np.testing.assert_allclose(
-                np.asarray(actual[key], dtype=np.float64),
-                _numeric(expected[key]),
-                atol=COMPOUND,
-            )
+            _assert_nested_stack_values(actual[key], expected[key])
+
+
+def _assert_nested_stack_values(actual: Any, expected: Any) -> None:
+    """Recursively verify R14 class sets without flattening ragged arrays.
+
+    Prediction.set legitimately contains a different number of labels per
+    observation. Converting that structure to a float64 array raises a NumPy
+    ValueError before any of its predictions can be compared. Preserve every
+    entry, its order and its shape; numeric leaves retain the same tolerance.
+    """
+    if isinstance(actual, dict):
+        assert isinstance(expected, dict)
+        assert set(actual) == set(expected)
+        for key, value in actual.items():
+            _assert_nested_stack_values(value, expected[key])
+        return
+    if isinstance(actual, np.ndarray) and actual.dtype == object:
+        _assert_nested_stack_values(actual.tolist(), expected)
+        return
+    if isinstance(actual, (list, tuple)):
+        if isinstance(expected, np.ndarray):
+            expected = expected.tolist()
+        if not isinstance(expected, (list, tuple)):
+            # jsonlite auto_unbox turns a singleton class set into a scalar.
+            # Accept only a one-element set; no broadcasting across rows.
+            assert len(actual) == 1
+            _assert_nested_stack_values(actual[0], expected)
+            return
+        assert isinstance(expected, (list, tuple))
+        assert len(actual) == len(expected)
+        for value, reference in zip(actual, expected, strict=True):
+            _assert_nested_stack_values(value, reference)
+        return
+    if actual is None:
+        assert expected is None
+        return
+    if isinstance(actual, str):
+        assert str(expected) == actual
+        return
+    np.testing.assert_allclose(
+        np.asarray(actual, dtype=np.float64),
+        _numeric(expected),
+        atol=COMPOUND,
+    )
+
+
+def test_nested_stack_probability_sets_are_compared_without_shape_coercion() -> None:
+    got = [1.0, [1.0, 2.0], [2.0, 3.0, 4.0], 3.0]
+    expected = [1.0, np.asarray([1.0, 2.0]), [2.0, 3.0, 4.0], 3.0]
+    _assert_nested_stack_values(got, expected)
+    with pytest.raises(AssertionError):
+        _assert_nested_stack_values(got, [1.0, [2.0, 1.0], [2.0, 3.0, 4.0], 3.0])
+    with pytest.raises(AssertionError):
+        _assert_nested_stack_values(got, [1.0, [1.0, 2.0], [2.0, 3.0], 3.0])
 
 
 def _numeric(value: object) -> np.ndarray:
@@ -987,3 +1175,57 @@ def _assert_stack_class_structure(
         for values in actual_pred_int.values():
             assert values.shape == (point_rows,)
             assert np.all(np.isfinite(values))
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("balance", [False, True])
+def test_nns_stack_univariate_class_threshold_uses_the_deployed_fit(balance: bool) -> None:
+    # Patched R scores only the deployed univariate nns_reg fit for one predictor
+    # (the k-NN candidates it used to rank were never deployed), so the class
+    # threshold is tuned on that fit's out-of-fold predictions.
+    rng = np.random.default_rng(12)
+    x = np.round(
+        np.concatenate(
+            [rng.normal(1.5, 0.3, 30), rng.normal(4.3, 0.5, 30), rng.normal(5.6, 0.6, 30)]
+        ),
+        6,
+    )
+    y = np.repeat([1.0, 2.0, 3.0], 30)
+    test = np.array([2.1, 2.4, 4.9, 5.1])
+
+    expected = nns_stack_numeric(
+        x.reshape(-1, 1).tolist(),
+        y.tolist(),
+        test.reshape(-1, 1).tolist(),
+        cv_size=0.25,
+        folds=5,
+        method=[1],
+        order=None,
+        stack=False,
+        dim_red_method="cor",
+        type="CLASS",
+        balance=balance,
+        seed=1,
+    )
+    actual = nns_stack(
+        x.reshape(-1, 1),
+        y,
+        test.reshape(-1, 1),
+        type="CLASS",
+        cv_size=0.25,
+        folds=5,
+        method=(1,),
+        stack=False,
+        balance=balance,
+        random_seed=1,
+    )
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(
+        actual["NNS.reg.n.best"], _numeric(expected["NNS.reg.n.best"]), equal_nan=True
+    )
+    np.testing.assert_allclose(
+        actual["probability.threshold"], float(np.asarray(expected["probability.threshold"]))
+    )
+    np.testing.assert_allclose(actual["OBJfn.reg"], float(np.asarray(expected["OBJfn.reg"])))
+    np.testing.assert_array_equal(actual["reg"], np.asarray(expected["reg"], dtype=np.float64))

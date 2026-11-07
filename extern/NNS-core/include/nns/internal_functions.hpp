@@ -58,7 +58,11 @@ struct ForecastVectors {
   std::vector<std::vector<int>> forecast_index;
 };
 
-TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* lags, std::size_t num_lags);
+/// Port of generate.vectors(x, l, len). `len` (R 13.3) lets a caller treat
+/// only the first `len` elements of a pre-allocated buffer as the series;
+/// len < 0 (default) uses all n elements. Throws if len > n.
+TimeSeriesVectors generate_vectors(const double* x, std::size_t n, const int* lags, std::size_t num_lags,
+                                   long long len = -1);
 ForecastVectors generate_lin_vectors(const double* x, std::size_t n, int l, int h = 1);
 
 // --- ARMA Seasonality Weighting ---
@@ -70,6 +74,7 @@ struct ARMAWeights {
 
 /// Computes ARMA seasonality weighting. 
 /// Replaces the dynamic R DataFrame lookup with explicit arrays.
+/// Weights are equal when (varcovar - covar) / sqrt(period) sums to 0.
 ARMAWeights arma_seas_weighting(const double* periods, const double* covar, const double* varcovar, std::size_t m);
 
 // --- Maximum Entropy Bootstrap (MEBoot) ---

@@ -115,6 +115,67 @@ class RRNG:
             nn -= 1
         return out
 
+    def sample_int_replace(self, n: int, size: int) -> NDArray[np.int64]:
+        """Vectorised ``sample.int(n, size, replace=TRUE)`` (1-based draws).
+
+        Draw-for-draw identical to ``sample_int(n, size, replace=True)`` and leaves
+        the generator in the same state, but runs the Mersenne-Twister in NumPy's
+        MT19937 (the same generator R uses once seeded) instead of pure Python.
+        Each rejection attempt consumes a fixed ``bits // 16 + 1`` uniforms, so the
+        stream can be cut into attempts and filtered in bulk.
+        """
+        n = int(n)
+        size = int(size)
+        if size <= 0:
+            return np.empty(0, dtype=np.int64)
+        if n < 1:
+            raise ValueError("n must be >= 1.")
+        bits = math.ceil(math.log2(n))
+        per_attempt = bits // 16 + 1
+        mask = (1 << bits) - 1
+        accept_rate = n / float(1 << bits)
+
+        bit_generator = np.random.MT19937()
+        bit_generator.state = {
+            "bit_generator": "MT19937",
+            "state": {"key": np.asarray(self._mt, dtype=np.uint32), "pos": self._mti},
+        }
+        out = np.empty(size, dtype=np.int64)
+        filled = 0
+        while filled < size:
+            needed = size - filled
+            attempts = min(int(needed / accept_rate * 1.05) + 32, 1 << 18)
+            saved = bit_generator.state
+            # unif_rand() * 65536 floored is the top 16 bits of the 32-bit draw
+            # (R's fixup only changes a zero draw, which still floors to 0).
+            raw = bit_generator.random_raw(attempts * per_attempt)
+            raw >>= np.uint64(16)
+            if per_attempt == 1:
+                values = raw
+            else:
+                chunks = raw.reshape(attempts, per_attempt)
+                values = chunks[:, 0].copy()
+                for column in range(1, per_attempt):
+                    values <<= np.uint64(16)
+                    values |= chunks[:, column]
+            values &= np.uint64(mask)
+            keep = values < np.uint64(n)
+            accepted_count = int(np.count_nonzero(keep))
+            if accepted_count >= needed:
+                accepted = np.flatnonzero(keep)[:needed]
+                out[filled:] = values[accepted]
+                bit_generator.state = saved
+                bit_generator.random_raw((int(accepted[-1]) + 1) * per_attempt)
+                filled = size
+            else:
+                out[filled : filled + accepted_count] = values[keep]
+                filled += accepted_count
+
+        state = bit_generator.state["state"]
+        self._mt = [int(value) for value in state["key"]]
+        self._mti = int(state["pos"])
+        return out + 1
+
     def sample(
         self,
         values: NDArray[np.int64],
@@ -125,33 +186,3 @@ class RRNG:
         values = np.asarray(values)
         idx = self.sample_int(values.size, size, replace)
         return values[idx - 1]
-
-    def sample_int_prob_noreplace(
-        self, n: int, size: int, prob: NDArray[np.float64]
-    ) -> NDArray[np.int64]:
-        """R's weighted ``sample.int(n, size, replace=FALSE, prob=p)``.
-
-        Reproduces R's ProbSampleNoReplace: each draw picks an element with
-        probability proportional to the remaining weights, then removes it.
-        Returns 1-based indices.
-        """
-        perm = list(range(1, n + 1))
-        weights = [float(w) for w in prob]
-        total = sum(weights)
-        out = np.empty(size, dtype=np.int64)
-        remaining = n
-        for i in range(size):
-            rt = total * self.unif_rand()
-            mass = 0.0
-            j = 0
-            while j < remaining - 1:
-                mass += weights[j]
-                if rt <= mass:
-                    break
-                j += 1
-            out[i] = perm[j]
-            total -= weights[j]
-            del weights[j]
-            del perm[j]
-            remaining -= 1
-        return out

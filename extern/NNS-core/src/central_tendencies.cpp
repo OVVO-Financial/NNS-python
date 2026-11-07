@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
@@ -73,26 +74,66 @@ void quartiles_like_R_code(const std::vector<double>& xs, double& q1, double& q2
   }
 }
 
-// Minimal replacement for NNS_bin used by mode/gravity
+// Minimal replacement for NNS_bin used by mode/gravity. Bins are
+// [origin + k*width, origin + (k+1)*width), k = 0 .. nbins-1, with
+// nbins = floor((max - origin) / width + 1e-12) + 1, as in NNS 13.3.
+//
+// Gravity and mode only read counts within 6 bins of a non-empty bin, so runs
+// of more than kMaxEmptyRun empty bins keep only their first and last
+// kMaxEmptyRun / 2 bins: results are bit-identical and memory is O(n). A width
+// so small that the bin count exceeds 2^52 is widened to (max - origin) / 2^52.
+constexpr std::int64_t kMaxEmptyRun = 16;
+constexpr double kMaxBinIndex = 4503599627370496.0;  // 2^52
+
 void simple_bin_counts(const std::vector<double>& xs, double width, double origin,
                        std::vector<double>& bin_names, std::vector<int>& counts) {
-  const int l = static_cast<int>(xs.size());
-  if (l == 0) { bin_names.clear(); counts.clear(); return; }
-  
+  bin_names.clear();
+  counts.clear();
+  if (xs.empty()) return;
+
   const double xmax = xs.back();
-  int nbins = static_cast<int>(std::floor((xmax - origin) / width + 1e-12)) + 1;
-  if (nbins < 1) nbins = 1;
-  
-  bin_names.resize(nbins);
-  for (int k = 0; k < nbins; ++k) bin_names[k] = origin + k * width;
-  
-  counts.assign(nbins, 0);
-  for (double v : xs) {
-    int idx = static_cast<int>(std::floor((v - origin) / width));
-    if (idx < 0) idx = 0;
-    if (idx >= nbins) idx = nbins - 1;
-    counts[idx] += 1;
+  double last = std::floor((xmax - origin) / width + 1e-12);
+  if (!(last < kMaxBinIndex)) {
+    width = (xmax - origin) / kMaxBinIndex;
+    last = std::floor((xmax - origin) / width + 1e-12);
+    if (!(last < kMaxBinIndex)) last = kMaxBinIndex;
   }
+  const std::int64_t nbins = (last >= 0.0) ? static_cast<std::int64_t>(last) + 1 : 1;
+  const std::int64_t cap = static_cast<std::int64_t>(xs.size()) * (kMaxEmptyRun + 1) + kMaxEmptyRun;
+  bin_names.reserve(static_cast<std::size_t>(std::min(nbins, cap)));
+  counts.reserve(static_cast<std::size_t>(std::min(nbins, cap)));
+
+  auto push_bin = [&](std::int64_t k, int c) {
+    bin_names.push_back(origin + static_cast<double>(k) * width);
+    counts.push_back(c);
+  };
+  auto push_empty_run = [&](std::int64_t first, std::int64_t last_bin) {
+    const std::int64_t len = last_bin - first + 1;
+    if (len <= 0) return;
+    if (len <= kMaxEmptyRun) {
+      for (std::int64_t k = first; k <= last_bin; ++k) push_bin(k, 0);
+      return;
+    }
+    const std::int64_t half = kMaxEmptyRun / 2;
+    for (std::int64_t k = first; k < first + half; ++k) push_bin(k, 0);
+    for (std::int64_t k = last_bin - half + 1; k <= last_bin; ++k) push_bin(k, 0);
+  };
+
+  // xs is sorted, so bin indices are non-decreasing.
+  const double top = static_cast<double>(nbins - 1);
+  std::int64_t prev = -1;
+  for (double v : xs) {
+    const double q = std::floor((v - origin) / width);
+    const std::int64_t k = (q < 0.0) ? 0 : (q >= top ? nbins - 1 : static_cast<std::int64_t>(q));
+    if (k == prev) {
+      ++counts.back();
+      continue;
+    }
+    push_empty_run(prev + 1, k - 1);
+    push_bin(k, 1);
+    prev = k;
+  }
+  push_empty_run(prev + 1, nbins - 1);
 }
 
 // Triangular smoothing helper: 7-tap [1,2,3,4,3,2,1] with mirrored edges
@@ -103,9 +144,12 @@ void smooth_counts_tri7(const std::vector<int>& counts, std::vector<double>& smo
   smooth.assign(n, 0.0);
   if (n == 0) return;
   
+  // Mirror at the edges. The clamp only binds for n <= 3 bins, whose smoothed
+  // values are unused (the peak scan needs n >= 7).
   auto at = [&](int idx) -> int {
-    if (idx < 0) return counts[-idx];
-    if (idx >= n) return counts[2 * n - 2 - idx];
+    if (idx < 0) idx = -idx;
+    if (idx >= n) idx = 2 * n - 2 - idx;
+    idx = std::min(std::max(idx, 0), n - 1);
     return counts[idx];
   };
   
@@ -286,24 +330,24 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
       return {nearest_int_half_up(med)};
     }
     
-    std::unordered_map<int, int> freq; 
+    // Key on the rounded value itself: NNS 13.3's int key overflowed beyond the
+    // int range. "+ 0.0" folds -0.0 into the 0 key.
+    std::unordered_map<double, int> freq;
     freq.reserve(l * 2u);
-    for (double v : xnum) ++freq[static_cast<int>(nearest_int_half_up(v))];
+    for (double v : xnum) ++freq[nearest_int_half_up(v) + 0.0];
     
     int maxf = 0; 
     for (const auto& kv : freq) if (kv.second > maxf) maxf = kv.second;
     
-    std::vector<int> modes_int;
+    std::vector<double> modes_int;
     for (const auto& kv : freq) if (kv.second == maxf) modes_int.push_back(kv.first);
     std::sort(modes_int.begin(), modes_int.end());
     
     if (multi) {
-      std::vector<double> out(modes_int.size());
-      for (std::size_t i = 0; i < modes_int.size(); ++i) out[i] = static_cast<double>(modes_int[i]);
-      return out;
+      return modes_int;
     } else {
       long double sum = 0.0L;
-      for (int m : modes_int) sum += static_cast<long double>(m);
+      for (double m : modes_int) sum += static_cast<long double>(m);
       double mean_modes = modes_int.empty() ? kNaN : static_cast<double>(sum / static_cast<long double>(modes_int.size()));
       return {mean_modes};
     }
@@ -365,7 +409,8 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
   }
   
   if (!peak_idx.empty()) {
-    std::sort(peak_idx.begin(), peak_idx.end(), [&](int a, int b){ return cs[a] > cs[b]; });
+    // Equal heights keep bin order, so the kept peaks don't depend on the sort implementation.
+    std::stable_sort(peak_idx.begin(), peak_idx.end(), [&](int a, int b){ return cs[a] > cs[b]; });
     std::vector<int> kept;
     for (int idx : peak_idx) {
       bool too_close = false;
@@ -394,11 +439,14 @@ std::vector<double> mode(const double* x_in, std::size_t n, bool discrete, bool 
         std::sort(out.begin(), out.end());
         return out;
       } else {
-        int best_t = 0;
-        for (std::size_t t = 1; t < kept.size(); ++t) {
-          if (cs[kept[t]] > cs[kept[best_t]]) best_t = t;
-        }
-        return {centers[best_t]};
+        // Equally high peaks are averaged, as the tied-bin fallback below does.
+        double best_h = cs[kept[0]];
+        for (std::size_t t = 1; t < kept.size(); ++t) best_h = std::max(best_h, cs[kept[t]]);
+        long double sum = 0.0L;
+        int nt = 0;
+        for (std::size_t t = 0; t < kept.size(); ++t)
+          if (cs[kept[t]] == best_h) { sum += static_cast<long double>(centers[t]); ++nt; }
+        return {static_cast<double>(sum / nt)};
       }
     }
   }

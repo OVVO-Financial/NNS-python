@@ -42,41 +42,31 @@ from nns import stochastic_dominance as sd
         ),
     ],
 )
-def test_prefix_pair_dominance_matrix_matches_global_grid(
+def test_prefix_pair_evaluator_matches_pairwise_tests(
     degree: int,
     discrete: bool,
     returns: np.ndarray,
 ) -> None:
-    global_precomputed = sd._precompute_sd_table(returns, degree, discrete=discrete)
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
 
-    expected = sd._dominance_matrix_from_precomputed(global_precomputed, degree)
-    actual = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    expected = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
+    actual = _prefix_dominance_matrix(prefix_precomputed, degree, discrete=discrete)
 
     np.testing.assert_array_equal(actual, expected)
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_prefix_pair_dominance_matrix_matches_random_global_grid(degree: int) -> None:
+def test_prefix_pair_evaluator_matches_random_pairwise_tests(degree: int) -> None:
     rng = np.random.default_rng(20260517 + degree)
     returns = rng.normal(size=(11, 9))
     returns[:, 1] = returns[:, 0]
     returns[:, 2] = returns[:, 0] + 0.25
     returns[:, 3] = np.round(returns[:, 3], 1)
 
-    global_precomputed = sd._precompute_sd_table(returns, degree, discrete=True)
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=True)
 
-    expected = sd._dominance_matrix_from_precomputed(global_precomputed, degree)
-    actual = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=True,
-    )
+    expected = _pairwise_dominance_matrix(returns, degree, discrete=True)
+    actual = _prefix_dominance_matrix(prefix_precomputed, degree, discrete=True)
 
     np.testing.assert_array_equal(actual, expected)
 
@@ -123,20 +113,15 @@ def test_prefix_pair_dominance_matrix_matches_random_global_grid(degree: int) ->
         ),
     ],
 )
-def test_order_stat_dominance_matrix_matches_prefix_and_global(returns: np.ndarray) -> None:
-    global_precomputed = sd._precompute_sd_table(returns, 1, discrete=True)
+def test_order_stat_dominance_matrix_matches_prefix_and_pairwise(returns: np.ndarray) -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, 1, discrete=True)
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
 
-    global_expected = sd._dominance_matrix_from_precomputed(global_precomputed, 1)
-    prefix_expected = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    pairwise_expected = _pairwise_dominance_matrix(returns, 1, discrete=True)
+    prefix_expected = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
     actual = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
 
-    np.testing.assert_array_equal(actual, global_expected)
+    np.testing.assert_array_equal(actual, pairwise_expected)
     np.testing.assert_array_equal(actual, prefix_expected)
 
 
@@ -152,11 +137,7 @@ def test_order_stat_dominance_matrix_matches_random_prefix_matrix() -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, 1, discrete=True)
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
 
-    expected = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    expected = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
     actual = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
 
     np.testing.assert_array_equal(actual, expected)
@@ -204,11 +185,7 @@ def test_prefix_pair_one_direction_evaluator_matches_matrix(
     returns: np.ndarray,
 ) -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     for source_index in range(returns.shape[1]):
         for target_index in range(returns.shape[1]):
@@ -243,11 +220,7 @@ def test_prefix_pair_one_direction_evaluator_matches_random_matrix(
     returns[:, 4] = np.linspace(-1.0, 1.0, returns.shape[0])
     returns[:, 5] = returns[:, 4][::-1]
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     for source_index in range(returns.shape[1]):
         for target_index in range(returns.shape[1]):
@@ -261,30 +234,25 @@ def test_prefix_pair_one_direction_evaluator_matches_random_matrix(
             assert actual == bool(dominance_matrix[source_index, target_index])
 
 
-def test_sd_efficient_set_prefix_path_matches_lazy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("degree", "type_"),
+    [(1, "discrete"), (1, "continuous"), (2, "discrete"), (3, "discrete")],
+)
+def test_sd_efficient_set_matches_pairwise_oracle(degree: int, type_: str) -> None:
     returns = _large_fixture()
+    discrete = type_ != "continuous"
+    active = list(range(returns.shape[1]))
+    expected = sd._sd_efficient_active_indices_from_matrix(
+        returns,
+        active,
+        degree,
+        _pairwise_dominance_matrix(returns, degree, discrete=discrete),
+    )
 
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = sd_efficient_set(returns, 2)
-
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", 1)
-    prefix = sd_efficient_set(returns, 2)
-
-    assert prefix == lazy
-
-
-def test_sd_efficient_set_order_stat_path_matches_lazy_path(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    returns = _large_fixture()
-
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = sd_efficient_set(returns, 1)
-
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", 1)
-    order_stat = sd_efficient_set(returns, 1)
-
-    assert order_stat == lazy
+    assert sd_efficient_set(returns, degree, type=type_) == expected
+    assert nns_sd_cluster(returns, degree=degree, type=type_)["Clusters"]["Cluster_1"] == [
+        f"X_{index + 1}" for index in expected
+    ]
 
 
 def test_order_stat_active_subset_matches_prefix_matrix() -> None:
@@ -293,11 +261,7 @@ def test_order_stat_active_subset_matches_prefix_matrix() -> None:
     prefix_precomputed = sd._prefix_sd_precompute(returns, 1, discrete=True)
     order_stat_precomputed = sd._order_stat_sd_precompute(returns)
     dominance_matrix = sd._dominance_matrix_from_order_stats(order_stat_precomputed)
-    prefix_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        1,
-        discrete=True,
-    )
+    prefix_matrix = _prefix_dominance_matrix(prefix_precomputed, 1, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -316,16 +280,12 @@ def test_order_stat_active_subset_matches_prefix_matrix() -> None:
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(degree: int) -> None:
+def test_lazy_prefix_efficient_set_matches_matrix_path_on_active_subset(degree: int) -> None:
     returns = _large_fixture()
     active = [0, 1, 2, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
     discrete = True
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=discrete)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=discrete,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=discrete)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -333,7 +293,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(deg
         degree,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         degree,
@@ -343,7 +303,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_on_active_subset(deg
     assert actual == expected
 
 
-def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns() -> None:
+def test_lazy_prefix_efficient_set_matches_matrix_path_for_repeated_returns() -> None:
     returns = np.asarray(
         [
             [0.0, 0.0, 0.0, 1.0, -1.0, 2.0],
@@ -357,11 +317,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
     )
     active = list(range(returns.shape[1]))
     prefix_precomputed = sd._prefix_sd_precompute(returns, 2, discrete=True)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        2,
-        discrete=True,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, 2, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -369,7 +325,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
         2,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         2,
@@ -380,7 +336,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_repeated_returns
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
+def test_lazy_prefix_efficient_set_matches_matrix_path_for_random_fixture(
     degree: int,
 ) -> None:
     rng = np.random.default_rng(1701 + degree)
@@ -390,11 +346,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
     returns[:, 3] = returns[:, 0] + 0.3
     active = list(range(returns.shape[1]))
     prefix_precomputed = sd._prefix_sd_precompute(returns, degree, discrete=True)
-    dominance_matrix = sd._dominance_matrix_from_prefix_pairs(
-        prefix_precomputed,
-        degree,
-        discrete=True,
-    )
+    dominance_matrix = _pairwise_dominance_matrix(returns, degree, discrete=True)
 
     expected = sd._sd_efficient_active_indices_from_matrix(
         returns,
@@ -402,7 +354,7 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
         degree,
         dominance_matrix,
     )
-    actual = sd._sd_efficient_active_indices_from_prefix_kept(
+    actual = sd._sd_efficient_active_indices_from_prefix(
         prefix_precomputed,
         active,
         degree,
@@ -412,90 +364,72 @@ def test_kept_only_prefix_efficient_set_matches_matrix_path_for_random_fixture(
     assert actual == expected
 
 
-@pytest.mark.parametrize("dendrogram", [False, True])
-def test_nns_sd_cluster_prefix_path_matches_lazy_path(
-    monkeypatch: pytest.MonkeyPatch,
-    dendrogram: bool,
-) -> None:
-    returns = _large_fixture()
-
-    monkeypatch.setattr(sd, "_SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = nns_sd_cluster(returns, degree=2, min_cluster=1, dendrogram=dendrogram)
-
-    monkeypatch.setattr(sd, "_SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS", 1)
-    prefix = nns_sd_cluster(returns, degree=2, min_cluster=1, dendrogram=dendrogram)
-
-    if not dendrogram:
-        assert prefix == lazy
-        return
-
-    assert prefix["Clusters"] == lazy["Clusters"]
-    prefix_dendrogram = prefix["Dendrogram"]
-    lazy_dendrogram = lazy["Dendrogram"]
-    assert isinstance(prefix_dendrogram, dict)
-    assert isinstance(lazy_dendrogram, dict)
-    for key in ("merge", "height", "order", "labels"):
-        np.testing.assert_array_equal(prefix_dendrogram[key], lazy_dendrogram[key])
-    assert prefix_dendrogram["method"] == lazy_dendrogram["method"]
-    assert prefix_dendrogram["dist.method"] == lazy_dendrogram["dist.method"]
-
-
-@pytest.mark.parametrize("dendrogram", [False, True])
-def test_nns_sd_cluster_order_stat_path_matches_lazy_path(
-    monkeypatch: pytest.MonkeyPatch,
-    dendrogram: bool,
-) -> None:
-    returns = _large_fixture()
-
-    monkeypatch.setattr(sd, "_SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = nns_sd_cluster(returns, degree=1, min_cluster=1, dendrogram=dendrogram)
-
-    monkeypatch.setattr(sd, "_SD_CLUSTER_DOMINANCE_MATRIX_MIN_COLUMNS", 1)
-    order_stat = nns_sd_cluster(returns, degree=1, min_cluster=1, dendrogram=dendrogram)
-
-    if not dendrogram:
-        assert order_stat == lazy
-        return
-
-    assert order_stat["Clusters"] == lazy["Clusters"]
-    order_stat_dendrogram = order_stat["Dendrogram"]
-    lazy_dendrogram = lazy["Dendrogram"]
-    assert isinstance(order_stat_dendrogram, dict)
-    assert isinstance(lazy_dendrogram, dict)
-    for key in ("merge", "height", "order", "labels"):
-        np.testing.assert_array_equal(order_stat_dendrogram[key], lazy_dendrogram[key])
-    assert order_stat_dendrogram["method"] == lazy_dendrogram["method"]
-    assert order_stat_dendrogram["dist.method"] == lazy_dendrogram["dist.method"]
-
-
-def test_degree1_continuous_large_path_stays_on_prefix_behavior(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    returns = _large_fixture()
-
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = sd_efficient_set(returns, 1, type="continuous")
-
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", 1)
-    prefix = sd_efficient_set(returns, 1, type="continuous")
-
-    assert prefix == lazy
-
-
-@pytest.mark.parametrize("degree", [2, 3])
-def test_degree2_and_degree3_large_paths_stay_on_prefix_behavior(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("degree", "type_"),
+    [(1, "discrete"), (1, "continuous"), (2, "discrete"), (3, "discrete")],
+)
+@pytest.mark.parametrize("junk_columns", [0, 1, 71, 72, 120])
+def test_sd_efficient_set_ignores_unrelated_dominated_columns(
     degree: int,
+    type_: str,
+    junk_columns: int,
 ) -> None:
-    returns = _large_fixture()
+    # A column's verdict against another must not depend on which other columns
+    # are present: neither on extra knots they add nor on the column count.
+    x = np.array([-0.85, -1.52, 0.68])
+    y = np.array([-0.21, -0.33, -1.67])
+    z = np.array([-3.0, 0.16, 0.2])
+    junk = [np.array([-10.0, -9.0, -8.0]) - index for index in range(junk_columns)]
+    base = sd_efficient_set(np.column_stack([x, y]), degree, type=type_)
+    padded = np.column_stack([x, y, z, *junk])
 
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", returns.shape[1] + 1)
-    lazy = sd_efficient_set(returns, degree)
+    assert [index for index in sd_efficient_set(padded, degree, type=type_) if index < 2] == base
+    clusters = nns_sd_cluster(padded, degree=degree, type=type_)["Clusters"]
+    assert [name for name in clusters["Cluster_1"] if name in {"X_1", "X_2"}] == [
+        f"X_{index + 1}" for index in base
+    ]
 
-    monkeypatch.setattr(sd, "_SD_PREFIX_PAIR_MATRIX_MIN_COLUMNS", 1)
-    prefix = sd_efficient_set(returns, degree)
 
-    assert prefix == lazy
+def _pairwise_dominance_matrix(
+    returns: np.ndarray,
+    degree: int,
+    *,
+    discrete: bool,
+) -> np.ndarray:
+    """Oracle: the bivariate test on each pair's own merged grid, as fsd/ssd/tsd use."""
+    columns = returns.shape[1]
+    out = np.zeros((columns, columns), dtype=np.bool_)
+    for source in range(columns):
+        for target in range(columns):
+            if source != target:
+                out[source, target] = sd._dominates_uni(
+                    returns[:, source],
+                    returns[:, target],
+                    degree,
+                    discrete=discrete,
+                )
+    return out
+
+
+def _prefix_dominance_matrix(
+    precomputed: sd._SDPrefixPrecomputed,
+    degree: int,
+    *,
+    discrete: bool,
+) -> np.ndarray:
+    columns = precomputed.sorted_values.shape[1]
+    out = np.zeros((columns, columns), dtype=np.bool_)
+    for source in range(columns):
+        for target in range(columns):
+            if source != target:
+                out[source, target] = sd._dominates_from_prefix_pair(
+                    precomputed,
+                    source,
+                    target,
+                    degree,
+                    discrete=discrete,
+                )
+    return out
 
 
 def _large_fixture() -> np.ndarray:
@@ -507,3 +441,21 @@ def _large_fixture() -> np.ndarray:
     returns[:, 4] = returns[:, 3][::-1]
     returns[:, 5:10] = np.round(returns[:, 5:10], 1)
     return returns
+
+
+def test_identical_sorted_columns_matches_dense_comparison() -> None:
+    rng = np.random.default_rng(42)
+    returns = np.round(rng.normal(size=(9, 12)), 1)
+    returns[:, 1] = returns[::-1, 0]
+    returns[:, 2] = returns[:, 0]
+    returns[:, 3] = 0.0
+    returns[:, 4] = -0.0
+    returns[:, 5] = returns[:, 6]
+    returns[0, 7] = returns[0, 7] + 1e-15
+    sorted_values = np.sort(returns, axis=0)
+
+    expected = np.all(sorted_values.T[:, None, :] == sorted_values.T[None, :, :], axis=2)
+    actual = sd._identical_sorted_columns(sorted_values)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert actual[0, 1] and actual[0, 2] and actual[3, 4] and actual[5, 6]

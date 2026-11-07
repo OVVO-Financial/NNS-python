@@ -42,6 +42,46 @@ def test_nns_boost_numeric_matches_r(depth: int | None) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("values", [(0.0, 1.0), (-5.0, 5.0)])
+def test_nns_boost_two_valued_numeric_response_returns_values(values: tuple[float, float]) -> None:
+    # Patched R: the final NNS.stack auto-classifies a two-valued numeric
+    # response and returns class codes 1/2, which boost passed through as
+    # regression estimates; they are now mapped back to the response values.
+    x = np.linspace(-2.0, 2.0, 40)
+    variable = np.column_stack((x, np.sin(x)))
+    y = np.where(x > 0.3, values[1], values[0])
+    point = variable[[1, 5, 20, 30, 38]]
+
+    expected = nns_boost_numeric(
+        variable.tolist(),
+        y.tolist(),
+        point.tolist(),
+        learner_trials=5,
+        cv_size=0.25,
+        depth=None,
+        features_only=False,
+        epochs=3,
+        seed=1,
+    )
+    actual = nns_boost(
+        variable,
+        y,
+        point,
+        learner_trials=5,
+        epochs=3,
+        cv_size=0.25,
+        feature_importance=False,
+        dist=None,
+        random_seed=1,
+    )
+
+    assert isinstance(expected, dict)
+    results = np.asarray(actual["results"], dtype=np.float64)
+    assert set(results.tolist()) <= set(values)
+    np.testing.assert_allclose(results, np.asarray(expected["results"], dtype=np.float64))
+
+
+@pytest.mark.parity
 def test_nns_boost_ivs_test_none_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     variable = np.column_stack((x, np.sin(x), np.cos(x)))
@@ -91,7 +131,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
             learner_trials=10,
             cv_size=0.25,
             feature_importance=False,
-        dist=None,
+            dist=None,
         )["results"],
         dtype=np.float64,
     )
@@ -104,7 +144,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
                 cv_size=0.25,
                 feature_importance=False,
                 random_seed=seed,
-            dist=None,
+                dist=None,
             )["results"],
             dtype=np.float64,
         )
@@ -319,7 +359,9 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     labels = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     y = x + np.where(labels == "low", 1.0, np.where(labels == "mid", 2.0, 3.0)) * 0.25
-    variable = np.column_stack((labels, x))
+    # Object columns: a numeric column stays numeric (a '<U' array would make
+    # every column a factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
 
     expected = nns_boost_factor_predictor(
         labels.tolist(),
@@ -341,6 +383,7 @@ def test_nns_boost_factor_predictor_matches_r() -> None:
         cv_size=0.25,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)
@@ -351,7 +394,9 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
     x = np.linspace(-2.0, 2.0, 24)
     labels = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     y = x + np.where(labels == "low", 1.0, np.where(labels == "mid", 2.0, 3.0)) * 0.25
-    variable = np.column_stack((labels, x))
+    # Object columns: a numeric column stays numeric (a '<U' array would make
+    # every column a factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
 
     expected = nns_boost_factor_predictor(
         labels.tolist(),
@@ -374,6 +419,7 @@ def test_nns_boost_factor_predictor_features_only_matches_r() -> None:
         features_only=True,
         feature_importance=False,
         dist=None,
+        factor_levels=(["low", "mid", "high"], None),
     )
 
     _assert_boost_matches(actual, expected)
@@ -1007,6 +1053,7 @@ def _assert_boost_class_structure(
     else:
         assert actual["pred.int"] is None
         assert expected["pred.int"] is None
+
     # The port keeps feature.weights/frequency as named dicts; R serializes the
     # named vector as a plain array.
     def _weight_values(value: Any) -> np.ndarray:
@@ -1017,3 +1064,38 @@ def _assert_boost_class_structure(
     assert _weight_values(expected["feature.weights"]).ndim == 1
     assert _weight_values(actual["feature.frequency"]).ndim == 1
     assert _weight_values(expected["feature.frequency"]).ndim == 1
+
+
+@pytest.mark.parity
+def test_nns_boost_multiclass_interval_is_null_like_live_r14() -> None:
+    x = np.linspace(-2.0, 2.0, 30)
+    design = np.column_stack((x, np.sin(x), np.cos(x)))
+    y = (np.arange(30) % 3 + 1).astype(float)
+    points = design[::7]
+    expected = nns_boost_numeric(
+        design.tolist(),
+        y.tolist(),
+        points.tolist(),
+        learner_trials=10,
+        features_only=False,
+        cv_size=0.25,
+        depth=1,
+        type="class",
+        pred_int=0.95,
+    )
+    actual = nns_boost(
+        design,
+        y,
+        points,
+        learner_trials=10,
+        cv_size=0.25,
+        depth=1,
+        type="class",
+        pred_int=0.95,
+        feature_importance=False,
+        dist=None,
+    )
+    _assert_boost_matches(actual, expected)
+    assert isinstance(expected, dict)
+    assert expected["pred.int"] is None
+    assert actual["pred.int"] is None

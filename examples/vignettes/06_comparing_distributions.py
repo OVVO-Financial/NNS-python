@@ -54,14 +54,16 @@ def anova_figure(
         [control_stat, treatment_stat, grand],
         color=["steelblue", "darkorange", "gray"],
     )
-    lower = result.get("Lower Bound Robust Certainty")
-    upper = result.get("Upper Bound Robust Certainty")
+    lower = result.get("Lower 95% CI")
+    upper = result.get("Upper 95% CI")
     robust = result.get("Robust Certainty Estimate")
     label = f"Certainty = {float(np.asarray(result['Certainty'], dtype=float)):.4f}"
     if robust is not None:
         robust_value = float(np.asarray(robust, dtype=float))
-        bounds = (float(np.asarray(lower, dtype=float)), float(np.asarray(upper, dtype=float)))
-        label += f"\nrobust = {robust_value:.4f} [{bounds[0]:.4f}, {bounds[1]:.4f}]"
+        label += f"\nrobust = {robust_value:.4f}"
+        if lower is not None and upper is not None:
+            bounds = (float(np.asarray(lower, dtype=float)), float(np.asarray(upper, dtype=float)))
+            label += f" [{bounds[0]:.4f}, {bounds[1]:.4f}]"
     axes[0].set_title(label)
     axes[0].set_ylabel("group statistic")
 

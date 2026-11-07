@@ -1,15 +1,44 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "82a92eb45c1a1892acce82e66175cf2e29434b65",
-  "r_version": "13.3",
+  "r_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
+  "r_version": "14.0",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
-  "core_commit": "cfc25a3469df6460f9224fb976fcb58de9d58068",
+  "core_commit": "a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d",
   "python_repo": "OVVO-Financial/NNS-python",
   "python_commit": null,
   "vendored_core_path": "extern/NNS-core",
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache",
-  "notes": "NNS-python consumes accepted NNS-core snapshots for native code and verifies public Python behavior against live or cached R NNS. r_commit/r_version record the 13.2 Beta commit carrying the reconciled NNS.boost (LPM.VaR probability threshold, replicated multivariate final stack) that generated the committed parity cache. The vendored native snapshot (tools/NNS, r_src_tree_hash, tarball) and NNS-core commit are left at their prior values; re-syncing the native snapshot is a separate NNS-core snapshot update."
+  "notes": "Behavioral oracle: the exact R14 archive and commit recorded above. The cumulative Python implementation through PR #189 is preserved under draft #192. Native R14 overlays are explicit and hashed separately; extern/NNS-core remains byte-for-byte at the recorded accepted vendor revision. The vendored tools/NNS snapshot, r_src_tree_hash, and tools/NNS_13.0.tar.gz retain their historical lineage and do not identify the live R14 behavioral oracle. Local verification results are recorded in docs/R14_LOCAL_PARITY_REPAIR.md; remote CI/release approval is separate.",
+  "r_source_archive": {
+    "filename": "NNS_14.0.tar.gz",
+    "sha256": "5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b",
+    "repository_commit": "7b07a837c130ba7220dbe16c584221508757d5ae"
+  },
+  "r14_native_overlays": [
+    {
+      "path": "src/nns/_r14_central_tendencies.cpp",
+      "sha256": "ffff52840a38e58e9654ebd47877fc5cc6b2d790df6beb89a1f5edf2692d03de",
+      "r_source_path": "src/central_tendencies.cpp",
+      "r_source_sha256": "f50530afc3f94e8c7faef14f59bd44bacf64e7a21bd5c2e8b9421404a82bd61d",
+      "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
+      "adaptation": "R14 gravity/mode port with std::vector marshalling. CMake replaces only the old central-tendency translation unit; vendor rescale behavior is retained."
+    },
+    {
+      "path": "src/nns/_r14_dependence.hpp",
+      "sha256": "782ffb312545d722a86ff32994a17c600fba65ba70bc9c7ecf647f37e291e47b",
+      "r_source_path": "src/NNS_dep.cpp",
+      "r_source_sha256": "2e577f57165fd38d779dcde369eabf4800135eb50e07079069c11be2fedaa115",
+      "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
+      "adaptation": "R14 multilevel/null-corrected dependence with vector marshalling, erfc normal probabilities, and long-double binomial hypergeometric initialization. Bound explicitly instead of the untouched vendor dependence estimator."
+    }
+  ],
+  "r_cache_summary": {
+    "nns_version": "14.0",
+    "shards": 80,
+    "entries": 2764,
+    "generation": "Pinned live R 14.0 only; no Python-authored expected values."
+  }
 }

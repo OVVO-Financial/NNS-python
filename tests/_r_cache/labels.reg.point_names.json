@@ -1,0 +1,13 @@
+{
+  "entries": {
+    "ba32316083e025dffa0b7943a36172965253a5bb21255a3b8532eae63e6ddbc3": [
+      28.306306341673,
+      23.1592939879044,
+      22.5004137772289,
+      22.6954078174781
+    ]
+  },
+  "label": "labels.reg.point_names",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

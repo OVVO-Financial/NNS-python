@@ -52,12 +52,20 @@ jobs:
             ".github/workflows/inspect-r-api-update.yml"
             ".github/workflows/docs.yml"
             ".github/workflows/release.yml"
+            ".github/workflows/sync-from-nns-core.yml"
           )
 
           mkdir -p .github/workflows
 
           for path in "${protected_workflows[@]}"; do
-            git show "origin/${BASE_REF}:${path}" > "${path}"
+            # A protected workflow that the default branch does not have yet
+            # (for example a newly added receiver) is removed like any other
+            # unapproved workflow change.
+            if git cat-file -e "origin/${BASE_REF}:${path}" 2>/dev/null; then
+              git show "origin/${BASE_REF}:${path}" > "${path}"
+            else
+              rm -f "${path}"
+            fi
           done
 
           while IFS= read -r -d '' path; do
@@ -66,7 +74,8 @@ jobs:
               ".github/workflows/native-backend-ci.yml"|\
               ".github/workflows/inspect-r-api-update.yml"|\
               ".github/workflows/docs.yml"|\
-              ".github/workflows/release.yml")
+              ".github/workflows/release.yml"|\
+              ".github/workflows/sync-from-nns-core.yml")
                 ;;
               *)
                 echo "Removing non-baseline workflow: ${path}"

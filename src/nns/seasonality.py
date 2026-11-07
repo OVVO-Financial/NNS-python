@@ -29,6 +29,7 @@ SeasonalityResult = TypedDict(
 _CacheKey = tuple[bytes, tuple[int, ...], bool]
 _CACHE_MAX_SIZE = 32
 _CACHE: OrderedDict[_CacheKey, SeasonalityResult] = OrderedDict()
+_SD_TOL = math.sqrt(np.finfo(np.float64).eps)
 
 
 def nns_seas(
@@ -36,9 +37,25 @@ def nns_seas(
     modulo: int | list[int] | NDArray[np.int64] | None = None,
     mod_only: bool = True,
     plot: bool = False,
+    *,
+    detrend: bool = True,
+    max_period: int | None = None,
+    dispersion: str = "auto",
 ) -> SeasonalityResult:
-    """Seasonality test matching R's NNS.seas; ``plot=True`` renders the figure."""
-    result = _nns_seas_compute(variable, modulo=modulo, mod_only=mod_only)
+    """R 14.0 Gini-dispersion seasonal candidates and fundamental period.
+
+    The R14 estimator changed its statistics (Gini rather than SD), trend
+    adjustment and scan cap; it must not reuse the earlier R13 cached statistic.
+    """
+    from nns._seas_r14 import r14_seasonality
+
+    result = cast(
+        SeasonalityResult,
+        r14_seasonality(
+            variable, modulo, mod_only,
+            detrend=detrend, max_period=max_period, dispersion=dispersion,
+        ),
+    )
     if plot:
         from nns.plotting.seasonality import plot_nns_seas
 
@@ -69,53 +86,22 @@ def _nns_seas_compute(
         _cache_put(cache_key, result)
         return _clone_result(result)
 
-    mean_var = _mean_exact(values)
-    use_cv = mean_var != 0.0
-    exact_cv = abs(mean_var) <= 1e-12
-    var_cov = (
-        abs(_sample_sd_from_mean(values, mean_var, exact=True) / mean_var)
-        if use_cv
-        else abs(_acf1(values)) ** -1.0
-    )
-    if not np.isfinite(var_cov):
-        var_cov = math.inf
+    mean_var = _seq_mean(values)
+    # Compare raw values: a repeated 0.1 need not centre to exactly 0.
+    sd_var = 0.0 if bool(np.all(values == values[0])) else _seq_sd(values, mean_var)
+    # CV is meaningless for a mean that is zero up to rounding; compare sds instead.
+    use_cv = abs(mean_var) > _SD_TOL * sd_var
+    var_cov = abs(sd_var / mean_var) if use_cv else sd_var
 
-    periods: list[int] = []
-    covs: list[float] = []
-    half_n = n // 2
-    variable_1 = values[:-1]
-    variable_2 = variable_1[:-1]
-    if use_cv:
-        for period in range(1, half_n + 1):
-            component = values[::-period]
-            t0 = _cv_stat(component, var_cov, exact_cv)
-            if t0 > var_cov:
-                continue
-            component = variable_1[::-period]
-            t1 = _cv_stat(component, var_cov, exact_cv)
-            if t1 > var_cov:
-                continue
-            component = variable_2[::-period]
-            t2 = _cv_stat(component, var_cov, exact_cv)
-            if t2 <= var_cov:
-                periods.append(period)
-                covs.append((t0 + t1 + t2) / 3.0)
-    else:
-        for period in range(1, half_n + 1):
-            t0 = _cv_or_fallback(_reverse_step(values, period), use_cv, var_cov, exact_cv)
-            if t0 > var_cov:
-                continue
-            t1 = _cv_or_fallback(_reverse_step(variable_1, period), use_cv, var_cov, exact_cv)
-            if t1 > var_cov:
-                continue
-            t2 = _cv_or_fallback(_reverse_step(variable_2, period), use_cv, var_cov, exact_cv)
-            if t2 <= var_cov:
-                periods.append(period)
-                covs.append((t0 + t1 + t2) / 3.0)
+    candidates = np.arange(1, n // 2 + 1, dtype=np.int64)
+    scores = np.array([_component_score(values, int(m), use_cv) for m in candidates])
+    passing = scores < var_cov
+    periods = candidates[passing]
+    covs = scores[passing]
 
-    if periods:
-        period_arr = np.asarray(periods, dtype=np.int64)
-        coef_arr = np.asarray(covs, dtype=np.float64)
+    if periods.size:
+        period_arr = periods
+        coef_arr = covs
         var_arr = np.full(period_arr.size, var_cov, dtype=np.float64)
         period_arr, coef_arr, var_arr = _sort_periods(period_arr, coef_arr, var_arr)
     else:
@@ -157,100 +143,50 @@ def _validate_variable(variable: NDArray[np.float64]) -> NDArray[np.float64]:
     return values
 
 
-def _sample_sd(values: NDArray[np.float64]) -> float:
-    if values.size < 2:
-        return math.nan
-    mean = _mean(values)
-    return _sample_sd_from_mean(values, mean)
+def _seq_mean(values: NDArray[np.float64]) -> float:
+    # R NNS_seas.cpp::vec_mean accumulates left to right; np.cumsum is sequential
+    # too (np.sum would use pairwise summation and round differently).
+    return float(np.cumsum(values)[-1]) / float(values.size)
 
 
-def _acf1(values: NDArray[np.float64]) -> float:
+def _seq_sd(values: NDArray[np.float64], mean: float) -> float:
+    delta = values - mean
+    return math.sqrt(float(np.cumsum(delta * delta)[-1]) / float(values.size - 1))
+
+
+def _component_score(values: NDArray[np.float64], m: int, use_cv: bool) -> float:
+    """Length-weighted mean CV (or sd) of the m component series ``values[j::m]``.
+
+    As R's NNS_seas_cpp: a constant component (equal raw values) scores 0 and a near-zero component
+    mean caps its CV at ``1 / _SD_TOL``. Column j of the padded matrix is component
+    j; adding the rows one at a time keeps each column's sums in the C++ order, so
+    the scores are bit-identical to R's. Only the last row has padding.
+    """
     n = values.size
-    if n < 2:
-        return math.nan
-    mean = _mean(values)
-    numerator = 0.0
-    denom = 0.0
-    for index in range(1, n):
-        numerator += (float(values[index]) - mean) * (float(values[index - 1]) - mean)
-    for value in values:
-        delta = float(value) - mean
-        denom += delta * delta
-    if denom == 0.0:
-        return math.nan
-    return numerator / denom
-
-
-def _cv_or_fallback(
-    values: NDArray[np.float64],
-    use_cv: bool,
-    var_cov: float,
-    exact_cv: bool,
-) -> float:
-    if values.size < 2:
-        return var_cov
+    width = -(-n // m)
+    padded = np.zeros(m * width, dtype=np.float64)
+    padded[:n] = values
+    block = padded.reshape(width, m)
+    lengths = ((n - 1 - np.arange(m)) // m + 1).astype(np.float64)
+    total = np.zeros(m, dtype=np.float64)
+    for row in block:
+        total += row
+    mean = total / lengths
+    sum_sq = np.zeros(m, dtype=np.float64)
+    same = np.ones(m, dtype=bool)
+    for row in block[:-1]:
+        sum_sq += (row - mean) ** 2
+        same &= row == block[0]
+    tail = lengths == width
+    sum_sq[tail] += (block[-1, tail] - mean[tail]) ** 2
+    same[tail] &= block[-1, tail] == block[0, tail]
+    sd = np.where(same, 0.0, np.sqrt(sum_sq / (lengths - 1.0)))
     if use_cv:
-        mean = _mean_exact(values) if exact_cv else _mean(values)
-        sd = _sample_sd_from_mean(values, mean, exact=exact_cv)
-        stat = abs(sd / mean) if mean != 0.0 else math.inf
-        if (
-            not exact_cv
-            and np.isfinite(stat)
-            and abs(stat - var_cov) <= 1e-12 * max(1.0, abs(var_cov))
-        ):
-            mean = _mean_exact(values)
-            sd = _sample_sd_from_mean(values, mean, exact=True)
-            stat = abs(sd / mean) if mean != 0.0 else math.inf
+        with np.errstate(invalid="ignore", divide="ignore"):
+            score = np.where(sd == 0.0, 0.0, sd / np.maximum(np.abs(mean), _SD_TOL * sd))
     else:
-        acf = _acf1(values)
-        stat = abs(acf) ** -1.0
-    if not np.isfinite(stat):
-        return var_cov
-    return float(stat)
-
-
-def _cv_stat(values: NDArray[np.float64], var_cov: float, exact_cv: bool) -> float:
-    if values.size < 2:
-        return var_cov
-    mean = _mean_exact(values) if exact_cv else _mean(values)
-    sd = _sample_sd_from_mean(values, mean, exact=exact_cv)
-    stat = abs(sd / mean) if mean != 0.0 else math.inf
-    if not exact_cv and np.isfinite(stat) and abs(stat - var_cov) <= 1e-12 * max(1.0, abs(var_cov)):
-        mean = _mean_exact(values)
-        sd = _sample_sd_from_mean(values, mean, exact=True)
-        stat = abs(sd / mean) if mean != 0.0 else math.inf
-    if not np.isfinite(stat):
-        return var_cov
-    return float(stat)
-
-
-def _mean(values: NDArray[np.float64]) -> float:
-    # Match R NNS_seas_cpp::vec_mean exactly: sequential accumulation.
-    total = 0.0
-    for value in values:
-        total += float(value)
-    return total / float(values.size)
-
-
-def _mean_exact(values: NDArray[np.float64]) -> float:
-    total = 0.0
-    for value in values:
-        total += float(value)
-    return total / float(values.size)
-
-
-def _sample_sd_from_mean(values: NDArray[np.float64], mean: float, *, exact: bool = False) -> float:
-    del exact
-    # Match R NNS_seas_cpp::vec_sd exactly: sequential squared deviations.
-    ss = 0.0
-    for value in values:
-        delta = float(value) - mean
-        ss += delta * delta
-    return math.sqrt(ss / float(values.size - 1))
-
-
-def _reverse_step(values: NDArray[np.float64], step: int) -> NDArray[np.float64]:
-    return values[::-step]
+        score = sd
+    return float(np.cumsum(lengths * score)[-1]) / float(n)
 
 
 def _sort_periods(
@@ -258,7 +194,10 @@ def _sort_periods(
     coef: NDArray[np.float64],
     var_cov: NDArray[np.float64],
 ) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.float64]]:
-    order = np.lexsort((periods, coef))
+    # R sorts on the CV alone (std::sort, an insertion sort for <= 16 elements, so
+    # ties keep their insertion order). A stable sort reproduces that order exactly
+    # for small tables and stays deterministic for larger ones.
+    order = np.argsort(coef, kind="stable")
     return periods[order], coef[order], var_cov[order]
 
 
@@ -331,7 +270,9 @@ def _strict_cap(
     n: int,
     var_cov: float,
 ) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.float64]]:
-    keep = periods < (n / 2.0)
+    # R NNS_seas.cpp compares against the C++ integer division n/2, so for odd n the
+    # period floor(n/2) (two points per subsample) is excluded as well.
+    keep = periods < (n // 2)
     if np.any(keep):
         return _sort_periods(periods[keep], coef[keep], var_arr[keep])
     return (

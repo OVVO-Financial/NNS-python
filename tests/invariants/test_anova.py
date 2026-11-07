@@ -6,14 +6,18 @@ import pytest
 from nns import nns_anova
 
 
-def test_nns_anova_identical_degenerate_groups_match_r_nan_convention() -> None:
+def test_nns_anova_identical_degenerate_groups_match_r_convention() -> None:
     x = np.linspace(-2.0, 2.0, 100)
     constant = np.ones_like(x)
 
     result = nns_anova(constant, constant, confidence_interval=None)
 
+    # R 14.0 Binary_ANOVA.R: identical constants attain rho = 1, then
+    # apply ((n_control + n_treatment - 2) / total_n)**2.  For two
+    # 100-observation groups this is exactly 0.9801, not the old 0.
     assert isinstance(result, dict)
-    assert np.isnan(result["Certainty"])
+    assert result["Control_CDF"] == result["Treatment_CDF"] == 1.0
+    assert result["Certainty"] == pytest.approx(((200 - 2) / 200) ** 2)
     assert result["Control"] == result["Treatment"]
 
 
@@ -53,7 +57,9 @@ def test_nns_anova_robust_degenerate_inputs_do_not_crash() -> None:
 
     assert isinstance(result, dict)
     assert "Robust Certainty Estimate" in result
-    assert np.isnan(result["Robust Certainty Estimate"])
+    # Every bootstrap draw contains the same constant, so the robust
+    # estimate is the R14 population-adjusted rho of two 20-row groups.
+    assert result["Robust Certainty Estimate"] == pytest.approx(((40 - 2) / 40) ** 2)
 
 
 @pytest.mark.stochastic
@@ -67,3 +73,16 @@ def test_nns_anova_robust_reproducible_with_seed() -> None:
     assert isinstance(first, dict)
     assert isinstance(second, dict)
     assert first == second
+
+
+def test_nns_anova_drops_nan_but_rejects_infinite_values() -> None:
+    x = np.linspace(-2.0, 2.0, 40)
+    y = x + 0.25
+    reference = nns_anova(x, y, confidence_interval=None)
+
+    assert nns_anova(np.r_[x, np.nan], y, confidence_interval=None) == reference
+    for bad in (np.inf, -np.inf):
+        with pytest.raises(ValueError, match="infinite"):
+            nns_anova(np.r_[x, bad], y, confidence_interval=None)
+        with pytest.raises(ValueError, match="infinite"):
+            nns_anova([x, np.r_[y, bad]], confidence_interval=None)

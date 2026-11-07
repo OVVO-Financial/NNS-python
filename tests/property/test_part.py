@@ -28,7 +28,8 @@ finite_arrays = arrays(
     finite_arrays,
     st.sampled_from([None, "XONLY"]),
     st.sampled_from(["off", "mean", "median", "mode"]),
-    st.integers(min_value=0, max_value=5),
+    # order = 0 is rejected, as in R ("[order] must be ... a positive integer").
+    st.integers(min_value=1, max_value=5),
     st.integers(min_value=0, max_value=16),
     st.booleans(),
 )

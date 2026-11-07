@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
@@ -7,6 +8,8 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._native import native_fn
+from nns.core import lpm_ratio
 from nns.dependence import co_lpm_nd
 from nns.regression import RegResult, nns_reg
 
@@ -27,9 +30,19 @@ def nns_cdf(
     if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
         raise ValueError("invalid type")
 
+    if names is None:
+        columns = getattr(variable, "columns", None)
+        if columns is not None:
+            names = [str(column) for column in columns]
     values = np.asarray(variable, dtype=np.float64)
     if values.ndim == 0:
         values = values.reshape(1)
+    # As R's NNS.CDF: drop missing observations (complete rows for a matrix) so the
+    # evaluation grid and the denominator agree; infinite values are rejected below.
+    if values.ndim == 1:
+        values = values[~np.isnan(values)]
+    elif values.ndim == 2:
+        values = values[~np.isnan(values).any(axis=1)]
     if values.ndim == 1 or (values.ndim == 2 and values.shape[1] == 1):
         result = _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
         if plot:
@@ -60,14 +73,12 @@ def _univariate_cdf(
     type_value: str,
 ) -> dict[str, object]:
     if values.size == 0:
-        raise ValueError("variable must be non-empty.")
+        raise ValueError("variable must contain at least one non-missing value.")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("variable must contain only finite values.")
     target_value = _univariate_target(target, values)
-    x = np.sort(values[~np.isnan(values)])
-    pval = (
-        _finite_sorted_grid_lpm_ratio(degree, x)
-        if np.all(np.isfinite(values))
-        else _r_lpm_ratio(degree, x, values)
-    )
+    x = np.sort(values)
+    pval = _r_lpm_ratio(degree, x, values)
     column_name = {
         "cdf": "CDF",
         "survival": "S(x)",
@@ -102,24 +113,16 @@ def _univariate_cdf(
         pv = np.array([], dtype=np.float64)
     else:
         pv = _r_lpm_ratio(degree, np.array([target_value], dtype=np.float64), values)
+        # The same transformation of the survival at target as the curve uses at each x.
         if type_value == "survival":
             pv = 1.0 - pv
         elif type_value == "hazard":
             if fit is None:
                 raise RuntimeError("hazard fit was not computed.")
             point = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1)
-            nearest = int(np.argmin(np.abs(x - target_value)))
-            pv = point / np.maximum(1.0 - pval[nearest], 1e-10)
+            pv = np.minimum(np.maximum(point / np.maximum(1.0 - pv, 1e-10), 0.0), 1e6)
         elif type_value == "cumulative hazard":
-            point_fit = nns_reg(
-                x,
-                y,
-                order=None,
-                n_best=1,
-                point_est=float(target_value),
-                plot=False,
-            )
-            pv = np.asarray(point_fit["Point.est"], dtype=np.float64).reshape(-1)
+            pv = np.maximum(-np.log(np.maximum(1.0 - pv, 1e-10)), 0.0)
 
     return {"Function": {"x": x, column_name: y}, "target.value": np.asarray(pv, dtype=np.float64)}
 
@@ -132,52 +135,65 @@ def _multivariate_cdf(
     names: Sequence[str] | None,
 ) -> dict[str, object]:
     if values.shape[0] == 0 or values.shape[1] == 0:
-        raise ValueError("variable must have at least one row and one column.")
+        raise ValueError("variable must have at least one complete row and one column.")
     if not np.all(np.isfinite(values)):
         raise ValueError("variable must contain only finite values.")
+    # R14 explicitly rejects the joint hazard without a defined multivariate
+    # density or coordinate-hazard construction. At positive degree, its
+    # normalized co-partial moments are not a joint CDF and cannot be used
+    # for a cumulative-hazard interpretation either.
+    if type_value == "hazard":
+        raise ValueError(
+            "Multivariate type = 'hazard' is not implemented: a joint density "
+            "or coordinate-hazard definition is required."
+        )
+    if degree > 0.0 and type_value == "cumulative hazard":
+        raise ValueError(
+            "type = 'cumulative hazard' needs degree = 0 for multivariate variable"
+        )
     target_values = _multivariate_target(target, values)
     column_names = _matrix_names(values.shape[1], names)
 
     cdf = _co_lpm_nd_rows(values, degree)
+    survival = np.array([], dtype=np.float64)
+    if type_value != "cdf":
+        survival = _joint_survival(values, values, cdf, degree)
+    fit: RegResult | MRegResult | None = None
     if type_value == "survival":
-        marginal_probs = _marginal_lpm_ratios(values, degree)
-        cdf = np.maximum(0.0, np.minimum(1.0, 1.0 - np.sum(marginal_probs, axis=1) + cdf))
+        cdf = np.maximum(0.0, np.minimum(1.0, survival))
     elif type_value == "hazard":
-        fit = nns_reg(values, np.maximum(cdf, 1e-10), order="max", plot=False)
+        fit = nns_reg(
+            values, np.maximum(cdf, 1e-10), order="max", plot=False, point_est=target_values
+        )
         fitted = cast(dict[str, NDArray[np.float64]], fit["Fitted.xy"])
-        marginal_probs = _marginal_lpm_ratios(values, degree)
-        denominator = np.maximum(1.0 - np.sum(marginal_probs, axis=1) + cdf, 1e-10)
-        cdf = np.maximum(fitted["y.hat"] / denominator, 0.0)
+        cdf = np.maximum(fitted["y.hat"] / np.maximum(survival, 1e-10), 0.0)
     elif type_value == "cumulative hazard":
-        marginal_probs = _marginal_lpm_ratios(values, degree)
-        survival = np.maximum(1.0 - np.sum(marginal_probs, axis=1) + cdf, 1e-10)
-        cdf = np.maximum(-np.log(survival), 0.0)
+        cdf = np.maximum(-np.log(np.maximum(survival, 1e-10)), 0.0)
 
+    # The target value is the same function as the rows, evaluated at target.
     pv = np.array([], dtype=np.float64)
     if target_values is not None:
         target_cdf = float(co_lpm_nd(values, target_values, degree=degree))
+        target_survival = 0.0
+        if type_value != "cdf":
+            target_survival = float(
+                _joint_survival(
+                    values, target_values.reshape(1, -1), np.array([target_cdf]), degree
+                )[0]
+            )
         if type_value == "cdf":
             pv = np.array([target_cdf], dtype=np.float64)
         elif type_value == "survival":
-            marg_target = np.array(
-                [
-                    _r_lpm_ratio(
-                        degree,
-                        np.array([target_values[col]], dtype=np.float64),
-                        values[:, col],
-                    )[0]
-                    for col in range(values.shape[1])
-                ],
-                dtype=np.float64,
-            )
-            target_survival = max(0.0, min(1.0, 1.0 - float(np.sum(marg_target)) + target_cdf))
-            pv = np.array([target_survival], dtype=np.float64)
+            pv = np.array([max(0.0, min(1.0, target_survival))], dtype=np.float64)
         elif type_value == "hazard":
-            point_fit = nns_reg(values, cdf, order="max", plot=False, point_est=target_values)
-            point = np.asarray(point_fit["Point.est"], dtype=np.float64).reshape(-1)
-            pv = point / np.maximum(1.0 - target_cdf, 1e-10)
+            if fit is None:
+                raise RuntimeError("hazard fit was not computed.")
+            point = float(np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1)[0])
+            pv = np.array([max(point / max(target_survival, 1e-10), 0.0)], dtype=np.float64)
         elif type_value == "cumulative hazard":
-            pv = np.array([max(-math.log(max(1.0 - target_cdf, 1e-10)), 0.0)], dtype=np.float64)
+            pv = np.array(
+                [max(-math.log(max(target_survival, 1e-10)), 0.0)], dtype=np.float64
+            )
 
     function = {column_names[col]: values[:, col].copy() for col in range(values.shape[1])}
     function["CDF"] = cdf
@@ -194,8 +210,8 @@ def _univariate_target(
     if target_array.ndim != 0 and target_array.size != 1:
         raise ValueError("target must be scalar for univariate NNS.CDF.")
     target_value = float(target_array.reshape(-1)[0])
-    if np.isnan(values).any():
-        raise ValueError("missing value where TRUE/FALSE needed")
+    if not np.isfinite(target_value):
+        raise ValueError("target must be finite.")
     if target_value < float(np.min(values)) or target_value > float(np.max(values)):
         raise ValueError("target out of bounds")
     return target_value
@@ -208,19 +224,12 @@ def _multivariate_target(
     if target is None:
         return None
     target_values = np.asarray(target, dtype=np.float64).reshape(-1)
-    if target_values.size < 2:
-        raise ValueError("target must contain at least two coordinates for multivariate NNS.CDF.")
-    if (
-        target_values[0] < float(np.min(values[:, 0]))
-        or target_values[0] > float(np.max(values[:, 0]))
-        or target_values[1] < float(np.min(values[:, 1]))
-        or target_values[1] > float(np.max(values[:, 1]))
-    ):
-        raise ValueError("target out of bounds")
     if target_values.size != values.shape[1]:
-        raise ValueError("target length must match number of columns in variable.")
+        raise ValueError("target must have one value per column of variable")
     if not np.all(np.isfinite(target_values)):
         raise ValueError("target must be finite.")
+    if np.any((target_values < np.min(values, axis=0)) | (target_values > np.max(values, axis=0))):
+        raise ValueError("target out of bounds")
     return target_values
 
 
@@ -231,7 +240,30 @@ def _matrix_names(column_count: int, names: Sequence[str] | None) -> list[str]:
     column_names = [str(name) for name in names]
     if len(column_names) != column_count:
         raise ValueError("names length must match the number of columns in variable.")
-    return column_names
+    # R keeps duplicate data.frame names; a dict cannot, so suffix them like make.unique.
+    return _make_unique(["CDF", *column_names])[1:]
+
+
+def _make_unique(names: list[str]) -> list[str]:
+    """R's ``make.unique``: later duplicates get the first free ``.1``, ``.2``, ... suffix."""
+    taken = set(names)
+    seen: set[str] = set()
+    counters: dict[str, int] = {}
+    out: list[str] = []
+    for name in names:
+        if name in seen:
+            suffix = counters.get(name, 0)
+            while True:
+                suffix += 1
+                candidate = f"{name}.{suffix}"
+                if candidate not in taken:
+                    break
+            counters[name] = suffix
+            taken.add(candidate)
+            name = candidate
+        seen.add(name)
+        out.append(name)
+    return out
 
 
 def _r_lpm_ratio(
@@ -239,121 +271,105 @@ def _r_lpm_ratio(
     targets: NDArray[np.float64],
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
+    """R's ``LPM.ratio(degree, targets, values)`` on finite ``values``."""
     target_values = np.asarray(targets, dtype=np.float64).reshape(-1)
-    variable_values = np.asarray(values, dtype=np.float64).reshape(-1)
-    if variable_values.size == 0:
-        raise ValueError("variable must be non-empty.")
-    lower = _r_partial_moments(degree, target_values, variable_values, lower=True)
-    if degree <= 0.0:
-        return lower
-    upper = _r_partial_moments(degree, target_values, variable_values, lower=False)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        ratio = lower / (lower + upper)
-    return np.asarray(ratio, dtype=np.float64)
-
-
-def _finite_sorted_grid_lpm_ratio(
-    degree: float,
-    sorted_values: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    if degree == 0.0:
-        counts = np.searchsorted(sorted_values, sorted_values, side="right")
-        return np.asarray(counts / float(sorted_values.size), dtype=np.float64)
-
-    if degree != int(degree) or int(degree) not in {1, 2, 3}:
-        return _r_lpm_ratio(degree, sorted_values, sorted_values)
-
-    d = int(degree)
-    n = sorted_values.size
-    right_counts = np.searchsorted(sorted_values, sorted_values, side="right")
-    powers = [np.ones(n, dtype=np.float64)]
-    for power in range(1, d + 1):
-        powers.append(sorted_values**power)
-    prefix = [np.concatenate(([0.0], np.cumsum(power_values))) for power_values in powers]
-    totals = [float(power_prefix[-1]) for power_prefix in prefix]
-
-    lower = np.zeros(n, dtype=np.float64)
-    upper = np.zeros(n, dtype=np.float64)
-    for power in range(d + 1):
-        coefficient = float(math.comb(d, power))
-        lower += (
-            coefficient
-            * (sorted_values ** (d - power))
-            * ((-1.0) ** power)
-            * prefix[power][right_counts]
-        )
-        suffix_sum = totals[power] - prefix[power][right_counts]
-        upper += coefficient * ((-sorted_values) ** (d - power)) * suffix_sum
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.asarray(lower / (lower + upper), dtype=np.float64)
-
-
-def _r_partial_moments(
-    degree: float,
-    targets: NDArray[np.float64],
-    values: NDArray[np.float64],
-    *,
-    lower: bool,
-) -> NDArray[np.float64]:
-    target_matrix = targets[:, np.newaxis]
-    value_matrix = values[np.newaxis, :]
-    with np.errstate(invalid="ignore"):
-        diff = target_matrix - value_matrix if lower else value_matrix - target_matrix
-        mask = diff >= 0.0 if lower else diff > 0.0
-
-    integer_degree = degree == int(degree)
-    if integer_degree and degree == 0.0:
-        moment_terms = mask.astype(np.float64)
-    else:
-        safe_diff = np.where(mask, diff, 0.0)
-        if integer_degree and degree == 1.0:
-            moment_terms = safe_diff
-        elif integer_degree:
-            moment_terms = safe_diff ** int(degree)
-        else:
-            with np.errstate(invalid="ignore"):
-                moment_terms = safe_diff**degree
-    return np.asarray(np.mean(moment_terms, axis=1), dtype=np.float64)
+    if target_values.size == 0:
+        return np.array([], dtype=np.float64)
+    return np.asarray(lpm_ratio(degree, target_values, values), dtype=np.float64)
 
 
 def _co_lpm_nd_rows(values: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
-    diff = values[np.newaxis, :, :] - values[:, np.newaxis, :]
-    if degree == 0.0:
-        return np.asarray(np.mean(np.all(diff <= 0.0, axis=2), axis=1), dtype=np.float64)
+    """R's ``Co.LPM_nD(values, values, degree, norm = TRUE)`` evaluated at every row."""
+    return _co_lpm_nd_batch(values, values, degree)
 
-    lower_mask = np.all(diff <= 0.0, axis=2)
-    lower_values = np.prod(np.where(lower_mask[:, :, np.newaxis], (-diff) ** degree, 0.0), axis=2)
-    clpm = np.mean(np.where(lower_mask, lower_values, 0.0), axis=1)
 
-    upper_mask = np.all(diff >= 0.0, axis=2)
-    upper_values = np.prod(np.where(upper_mask[:, :, np.newaxis], diff**degree, 0.0), axis=2)
-    cupm = np.mean(np.where(upper_mask, upper_values, 0.0), axis=1)
+def _co_lpm_nd_batch(
+    values: NDArray[np.float64], points: NDArray[np.float64], degree: float
+) -> NDArray[np.float64]:
+    """R's ``Co.LPM_nD.batch(values, points, degree, norm = TRUE)``: one value per point row."""
+    n, d = values.shape
+    m = points.shape[0]
+    native = native_fn("clpm_nd_batch")
+    if native is not None:
+        flat = np.ascontiguousarray(values.ravel(order="F"))
+        flat_points = np.ascontiguousarray(points.ravel(order="F"))
+        return np.asarray(
+            native(flat, n, d, flat_points, m, float(degree), True), dtype=np.float64
+        )
+    out = np.empty(m, dtype=np.float64)
+    # Pure-NumPy fallback, chunked so memory stays O(chunk * n * d).
+    chunk = max(1, 2_000_000 // max(1, n * d))
+    for start in range(0, m, chunk):
+        rows = points[start : start + chunk]
+        diff = values[np.newaxis, :, :] - rows[:, np.newaxis, :]
+        lower_mask = np.all(diff <= 0.0, axis=2)
+        if degree == 0.0:
+            out[start : start + chunk] = np.mean(lower_mask, axis=1)
+            continue
+        upper_mask = np.all(diff >= 0.0, axis=2)
+        abs_pow = np.prod(np.abs(diff) ** degree, axis=2)
+        clpm = np.mean(np.where(lower_mask, abs_pow, 0.0), axis=1)
+        cupm = np.mean(np.where(upper_mask, abs_pow, 0.0), axis=1)
+        dpm = np.mean(np.where(~(lower_mask | upper_mask), abs_pow, 0.0), axis=1)
+        total = clpm + cupm + dpm
+        out[start : start + chunk] = np.divide(
+            clpm, total, out=np.zeros_like(clpm), where=total > 0.0
+        )
+    return out
 
-    discordant = ~(lower_mask | upper_mask)
-    dpm_values = np.prod(np.abs(diff) ** degree, axis=2)
-    dpm = np.mean(np.where(discordant, dpm_values, 0.0), axis=1)
-    total = clpm + cupm + dpm
-    ratios = np.divide(clpm, total, out=np.zeros_like(clpm), where=total > 0.0)
-    return np.asarray(ratios, dtype=np.float64)
+
+def _joint_survival(
+    values: NDArray[np.float64],
+    points: NDArray[np.float64],
+    joint_cdf: NDArray[np.float64],
+    degree: float,
+) -> NDArray[np.float64]:
+    """Joint survival ``P(X_1 > t_1, ..., X_d > t_d)`` at each row of ``points``.
+
+    For d <= 3, inclusion-exclusion over the subsets A of the coordinates,
+    ``S = sum_A (-1)^|A| F_A(t_A)`` with ``F_A`` the joint CDF of the coordinates in A
+    (``F_{}`` = 1, the full set is ``joint_cdf``); for d = 2 this is
+    ``1 - F_1 - F_2 + F_12``. For d > 3 the share of rows above ``t`` in every
+    column, counted directly.  At degree > 0 the subset terms have different
+    normalisers, so the survival is the normalised joint UPM ``Co.UPM_nD(X, t)``,
+    computed as ``Co.LPM_nD(-X, -t)``.  Mirrors R NNS.CDF's ``joint.survival``.
+    """
+    if degree > 0:
+        return _co_lpm_nd_batch(-values, -points, degree)
+    d = values.shape[1]
+    if d > 3:
+        # Beyond 3 columns the 2^d terms are slow and cancel; count the rows above t.
+        above = np.array([np.count_nonzero(np.all(values > p, axis=1)) for p in points])
+        return np.asarray(above / values.shape[0], dtype=np.float64)
+    marginals = np.column_stack(
+        [_r_lpm_ratio(degree, points[:, col], values[:, col]) for col in range(d)]
+    )
+    survival = 1.0 - np.sum(marginals, axis=1)
+    for k in range(2, d):
+        sign = -1.0 if k % 2 else 1.0
+        for subset in itertools.combinations(range(d), k):
+            cols = list(subset)
+            survival = survival + sign * _co_lpm_nd_batch(
+                np.ascontiguousarray(values[:, cols]), np.ascontiguousarray(points[:, cols]), degree
+            )
+    return np.asarray(survival + (-1.0) ** d * joint_cdf, dtype=np.float64)
 
 
 def _hazard_proxy(x: NDArray[np.float64], pval: NDArray[np.float64]) -> NDArray[np.float64]:
     n = x.size
     if n == 0:
         return np.array([], dtype=np.float64)
-    window = min(10, n - 1)
-    half_window = window // 2
-    proxy = np.empty(n, dtype=np.float64)
-    for index in range(n):
-        lo = max(0, index - half_window)
-        hi = min(n - 1, index + half_window)
-        proxy[index] = (pval[hi] - pval[lo]) / (x[hi] - x[lo])
-    return proxy
+    if x[0] == x[-1]:
+        raise ValueError("type = 'hazard' requires at least two distinct values of variable")
+    half_window = min(10, n - 1) // 2
+    index = np.arange(n)
+    lo = np.maximum(0, index - half_window)
+    hi = np.minimum(n - 1, index + half_window)
+    # A window lying inside a run of tied values has zero width (0/0): widen it to
+    # the neighbouring distinct values (x is sorted), as R's NNS.CDF does.
+    tied = x[hi] == x[lo]
+    if np.any(tied):
+        lo = np.where(tied, np.maximum(0, np.searchsorted(x, x, side="left") - 1), lo)
+        hi = np.where(tied, np.minimum(n - 1, np.searchsorted(x, x, side="right")), hi)
+    return np.asarray((pval[hi] - pval[lo]) / (x[hi] - x[lo]), dtype=np.float64)
 
-
-def _marginal_lpm_ratios(values: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
-    out = np.empty_like(values, dtype=np.float64)
-    for col in range(values.shape[1]):
-        out[:, col] = _r_lpm_ratio(degree, values[:, col], values[:, col])
-    return out

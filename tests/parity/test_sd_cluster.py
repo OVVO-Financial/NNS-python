@@ -65,7 +65,8 @@ def test_nns_sd_cluster_min_cluster_at_or_above_columns_matches_r(min_cluster: i
 
     actual = nns_sd_cluster(data, degree=1, min_cluster=min_cluster)
 
-    assert actual == expected == {"Clusters": {}}
+    # Nothing is peeled, and the variables left form the final cluster.
+    assert actual == expected == {"Clusters": {"Cluster_1": ["X_1", "X_2", "X_3", "X_4"]}}
 
 
 @pytest.mark.parity
@@ -88,6 +89,23 @@ def test_nns_sd_cluster_random_matrix_matches_r(degree: int) -> None:
     actual = nns_sd_cluster(data, degree=degree, min_cluster=1)
 
     assert actual == expected
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("min_cluster", [0, 1, 2])
+def test_nns_sd_cluster_shifted_copies_match_r(min_cluster: int) -> None:
+    # Each peel takes one column; with min_cluster=0 the last peel empties the
+    # pool and R adds no empty trailing cluster.
+    base = np.sin(np.arange(1, 21, dtype=np.float64))
+    data = np.column_stack([base + shift for shift in (3.0, 2.0, 1.0, 0.0, -1.0)])
+    expected = _normalize_clusters(
+        nns("NNS.SD.cluster", data.tolist(), 1, "discrete", min_cluster, False)
+    )
+
+    actual = nns_sd_cluster(data, degree=1, min_cluster=min_cluster)
+
+    assert actual == expected
+    assert all(actual["Clusters"].values())
 
 
 @pytest.mark.parity
@@ -133,12 +151,13 @@ def test_nns_sd_cluster_dendrogram_matches_r_hclust_shape() -> None:
 
 @pytest.mark.parity
 def test_nns_sd_cluster_dendrogram_too_few_variables_matches_r() -> None:
-    data = _known_matrix()
-    expected = _normalize_dendrogram(nns_sd_cluster_dendrogram(data.tolist(), 1, "discrete", 4))
+    data = _known_matrix()[:, :1]
+    expected = _normalize_dendrogram(nns_sd_cluster_dendrogram(data.tolist(), 1, "discrete", 1))
 
-    actual = nns_sd_cluster(data, degree=1, min_cluster=4, dendrogram=True)
+    with pytest.warns(UserWarning, match="Not enough variables"):
+        actual = nns_sd_cluster(data, degree=1, min_cluster=1, dendrogram=True)
 
-    assert actual == expected == {"Clusters": {}, "Order": None}
+    assert actual == expected == {"Clusters": {"Cluster_1": ["X_1"]}, "Order": None}
 
 
 def _known_matrix() -> np.ndarray:
@@ -189,3 +208,15 @@ def _normalize_dendrogram(value: RValue) -> dict[str, object]:
             "dist.method": None,
         },
     }
+
+
+def test_nns_sd_cluster_uses_dataframe_column_names() -> None:
+    pd = pytest.importorskip("pandas")
+    frame = pd.DataFrame(_known_matrix(), columns=["A", "B", "C", "D"])
+
+    actual = nns_sd_cluster(frame, degree=1, min_cluster=1)
+
+    assert actual == nns_sd_cluster(_known_matrix(), degree=1, names=["A", "B", "C", "D"])
+    assert actual == {"Clusters": {"Cluster_1": ["A", "D"], "Cluster_2": ["B"], "Cluster_3": ["C"]}}
+    renamed = nns_sd_cluster(frame, degree=1, names=["w", "x", "y", "z"])
+    assert renamed["Clusters"]["Cluster_1"] == ["w", "z"]

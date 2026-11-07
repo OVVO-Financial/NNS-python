@@ -1,6 +1,6 @@
 // src/dependence.cpp
 //
-// Implementation extracted from NNS 13.0 NNS_dep.cpp. Decoupled from Rcpp.
+// Implementation extracted from NNS NNS_dep.cpp (synced to R 13.3, 82a92eb). Decoupled from Rcpp.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 #include "nns/dependence.hpp"
@@ -61,7 +61,9 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
     
     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
-    if (!((dx < 0.0 && dy < 0.0) || (dx > 0.0 && dy > 0.0)))
+    // Discordant = neither co-lower (<= target) nor co-upper (> target), so
+    // the degree-0 counts partition the cell.
+    if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
       dpm_d0_count += 1.0;
     
     if (dx >= 0.0 && dy >= 0.0) {
@@ -77,8 +79,12 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   }
   
   double inv_n = 1.0 / static_cast<double>(n);
-  double d0_Co = (d0_cupm + d0_clpm) * inv_n;
-  if (d0_Co == 1.0 || d0_Co == 0.0) return 1.0;
+  // Compare counts, not count * (1/n): 49 * (1/49) != 1. All
+  // concordant: perfect positive dependence; all discordant: negative.
+  double d0_concordant = d0_cupm + d0_clpm;
+  double d0_Co = d0_concordant * inv_n;
+  if (d0_concordant == static_cast<double>(n)) return 1.0;
+  if (d0_concordant == 0.0) return -1.0;
   
   double c1_total = c1_cupm + c1_clpm + c1_dpm;
   double co_d1 = c1_total > 0.0 ? (c1_cupm + c1_clpm) / c1_total : 0.0;
@@ -86,7 +92,10 @@ double copula_signed(const std::vector<double>& xv, const std::vector<double>& y
   double dpm_d1 = c1_total > 0.0 ? c1_dpm / c1_total : 0.0;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  // Independence null for the discordant partial moment (R 13.1): a point is
+  // concordant when all-below OR all-above the target, so under independence
+  // P(discordant) = 1 - 2 * 0.5^2 = 0.5, not 0.75.
+  constexpr double indep_D  = 0.5;
   
   double discrete_dep   = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double continuous_dep = std::min(1.0, std::max(0.0, std::abs(co_d1 - indep_Co) / indep_Co));
@@ -113,7 +122,9 @@ double copula_degree0_unsigned(const std::vector<double>& xv, const std::vector<
     double dy = yv[i] - ty;
     if (dx > 0.0 && dy > 0.0) d0_cupm += 1.0;
     if (dx <= 0.0 && dy <= 0.0) d0_clpm += 1.0;
-    if (!((dx < 0.0 && dy < 0.0) || (dx > 0.0 && dy > 0.0)))
+    // Discordant = neither co-lower (<= target) nor co-upper (> target), so
+    // the degree-0 counts partition the cell.
+    if (!((dx <= 0.0 && dy <= 0.0) || (dx > 0.0 && dy > 0.0)))
       dpm_d0_count += 1.0;
   }
   
@@ -122,7 +133,10 @@ double copula_degree0_unsigned(const std::vector<double>& xv, const std::vector<
   double dpm_d0 = dpm_d0_count * inv_n;
   
   constexpr double indep_Co = 0.5;
-  constexpr double indep_D  = 0.75;
+  // Independence null for the discordant partial moment (R 13.1): a point is
+  // concordant when all-below OR all-above the target, so under independence
+  // P(discordant) = 1 - 2 * 0.5^2 = 0.5, not 0.75.
+  constexpr double indep_D  = 0.5;
   
   double disc_dep = std::min(1.0, std::max(0.0, std::abs(d0_Co - indep_Co) / indep_Co));
   double nd_disc  = std::abs(dpm_d0 - indep_D) / indep_D;
@@ -260,7 +274,7 @@ DepMatrixResult dep_matrix(const double* X, std::size_t n, std::size_t p,
       }
       all_quads[j] = std::move(quad);
     }
-  }, nthreads);
+  }, nthreads, n * 8U);  // ~log2(n) hashing passes over n rows
   
   // Phase 2: Compute Pairwise Dependence
   std::vector<double> corr_upper(n_pairs, 0.0);
@@ -304,7 +318,7 @@ DepMatrixResult dep_matrix(const double* X, std::size_t n, std::size_t p,
         dep_lower[idx]  = dep_upper[idx];
       }
     }
-  }, nthreads);
+  }, nthreads, n * 16U);  // dep_pair: several passes over n rows
   
   // Phase 3: Construct the final Column-Major output matrices
   DepMatrixResult result;

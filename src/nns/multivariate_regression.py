@@ -1,32 +1,29 @@
 from __future__ import annotations
 
-import math
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
-from nns.central_tendencies import nns_mode
-from nns.dependence import _gravity
-from nns.distance import KValue, nns_distance, nns_distance_path_single_bulk
+from nns._native import honours_ncores
 from nns.part import NoiseReduction
-from nns.regression import Order, _normalize_type, _round_clamp_classes, nns_reg
-from nns.regression import _nns_copula_matrix as _copula_matrix
-from nns.var import upm_var
+from nns.regression import Order, _normalize_type
 
 NBest = int | Literal["all"] | None
 
 MRegFitted = dict[str, NDArray[np.float64] | NDArray[np.str_]]
-"""Fit table keyed ``V1..Vn`` per regressor plus ``y``, ``y.hat``, ``NNS.ID``,
-``residuals``, and (with ``confidence_interval``) ``conf.int.pos``/``conf.int.neg``.
-Column count depends on the input, so keys stay dynamic."""
+"""Fit table keyed by encoded predictor name (frame column names, factor dummies
+``<name>_<level>``, ``V1..Vn`` for an unnamed matrix) plus ``y``, ``y.hat``,
+``NNS.ID``, ``residuals``, and (with ``confidence_interval``)
+``conf.int.pos``/``conf.int.neg``. Column count depends on the input, so keys
+stay dynamic."""
 
 MRegPredInt = TypedDict(
     "MRegPredInt",
     {
-        "lower.pred.int": NDArray[np.float64],
-        "upper.pred.int": NDArray[np.float64],
+        "pred.int.neg": NDArray[np.float64],
+        "pred.int.pos": NDArray[np.float64],
     },
 )
 """Prediction interval bounds for the requested ``point_est`` rows."""
@@ -36,25 +33,30 @@ MRegResult = TypedDict(
     {
         "Point.est": "NDArray[np.float64] | None",
         "RPM": dict[str, NDArray[np.float64]],
-        "R2": NotRequired[float],
-        "rhs.partitions": NotRequired[dict[str, NDArray[np.float64]]],
-        "pred.int": NotRequired["MRegPredInt | None"],
-        "Fitted.xy": NotRequired[MRegFitted],
+        "R2": "float | None",
+        "rhs.partitions": dict[str, NDArray[np.float64]],
+        "pred.int": "MRegPredInt | None",
+        "Fitted.xy": "MRegFitted | None",
+        "n.best": int,
+        "dist": str,
+        "class.levels": "list[str] | None",
     },
 )
 """``nns_m_reg`` result.
 
-``point_only=True`` returns only ``Point.est`` and ``RPM``; the full form always
-carries the remaining keys (``pred.int`` is ``None`` unless
-``confidence_interval`` is set).
+Every key is always present: ``R2`` and ``Fitted.xy`` are ``None`` with
+``point_only=True``, ``Point.est`` is ``None`` without ``point_est``,
+``pred.int`` is ``None`` unless ``confidence_interval`` is set, and
+``class.levels`` is ``None`` for a numeric response.
 """
 
 
+@honours_ncores
 def nns_m_reg(
     x: NDArray[Any],
     y: NDArray[Any],
     *,
-    factor_2_dummy: bool = False,
+    factor_2_dummy: bool = True,
     order: Order = None,
     n_best: NBest = None,
     type: str | None = None,
@@ -70,55 +72,46 @@ def nns_m_reg(
     ncores: int | None = None,
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
+    factor_levels: Any = None,
 ) -> MRegResult:
-    """Multivariate numeric regression matching R's NNS.M.reg path.
+    """Multivariate regression matching R's ``NNS.M.reg``.
 
-    Delegates to the repaired :func:`nns._reg_engine.nns_reg_engine`, whose
-    multivariate branch is the authoritative port of R's ``NNS.M.reg``.
+    Delegates to :func:`nns._reg_engine.nns_reg_engine`, whose multivariate
+    branch is the port of R's ``NNS.M.reg``. Predictors are encoded exactly as
+    in :func:`nns.nns_reg`: string and categorical columns become one-hot
+    dummies (``factor_2_dummy=True``, R's default) or integer codes, pandas
+    column names are kept as the ``RPM`` / ``Fitted.xy`` keys, and
+    [point_est] columns are matched by name. A string, bool or categorical
+    response (or one with ``class_levels``) is a classification target, as in
+    R; ``class_levels`` fixes the code order. At least two encoded predictor
+    columns are required.
     """
     _warn_unsupported(
         location=location is not None,
         dist=False,
         return_values=return_values is not False,
         plot_regions=plot_regions,
-        ncores=ncores is not None,
     )
-    if factor_2_dummy:
-        raise NotImplementedError(
-            "direct nns_m_reg factor_2_dummy=True is rejected because installed R's "
-            "internal NNS.M.reg raw factor path errors; use nns_reg(..., "
-            "factor_2_dummy=True, factor_levels=...) instead."
-        )
     type_value = _normalize_type(type)
     from nns._reg_engine import nns_reg_engine
-
-    x_values = np.asarray(x, dtype=np.float64)
-    if x_values.ndim == 1:
-        x_values = x_values.reshape(-1, 1)
-    if x_values.shape[1] < 2:
-        raise ValueError("nns_m_reg requires at least two predictor columns.")
-
-    # class_levels fixes the categorical y ordering; encode to 1..K codes so the
-    # engine (which sorts unique labels) reproduces the requested mapping.
-    y_for_engine: Any = y
-    if class_levels is not None:
-        levels = [str(level) for level in class_levels]
-        y_str = [str(v) for v in np.asarray(y).ravel().tolist()]
-        y_for_engine = np.asarray([levels.index(v) + 1 for v in y_str], dtype=np.float64)
 
     result = cast(
         "MRegResult",
         nns_reg_engine(
-            x_values,
-            y_for_engine,
+            x,
+            y,
+            factor_2_dummy=factor_2_dummy,
             order=order,
             n_best=cast(Any, n_best),
             type=type_value,
-            point_est=None if point_est is None else np.asarray(point_est, dtype=np.float64),
+            point_est=point_est,
             point_only=point_only,
             noise_reduction=noise_reduction,
             dist=dist,
             confidence_interval=confidence_interval,
+            class_levels=class_levels,
+            factor_levels=factor_levels,
+            multivariate_only=True,
         ),
     )
     if (plot or residual_plot) and isinstance(result.get("Fitted.xy"), dict):
@@ -158,353 +151,3 @@ def _render_m_reg(fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]]) -> 
     ax.set_title("NNS.M.reg Residual Plot")
 
 
-def _validate_inputs(
-    x: NDArray[Any],
-    y: NDArray[Any],
-    factor_2_dummy: bool,
-    *,
-    type_value: str | None,
-    class_levels: list[object] | None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    if factor_2_dummy:
-        raise NotImplementedError(
-            "direct nns_m_reg factor_2_dummy=True is rejected because installed R's "
-            "internal NNS.M.reg raw factor path errors; use prepare_factor_predictors(...) "
-            "before nns_m_reg(...) or nns_reg(..., factor_2_dummy=True, factor_levels=...)."
-        )
-    x_values = np.asarray(x, dtype=np.float64)
-    if x_values.ndim == 1:
-        x_values = x_values.reshape(-1, 1)
-    if x_values.ndim != 2:
-        raise ValueError("x must be a 2D numeric matrix.")
-    from nns.regression import _prepare_y_values
-
-    y_values, _ = _prepare_y_values(
-        y,
-        type_value=type_value,
-        class_levels=class_levels,
-    )
-    if x_values.shape[0] == 0 or x_values.shape[1] == 0:
-        raise ValueError("x must be non-empty.")
-    if y_values.size != x_values.shape[0]:
-        raise ValueError("x and y must have the same row count.")
-    if not np.all(np.isfinite(x_values)) or not np.all(np.isfinite(y_values)):
-        raise ValueError("x and y must contain only finite values.")
-    return x_values, y_values
-
-
-def _validate_point_est(
-    point_est: NDArray[np.float64] | None,
-    n_cols: int,
-) -> tuple[NDArray[np.float64] | None, bool]:
-    if point_est is None:
-        return None, False
-    values = np.asarray(point_est, dtype=np.float64)
-    is_matrix = values.ndim == 2
-    if values.ndim == 1:
-        values = values.reshape(1, -1)
-    if values.ndim != 2:
-        raise ValueError("point_est must be a vector or 2D matrix.")
-    if values.shape[1] != n_cols:
-        raise ValueError("point_est must have the same column count as x.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("point_est must contain only finite values.")
-    return values, is_matrix
-
-
-def _validate_noise(noise_reduction: str) -> NoiseReduction:
-    noise = noise_reduction.lower()
-    if noise not in {"off", "mean", "median", "mode", "mode_class"}:
-        raise ValueError(
-            "noise_reduction must be one of 'mean', 'median', 'mode', 'mode_class', 'off'."
-        )
-    return cast(NoiseReduction, noise)
-
-
-def _regression_points_matrix(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-    order: Order,
-    noise: NoiseReduction,
-    factor_2_dummy: bool,
-    type_value: str | None,
-) -> NDArray[np.float64]:
-    if order == "max":
-        return x.copy()
-    columns: list[NDArray[np.float64]] = []
-    max_len = 0
-    for col in range(x.shape[1]):
-        result = nns_reg(
-            x[:, col],
-            y,
-            factor_2_dummy=factor_2_dummy,
-            order=order,
-            type=type_value,
-            noise_reduction=noise,
-            plot=False,
-            multivariate_call=True,
-        )
-        points = np.asarray(result["x"], dtype=np.float64)
-        columns.append(points)
-        max_len = max(max_len, points.size)
-
-    out = np.full((max_len, x.shape[1]), np.nan, dtype=np.float64)
-    for col, points in enumerate(columns):
-        out[: points.size, col] = points
-    return out
-
-
-def _unique_rows_preserve_order(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    seen: set[tuple[float, ...]] = set()
-    rows: list[NDArray[np.float64]] = []
-    for row in values:
-        key = tuple(float(v) if np.isfinite(v) else math.nan for v in row)
-        if key not in seen:
-            seen.add(key)
-            rows.append(row)
-    return np.vstack(rows) if rows else values
-
-
-def _find_interval_matrix(
-    x: NDArray[np.float64],
-    reg_points_matrix: NDArray[np.float64],
-) -> NDArray[np.int64]:
-    out = np.empty(x.shape, dtype=np.int64)
-    for col in range(x.shape[1]):
-        breaks = np.sort(reg_points_matrix[:, col][np.isfinite(reg_points_matrix[:, col])])
-        out[:, col] = np.searchsorted(breaks, x[:, col], side="right")
-    return out
-
-
-def _join_ids(components: NDArray[np.int64]) -> NDArray[np.str_]:
-    return np.asarray([".".join(str(int(v)) for v in row) for row in components], dtype=str)
-
-
-def _rpm_and_fitted(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-    nns_ids: NDArray[np.str_],
-    noise: NoiseReduction,
-    *,
-    order_is_numeric: bool,
-    class_mode: bool,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    obs = np.arange(y.size)
-    sorted_order = np.lexsort((obs, nns_ids.astype(str)))
-    sorted_ids = nns_ids[sorted_order].astype(str)
-    unique_ids, first, inverse_sorted = np.unique(
-        sorted_ids,
-        return_index=True,
-        return_inverse=True,
-    )
-
-    sorted_matrix = np.column_stack((x[sorted_order], y[sorted_order]))
-    group_values = np.empty((unique_ids.size, x.shape[1] + 1), dtype=np.float64)
-    for group_index in range(unique_ids.size):
-        rows = sorted_matrix[inverse_sorted == group_index]
-        group_values[group_index] = _aggregate_rows(rows, noise, order_is_numeric)
-
-    original_group_index = np.searchsorted(unique_ids.astype(str), nns_ids.astype(str))
-    initial_yhat = group_values[original_group_index, -1].copy()
-    if class_mode:
-        initial_yhat = _round_clamp_classes(initial_yhat, y)
-    residuals = initial_yhat - y
-    bias = np.empty_like(residuals)
-    for group_id in np.unique(nns_ids.astype(str)):
-        mask = nns_ids.astype(str) == group_id
-        bias[mask] = _gravity(residuals[mask])
-    fitted_y = initial_yhat - bias
-    if class_mode:
-        fitted_y = _round_clamp_classes(fitted_y, y)
-    residuals = fitted_y - y
-
-    rpm = group_values[np.argsort(first)]
-    return rpm, fitted_y, residuals
-
-
-def _aggregate_rows(
-    rows: NDArray[np.float64],
-    noise: NoiseReduction,
-    order_is_numeric: bool,
-) -> NDArray[np.float64]:
-    if not order_is_numeric:
-        return np.asarray(rows[0], dtype=np.float64)
-    if noise == "mean":
-        return np.asarray(np.mean(rows, axis=0), dtype=np.float64)
-    if noise == "median":
-        return np.median(rows, axis=0)
-    if noise == "mode":
-        return np.array([float(nns_mode(rows[:, col])) for col in range(rows.shape[1])])
-    if noise == "mode_class":
-        return np.array(
-            [float(nns_mode(rows[:, col], discrete=True)) for col in range(rows.shape[1])]
-        )
-    return np.array([_gravity(rows[:, col]) for col in range(rows.shape[1])])
-
-
-def _resolve_n_best(
-    n_best: NBest,
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-    rpm: NDArray[np.float64],
-) -> KValue:
-    if n_best == "all":
-        return "all"
-    if n_best is not None:
-        return max(1, int(n_best))
-    dependence = _copula_matrix(np.column_stack((x, y)))
-    return max(1, math.floor((1.0 - dependence) * math.sqrt(x.shape[0])))
-
-
-def _k_as_count(k: KValue, row_count: int) -> int:
-    if k == "all":
-        return row_count
-    return int(k)
-
-
-def _predict_points(
-    point_est: NDArray[np.float64],
-    point_is_matrix: bool,
-    x: NDArray[np.float64],
-    rpm: NDArray[np.float64],
-    k: KValue,
-    class_: str | None,
-) -> NDArray[np.float64]:
-    minimums = np.min(x, axis=0)
-    maximums = np.max(x, axis=0)
-    central = np.array([_gravity(rpm[:, col]) for col in range(x.shape[1])], dtype=np.float64)
-    # NaN comparisons are already False, matching R's outsiders[is.na(outsiders)] <- 0.
-    outsider_mask = (point_est < minimums) | (point_est > maximums)
-
-    if not point_is_matrix:
-        point = point_est[0]
-        if not np.any(outsider_mask[0]):
-            return np.array(
-                [nns_distance(rpm, point, k, class_)],
-                dtype=np.float64,
-            )
-        return np.array(
-            [_outside_prediction(point, minimums, maximums, central, rpm, k, class_)],
-            dtype=np.float64,
-        )
-
-    out = nns_distance_path_single_bulk(rpm, point_est, k, class_)
-    outsider_rows = np.flatnonzero(np.any(outsider_mask, axis=1))
-    if outsider_rows.size:
-        outside_points = point_est[outsider_rows, :]
-        boundary = np.minimum(np.maximum(outside_points, minimums), maximums)
-        mid = (boundary + central) / 2.0
-        mid_2 = (boundary + mid) / 2.0
-
-        d1 = np.sqrt(np.sum((boundary - central) ** 2, axis=1))
-        d2 = np.sqrt(np.sum((boundary - mid) ** 2, axis=1))
-        d3 = np.sqrt(np.sum((boundary - mid_2) ** 2, axis=1))
-
-        boundary_est = nns_distance_path_single_bulk(rpm, boundary, k, class_)
-        mid_est = nns_distance_path_single_bulk(rpm, mid, k, class_)
-        mid_2_est = nns_distance_path_single_bulk(rpm, mid_2, k, class_)
-        central_est = nns_distance(rpm, central, k, class_)
-
-        g1 = (boundary_est - central_est) / np.maximum(d1, 1e-10)
-        g2 = (boundary_est - mid_est) / np.maximum(d2, 1e-10)
-        g3 = (boundary_est - mid_2_est) / np.maximum(d3, 1e-10)
-
-        last_gradient = (g1 * 3.0 + g2 * 2.0 + g3 * 1.0) / 6.0
-        last_distance = np.sqrt(np.sum((outside_points - boundary) ** 2, axis=1))
-        out[outsider_rows] = last_distance * last_gradient + boundary_est
-    return out
-
-
-def _outside_prediction(
-    point: NDArray[np.float64],
-    minimums: NDArray[np.float64],
-    maximums: NDArray[np.float64],
-    central: NDArray[np.float64],
-    rpm: NDArray[np.float64],
-    k: KValue,
-    class_: str | None,
-) -> float:
-    boundary = np.minimum(np.maximum(point, minimums), maximums)
-    mid = (boundary + central) / 2.0
-    mid_2 = (boundary + mid) / 2.0
-    boundary_est = nns_distance(rpm, boundary, k, class_)
-    gradients = []
-    for compare in (central, mid, mid_2):
-        distance = float(np.sqrt(np.sum((boundary - compare) ** 2)))
-        with np.errstate(invalid="ignore", divide="ignore"):
-            gradients.append(
-                float(
-                    np.float64(boundary_est - nns_distance(rpm, compare, k, class_))
-                    / np.float64(distance)
-                )
-            )
-    last_gradient = float(np.dot(np.asarray(gradients), np.array([3.0, 2.0, 1.0])) / 6.0)
-    last_distance = float(np.sqrt(np.sum((point - boundary) ** 2)))
-    return last_distance * last_gradient + boundary_est
-
-
-def _point_output(point_predictions: NDArray[np.float64] | None) -> NDArray[np.float64] | None:
-    if point_predictions is None:
-        return None
-    return point_predictions
-
-
-def _rpm_dict(rpm: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
-    out = {f"V{col + 1}": rpm[:, col] for col in range(rpm.shape[1] - 1)}
-    out["y.hat"] = rpm[:, -1]
-    return out
-
-
-def _rhs_partitions_dict(values: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
-    return {f"x{col + 1}": values[:, col] for col in range(values.shape[1])}
-
-
-def _fitted_dict(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-    yhat: NDArray[np.float64],
-    nns_ids: NDArray[np.str_],
-    residuals: NDArray[np.float64],
-) -> dict[str, NDArray[np.float64] | NDArray[np.str_]]:
-    out: dict[str, NDArray[np.float64] | NDArray[np.str_]] = {
-        f"V{col + 1}": x[:, col].copy() for col in range(x.shape[1])
-    }
-    out["y"] = y.copy()
-    out["y.hat"] = yhat
-    out["NNS.ID"] = nns_ids
-    out["residuals"] = residuals
-    return out
-
-
-def _apply_multivariate_intervals(
-    fitted: dict[str, NDArray[np.float64] | NDArray[np.str_]],
-    point_predictions: NDArray[np.float64] | None,
-    *,
-    confidence_interval: float | None,
-) -> MRegPredInt | None:
-    if confidence_interval is None:
-        return None
-    alpha = (1.0 - float(confidence_interval)) / 2.0
-    yhat = cast(NDArray[np.float64], fitted["y.hat"])
-    residuals = cast(NDArray[np.float64], fitted["residuals"])
-    residual_var = abs(upm_var(alpha, 1.0, residuals))
-    fitted["conf.int.pos"] = yhat + residual_var
-    fitted["conf.int.neg"] = yhat - residual_var
-    if point_predictions is None:
-        return None
-    return {
-        "lower.pred.int": point_predictions - residual_var,
-        "upper.pred.int": point_predictions + residual_var,
-    }
-
-
-def _r2(y: NDArray[np.float64], yhat: NDArray[np.float64]) -> float:
-    y_mean = float(np.mean(y))
-    numerator = float(np.sum((y - y_mean) * (yhat - y_mean)) ** 2)
-    denominator = float(np.sum((y - y_mean) ** 2) * np.sum((yhat - y_mean) ** 2))
-    return numerator / denominator if denominator > 0.0 else float("nan")
-
-
-def _class_accuracy(y: NDArray[np.float64], yhat: NDArray[np.float64]) -> float:
-    accuracy = float(np.mean(yhat == y))
-    return float(f"{accuracy:.4g}")

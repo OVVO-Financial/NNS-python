@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import warnings
 from typing import NotRequired, TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._rmean import r_mean
 from nns.dependence import nns_dep
 
 
@@ -36,8 +38,8 @@ def nns_meboot(
     rho: float | list[float] | np.ndarray | None = None,
     type: str = "spearman",
     drift: bool = True,
-    target_drift: float | None = None,
-    target_drift_scale: float | None = None,
+    target_drift: float | list[float] | np.ndarray | None = None,
+    target_drift_scale: float | list[float] | np.ndarray | None = None,
     trim: float = 0.10,
     xmin: float | None = None,
     xmax: float | None = None,
@@ -54,6 +56,14 @@ def nns_meboot(
 
     Stochastic draws use NumPy's RNG, so exact replicate parity with R is not
     expected. Deterministic diagnostics follow the installed R algorithm.
+
+    ``rho``, ``target_drift`` and ``target_drift_scale`` are vectorised like R's
+    ``Vectorize``/``mapply``: given arguments are recycled elementwise to the longest
+    length (not crossed) and a list with one result per position is returned. If all
+    of them are scalars (or length 1) a single result is returned.
+
+    When the detrended residuals are all exactly zero (a constant or exactly linear
+    series) there is nothing to align and ``rho`` has no effect.
     """
     del elaps  # R elapsed-time printout flag; NNS Python emits no console output.
     values = np.asarray(x, dtype=np.float64)
@@ -74,36 +84,24 @@ def nns_meboot(
 
     rng = np.random.default_rng(random_seed)
     rho_values = np.asarray(rho, dtype=np.float64).reshape(-1)
-    if rho_values.size == 1:
-        return _nns_meboot_one(
-            values,
-            reps,
-            float(rho_values[0]),
-            type,
-            drift,
-            target_drift,
-            target_drift_scale,
-            trim,
-            xmin,
-            xmax,
-            reachbnd,
-            expand_sd,
-            force_clt,
-            scl_adjustment,
-            sym,
-            digits,
-            rng,
+    drift_values = _optional_vector(target_drift)
+    scale_values = _optional_vector(target_drift_scale)
+    vectorised = [v for v in (rho_values, drift_values, scale_values) if v is not None]
+    count = 0 if any(v.size == 0 for v in vectorised) else max(v.size for v in vectorised)
+    if any(count % v.size for v in vectorised if v.size):
+        warnings.warn(
+            "longer argument not a multiple of length of shorter", RuntimeWarning, stacklevel=2
         )
 
-    return [
+    results = [
         _nns_meboot_one(
             values,
             reps,
-            float(rho_item),
+            float(rho_values[i % rho_values.size]),
             type,
             drift,
-            target_drift,
-            target_drift_scale,
+            None if drift_values is None else float(drift_values[i % drift_values.size]),
+            None if scale_values is None else float(scale_values[i % scale_values.size]),
             trim,
             xmin,
             xmax,
@@ -115,8 +113,17 @@ def nns_meboot(
             digits,
             rng,
         )
-        for rho_item in rho_values
+        for i in range(count)
     ]
+    if count == 1:
+        return results[0]
+    return results
+
+
+def _optional_vector(value: float | list[float] | np.ndarray | None) -> NDArray[np.float64] | None:
+    if value is None:
+        return None
+    return np.asarray(value, dtype=np.float64).reshape(-1)
 
 
 def _nns_meboot_one(
@@ -142,6 +149,8 @@ def _nns_meboot_one(
     time = np.arange(1, n + 1, dtype=np.float64)
     intercept, orig_drift = _fast_lm(time, x)
     orig_res = x - (intercept + orig_drift * time)
+    # All-zero residuals have no ranks for a rho target and no spread to rescale.
+    zero_res = bool(np.all(orig_res == 0.0))
 
     if target_drift is not None or target_drift_scale is not None:
         drift = True
@@ -155,7 +164,13 @@ def _nns_meboot_one(
         recon_slope = target
     else:
         recon_slope = 0.0
-    baseline = intercept + recon_slope * time
+    keeps_drift = recon_slope == orig_drift
+    # A changed slope pivots about mean(x), so the replicates keep the level.
+    baseline = (
+        intercept + recon_slope * time
+        if keeps_drift
+        else r_mean(x) + recon_slope * (time - (n + 1) / 2.0)
+    )
 
     xx = np.sort(orig_res)
     ordxx_zero = np.argsort(orig_res, kind="stable")
@@ -168,7 +183,8 @@ def _nns_meboot_one(
     dvtrim = _trimmed_mean(dv, trim)
     xmin = float(xx[0] - dvtrim) if xmin_arg is None else float(xmin_arg)
     xmax = float(xx[-1] + dvtrim) if xmax_arg is None else float(xmax_arg)
-    if xmin_arg is not None or xmax_arg is not None:
+    if (xmin_arg is not None or xmax_arg is not None) and force_clt:
+        # R: if (isTRUE(force.clt)) { expand.sd <- FALSE; force.clt <- FALSE }
         force_clt = False
         expand_sd = False
 
@@ -187,33 +203,39 @@ def _nns_meboot_one(
     qseq = np.sort(res_mat, axis=0)
     res_mat[ordxx_zero, :] = qseq
 
-    res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
+    if not zero_res:
+        res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
     res_mat = _meboot_expand_sd(orig_res, res_mat, rng)
+
+    # The ME density lives on the residuals, so scale them against their own mean and sd.
+    if scl_adjustment and not zero_res:
+        zz = np.concatenate(([xmin], z, [xmax]))
+        v = np.diff(zz**2) / 12.0
+        xb = r_mean(orig_res)
+        s1 = float(np.sum((desintxb - xb) ** 2))
+        uv = (s1 + float(np.sum(v))) / n
+        desired_sd = _sample_sd(orig_res)
+        actual_me_sd = float(np.sqrt(uv))
+        if actual_me_sd <= 0.0:
+            raise ValueError("actualME.sd<=0 Error")
+        kappa = (desired_sd / actual_me_sd) - 1.0
+        res_mat = res_mat + kappa * (res_mat - xb)
+    else:
+        kappa = None
+
     ensemble = res_mat + baseline[:, np.newaxis]
 
     if np.array_equal(ordxx_zero[::-1], ordxx_zero) and reps > 1:
         for i in range(ensemble.shape[0]):
             ensemble[i, :] = rng.choice(ensemble[i, :], size=reps, replace=True)
 
-    if expand_sd:
+    # sd(x) includes the original drift, so expand toward it only when it is kept.
+    if expand_sd and keeps_drift:
         ensemble = _meboot_expand_sd(x, ensemble, rng)
     if force_clt and reps > 1:
-        ensemble = _force_clt(x, ensemble)
-
-    if scl_adjustment:
-        zz = np.concatenate(([xmin], z, [xmax]))
-        v = np.diff(zz**2) / 12.0
-        xb = float(np.mean(x))
-        s1 = float(np.sum((desintxb - xb) ** 2))
-        uv = (s1 + float(np.sum(v))) / n
-        desired_sd = _sample_sd(x)
-        actual_me_sd = float(np.sqrt(uv))
-        if actual_me_sd <= 0.0:
-            raise ValueError("actualME.sd<=0 Error")
-        kappa = (desired_sd / actual_me_sd) - 1.0
-        ensemble = ensemble + kappa * (ensemble - xb)
-    else:
-        kappa = None
+        clt_ref = x if keeps_drift else baseline + orig_res
+        if _sample_sd(clt_ref) > 0.0:
+            ensemble = _force_clt(clt_ref, ensemble)
 
     if xmin_arg is not None:
         ensemble = np.maximum(float(xmin_arg), ensemble)

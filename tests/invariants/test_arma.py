@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import warnings
+from typing import Any
+from unittest import mock
 
 import numpy as np
 import pytest
 
-from nns import nns_arma, nns_arma_optim, nns_var
-from nns.arma import _default_arma_optim_objective, _numeric_seasonal_weights
+import nns.arma as arma_module
+from nns import nns_arma, nns_arma_optim, nns_mc, nns_var
+from nns.arma import (
+    _default_arma_optim_objective,
+    _generate_vectors,
+    _linear_forecast_for_lag,
+    _numeric_seasonal_weights,
+)
 from nns.meboot import _target_rho
+from nns.var import lpm_var, upm_var
 
 
 def test_nns_arma_output_length_matches_h() -> None:
@@ -32,6 +41,27 @@ def test_nns_arma_numeric_seasonal_dynamic_raises() -> None:
 
     with pytest.raises(ValueError, match="dynamic"):
         nns_arma(variable, h=3, seasonal_factor=5, dynamic=True)
+
+
+def test_nns_arma_numeric_weights_dynamic_raises() -> None:
+    variable = np.sin(np.arange(1, 40, dtype=np.float64)) + 2.0
+
+    with pytest.raises(ValueError, match="dynamic"):
+        nns_arma(variable, h=3, seasonal_factor=False, weights=np.array([1.0, 0.0]), dynamic=True)
+
+
+def test_nns_arma_dynamic_equal_weights_match_repeated_one_step_forecasts() -> None:
+    # As in patched R, weights="equal" applies to the lags each dynamic step selects
+    # (they used to be replaced by the NNS.seas weights).
+    variable = 100.0 + np.arange(60.0) + 15.0 * np.sin(np.arange(60.0) * np.pi / 6.0)
+    options: dict[str, Any] = {"seasonal_factor": False, "best_periods": 2, "weights": "equal"}
+
+    dynamic = nns_arma(variable, h=3, dynamic=True, **options)
+    path = variable.copy()
+    for _ in range(3):
+        path = np.append(path, nns_arma(path, h=1, **options))
+
+    np.testing.assert_allclose(dynamic, path[-3:], rtol=1e-12)
 
 
 def test_numeric_seasonal_weights_constant_subsample_is_finite() -> None:
@@ -82,6 +112,45 @@ def test_nns_arma_pred_int_returns_interval_dict() -> None:
     assert all(value.shape == (3,) for value in result.values())
 
 
+def test_nns_arma_nonlin_pred_int_widens_by_linear_residual_like_r() -> None:
+    # R fits the per-lag linear models for method="nonlin" whenever pred.int is set
+    # and widens the band by lin.resid = mean(abs(e - mean(e))) of the last step's
+    # linear forecasts e (one per lag).
+    t = np.arange(1, 81, dtype=np.float64)
+    variable = 50.0 + 0.5 * t + 5.0 * np.sin(2.0 * np.pi * t / 4.0) + 2.0 * np.cos(t / 2.0)
+    lags = np.array([4, 8], dtype=np.int64)
+    h = 6
+
+    point = nns_arma(variable, h=h, seasonal_factor=lags, method="nonlin")
+    result = nns_arma(
+        variable, h=h, seasonal_factor=lags, method="nonlin", pred_int=0.9, random_seed=3
+    )
+
+    generated = _generate_vectors(np.concatenate((variable, point[:-1])), lags)
+    lin = np.array(
+        [
+            _linear_forecast_for_lag(index, series)
+            for index, series in zip(
+                generated["Component.index"], generated["Component.series"], strict=True
+            )
+        ]
+    )
+    lin_resid = float(np.mean(np.abs(lin - np.mean(lin))))
+    assert lin_resid > 0.0
+
+    mc = nns_mc(point, lower_rho=-1.0, upper_rho=1.0, by=0.2, random_seed=3)
+    replicates = mc["replicates"]
+    assert isinstance(replicates, dict)
+    rows = np.column_stack(list(replicates.values()))
+    upper = np.array([upm_var(0.05, 0.0, row) for row in rows]) + lin_resid
+    lower = np.array([abs(lpm_var(0.05, 0.0, row)) for row in rows]) - lin_resid
+
+    assert isinstance(result, dict)
+    np.testing.assert_array_equal(result["Estimates"], point)
+    np.testing.assert_allclose(result["Upper 90% pred.int"], np.maximum(point, upper), rtol=1e-12)
+    np.testing.assert_allclose(result["Lower 90% pred.int"], np.minimum(point, lower), rtol=1e-12)
+
+
 @pytest.mark.stochastic
 def test_nns_arma_pred_int_seed_reproducibility() -> None:
     variable = np.sin(np.arange(1, 45, dtype=np.float64) / 3.0) + 2.0
@@ -100,18 +169,117 @@ def test_nns_arma_pred_int_seed_reproducibility() -> None:
     assert not np.array_equal(first["Lower 80% pred.int"], third["Lower 80% pred.int"])
 
 
-def test_nns_arma_static_linear_pred_int_matches_installed_r_error() -> None:
+def test_nns_arma_static_linear_pred_int_returns_intervals() -> None:
+    t = np.arange(1, 61, dtype=np.float64)
+    variable = 50.0 + t + 5.0 * np.sin(2.0 * np.pi * t / 4.0) + np.cos(t)
+
+    result = nns_arma(variable, h=6, seasonal_factor=4, method="lin", pred_int=0.9, random_seed=1)
+    point = nns_arma(variable, h=6, seasonal_factor=4, method="lin")
+
+    assert isinstance(result, dict)
+    assert list(result) == ["Estimates", "Lower 90% pred.int", "Upper 90% pred.int"]
+    np.testing.assert_array_equal(result["Estimates"], point)
+    assert np.all(result["Lower 90% pred.int"] <= point)
+    assert np.all(result["Upper 90% pred.int"] >= point)
+
+
+def test_nns_arma_static_linear_pred_int_exact_line() -> None:
+    # An exactly linear forecast path has all-zero meboot residuals; R raised until
+    # NNS.meboot skipped the rho search for them.
     variable = np.arange(1, 21, dtype=np.float64)
 
-    with pytest.raises(TypeError, match="non-numeric argument"):
-        nns_arma(variable, h=5, seasonal_factor=4, method="lin", pred_int=0.95)
+    result = nns_arma(variable, h=5, seasonal_factor=4, method="lin", pred_int=0.95, random_seed=1)
+    assert isinstance(result, dict)
+    np.testing.assert_array_equal(result["Estimates"], np.arange(21, 26, dtype=np.float64))
+    assert np.all(result["Lower 95% pred.int"] < result["Estimates"])
+    assert np.all(result["Upper 95% pred.int"] > result["Estimates"])
 
 
-def test_nns_arma_pred_int_h_one_matches_installed_r_error() -> None:
+def test_nns_arma_pred_int_h_one_returns_lin_residual_band() -> None:
+    # R fails with "incorrect number of dimensions"; a single forecast has no MC path
+    # to bootstrap, so the band is the point forecast widened by lin.resid.
     variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
 
-    with pytest.raises(ValueError, match="incorrect number of dimensions"):
-        nns_arma(variable, h=1, seasonal_factor=4, method="nonlin", pred_int=0.95)
+    single = nns_arma(variable, h=1, seasonal_factor=4, method="nonlin", pred_int=0.95)
+    assert isinstance(single, dict)
+    point = nns_arma(variable, h=1, seasonal_factor=4, method="nonlin")
+    for value in single.values():
+        np.testing.assert_array_equal(value, point)
+
+    lags = np.array([3, 4], dtype=np.int64)
+    multi = nns_arma(variable, h=1, seasonal_factor=lags, method="lin", pred_int=0.95)
+    assert isinstance(multi, dict)
+    generated = _generate_vectors(variable, lags)
+    lin = np.array(
+        [
+            _linear_forecast_for_lag(index, series)
+            for index, series in zip(
+                generated["Component.index"], generated["Component.series"], strict=True
+            )
+        ]
+    )
+    lin_resid = float(np.mean(np.abs(lin - np.mean(lin))))
+    estimate = multi["Estimates"]
+    np.testing.assert_allclose(multi["Upper 95% pred.int"], estimate + lin_resid, rtol=1e-12)
+    np.testing.assert_allclose(multi["Lower 95% pred.int"], estimate - lin_resid, rtol=1e-12)
+
+
+@pytest.mark.parametrize("training_set", [0, -1, 40])
+def test_nns_arma_rejects_out_of_range_training_set(training_set: int) -> None:
+    # R: 0 -> "[y] must contain at least two observations.", > n -> "[y] contains
+    # missing values."; Python used to slice silently or raise IndexError.
+    variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
+
+    with pytest.raises(ValueError, match="training_set must be between 1"):
+        nns_arma(variable, h=2, training_set=training_set, seasonal_factor=4)
+
+
+@pytest.mark.parametrize("length", [1, 2, 3, 4])
+def test_nns_arma_short_series_raise_value_error(length: int) -> None:
+    variable = np.arange(1, length + 1, dtype=np.float64)
+
+    with pytest.raises(ValueError):
+        nns_arma(variable, h=2)
+
+
+def test_nns_arma_short_series_with_numeric_lag_still_forecasts() -> None:
+    # R 13.3 + patches (no rounding of integer-x regression points):
+    # NNS.ARMA(c(1,2,4), h=2, seasonal.factor=1) = 5.8333333333333339 7.5714285714285721.
+    result = nns_arma(np.array([1.0, 2.0, 4.0]), h=2, seasonal_factor=1)
+
+    np.testing.assert_allclose(result, [5.8333333333333339, 7.5714285714285721], rtol=1e-12)
+
+
+@pytest.mark.parametrize("seasonal_factor", [0, 40, [4, 0]])
+def test_nns_arma_rejects_out_of_range_lags(seasonal_factor: int | list[int]) -> None:
+    variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
+
+    with pytest.raises(ValueError, match="seasonal_factor lags must be between 1"):
+        nns_arma(variable, h=2, seasonal_factor=seasonal_factor)
+
+
+def test_nns_arma_seasonal_factor_none_behaves_like_r_false() -> None:
+    variable = np.sin(np.arange(1, 60, dtype=np.float64) / 3.0) + 0.1 * np.arange(1, 60)
+
+    np.testing.assert_array_equal(
+        nns_arma(variable, h=3, seasonal_factor=None),  # type: ignore[arg-type]
+        nns_arma(variable, h=3, seasonal_factor=False),
+    )
+    with pytest.raises(TypeError, match="seasonal_factor must be"):
+        nns_arma(variable, h=3, seasonal_factor="12")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("seasonal_factor", "weights"),
+    [([3, 4], [1.0]), ([3, 4], [0.2, 0.3, 0.5]), (4, [0.5, 0.5]), (False, [0.5, 0.5])],
+)
+def test_nns_arma_rejects_weights_of_wrong_length(
+    seasonal_factor: bool | int | list[int], weights: list[float]
+) -> None:
+    variable = np.sin(np.arange(1, 60, dtype=np.float64) / 3.0) + 2.0
+
+    with pytest.raises(ValueError, match="one weight per lag"):
+        nns_arma(variable, h=2, seasonal_factor=seasonal_factor, weights=np.asarray(weights))
 
 
 def test_nns_arma_optim_returns_forecast_dictionary() -> None:
@@ -133,15 +301,46 @@ def test_nns_arma_optim_returns_forecast_dictionary() -> None:
         "shrink",
         "nns.regress",
         "bias.shift",
+        "bias.validation",
+        "raw.results",
+        "validation.forecast",
         "errors",
         "results",
         "lower.pred.int",
         "upper.pred.int",
     ]
+    assert result["bias.validation"]["policy"] == "none"
+    assert result["bias.validation"]["applied.shift"] == 0.0
+    assert result["raw.results"].shape == (3,)
+    assert result["validation.forecast"].shape == (8,)
     assert result["results"].shape == (3,)
     assert result["lower.pred.int"].shape == (3,)
     assert result["upper.pred.int"].shape == (3,)
     assert np.all(np.isfinite(result["results"]))
+
+
+def test_nns_arma_optim_bias_policy_matches_r14_chronological_split() -> None:
+    raw = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0])
+    actual = raw + 1.0
+
+    def objective(predicted: np.ndarray, target: np.ndarray) -> float:
+        return float(np.mean((predicted - target) ** 2))
+
+    no_bias = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "none")
+    assert no_bias["policy"] == "none"
+    assert no_bias["applied.shift"] == 0.0
+    assert no_bias["status"] == "disabled"
+    assert no_bias["estimate.rows"].size == no_bias["acceptance.rows"].size == 0
+
+    split = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "split")
+    np.testing.assert_array_equal(split["estimate.rows"], [1, 2, 3])
+    np.testing.assert_array_equal(split["acceptance.rows"], [4, 5, 6])
+    assert split["estimated.shift"] == pytest.approx(1.0)
+    assert split["applied.shift"] == pytest.approx(1.0)
+    assert split["raw.score"] == pytest.approx(1.0)
+    assert split["adjusted.score"] == pytest.approx(0.0)
+    assert split["accepted"] is True
+    assert split["status"] == "accepted"
 
 
 def test_nns_arma_optim_validation_matches_installed_r() -> None:
@@ -156,15 +355,17 @@ def test_nns_arma_optim_validation_matches_installed_r() -> None:
             print_trace=False,
         )
 
-    with pytest.raises(TypeError, match="non-numeric argument"):
-        nns_arma_optim(
-            variable,
-            h=3,
-            seasonal_factor=[3, 4, 5, 6, 7],
-            lin_only=True,
-            pred_int=None,
-            print_trace=False,
+
+def test_nns_arma_optim_bias_shift_is_never_negative_zero() -> None:
+    variable = np.sin(np.arange(1, 40, dtype=np.float64) / 3.0) + 2.0
+
+    with mock.patch.object(arma_module, "_finite_gravity", return_value=0.0):
+        result = nns_arma_optim(
+            variable, h=3, seasonal_factor=[3, 4, 5], lin_only=True, print_trace=False
         )
+
+    assert result["bias.shift"] == 0.0
+    assert not np.signbit(result["bias.shift"])
 
 
 @pytest.mark.parametrize("dim_red_method", ["cor", "NNS.dep", "NNS.caus", "all"])
@@ -214,16 +415,79 @@ def test_arma_degenerate_objective_returns_nan_without_warning() -> None:
         warnings.simplefilter("always", RuntimeWarning)
         result = _default_arma_optim_objective(values, values)
 
-    assert np.isnan(result)
+    assert np.isposinf(result)  # R14 explicitly guards a zero denominator.
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
-def test_arma_constant_numeric_seasonal_weights_return_nan_without_warning() -> None:
+def test_arma_constant_numeric_seasonal_weights_are_equal_without_warning() -> None:
+    # Patched R: a constant series (CV 0/0 for every lag) gets equal weights.
     values = np.full(20, 5.0, dtype=np.float64)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", RuntimeWarning)
-        result = _numeric_seasonal_weights(values, np.array([4], dtype=np.int64))
+        result = _numeric_seasonal_weights(values, np.array([4, 6], dtype=np.int64))
 
-    assert np.isnan(result).all()
+    np.testing.assert_array_equal(result, [0.5, 0.5])
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_linear_forecasts_match_component_path_bitwise(native: bool) -> None:
+    rng = np.random.default_rng(41)
+    current = np.cumsum(rng.normal(size=137)) + 50.0
+    lags = np.array([1, 2, 5, 12, 24, 136, 137], dtype=np.int64)
+    pool = np.arange(1, 400, dtype=np.float64)
+    generated = arma_module._generate_vectors(current, lags)
+    expected = [
+        arma_module._linear_forecast_for_lag(
+            generated["Component.index"][i], generated["Component.series"][i]
+        )
+        for i in range(lags.size)
+    ]
+    if native:
+        actual = arma_module._linear_forecasts(current, lags, pool)
+    else:
+        with mock.patch.object(arma_module, "native_fn", return_value=None):
+            actual = arma_module._linear_forecasts(current, lags, pool)
+    np.testing.assert_array_equal(actual, np.asarray(expected))
+    with pytest.raises(ValueError, match="non-empty"):
+        arma_module._linear_forecasts(current, np.array([200], dtype=np.int64), pool)
+
+
+def _lin_arma(x: list[float], **kwargs: Any) -> np.ndarray:
+    return np.asarray(
+        nns_arma(np.asarray(x, dtype=np.float64), h=3, seasonal_factor=1, method="lin", **kwargs)
+    )
+
+
+def test_nns_arma_held_out_negative_values_do_not_change_the_clamp() -> None:
+    # R NNS.ARMA decides negative_values from variable[1:training.set]; this gave [0, -1, -2].
+    down = [float(v) for v in range(20, 0, -1)]
+    np.testing.assert_array_equal(_lin_arma([*down, -1.0], training_set=20), _lin_arma(down))
+    np.testing.assert_array_equal(_lin_arma(down), [0.0, 0.0, 0.0])
+    assert np.all(_lin_arma([*down, -1.0]) < 0.0)
+
+
+def test_nns_arma_optim_clamps_validation_forecasts_from_a_nonnegative_training_window() -> None:
+    x = np.r_[np.arange(58.0, 1.0, -2.0), 1.0, 0.5, 0.2, 0.1, -0.1]
+
+    def run(**kwargs: Any) -> dict[str, Any]:
+        return nns_arma_optim(
+            x,
+            training_set=29,
+            seasonal_factor=[1, 2],
+            ncores=1,
+            obj_fn=lambda predicted, actual: float(np.mean((predicted - actual) ** 2)),
+            **kwargs,
+        )
+
+    o = run()
+    assert np.all(o["errors"] + x[-5:] >= 0.0)
+    assert np.all(o["results"] >= 0.0)
+    # R main gives these validation values; R 13.3 forecast below 0 from the held-out -0.1.
+    np.testing.assert_allclose(o["errors"], [-1.0, -0.5, -0.2, -0.1, 0.1], rtol=1e-12)
+    # R14 defaults to bias.correction = "none": no in-sample gravity shift.
+    assert o["bias.shift"] == 0.0
+    assert o["bias.validation"]["status"] == "disabled"
+    # The out-of-sample forecast is fitted on the whole series, which is negative.
+    assert np.any(run(h=3)["results"] < 0.0)

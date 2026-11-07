@@ -36,7 +36,9 @@ def test_nns_stack_numeric_shapes_and_keys() -> None:
     assert result["stack"].shape == (7,)
     assert result["probability.threshold"] == pytest.approx(0.5)
     assert np.all(np.isfinite(result["stack"]))
-    assert result["NNS.dim.red.coefficients"].shape == (3,)
+    # R names: V1..Vp for an unnamed matrix, encoded column names for coefficients.
+    assert list(result["NNS.dim.red.coefficients"]) == ["V1", "V2", "V3"]
+    assert set(result["NNS.dim.red.variables"]) <= {"V1", "V2", "V3"}
 
 
 def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
@@ -51,8 +53,11 @@ def test_nns_stack_dim_red_variables_are_exactly_the_predictors_used() -> None:
         return nns_stack(train, y[:70], test_rows, ts_test=14, folds=1, method=(1, 2))
 
     base = fit(test)
-    selected = np.asarray(base["NNS.dim.red.variables"])
-    coefficients = np.asarray(base["NNS.dim.red.coefficients"])
+    names = ["V1", "V2", "V3"]
+    selected = np.asarray(
+        [names.index(v) for v in base["NNS.dim.red.variables"]], dtype=np.int64
+    )
+    coefficients = np.asarray(list(base["NNS.dim.red.coefficients"].values()))
     assert selected.size >= 1
     assert sorted(selected.tolist()) == np.flatnonzero(coefficients != 0).tolist()
     assert 0 in selected.tolist()
@@ -423,6 +428,45 @@ def test_nns_stack_predict_matches_full_stack() -> None:
             )
 
 
+def test_nns_stack_fit_is_not_moved_by_later_changes_to_the_inputs() -> None:
+    from nns import nns_stack_fit, nns_stack_predict
+
+    rng = np.random.RandomState(0)
+    x = rng.uniform(-2.0, 2.0, size=(80, 2))
+    y = x[:, 0] - x[:, 1]
+    fit = nns_stack_fit(x, y, method=(1,), order="max", folds=2)
+    before = np.asarray(nns_stack_predict(fit, x[:5])["stack"], dtype=np.float64)
+
+    x += 1.0
+    y += 100.0
+    after = np.asarray(nns_stack_predict(fit, x[:5] - 1.0)["stack"], dtype=np.float64)
+
+    np.testing.assert_array_equal(after, before)
+
+
+def test_nns_stack_fit_calls_the_callers_objective() -> None:
+    import threading
+
+    from nns import nns_stack_fit
+
+    class Loss:
+        def __init__(self) -> None:
+            self.lock = threading.Lock()
+            self.calls = 0
+
+        def __call__(self, predicted: np.ndarray, actual: np.ndarray) -> float:
+            with self.lock:
+                self.calls += 1
+            return float(np.sum((predicted - actual) ** 2))
+
+    rng = np.random.RandomState(1)
+    x = rng.normal(size=(40, 2))
+    loss = Loss()
+    nns_stack_fit(x, x[:, 0] - x[:, 1], obj_fn=loss, method=(1,), order="max", folds=2)
+
+    assert loss.calls > 0
+
+
 def test_nns_stack_default_result_has_no_fit_key() -> None:
     # The opt-in fit state must not leak into the public result dict.
     from nns import nns_stack
@@ -432,3 +476,62 @@ def test_nns_stack_default_result_has_no_fit_key() -> None:
     y = x[:, 0] - x[:, 2]
     result = nns_stack(x, y, ivs_test=x[:5], order="max", folds=2)
     assert "_fit" not in result
+
+
+def test_r_spearman_cor_matches_spearman_and_flags_constant_columns() -> None:
+    from scipy.stats import spearmanr  # type: ignore[import-untyped]
+
+    from nns.stack import _r_spearman_cor
+
+    rng = np.random.default_rng(3)
+    x = np.column_stack((rng.normal(size=80), np.round(rng.normal(size=80), 1), np.ones(80)))
+    y = rng.exponential(size=80)
+
+    result = _r_spearman_cor(x, y)
+
+    expected = [spearmanr(x[:, j], y)[0] for j in range(2)]
+    np.testing.assert_allclose(result[:2], expected, rtol=1e-14)
+    assert np.isnan(result[2])
+
+
+def test_r_xstar_path_matches_active_projections() -> None:
+    from nns.stack import _r_matvec, _r_xstar_path
+
+    rng = np.random.default_rng(4)
+    design = rng.uniform(size=(30, 4))
+    coef = np.array([0.2, -0.7, 0.0, 0.7])
+
+    path = _r_xstar_path(design, coef)
+
+    # |coef|-descending with ties by column: columns 1, 3, 0, then 2 (zero).
+    for m, active in enumerate(([1], [1, 3], [1, 3, 0], [1, 3, 0])):
+        weights = np.zeros(4)
+        weights[active] = coef[active]
+        np.testing.assert_allclose(
+            path[:, m], _r_matvec(design, weights) / len(active), rtol=1e-14
+        )
+
+
+def test_obj_fn_must_return_one_numeric_value() -> None:
+    rng = np.random.default_rng(21)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_stack(x, y, obj_fn=lambda p, a: (p - a) ** 2, folds=2, method=1)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_stack(x, y, obj_fn=lambda p, a: "bad", folds=2, method=1)
+    one = nns_stack(x, y, obj_fn=lambda p, a: np.array([np.sum((p - a) ** 2)]), folds=2, method=1)
+    ref = nns_stack(x, y, folds=2, method=1)
+    assert one["OBJfn.reg"] == ref["OBJfn.reg"]
+
+
+def test_random_seed_alias_conflict_raises() -> None:
+    rng = np.random.default_rng(22)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    with pytest.raises(ValueError, match="random_seed"):
+        nns_stack(x, y, seed=7, random_seed=5, folds=2, method=1)
+    alias = nns_stack(x, y, random_seed=5, folds=2, method=1)
+    assert alias["OBJfn.reg"] == nns_stack(x, y, seed=5, folds=2, method=1)["OBJfn.reg"]
+    same = nns_stack(x, y, seed=5, random_seed=5, folds=2, method=1)
+    assert same["OBJfn.reg"] == alias["OBJfn.reg"]

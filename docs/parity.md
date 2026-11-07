@@ -107,6 +107,28 @@ proxy-restricted runners that cannot install R), the cache cannot be regenerated
 live; rerun the local-source install and `scripts/regenerate_r_cache.py` on a
 host with R.
 
+## Cache provenance: R 13.3 + patches
+
+The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus
+the fixes in OVVO-Financial/NNS pull requests #73-#92, not from the unpatched
+13.3 release. Every shard
+was rebuilt from that R build with the full test suite; shards for functions the
+patches do not touch came out unchanged. Where Python has not mirrored one of
+those fixes yet, the parity tests that depend on it are marked xfail until it is.
+The entries that tied discrete modes reach (NNS.mode, NNS.part, NNS.reg and
+NNS.boost) also carry the discrete NNS.mode tie rule of pull request #111,
+refilled from the same build plus that change. The two NNS.copula entries
+where every margin lies on one side of its target carry pull request #143 the same way,
+the two univariate hazard and cumulative hazard NNS.CDF target values
+carry #123, and the NNS.SD.cluster entries where nothing is peeled and the
+dendrogram's leaf order carry #126. The NNS.MC.grid helper builds the grid as
+R main does after #146, and the three dy.dx entries with repeated bandwidths
+carry #147.
+
+To reproduce, install the patched package and point `R_LIBS` at it when
+regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
+`nns_version` stamp stays `13.3`.
+
 ## Automated parity check (with deferred autofix agent)
 
 `NNS-python` automates R-behavior fidelity detection. The automated **fixing

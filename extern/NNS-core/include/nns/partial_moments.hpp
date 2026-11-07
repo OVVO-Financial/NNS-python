@@ -1,6 +1,11 @@
 // include/nns/partial_moments.hpp
 //
 // SPDX-License-Identifier: GPL-3.0-only
+
+// ---- NNS-CORE PROVENANCE (managed by scripts/sync_adapter.py; do not hand-edit) ----
+// NNS-R-SOURCE: src/partial_moments.cpp @ 82a92eb45c1a1892acce82e66175cf2e29434b65
+// NNS-R-SOURCE: src/partial_moments.h @ 82a92eb45c1a1892acce82e66175cf2e29434b65
+// ---- end NNS-CORE PROVENANCE ----
 #ifndef NNS_PARTIAL_MOMENTS_HPP
 #define NNS_PARTIAL_MOMENTS_HPP
 
@@ -17,6 +22,9 @@ struct PMMatrixResult {
   std::vector<double> cov;  // column-major d x d
   std::size_t dim = 0;
 };
+
+// All degree arguments must be >= 0; every function below throws
+// std::invalid_argument for a negative or NaN degree.
 
 double lpm(double degree, double target, const double* x, std::size_t n);
 double upm(double degree, double target, const double* x, std::size_t n);

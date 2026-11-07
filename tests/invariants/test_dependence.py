@@ -76,3 +76,23 @@ def test_nns_dep_independence_null_is_consistent() -> None:
 
     assert large < small  # consistent: decays with sample size
     assert large < 0.35  # unreachable under the old non-vanishing ~0.41 floor
+
+
+@pytest.mark.parametrize("degree", [0.5, 1.5])
+def test_nd_partial_moments_fractional_degree_emit_no_runtime_warning(degree: float) -> None:
+    import warnings
+
+    from nns import co_lpm_nd, co_upm_nd, dpm_nd
+
+    rng = np.random.default_rng(4)
+    data = rng.normal(size=(80, 3))
+    target = np.zeros(3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        values = [fn(data, target, degree) for fn in (co_lpm_nd, co_upm_nd, dpm_nd)]
+    # Only rows entirely below (above) the target contribute to CLPM (CUPM).
+    below = np.all(data <= 0.0, axis=1)
+    expected = np.mean(np.where(below, np.prod(np.abs(data) ** degree, axis=1), 0.0))
+    raw = co_lpm_nd(data, target, degree, norm=False)
+    assert raw == pytest.approx(expected, rel=1e-12)
+    assert all(np.isfinite(v) for v in values)

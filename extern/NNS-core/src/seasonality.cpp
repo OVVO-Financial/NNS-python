@@ -1,11 +1,13 @@
 // src/seasonality.cpp
 //
-// Implementation extracted from NNS 13.0 NNS_seas.cpp. Decoupled from Rcpp.
+// Implementation extracted from NNS NNS_seas.cpp (R 13.3, 82a92eb), scoring every
+// component series of each lag as later R does. Decoupled from Rcpp.
 //
 // SPDX-License-Identifier: GPL-3.0-only
 #include "nns/seasonality.hpp"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -18,7 +20,6 @@ namespace nns {
 namespace {
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
-constexpr double kInf = std::numeric_limits<double>::infinity();
 
 inline bool any_na_or_inf(const double* x, std::size_t n) {
   for (std::size_t i = 0; i < n; ++i) {
@@ -46,58 +47,6 @@ inline double vec_sd(const std::vector<double>& x) {
   return std::sqrt(ss / static_cast<double>(n - 1));
 }
 
-// lag-1 Pearson autocorrelation
-inline double acf1(const std::vector<double>& x) {
-  std::size_t n = x.size();
-  if (n < 2) return kNaN;
-  double m = vec_mean(x);
-  double num = 0.0;
-  double den = 0.0;
-  for (std::size_t t = 1; t < n; ++t) num += (x[t] - m) * (x[t - 1] - m);
-  for (std::size_t t = 0; t < n; ++t) { 
-    double d = x[t] - m; 
-    den += d * d; 
-  }
-  if (den == 0.0) return kNaN;
-  return num / den;
-}
-
-inline double cv_or_fallback(const std::vector<double>& x, bool use_cv, double var_cov) {
-  std::size_t n = x.size();
-  if (n < 2) return var_cov;
-  double z;
-  if (use_cv) {
-    double m = vec_mean(x);
-    double s = vec_sd(x);
-    z = std::fabs(s / m);
-  } else {
-    double a1 = acf1(x);
-    if (!std::isfinite(a1)) return var_cov;
-    z = std::pow(std::fabs(a1), -1.0);
-  }
-  if (!std::isfinite(z)) return var_cov;
-  return z;
-}
-
-// 0-based indices stepping backwards
-inline std::vector<int> rev_step_indices(int n, int step) {
-  int len = (n - 1) / step + 1;
-  std::vector<int> out(len);
-  int v = n - 1; // 0-based max index
-  for (int k = 0; k < len; ++k, v -= step) out[k] = v;
-  return out;
-}
-
-inline std::vector<double> take_by_index(const std::vector<double>& x, const std::vector<int>& idx) {
-  std::size_t m = idx.size();
-  std::vector<double> out(m);
-  for (std::size_t i = 0; i < m; ++i) {
-    int j = idx[i];
-    out[i] = (j >= 0 && j < static_cast<int>(x.size())) ? x[j] : kNaN;
-  }
-  return out;
-}
-
 } // namespace
 
 // ---------- Core Seasonality API ----------
@@ -118,43 +67,45 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
   }
 
   std::vector<double> variable(x, x + n);
-  std::vector<double> variable_1(x, x + n - 1);
-  std::vector<double> variable_2;
-  if (n - 1 >= 2) variable_2.assign(x, x + n - 2);
 
-  const int half_n = static_cast<int>(n) / 2;
+  const int ni = static_cast<int>(n);
+  const int half_n = ni / 2;
   const double mean_var = vec_mean(variable);
-  const bool use_cv = (mean_var != 0.0);
-  
-  double var_cov = use_cv ? std::fabs(vec_sd(variable) / mean_var) : std::pow(std::fabs(acf1(variable)), -1.0);
-  if (!std::isfinite(var_cov)) var_cov = kInf;
+  // Compare raw values: a repeated 0.1 need not centre to exactly 0.
+  const bool constant = std::all_of(variable.begin(), variable.end(),
+                                    [&](double v) { return v == variable[0]; });
+  const double sd_var = constant ? 0.0 : vec_sd(variable);
+  // CV is meaningless for a mean that is zero up to rounding; compare sds instead
+  const double tol = std::sqrt(DBL_EPSILON);
+  const bool use_cv = std::fabs(mean_var) > tol * sd_var;
+  const double var_cov = use_cv ? std::fabs(sd_var / mean_var) : sd_var;
 
-  std::vector<double> out(half_n), out1(half_n), out2(half_n);
-  std::vector<int> inst(half_n, 0), inst1(half_n, 0), inst2(half_n, 0);
-
-  const int n1 = static_cast<int>(n) - 1;
-  const int n2 = static_cast<int>(variable_2.size());
-
-  for (int i = 1; i <= half_n; ++i) {
-    std::vector<int> idx  = rev_step_indices(static_cast<int>(n), i);
-    std::vector<int> idx1 = rev_step_indices(n1, i);
-    std::vector<int> idx2 = (n2 > 0) ? rev_step_indices(n2, i) : std::vector<int>();
-
-    double t  = cv_or_fallback(take_by_index(variable, idx), use_cv, var_cov);
-    double t1 = cv_or_fallback(take_by_index(variable_1, idx1), use_cv, var_cov);
-    double t2 = cv_or_fallback(take_by_index(variable_2, idx2), use_cv, var_cov);
-
-    if (t  <= var_cov) { inst[i - 1]  = i; out[i - 1]  = t;  }
-    if (t1 <= var_cov) { inst1[i - 1] = i; out1[i - 1] = t1; }
-    if (t2 <= var_cov) { inst2[i - 1] = i; out2[i - 1] = t2; }
-  }
-
+  // Lag m: length-weighted mean CV of its m component series x[j], x[j + m], ...
   std::vector<int> periods_vec;
   std::vector<double> cvmean_vec;
-  for (int i = 0; i < half_n; ++i) {
-    if (inst[i] > 0 && inst1[i] > 0 && inst2[i] > 0) {
-      periods_vec.push_back(inst[i]);
-      cvmean_vec.push_back((out[i] + out1[i] + out2[i]) / 3.0);
+  for (int m = 1; m <= half_n; ++m) {
+    double wsum = 0.0;
+    for (int j = 0; j < m; ++j) {
+      int len = (ni - 1 - j) / m + 1;
+      double mu = 0.0, ss = 0.0;
+      bool same = true;
+      for (int i = j; i < ni; i += m) {
+        mu += x[i];
+        same = same && x[i] == x[j];
+      }
+      mu /= static_cast<double>(len);
+      for (int i = j; i < ni; i += m) {
+        double d = x[i] - mu;
+        ss += d * d;
+      }
+      double sd = same ? 0.0 : std::sqrt(ss / static_cast<double>(len - 1));
+      // a constant component has CV 0; a near-zero mean caps CV at 1/tol, where the series switches to sd
+      wsum += len * (use_cv ? (sd == 0.0 ? 0.0 : sd / std::max(std::fabs(mu), tol * sd)) : sd);
+    }
+    double cv_m = wsum / static_cast<double>(ni);
+    if (cv_m < var_cov) {
+      periods_vec.push_back(m);
+      cvmean_vec.push_back(cv_m);
     }
   }
 
@@ -170,7 +121,8 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
     std::vector<int> ord(m);
     std::iota(ord.begin(), ord.end(), 0);
-    std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+    // Equal CVs keep the shorter period first.
+    std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
     std::vector<int> sortedP(m);
     std::vector<double> sortedCV(m);
@@ -230,7 +182,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
         std::vector<int> ord(m);
         std::iota(ord.begin(), ord.end(), 0);
-        std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+        std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
         std::vector<int> sortedP(m);
         std::vector<double> sortedCV(m);
@@ -259,7 +211,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
         int m = static_cast<int>(Period.size());
         std::vector<int> ord(m);
         std::iota(ord.begin(), ord.end(), 0);
-        std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+        std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
         std::vector<int> sortedP(m);
         std::vector<double> sortedCV(m);
@@ -294,7 +246,7 @@ SeasonalityResult seasonality(const double* x, std::size_t n,
 
       std::vector<int> ord(m);
       std::iota(ord.begin(), ord.end(), 0);
-      std::sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
+      std::stable_sort(ord.begin(), ord.end(), [&](int a, int b) { return CoefVar[a] < CoefVar[b]; });
 
       std::vector<int> sortedP(m);
       std::vector<double> sortedCV(m);

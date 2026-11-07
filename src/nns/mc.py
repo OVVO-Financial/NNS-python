@@ -18,15 +18,25 @@ def nns_mc(
     exp: float = 1.0,
     type: str = "spearman",
     drift: bool = True,
-    target_drift: float | None = None,
-    target_drift_scale: float | None = None,
+    target_drift: float | list[float] | np.ndarray | None = None,
+    target_drift_scale: float | list[float] | np.ndarray | None = None,
     xmin: float | None = None,
     xmax: float | None = None,
     random_seed: int | None = None,
     **kwargs: Any,
 ) -> dict[str, object]:
-    """Monte Carlo sampling over NNS.meboot's rho space."""
+    """Monte Carlo sampling over NNS.meboot's rho space.
+
+    A vector ``target_drift`` / ``target_drift_scale`` is recycled along the rho grid
+    as in R (``mapply``); it cannot be longer than the grid. As in R, a given
+    ``target_drift`` takes precedence and ``target_drift_scale`` is then ignored.
+    """
     exp_rhos = _generate_mc_rhos(lower_rho, upper_rho, by, exp)
+    if target_drift is not None:
+        target_drift_scale = None
+    for name, value in (("target_drift", target_drift), ("target_drift_scale", target_drift_scale)):
+        if value is not None and np.asarray(value).size > exp_rhos.size:
+            raise ValueError(f"{name} must not have more elements than the rho grid.")
     meboot_result = nns_meboot(
         x=np.asarray(x, dtype=np.float64),
         reps=reps,
@@ -69,10 +79,18 @@ def _generate_mc_rhos(
     if by == 0.0:
         raise ValueError("'by' must be non-zero.")
     rhos = _r_seq(lower_rho, upper_rho, by)
-    neg_rhos = np.abs(rhos[rhos <= 0.0])
-    pos_rhos = rhos[rhos > 0.0]
-    exp_rhos = np.concatenate((-(neg_rhos**exp), pos_rhos ** (1.0 / exp)))[::-1]
-    return np.asarray(exp_rhos, dtype=np.float64)
+    # Warp each side of 0 (or of the bound nearest 0) within its own span, so the grid
+    # stays inside the bounds.
+    if exp != 1.0:
+        pivot = min(max(0.0, lower_rho), upper_rho)
+        low = rhos <= pivot
+        if pivot > lower_rho:
+            w = ((pivot - rhos[low]) / (pivot - lower_rho)) ** exp
+            rhos[low] = (1.0 - w) * pivot + w * lower_rho
+        if upper_rho > pivot:
+            w = ((rhos[~low] - pivot) / (upper_rho - pivot)) ** (1.0 / exp)
+            rhos[~low] = (1.0 - w) * pivot + w * upper_rho
+    return np.asarray(rhos[::-1], dtype=np.float64)
 
 
 def _r_seq(start: float, stop: float, step: float) -> NDArray[np.float64]:
@@ -81,11 +99,10 @@ def _r_seq(start: float, stop: float, step: float) -> NDArray[np.float64]:
         return np.array([start], dtype=np.float64)
     if span * step < 0.0:
         return np.array([], dtype=np.float64)
-    count = int(np.floor(span / step + 1e-12)) + 1
+    # R's seq.default: a fuzz of 1e-10 on the count, and the end clamped to stop.
+    count = int(np.floor(span / step + 1e-10)) + 1
     values = start + step * np.arange(count, dtype=np.float64)
-    if values.size and ((step > 0.0 and values[-1] > stop) or (step < 0.0 and values[-1] < stop)):
-        values = values[:-1]
-    return values
+    return np.minimum(values, stop) if step > 0.0 else np.maximum(values, stop)
 
 
 def _format_r_number(value: float) -> str:

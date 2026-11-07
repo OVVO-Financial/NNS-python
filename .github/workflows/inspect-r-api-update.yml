@@ -1,6 +1,10 @@
 name: Regenerate R parity cache
 
 on:
+  # One-shot integration audit: run against the complete Python PR stack.
+  push:
+    branches: [integration/r14-parity-on-python-stack-20261106, automation/r14-stack-cache-20261106]
+    paths: [.github/workflows/inspect-r-api-update.yml]
   repository_dispatch:
     types: [nns-r-package-updated]
   workflow_dispatch:
@@ -55,6 +59,13 @@ jobs:
             r_version="${{ github.event.client_payload.r_version }}"
             source_tarball="${{ github.event.client_payload.source_tarball }}"
             windows_binary="${{ github.event.client_payload.windows_binary }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # The pinned upstream release for the full-stack parity audit.
+            r_repo="OVVO-Financial/NNS"
+            r_commit="7b07a837c130ba7220dbe16c584221508757d5ae"
+            r_version="14.0"
+            source_tarball="NNS_14.0.tar.gz"
+            windows_binary="NNS_14.0.zip"
           else
             r_repo="OVVO-Financial/NNS"
             r_commit="${{ inputs.r_commit }}"
@@ -147,7 +158,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          Rscript -e "options(repos=c(CRAN='https://cloud.r-project.org')); install.packages(c('remotes','jsonlite')); remotes::install_deps('upstream/package', dependencies=NA, upgrade='never')"
+          Rscript -e "options(repos=c(CRAN='https://cloud.r-project.org')); install.packages(c('remotes','jsonlite','mlbench')); remotes::install_deps('upstream/package', dependencies=NA, upgrade='never')"
 
       - name: Install exact NNS source package
         shell: bash
@@ -162,8 +173,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -U pip
-          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
-          python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist pandas matplotlib
           python -m pip install -e . --force-reinstall --no-deps
 
       - name: Regenerate complete live-R parity cache
@@ -322,17 +333,39 @@ jobs:
             committed-cache-verification.log
           if-no-files-found: warn
 
+      # Rebuild directly on the existing #192 branch.  Do not let the
+      # create-pull-request action reset this branch from #191 and discard
+      # the independent R14 Python implementation fixes already on #192.
+      - name: Commit regenerated R14 cache to existing audit branch
+        if: ${{ always() && github.event_name == 'push' && github.ref_name == 'automation/r14-stack-cache-20261106' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A tests/_r.py tests/_r_cache sync/nns_source.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Rebuild R 14.0 parity fixtures with heterogeneous-list decoder'
+            # Fast-forward only; concurrent branch edits must never be overwritten.
+            git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          else
+            echo 'R cache is unchanged after fresh regeneration.'
+          fi
       - name: Open or update R cache regeneration PR
-        if: always()
+        if: ${{ always() && github.ref_name != 'automation/r14-stack-cache-20261106' }}
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.OVVO_SYNC_TOKEN || github.token }}
-          branch: automation/r-cache-nns-${{ steps.package.outputs.r_version }}
+          # A separate PR against the full-stack audit branch; never overwrite #190.
+          branch: ${{ github.event_name == 'push' && 'automation/r14-stack-cache-20261106' || format('automation/r-cache-nns-{0}', steps.package.outputs.r_version) }}
+          base: ${{ github.event_name == 'push' && 'integration/r14-parity-on-python-stack-20261106' || github.event.repository.default_branch }}
           delete-branch: true
           commit-message: Regenerate R parity cache for NNS ${{ steps.package.outputs.r_version }}
           title: Regenerate R parity cache for NNS ${{ steps.package.outputs.r_version }}
           body: |
             Automatic parity-cache refresh from the R source of truth.
+            For the one-shot stack audit, this PR targets draft #191 (all port PRs
+            through #189). Do NOT merge until deterministic parity is verified.
 
             - R repository: `${{ steps.package.outputs.r_repo }}`
             - R commit: `${{ steps.package.outputs.r_commit }}`
@@ -356,4 +389,8 @@ jobs:
         run: |
           echo "Live regeneration outcome: ${{ steps.regenerate.outcome }}"
           echo "Cache-only verification outcome: ${{ steps.verify.outcome }}"
-          echo "The regenerated R cache has been preserved in its pull request."
+          echo "The regenerated R cache has been preserved on the audit branch or in its PR."
+          if [ "${{ steps.regenerate.outcome }}" != "success" ] || [ "${{ steps.verify.outcome }}" != "success" ]; then
+            echo "::error::The oracle regeneration or its offline verification failed; generated cache is for review, not release."
+            exit 1
+          fi

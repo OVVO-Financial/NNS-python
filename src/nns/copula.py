@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Sequence
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _as_pair
 from nns._native import native_fn
-from nns.co_moments import _as_pair
+from nns.core import lpm, lpm_ratio
 from nns.dependence import _dpm_nd
 from nns.pm_matrix import pm_matrix
 
@@ -21,6 +22,7 @@ def nns_copula(
     *,
     continuous: bool = True,
     target: NDArray[np.float64] | Sequence[float] | None = None,
+    plot: bool = False,
 ) -> float:
     """Return R's ``NNS.copula`` higher-dimension dependence value in ``[0, 1]``.
 
@@ -38,9 +40,29 @@ def nns_copula(
     (degree-1) partial-moment dependence measures, exactly as R's
     ``NNS.copula(..., continuous=TRUE)``. ``continuous=False`` reuses the
     discrete partial moments for both terms, matching ``continuous=FALSE``.
+
+    Inputs and targets must be non-empty and finite (R stops on missing or
+    non-finite data); a ``ValueError`` is raised otherwise.
+
+    ``plot=True`` also scatters the data with R's orthant colouring
+    (``nns.plotting.plot_nns_copula``): a 2-D scatter for two variables and a
+    3-D one for three. More than three variables cannot be drawn; a warning
+    says so.
     """
     values, targets = _prepare(x, y, target_x, target_y, target)
-    return _copula(values, targets, continuous)
+    result = _copula(values, targets, continuous)
+    if plot:
+        if values.shape[1] > 3:
+            warnings.warn(
+                "plot=True draws two or three variables only; nothing is drawn.",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            from nns.plotting.copula import plot_nns_copula
+
+            plot_nns_copula(values)
+    return result
 
 
 def _copula(
@@ -48,6 +70,16 @@ def _copula(
     target: NDArray[np.float64],
     continuous: bool,
 ) -> float:
+    if values.ndim != 2 or values.shape[0] == 0:
+        # The native kernel assumes at least one observation.
+        raise ValueError("copula input must be non-empty.")
+    # A constant margin is independent of the rest and has no degree-1 lower share.
+    vary = np.any(values != values[0], axis=0)
+    if not np.all(vary):
+        if np.count_nonzero(vary) < 2:
+            return 0.0
+        values = np.ascontiguousarray(values[:, vary])
+        target = target[vary]
     native_copula = native_fn("copula_nd")
     if native_copula is not None:
         return float(
@@ -67,7 +99,17 @@ def _copula(
     discrete_co_pm = float(
         discrete_pm_cov["cupm"][upper].sum() + discrete_pm_cov["clpm"][upper].sum()
     )
-    if discrete_co_pm == 1.0 or discrete_co_pm == 0.0:
+    # Perfect dependence: every pair fully concordant (1) or fully discordant (0).
+    # A margin with every observation on one side of its target makes that trivially true.
+    p0 = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
+    # Every co-partial moment then equals its independence product.
+    one_sided = (p0 == 0.0) | (p0 == 1.0)
+    if np.all(one_sided):
+        return 0.0
+    pair_co_pm = discrete_pm_cov["cupm"][upper] + discrete_pm_cov["clpm"][upper]
+    if not np.any(one_sided) and np.all(
+        (np.abs(pair_co_pm - 1.0) < 1e-9) | (np.abs(pair_co_pm) < 1e-9)
+    ):
         return 1.0
 
     discrete_d_pm = _dpm_nd(values, target, 0.0, norm=True)
@@ -82,22 +124,40 @@ def _copula(
         continuous_co_pm = discrete_co_pm
         continuous_d_pm = discrete_d_pm
 
-    indep_co_pm = 0.25 * (n**2 - n)
-    discrete_dep = min(max(abs(discrete_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
-    continuous_dep = min(max(abs(continuous_co_pm - indep_co_pm) / indep_co_pm, 0.0), 1.0)
-
-    # DPM_nD counts a point as concordant when it is all-below OR all-above the
-    # target (both fully-aligned orthants), so under independence
-    # P(discordant) = 1 - 2*0.5**n (0.5 when n == 2), not 1 - 0.5**n. The old
-    # 1 - 0.5**n anchor left a non-vanishing dependence floor for independent
-    # data.
-    indep_d_pm = 1.0 - 2.0 * 0.5**n
-    n_dim_discrete_dep = abs(discrete_d_pm - indep_d_pm) / indep_d_pm
-    n_dim_continuous_dep = abs(continuous_d_pm - indep_d_pm) / indep_d_pm
+    # Independence anchors from each margin's own lower-tail share at its target.
+    p1 = (
+        np.array([float(lpm_ratio(1.0, target[j], values[:, j])) for j in range(n)])
+        if continuous
+        else p0
+    )
+    discrete_co_anchor, discrete_d_anchor = _independence_anchors(p0, upper)
+    continuous_co_anchor, continuous_d_anchor = _independence_anchors(p1, upper)
+    discrete_dep = min(max(_relative_deviation(discrete_co_pm, discrete_co_anchor), 0.0), 1.0)
+    continuous_dep = min(
+        max(_relative_deviation(continuous_co_pm, continuous_co_anchor), 0.0), 1.0
+    )
+    n_dim_discrete_dep = min(_relative_deviation(discrete_d_pm, discrete_d_anchor), 1.0)
+    n_dim_continuous_dep = min(_relative_deviation(continuous_d_pm, continuous_d_anchor), 1.0)
 
     return math.sqrt(
         (discrete_dep + continuous_dep + n_dim_discrete_dep + n_dim_continuous_dep) / 4.0
     )
+
+
+def _independence_anchors(
+    p: NDArray[np.float64], upper: tuple[NDArray[np.intp], NDArray[np.intp]]
+) -> tuple[float, float]:
+    """Pairwise co-moment sum and nD divergent share under independence (R NNS.copula)."""
+    co = float(np.sum((np.outer(p, p) + np.outer(1.0 - p, 1.0 - p))[upper]))
+    return co, 1.0 - float(np.prod(p)) - float(np.prod(1.0 - p))
+
+
+def _relative_deviation(observed: float, anchor: float) -> float:
+    # A boundary target can zero an anchor; an observed 0 then matches it exactly.
+    if observed == anchor:
+        return 0.0
+    with np.errstate(divide="ignore"):
+        return float(np.divide(abs(observed - anchor), anchor))
 
 
 def _prepare(
@@ -118,11 +178,13 @@ def _prepare(
         raise ValueError("Use target_x/target_y (not target) with the bivariate (x, y) form.")
     x_values, y_values = _as_pair(x, y)
     values = np.column_stack((x_values, y_values))
-    targets = cast(NDArray[np.float64], np.mean(values, axis=0))
+    targets = _r_col_means(values)
     if target_x is not None:
         targets[0] = float(target_x)
     if target_y is not None:
         targets[1] = float(target_y)
+    if not np.all(np.isfinite(targets)):
+        raise ValueError("target must contain only finite values.")
     return values, targets
 
 
@@ -144,10 +206,28 @@ def _matrix_target(
     target: NDArray[np.float64] | Sequence[float] | None,
 ) -> NDArray[np.float64]:
     if target is None:
-        return cast(NDArray[np.float64], np.mean(values, axis=0))
+        return _r_col_means(values)
     targets = np.asarray(target, dtype=np.float64).reshape(-1)
     if targets.size != values.shape[1]:
         raise ValueError("target length must match the number of variables (columns).")
     if not np.all(np.isfinite(targets)):
         raise ValueError("target must contain only finite values.")
     return targets
+
+
+def _r_col_means(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Column means computed exactly as R's ``colMeans`` on a double matrix.
+
+    R accumulates each column sequentially in long double and divides in long
+    double before rounding to double. ``np.mean`` uses pairwise double summation
+    and can differ in the last ulp, which is enough to flip the copula's
+    exact-equality shortcut when an observation sits on the mean.
+    On platforms where ``np.longdouble`` is plain double this degrades to a
+    sequential double sum.
+    """
+    n = values.shape[0]
+    out = np.empty(values.shape[1], dtype=np.float64)
+    for column in range(values.shape[1]):
+        total = np.cumsum(values[:, column], dtype=np.longdouble)[-1]
+        out[column] = float(total / n)
+    return out

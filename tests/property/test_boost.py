@@ -113,7 +113,7 @@ def test_nns_boost_class_shape_and_codes_hold(
     st.sampled_from([1]),
     st.sampled_from([0.8, 0.95]),
 )
-def test_nns_boost_class_pred_int_shape_holds(
+def test_nns_boost_class_interval_is_binary_only_like_r14(
     x: np.ndarray,
     n_classes: int,
     depth: int,
@@ -139,10 +139,16 @@ def test_nns_boost_class_pred_int_shape_holds(
 
     assert result["results"].shape == (3,)
     assert np.all(np.isin(result["results"], np.unique(y)))
-    assert isinstance(result["pred.int"], dict)
-    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
-    assert result["pred.int"]["pred.int.neg"].shape == (3,)
-    assert result["pred.int"]["pred.int.pos"].shape == (3,)
+    if np.unique(y).size == 2:
+        assert isinstance(result["pred.int"], dict)
+        assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
+        for bound in result["pred.int"].values():
+            assert bound.shape == (3,)
+            assert np.all(np.isin(bound, np.unique(y)))
+    else:
+        # R14 Boost forwards Stack's binary-only compatibility interval.
+        # Nominal multiclass sets cannot be represented by a numeric range.
+        assert result["pred.int"] is None
 
 
 @pytest.mark.stochastic

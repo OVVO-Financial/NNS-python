@@ -1,0 +1,19 @@
+{
+  "entries": {
+    "5bd4fd86dbfd728b071a2fa8fe3c1afbe60a3a1859602f3f893d2ba6dca76bff": {
+      "pe": [
+        18.5714130434783,
+        25.4885049019608
+      ],
+      "r2": 0.512896699479898,
+      "rpm": [
+        "x_FALSE.",
+        "x_TRUE.",
+        "y.hat"
+      ]
+    }
+  },
+  "label": "labels.reg.logical_uni",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

@@ -7,7 +7,43 @@ acceleration through `nns._nnscore` where available. Source builds use
 `scikit-build-core` and `nanobind` to compile the extension; published wheels
 should be preferred when available. Public APIs keep Python implementations and
 explicit fallback behavior, so native code remains a deliberate,
-benchmark-backed implementation detail rather than a public API.
+benchmark-backed implementation detail rather than a public API. Setting the
+environment variable `NNS_DISABLE_NATIVE=1` before importing `nns` forces the
+NumPy fallbacks, as when the extension is not built; CI runs the invariant and
+cached parity tests that way too.
+
+## Threads
+
+The native kernels (vectorised partial moments, the PM matrix, the n-dimensional
+co-moments and the copula) can use several threads. Inputs below a fixed amount of
+work always run serially, and results never depend on the thread count.
+`nns.set_num_threads(n)` sets the default; `n=None` restores the automatic choice,
+which is the `NNS_NUM_THREADS` environment variable when it is a positive integer
+and the number of hardware threads otherwise. `nns.get_num_threads()` returns the
+current default. The `ncores` argument of `nns_reg`, `nns_m_reg`, `nns_stack`,
+`nns_boost`, `nns_arma_optim` and `nns_var` caps the native threads for that call:
+`None` keeps the default, `1` runs serially, and anything other than `None` or a
+positive integer raises `ValueError`, as in R's `NNS.M.reg`. The cap applies per
+Python thread. R also uses `ncores` for its parallel `NNS.ARMA.optim` workers;
+NNS Python has no process-level parallelism. The heavy kernels release the GIL,
+so Python threads can run them concurrently.
+
+## Plotting
+
+Compute functions never draw unless asked. Where R's default is `plot = TRUE`
+(`NNS.reg`, `NNS.FSD`/`SSD`/`TSD`, `NNS.ANOVA`, ...), NNS Python defaults to
+`plot=False` and returns the same values either way; `plot=True` additionally
+draws the figure through the matching `nns.plotting.plot_*` function and never
+calls `plt.show()`. The flag exists on `nns_reg`, `nns_m_reg`, `nns_cdf`,
+`nns_seas`, `nns_arma`, `nns_arma_optim`, `nns_part` (R's `Voronoi`),
+`fsd`, `ssd`, `tsd`, `nns_anova`, `nns_norm` (R's `chart.type = "l"`),
+`nns_diff` and `nns_copula`. `nns_sd_cluster(dendrogram=True)` draws the
+dendrogram, as R does, because the flag is also what returns the `hclust` data.
+A requested figure that cannot be drawn raises a `UserWarning` instead of being
+skipped silently: multivariate `nns_reg(plot=True)` with more than two
+regressors (R draws its 3-D scatter for exactly two; `residual_plot=True` draws
+the fitted-values plot for any number), `nns_copula(plot=True)` with more than
+three variables, and `nns_norm(plot=True)` on unequal-length lists.
 
 ## Degree-Zero Boundary
 
@@ -23,12 +59,12 @@ NNS Python raises `ValueError`.
 
 Rationale: empty arrays in Python are upstream bugs, and NumPy convention is to warn or fail on empty reductions rather than silently produce a meaningful statistic.
 
-## Co-Moment Length Mismatch Divergence From R
+## Co-Moment Lengths
 
-R NNS warns when `x` and `y` lengths differ, computes over the shorter length, and divides by the longer length.
-NNS Python raises `ValueError`.
-
-Rationale: mismatched co-moment inputs lose observations silently in R. Python callers should fix alignment before computing a bivariate statistic.
+`co_lpm`, `co_upm`, `d_lpm` and `d_upm` raise `ValueError` unless `x` and `y` are
+non-empty and the same length, and `target_x` and `target_y` are non-empty and the
+same length or one of them length 1. R's `Co.LPM`, `Co.UPM`, `D.LPM` and `D.UPM`
+check the same rules.
 
 ## PM Matrix Target Defaults
 
@@ -38,6 +74,15 @@ scalar numeric target across all variables; R requires callers to pass an
 explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
 does not match the number of variables raise `ValueError`.
 
+## Mode Default Divergence From R
+
+`nns_mode` defaults to `multi=False` and returns a single float, while R's
+`NNS.mode` defaults to `multi = TRUE` and returns every detected mode (e.g. two
+values for a bimodal sample). Pass `multi=True` for R's default output; explicit
+`multi` values match R. The Python default is kept because the multi-mode peak
+finder also reports spurious secondary modes on unimodal data (in R as well),
+and the internal callers all ask for a single mode.
+
 ## Classical Moment Normalization
 
 `mean_pm`, `var_pm`, `skew_pm`, and `kurt_pm` use population normalization by
@@ -46,7 +91,9 @@ accepts `ddof` for NumPy-style variance scaling. `skew_pm` and `kurt_pm` do not
 apply SciPy's optional finite-sample bias correction.
 
 `nns_moments` is the public `NNS.moments` wrapper and returns R's dictionary
-shape with `mean`, `variance`, `skewness`, and `kurtosis`. `nns_gravity` exposes
+shape with `mean`, `variance`, `skewness`, and `kurtosis`. As in R, undefined
+moments are `NaN` rather than errors (constant input; `population=False` with
+n <= 3). `nns_gravity` exposes
 R's public `NNS.gravity` central-tendency helper. `fsd_uni`, `ssd_uni`, and
 `tsd_uni` are the unidirectional stochastic-dominance wrappers behind R's
 `.uni` exports. `co_lpm_nd`, `co_upm_nd`, and `dpm_nd` expose the public
@@ -65,10 +112,14 @@ convenience for that stochastic path.
 peels `sd_efficient_set` results and returns a dictionary of `Cluster_1`,
 `Cluster_2`, ... memberships. The output contains variable names, not numeric
 cluster labels; when names are omitted, NNS Python uses R-style `X_1`, `X_2`, ...
-names. `type="continuous"` is supported for first-degree efficient sets.
+names, or the column names of a DataFrame input. `type="continuous"` is
+supported for first-degree efficient sets, `fsd`, and `fsd_uni`; as in R, an
+unrecognised `type` warns (and `fsd` then runs its continuous branch, while
+`fsd_uni` and the efficient-set routines run the discrete one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
-NNS Python does not plot the dendrogram; it only returns the object data.
+With fewer than two clustered variables it warns, as R does, and returns the
+clusters only. The dendrogram is drawn as well (see Plotting).
 
 The stochastic-dominance implementation is deliberately pure NumPy. It mirrors
 R's C++ SD core mathematically by sorting each column once, storing prefix sums,
@@ -76,24 +127,32 @@ and evaluating dominance on each pair's merged threshold grid rather than on one
 global all-column grid. Pairwise tests (`fsd`, `ssd`, `tsd`, and the `*_uni`
 wrappers) accept samples of unequal length: each sample's curve is evaluated on
 the merged grid exactly as R's `NNS.FSD`/`NNS.SSD`/`NNS.TSD` compute
-`LPM(degree, sort(c(x, y)), sample)` per sample. R's C++ `.uni` walkers assume
-equal-length inputs, so for unequal lengths the Python `*_uni` wrappers are an
-intentional extension carrying the same merged-grid semantics. The
+`LPM(degree, sort(c(x, y)), sample)` per sample, and as the patched R `.uni`
+walkers do (each sample walked with its own length). Every pairwise verdict
+comes from one port of R's native pairwise test: for TSD and continuous FSD it
+also checks the closed-form extremum of the curve difference strictly between
+merged sample points (LPM2 is piecewise quadratic and the continuous ratio
+linear-fractional, so the difference can peak there), as the patched R does. The
 matrix-based efficient-set and cluster routines operate on data columns and
-therefore remain equal-length by construction. The full prefix-pair dominance matrix remains available
-internally for verification and fallback. Large degree-1 discrete calls use an
-exact order-statistic dominance matrix: with equal-length empirical samples,
-one sample first-order stochastically dominates another exactly when every
-sorted order statistic is at least as large and at least one is strictly larger.
-Large degree-1 continuous and degree 2/3 calls use a lazy kept-only prefix scan.
+therefore remain equal-length by construction. Every efficient-set and cluster
+call, whatever the column count, tests each pair on that pair's own grid, so a
+pair's verdict never depends on which other columns are present. Degree-1
+discrete calls use an exact order-statistic dominance matrix: with equal-length
+empirical samples, one sample first-order stochastically dominates another
+exactly when every sorted order statistic is at least as large and at least one
+is strictly larger. Degree-1 continuous and degree 2/3 calls use a lazy
+kept-only prefix scan.
 Columns are visited in R's LPM-at-global-maximum order with original-index tie
 breaks, and only already-kept candidates are tested against the current column.
 Each prefix pair check applies min/mean/identical guards before evaluating
-curves, then exits as soon as dominance is disproved.
+curves.
 
-These choices preserve exact R-style dominance semantics: no tolerances,
-approximate equality, output reordering, or diagonal/identical-column behavior
-changes are introduced. Polars is intentionally not used in this SD kernel
+Curve differences up to `64 * eps * S^d` (`S` the largest absolute value of
+the two samples; `d` = 1 for SSD and the mean condition, 2 for TSD, a ratio
+analogue for continuous FSD) are treated as ties, as in the patched R, so
+rounding noise does not decide dominance; discrete FSD compares exact
+empirical CDF fractions. No output reordering or diagonal/identical-column
+behavior changes are introduced. Polars is intentionally not used in this SD kernel
 because the hot path is dense pairwise threshold evaluation rather than
 data-frame grouping or filtering. R remains faster on some large finance
 fixtures because its C++ path walks merged sorted thresholds in tight parallel
@@ -107,31 +166,51 @@ uses R's lower-partial-moment frequency convention, and positive degrees use
 `LPM.ratio` deformation. Univariate output columns follow installed R (`x` plus
 `CDF`, `S(x)`, `h(x)`, or `H(x)`), while multivariate output keeps the final
 column named `CDF` for all types, including survival, hazard, and cumulative
-hazard. Plotting is ignored. The univariate `NA`/`Inf` comparison quirks are
-handled inside `nns_cdf` without loosening the global partial-moment APIs.
+hazard. Input column names that repeat each other or `CDF` get R
+`make.unique` suffixes (`CDF.1`, `a.1`), since a dict cannot hold the duplicate
+names R returns. Plotting is ignored. As in the patched R (see [parity](parity.md)), missing
+values are dropped first (complete rows for a matrix), so the CDF reaches 1, and
+infinite values raise `ValueError`. For `d >= 3` columns the survival, hazard and
+cumulative hazard use the joint survival `P(X_1 > t_1, ..., X_d > t_d)` by
+inclusion-exclusion over all column subsets.
 
 ## Dependence
 
-`nns_dep` follows R's `NNS.dep` bivariate path, including `NNS.gravity` handling
-for zero-range inputs and non-positive or non-finite bin widths. NNS Python also caps
-the internal gravity bin count at `4 * len(input)` to prevent pathological
-allocations on inputs where R's C++ `int` conversion effectively collapses an
-absurd bin count. `abs(Correlation) <= Dependence` is not guaranteed by
+`nns_dep(x, y)` follows R's `NNS.dep` bivariate path. With `asym=True` the partition
+is on `x` and the result measures `y` as a function of `x`. `nns_dep(X)` on a 2-D
+array or DataFrame returns R's `Correlation` and `Dependence` matrices; with
+`asym=True` entry `[i, j]` is `nns_dep(X[:, i], X[:, j], asym=True)` (row variable
+-> column variable, which is what R returns although its manual states the
+reverse). R's `p.value` option is not implemented. The bivariate path includes `NNS.gravity` handling
+for zero-range inputs and non-positive or non-finite bin widths. The gravity
+histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
+single outlier that makes R allocate millions of empty bins costs nothing and gives
+R's value. The compiled kernel (NNS-core `nns::gravity`) and the NumPy fallback
+compute the same value bit for bit. They differ from R 13.3 only when the bin count
+exceeds the C `int` range: R's cast overflows there and the histogram collapses to
+one bin, while NNS Python (like the patched R) keeps the real histogram.
+`abs(Correlation) <= Dependence` is not guaranteed by
 `NNS.dep`; both R and NNS Python can return signed correlation magnitudes above the
 dependence component for near-binary inputs.
 
 ## Copula
 
-`nns_copula(x, y)` is the bivariate scalar form of R's `NNS.copula(cbind(x, y))`.
-When targets are omitted, NNS Python uses column means, matching R's `target = NULL`.
-The `target_x` and `target_y` arguments map to R's two-element target vector.
+`nns_copula(x, y)` is the bivariate form of R's `NNS.copula(cbind(x, y))`, and
+`nns_copula(X)` takes a 2-D matrix with any number of columns (at least two), as R
+does; `target` gives the per-column targets of the matrix form. When targets are
+omitted NNS Python uses the column means computed like R's `colMeans` (long-double
+sequential sum), matching R's `target = NULL` to the last bit. The `target_x` and
+`target_y` arguments map to R's two-element target vector. Empty or non-finite
+input raises `ValueError` (R stops on missing values).
 
 ## Causation
 
 `nns_causation(x, y)` maps to R's `NNS.caus(x, y, tau = 0, p.value = FALSE)`
 numeric-vector path. It returns the two directional components and the named
 signed net log-ratio key selected by R, either `C(x--->y)` or `C(y--->x)`.
-`causal_matrix` maps to R's `NNS.caus.matrix` antisymmetric matrix convention.
+`causal_matrix` maps to R's `NNS.caus` on a matrix (internally `NNS.caus.matrix`):
+an antisymmetric matrix whose entry `[i, j]` is the net causation of column `j` on
+column `i` (positive: `j` causes `i`). A DataFrame input returns a DataFrame labelled with its columns.
 `tau='ts'` uses `nns_seas(... )["periods"]` exactly like installed R: the first
 period not exceeding `sqrt(length(x))` is selected per variable, including
 harmonics when R selects them. Inputs with no eligible selected period follow
@@ -142,36 +221,73 @@ supported.
 
 `nns_part` maps to R's `NNS.part` but returns plain NumPy arrays instead of
 `data.table` objects: `"dt"` and `"regression.points"` are dictionaries of
-arrays. Installed R 13.0 only distinguishes `type = NULL` from any non-null
-`type`: `None` uses XY quadrant splits, while every non-`None` value uses
-X-only splits. This differs from documentation that implies separate `"X"`,
-`"Y"`, and `"XONLY"` modes. NNS Python matches the installed binary.
-`order="max"` is rejected with `TypeError`; installed R coerces it to `NA` and
-returns a useless zero-order map. All five `noise_reduction` modes are
-supported: `"off"`, `"mean"`, `"median"`, `"mode"`, and `"mode_class"`.
+arrays. As in R 13.3, `type` must be `None` (XY quadrant splits) or `"XONLY"`
+(any case); other values raise `ValueError`. `order` is `None`, a positive
+integer (NumPy integers and integral floats are accepted), or `"max"`, which
+returns R's explicit maximum partition (one point per observation, or per unique
+`x` for `XONLY`). `obs_req` must be a non-negative integer. The returned `order`
+is the depth actually reached; it never exceeds `floor(log2(n))` and can be smaller
+than requested. Pairs with `NaN` in either variable are dropped and infinities are
+kept, as in R. All five `noise_reduction` modes are supported: `"off"`, `"mean"`,
+`"median"`, `"mode"`, and `"mode_class"`.
 
 ## Regression
 
-`nns_reg` maps to R's univariate numeric `NNS.reg` path with
-`factor.2.dummy = FALSE` and plotting disabled. Return keys match R's list names, but data.table outputs are plain
-dictionaries of NumPy arrays. `multivariate_call=True` returns R's internal
-two-column regression-point structure as `{"x": ..., "y": ...}` for
-`nns_m_reg`, including after dimension-reduction projection. Matrix `x` without
-dimension reduction dispatches to `nns_m_reg`.
+`nns_reg` maps to R's `NNS.reg` (plotting is a separate side effect). Return
+keys match R's list names; data.table outputs are plain dictionaries of NumPy
+arrays. `multivariate_call=True` returns R's internal two-column
+regression-point structure as `{"x": ..., "y": ...}`. More than one encoded
+predictor without dimension reduction runs the `NNS.M.reg` branch.
+
+Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
+
+- pandas column names are kept as they are (R's `check.names = FALSE`; only
+  duplicates are renamed, by `make.unique`) as keys in `RPM`, `Fitted.xy` and
+  `equation`; factor dummy columns are `<column>_<make.names(level)>`. And `point_est` columns are matched to the training
+  columns by name: the same set of names is reordered into training order,
+  names disjoint from the training names (or an unnamed array) are taken
+  positionally, and a partial overlap raises `ValueError`. A named row such as
+  `df.iloc[0]` is matched the same way. A single predictor is positional.
+- A column is a factor when it is a pandas categorical, when `factor_levels=`
+  declares its levels, or when it holds labels: strings (including
+  numeric-looking strings such as `"1"`, `"10"`, as in R) or an object column
+  with any non-number. An object column of numbers (`df.to_numpy()` of a mixed
+  frame) is numeric. `bool` columns (and object columns of booleans) are
+  factors with levels `FALSE`/`TRUE`, as R treats logicals: dummies
+  `<column>_FALSE.` / `<column>_TRUE.` (R's `make.names`), so even a single
+  bool predictor runs the `NNS.M.reg` branch.
+- Factor levels are the declared levels in their order (pandas categories, or
+  `factor_levels=`: a mapping from column name to levels, one entry per column
+  with `None` for numeric columns, or a flat level list for a single
+  predictor). Undeclared label columns use sorted levels. Divergence: R uses
+  first-appearance order for character predictors, which makes its fit depend
+  on the row order; sorted is R's `factor()` order. With the default
+  `factor_2_dummy=True` the order only permutes the one-hot columns (one per
+  level); with `factor_2_dummy=False` the level order is the integer code.
+- Missing values in a factor column (training or `point_est`) raise
+  `ValueError`, as in R; `point_est` levels unseen in training raise too.
+- The response is a factor when it is a pandas categorical or `class_levels=`
+  is given (codes `1..K` in that order, `class.levels` lists them, and
+  classification is implied), a set of labels when it holds strings (sorted
+  levels, R's `factor(y)`), and numeric otherwise; an object array of numbers
+  is a numeric response, not classification. Missing labels raise.
+  Classification returns numeric class codes with `class.levels` as the label
+  map.
+
 `dist=None` is the default for `nns_reg`, `nns_m_reg`, `nns_stack`, and `nns_boost` and selects the native blended NNS distance, with `dist="NNS"` as the explicit alias. Continuous predictors use range-normalized coordinate differences and sum `abs(z) + z**2` across non-zero-range columns; explicit `dist="L1"`, `dist="L2"`, and `dist="FACTOR"` keep their legacy behavior.
-Classification is supported for numeric/logical/factor-like class-code targets.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R
 does not call `smooth.spline` there. Spline-eligible inputs use a private
 fixed-`spar` cubic smoothing-spline adapter matching the `stats::smooth.spline`
-subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R-style knots, and
-R's interior-band trace ratio for lambda.
-Factor predictor expansion is supported through the public `nns_reg` path.
-When combined with dimension reduction, factor predictors are expanded with
-R's full-rank dummy convention before synthetic `x.star` coefficients are
-computed. For callers that want direct multivariate regression, use
-`prepare_factor_predictors(...)` first and pass the returned numeric design
-matrix into `nns_m_reg(...)`:
+subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R's
+`1e-6 * IQR(x)` tie grouping, `.nknots.smspl` knot thinning above 49 unique x,
+the Fortran `sgram` penalty (with its `.3330` constant), R's interior-band
+trace ratio for lambda, and a banded Cholesky solve.
+With dimension reduction, factor predictors are encoded first (one dummy column
+per level with `factor_2_dummy=True`) and the synthetic `x.star` coefficients
+are computed on the encoded columns, as in R. For callers that want an explicit
+numeric design matrix, `prepare_factor_predictors(...)` returns the same
+full-rank dummy expansion:
 
 ```python
 from nns import nns_m_reg, prepare_factor_predictors
@@ -185,9 +301,8 @@ design = prepare_factor_predictors(
 fit = nns_m_reg(design.x, y, point_est=design.point_est)
 ```
 
-`prepare_factor_predictors(...)` uses the same full-rank dummy expansion as
-`nns_reg(..., factor_2_dummy=True)`, combines training `x` and `point_est`
-before expansion, and returns deterministic feature names.
+`prepare_factor_predictors(...)` combines training `x` and `point_est` before
+expansion and returns deterministic feature names.
 
 Numeric dimension reduction is supported for `"cor"`, `"NNS.dep"`,
 `"NNS.caus"`, `"all"`, `"equal"`, and numeric coefficient vectors. The
@@ -204,47 +319,35 @@ observed `y` values and `regression.points` is the sorted observed `(x, y)` map.
 The derivative table still comes from R's pre-reset regression-point construction,
 which NNS Python matches rather than recomputing adjacent slopes from all observations.
 
-The `"mode"` and `"mode_class"` noise-reduction modes are accepted in the
-univariate path and use the shared `nns_part`/`nns_mode` implementation. The
-`"mode_class"` default-order path can produce segment `standard.errors` values
-that differ from R at floating grouping granularity: installed R groups the
-`gradient` column through data.table's numeric radix grouping, while NumPy keeps
-near-identical binary floating values as separate groups. Regression points,
-coefficients, fitted values, and point estimates still match R on that path.
+`noise_reduction` accepts R's `"mean"`, `"median"`, `"mode"` and `"off"`;
+classification always reduces by the class mode.
 
-Regression confidence intervals are deterministic and use R's `LPM.VaR` /
-`UPM.VaR` logic, not `nns_mc` / `nns_meboot`. In the univariate fitted table,
-both `conf.int.pos` and `conf.int.neg` use `UPM.VaR(..., degree = 1)` on
-segment residuals, matching installed R even though the lower side might look
-like an `LPM` candidate. Univariate `point_est` prediction intervals use
-`UPM.VaR(..., degree = 0)` for the upper column and `LPM.VaR(..., degree = 0)`
-for the lower column. Below-range univariate point estimates follow R's
-`findInterval`/data.table behavior: index `0` rows are dropped, so `pred.int`
-can have fewer rows than `Point.est`. For class mode, fitted confidence columns
-remain raw numeric values, while univariate `pred.int` columns are rounded with
-R's `x %% 1 < 0.5` rule. Spline-eligible `smooth=True` interval tables use the
-same deterministic residual VaR logic after smoothing, matching installed R.
+Regression confidence intervals are deterministic residual bands: the
+`alpha/2` and `1 - alpha/2` type-8 quantiles of the training residuals are
+added to the fitted values (`conf.int.neg` / `conf.int.pos` in `Fitted.xy`)
+and to each point estimate (`pred.int.neg` / `pred.int.pos`, one row per
+`point_est` row, including points outside the training range). In class mode
+`pred.int` bounds are snapped to the observed class codes; the fitted
+confidence columns stay raw.
 
 ## Multivariate Regression
 
-`nns_m_reg` maps to installed R's numeric `NNS.M.reg` path with
-`factor.2.dummy = FALSE` and plotting disabled.
-Outputs use R's keys (`R2`, `rhs.partitions`, `RPM`, `Point.est`, `pred.int`,
-and `Fitted.xy`) with data.table objects represented as dictionaries of NumPy
-arrays. Numeric and class confidence intervals are deterministic and use the
-global residual `UPM.VaR(..., degree = 1)` offset from installed R. In class
-mode, fitted predictions and point estimates are rounded/clamped to class codes,
-but `pred.int` lower/upper bounds and fitted confidence columns remain raw
-numeric values. Classification mode (`type="class"`) is supported for
-numeric/logical/factor-like targets and returns numeric class codes. Direct
-`nns_m_reg(..., factor_2_dummy=True)` remains rejected for raw factor
-predictors because installed R errors on that path. This is an intentional API
-boundary rather than a mathematical gap: `nns_m_reg` is the numeric
-multivariate engine, while `prepare_factor_predictors(...)` performs the
-R-compatible categorical design-matrix preparation. Public `nns_reg` factor
-predictor expansion is also supported with `factor_2_dummy=True` and explicit
-`factor_levels=` metadata; it combines training `x` and `point_est` before
-full-rank dummy expansion, matching installed R's `factor_2_dummy_FR` path.
+`nns_m_reg` maps to R 13.3's `NNS.M.reg`, including its defaults
+(`factor_2_dummy=True`). Predictors and the response are prepared exactly as in
+`nns_reg` (see Regression): raw string and categorical columns are encoded by
+the function itself (one-hot dummies, or integer codes with
+`factor_2_dummy=False`), pandas column names are kept as the `RPM`,
+`rhs.partitions` and `Fitted.xy` keys (`V1..Vp` for an unnamed matrix), and
+`point_est` columns are matched by name. A string, bool or categorical
+response, or one given `class_levels=`, is a classification target with
+`class.levels` set; `type="class"` forces classification of a numeric
+response. At least two encoded predictor columns are required. Outputs use
+R's keys (`R2`, `rhs.partitions`, `RPM`, `Point.est`, `pred.int`,
+`Fitted.xy`, `n.best`, `dist`, `class.levels`) with data.table objects as
+dictionaries of NumPy arrays; intervals are the residual-quantile bands
+described under Regression. `prepare_factor_predictors(...)` is a separate
+legacy helper that builds a full-rank dummy design; it is not needed for
+either function.
 
 Point estimates match installed R, including the one-row outsider behavior in
 the multi-point path where R drops matrix dimensions before extrapolating.
@@ -253,28 +356,49 @@ the regression-point matrix and defaulting `n.best` to 1.
 
 ## Stack
 
-`nns_stack` maps to R's numeric and deterministic classification `NNS.stack`
-paths using the real `nns_reg` dimension-reduction and multivariate-regression
-internals. `type="class"` is supported for numeric/logical/factor-like targets
-and returns numeric class codes, not labels. Use `class_levels=` to reproduce R
-factor level ordering. Raw string labels remain rejected unless explicit levels
-are supplied. `balance=True` is supported for classification and follows R's
-`downSample` + `upSample` structure: each non-empty class is downsampled to the
-minority count without replacement, each class is upsampled to the majority
-count with replacement, and the downsampled rows are concatenated before the
-upsampled rows. Exact sampled-row parity with R is not expected because NNS Python
-uses NumPy's RNG; `random_seed` is a NNS Python-only reproducibility convenience.
-Numeric and class prediction intervals are supported and are combined by
-installed R's weighted data.table arithmetic. For class stacks, single-method
-`method=1` and `method=2` return the delegated interval table unchanged; when
-`method=(1,2)`, the weighted final interval table is rounded with R's
-`x %% 1 < 0.5` rule.
-`ts_test` is supported and follows installed R's split exactly: CV training uses
-the tail `ts_test` rows, while CV testing uses the earlier rows
-`1:(n - ts_test)`. This is intentionally not changed even though it is
-counterintuitive. R's `CV.size = NULL` samples a random value between 0.2 and
-1/3; NNS Python uses a deterministic default of `0.25`. Pass `cv_size` explicitly for
-exact R parity.
+`nns_stack` ports R 13.3's `NNS.stack`: out-of-fold selection of `n.best`
+(Method 1) and of the dimension-reduction count (Method 2), classification
+thresholds and ensemble weights, using the real `nns_reg` internals.
+
+Randomness: every split and balancing draw reproduces R's Mersenne-Twister
+`sample()` stream (`set.seed(seed)`, default `seed=123`), so a seeded run
+matches R bit for bit. `seed=None` draws a seed from OS entropy (R continues
+its global stream). `random_seed=` is an alias for `seed`.
+
+Splits follow R: `cv_size=None` (R's `CV.size = NULL`) with the default
+`folds=5` is stratified (classification) or plain k-fold cross-validation;
+`folds=1` with `cv_size=None` draws one holdout size from `runif(0.2, 1/3)`;
+an explicit `cv_size` gives `folds` repeated holdouts of that size. `ts_test`
+uses rolling chronological folds: each validation block of `ts_test` rows is
+predicted from all earlier rows. `balance=True` (classification) down- and
+up-samples each fitting split as R's `.balance_indices` does.
+
+Inputs follow R's data-frame rules. pandas column names are kept (an unnamed
+matrix is `V1..Vp`, a vector `X1`), and `ivs_test` columns are matched to the
+training columns by name (same set reordered, disjoint names positional,
+partial overlap an error). Factor predictors are pandas categoricals (all
+declared levels, as `levels()`), columns given `factor_levels=` (same forms as
+`nns_reg`), or label columns (strings, including numeric-looking strings),
+which use sorted levels; each becomes one dummy per level, fitted on the full
+training levels, named `<column>__<make.names(level)>`.
+
+Classification (`type="class"`, or automatic for string, bool, categorical
+and two-valued numeric responses) returns numeric class codes `1..K`, with
+`class.levels` as the label map. Codes follow declared order for a pandas
+categorical or `class_levels=` (unused levels dropped, as R's `droplevels`),
+sorted order for strings, `False < True` for bool, and sorted values for a
+numeric response. The sorted order is R's factor order, which R's `NNS.stack`
+and `NNS.boost` use for character responses and predictors.
+
+`NNS.dim.red.variables` lists the names of the predictors carried by the
+final dimension reduction, ranked by absolute coefficient, and
+`NNS.dim.red.coefficients` is a dict from encoded column name to coefficient
+(R's named vector). `NNS.reg.n.best` is `NaN` when the all-points candidate
+wins with a single (encoded) predictor, as R's `NA`, and the RPM row count in
+the multivariate case.
+
+`nns_stack_fit` / `nns_stack_predict` run the cross-validated selection once and
+reuse it for new test sets.
 
 The installed-R 13.0 Iris classification vignette with `folds=1` is a documented
 stack disparity rather than a NNS Python correctness target. On the `141:150` holdout,
@@ -287,70 +411,40 @@ threshold rounding differs. Since R default `folds=5` also returns class code
 `3`, NNS Python keeps the behavior that matches the practical classification result
 instead of forcing installed-R-13.0 `folds=1` parity.
 
-Factor predictor expansion is supported for `nns_stack(method=1)` and
-`nns_stack(method=2)` with explicit `factor_levels=` metadata. NNS Python expands
-training and test predictors together using the same full-rank dummy convention
-as installed R's aligned train/test builder. Pure factor-predictor `method=2`
-and `method=(1,2)` match installed R's fallback to method 1. Mixed
-factor/numeric `method=2` uses the expanded numeric design directly. Mixed
-factor/numeric `method=(1,2)` is supported for parity-covered cases that use
-explicit `factor_levels` expansion.
-
 ## Boost
 
-`nns_boost` maps to R's numeric and deterministic classification `NNS.boost`
-paths and uses the real `nns_reg` and `nns_stack` implementations. The
-small-feature path (`n_features <= 10`, where R evaluates all feature
-combinations) is supported. For `n_features > 10`, NNS Python follows R's stochastic
-epoch structure: it samples learner-trial feature sets, builds a weighted
-survivor feature pool, then samples epoch feature counts and survivor features
-from that pool. Exact sampled-feature parity with R is not expected because
-NNS Python uses NumPy's RNG, and `random_seed` is NNS Python-only. Installed R errors for
-`threshold=` on this path because the threshold short-circuit leaves
-`test.features` undefined, so NNS Python keeps that guard. `ts_test` is supported on
-the stochastic path and follows R's separate epoch holdout split: initial
-learner trials test rows `1:(n - ts_test)`, while epochs test the final
-`2 * ts_test + 1` rows. `type="class"` returns numeric class codes, not labels; use
-`class_levels=` to reproduce R factor level ordering. Raw string labels remain
-rejected unless explicit levels are supplied. `balance=True` is supported for
-classification and uses the same R-style `downSample` + `upSample` structure as
-`nns_stack`; exact sampled-row parity with R is not expected.
-Explicit-level factor predictors are supported through `factor_levels=`. NNS Python
-integer-codes those columns before deterministic feature selection, matching
-installed R's `data.matrix` conversion under NNS Python' positional-column
-convention. Pass `None` for numeric columns in mixed predictor matrices, for
-example `factor_levels=(["low", "mid", "high"], None)`. Multiple explicit-level
-factor predictor columns use positional `X1`, `X2`, ... semantics; installed R
-data frames with semantic column names sort columns alphabetically before
-fitting, so callers should order NNS Python columns explicitly when reproducing those
-named-data-frame cases. Numeric `pred_int` is supported and
-delegates to `nns_stack(pred_int=...)`, matching installed R; it is deterministic
-and does not use MC/meboot. `features_only=True` returns before the final stack
-fit and ignores `pred_int`, matching R. Classification `pred_int` is supported
-and delegates to final stack `method=1`, so interval bounds remain raw numeric
-values. `ts_test` is supported for deterministic and stochastic boost paths. R
-requires usable column names for matrix inputs; NNS Python uses positional numeric columns. As with `nns_stack`, R
-samples a random CV size when `CV.size = NULL`; NNS Python uses deterministic
-`cv_size=0.25` unless specified. For classification boost, final predictions,
-feature weights, and feature frequencies are parity-tested against installed R
-when balance is disabled and structurally tested when balance sampling is
-enabled. The public `n.best` value is structural-only because R's final internal
-`NNS.stack` call samples its own `CV.size = NULL` split, while NNS Python keeps the
-deterministic stack default.
+`nns_boost` ports R 13.3's `NNS.boost`. Learner trials fit multivariate
+`nns_reg` models on feature subsets (all `2^p - 1` subsets when that is at most
+`learner_trials`, otherwise distinct random subsets) against fresh holdouts;
+`threshold` is the probability passed to `LPM.VaR` over the learner-trial
+objective distribution (`0.8` / `0.2` by default, `extreme=True` uses the best
+trial); `epochs` (default `2 * n`) re-test the surviving subsets; the final
+estimate replicates the keeper features by their relative frequencies into one
+`nns_stack(method=1, stack=False)`. `depth` is passed as `order`. All random
+draws reproduce R's Mersenne-Twister stream (default `seed=123`), so seeded
+runs match R; `cv_size=None` draws the holdout size from `runif(0.2, 1/3)` as R
+does.
+
+Inputs are prepared as in `nns_stack`: pandas column names are kept and name
+`feature.weights` / `feature.frequency` (`V1..Vp` for an unnamed matrix), test
+columns are matched by name, and factor predictors (categoricals,
+`factor_levels=`, or label columns with sorted levels) stay factors in every
+learner fit; declared levels absent from the training data are dropped
+(R's `droplevels`). A string, bool or categorical response is classified and
+returns class codes with `class.levels` (declared order, `class_levels=`, or
+sorted labels); a numeric response with `type="class"` returns its original
+class values.
 
 The installed-R 13.0 Iris boost vignette remains a true parity gap, but not a
 quality target for exact output matching. On the same all-class-`3` holdout,
 installed R 13.0 balanced boost returns class code `1` for every row, while NNS Python
 balanced boost returns class code `2` for every row; both are wrong for that
-example. Installed R 13.0 also does not accept the `folds` argument shown in the
-rendered upstream overview for `NNS.boost`, so this example is tracked as
-R-version/upstream-example drift plus a boost parity gap rather than evidence
-that NNS Python should copy the installed-R balanced output.
+example.
 
 ## Seasonality
 
-`nns_seas` maps to installed R's non-plotting `NNS.seas` path and ignores
-`plot`, consistent with other NNS Python ports. Inputs shorter than five observations
+`nns_seas` maps to installed R's `NNS.seas`; `plot=True` draws the figure as a
+side effect (see Plotting). Inputs shorter than five observations
 return R's sentinel period `0`. For mean-zero data, R falls back from coefficient
 of variation to `abs(acf1) ** -1`; NNS Python follows the same fallback and
 non-finite handling. Installed R can report harmonics rather than the visually
@@ -369,32 +463,35 @@ recursive: each estimate is appended before the next horizon step. Plot
 arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`; exact
 stochastic parity with R is not expected because RNG streams differ.
 `random_seed` is a NNS Python-only convenience for reproducible interval tests.
-No-`pred_int` deterministic forecasts are parity-tested except where NNS Python
-intentionally uses a more direct seasonal-lag weighting convention.
-`seasonal_factor=True` uses only the first detected period from `nns_seas`,
-matching `ARMA.seas.weighting(TRUE, ...)`; `seasonal_factor=False` uses the
-selected `best_periods` rows. `dynamic=True` with numeric seasonal factors
-raises with R's static-seasonality error. Constant-series behavior follows
-installed R, including zero forecasts for automatic seasonality paths and `NaN`
-forecasts for some explicit numeric-lag paths. Character `weights` with numeric
-multi-lag seasonal factors is rejected because installed R errors during numeric
-multiplication on that path.
+No-`pred_int` deterministic forecasts are parity-tested against R.
+As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
+`seasonal_factor=False`: it weights the `best_periods` best periods from
+`nns_seas` (the default `best_periods=1` selects the best period).
+`seasonal_factor=True, best_periods=None` uses the first detected period
+(weight 1), and `seasonal_factor=False, best_periods=None` weights all periods. `dynamic=True` with numeric seasonal factors
+raises with R's static-seasonality error. Where the lag weights are `0/0` (a
+constant series, or selected periods whose CV equals the variable CV), the
+weights fall back to equal weights as in the patched R, so a constant series
+forecasts its constant. Character `weights` such as `"equal"` weight every lag
+equally, including with numeric multi-lag seasonal factors. Explicit numeric multi-lag seasonal factors weight
+each lag by the coefficient of variation of that lag's own reverse component
+series, as installed R does (`seasonal.factor[i]`).
 
-For explicit numeric multi-lag seasonal factors such as
-`seasonal_factor=[132, 276]`, NNS Python intentionally weights each candidate lag by
-the coefficient of variation of that actual lag's reverse component series.
-Installed R NNS instead computes the coefficient-of-variation term with reverse
-steps `1:length(seasonal.factor)` while still applying the observation penalty
-to the actual lag values. NNS Python keeps the actual-lag weighting because it better
-matches the documented idea that each supplied seasonal factor is weighted by
-its own seasonality strength and observation count. The R-compatible difference
-is covered by a strict xfail practical test rather than hidden.
+Arguments are validated up front where R either errors or returns garbage:
+`training_set` must lie in `1..n`, numeric lags in `1..n`, numeric `weights`
+need one entry per lag (R recycles silently), and automatic seasonality needs at
+least 5 observations. `seasonal_factor=None` behaves like R's `NULL`, i.e. like
+`False`. With `h=1` and `pred_int`, where R fails, the band is the forecast
+widened by the linear residual term because there is no forecast path for
+`nns_mc` to bootstrap. `nns_arma_optim(pred_int=None)` returns empty bounds like
+R.
 
 `nns_arma_optim` is supported for the installed-R optimizer path. It greedily
 selects seasonal factors, evaluates the default co-moment-normalized objective,
-then applies the same equal-weight, bias-shift, shrink, and smooth-regressed
-variable checks as R. The optimizer's prediction intervals are deterministic
-VaR bands around the in-sample optimizer errors; they are separate from
+then applies the same equal-weight, shrink, smooth-regressed variable and
+bias-shift checks as R, the bias last, on the returned model. The optimizer's
+prediction intervals add the `lpm_var`/`upm_var` of that model's validation
+residuals (actual - forecast) to the results; they are separate from
 `nns_arma(pred_int=...)`, which uses the Monte Carlo path. Custom Python
 `obj_fn` callables may be supplied, but R expression objects are not part of the
 Python API. `nns_var` is implemented for numeric matrix-like inputs (a pandas
@@ -409,8 +506,10 @@ variables are found as in NNS 11.6: the dimension reduction threshold is
 cross-validated on the last `max(2h, ceil(0.2 n))` lagged training rows, and
 the regressors whose coefficient meets it are kept. The multivariate estimate is
 `nns_stack(method=1, stack=False)` on exactly those regressors (`nns_reg` with
-each its own dimension and a cross-validated `n_best`), evaluated on the last
-`h` lagged training rows (R's `tail(IV, h)`). `relevant_variables` is that
+each its own dimension and a cross-validated `n_best`), trained on the observed
+lagged rows and evaluated on the `h` forecast-period rows of the lag matrix built
+from the series extended with the univariate forecasts (as in the patched R; 13.3
+evaluated on the last `h` observed rows, an in-sample refit). `relevant_variables` is that
 selection, so it lists exactly the regressors each multivariate estimate is
 built from. `obj_fn` (a `(predicted, actual) -> float` callable) and
 `objective` apply to both stages; without `obj_fn` the default MSE /
@@ -418,16 +517,21 @@ co-movement objective falls back to MSE when it is undefined for every Method 1
 candidate, as in R. Series whose observed minimum is
 positive have their interpolated values floored at zero. The `h == 0` path is normalized to
 a Python dictionary containing `interpolated_and_extrapolated` and `names`
-rather than R's bare data-frame return. `ncores` and `nowcast` (row labelling
-only in R) are accepted for API compatibility.
+rather than R's bare data-frame return. `nowcast` (row labelling only in R) is
+accepted for API compatibility; `ncores` caps the native threads (see Threads).
 
 ## Meboot
 
 `nns_meboot` maps to R's `NNS.meboot` maximum-entropy bootstrap algorithm and
 returns plain Python dictionaries instead of R's vectorized list-matrix wrapper.
-Scalar `rho` returns one result dictionary; vector `rho` returns a list of result
-dictionaries in R's vectorized order. `rho=None` follows installed R's empty
-output behavior, and length-one input returns only `{"x": x}`.
+`rho`, `target_drift` and `target_drift_scale` are vectorized like R's
+`Vectorize`/`mapply`: the given arguments are recycled elementwise (not crossed)
+and a list of result dictionaries is returned in that order; when all of them are
+scalars a single result dictionary is returned. `rho=None` follows installed R's empty
+output behavior, and length-one input returns only `{"x": x}`. When the detrended
+residuals are all exactly zero (a constant or exactly linear series) `rho` has no
+effect, as in R: the replicates are copies of the trend with their means spread by
+`force_clt`, and a constant series gives constant columns.
 
 Exact replicate parity with R is not expected because NNS Python uses NumPy's random
 number generator and SciPy's optimizer while R uses its global RNG and
@@ -451,8 +555,8 @@ are covered as smoke tests, but installed R behavior remains the parity source.
 
 ## Normalization
 
-`nns_norm(x, linear=False)` maps to R's numeric matrix `NNS.norm` path with
-plotting disabled. NNS Python accepts finite 2D arrays. `linear=True` uses R's
+`nns_norm(x, linear=False)` maps to R's numeric matrix `NNS.norm` path
+(`plot=True` draws R's `chart.type = "l"` panels). NNS Python accepts finite 2D arrays. `linear=True` uses R's
 mean-ratio scaling, while `linear=False` additionally weights scaling by
 absolute correlation for fewer than 10 columns and NNS dependence for 10 or
 more columns.
@@ -481,34 +585,41 @@ binary rather than the higher-level classification intent.
 
 ## Classification
 
-R classification paths work with numeric class codes. R factors become
-1-indexed numeric codes in factor-level order and predictions are returned as
-codes rather than decoded labels. NNS Python provides `factor_2_dummy`,
-`factor_2_dummy_fr`, `encode_factor_codes`, and `prepare_factor_predictors`;
-pass explicit `levels=` / `factor_levels=` to reproduce R factor level order
-because NumPy arrays do not carry factor metadata.
-
-`nns_reg(..., type="class")`, `nns_m_reg(..., type="class")`, and
-`nns_stack(..., type="class")` are supported for numeric, logical, and
-factor-like targets. Use `class_levels=` when passing string/object labels so
-NNS Python can reproduce R factor codes explicitly. Raw string classification remains
-rejected where installed R errors or produces unusable `NA` conversions.
-Predictions and point estimates are numeric class codes, not original labels,
-matching installed R. Class confidence intervals are supported in `nns_reg` and
-`nns_m_reg`; stack/boost class `pred_int` is supported through those regression
-interval tables.
+R classification paths work with numeric class codes: factor levels become
+1-indexed codes in level order and predictions are returned as codes rather
+than labels, with `class.levels` as the label map. NNS Python follows that
+contract. pandas categoricals carry their level order; `class_levels=` (for
+the response) and `factor_levels=` (for predictors) declare it explicitly for
+plain arrays; undeclared string labels are coded in sorted order. String
+labels are accepted directly by `nns_reg`, `nns_m_reg`, `nns_stack` and
+`nns_boost`. The standalone helpers `factor_2_dummy`, `factor_2_dummy_fr` and
+`encode_factor_codes` take `levels=` for the same purpose. Class confidence
+intervals are supported in `nns_reg` and `nns_m_reg`; stack/boost class
+`pred_int` is supported through those regression interval tables.
 
 ## Differentiation
 
-`nns_diff` maps to R's scalar callable `NNS.diff` path with plotting and trace
-output disabled. It returns a dictionary keyed by R's matrix row names and
+`nns_diff` maps to R's scalar callable `NNS.diff` path with trace
+output disabled (`plot=True` draws the function and secant panel). It returns a dictionary keyed by R's matrix row names and
 rounds results to `digits`, matching R's default output convention.
 `dy_dx(..., eval_point="overall")` maps to R's `dy.dx(..., eval.point =
 "overall")` path and returns the mean fitted gradient from unsmoothed
 `nns_reg`. Numeric `dy_dx` evaluation points use R's finite-difference grid
-around smooth `nns_reg` point estimates and return a table-like dictionary with
-`eval.point`, `first.derivative`, and `second.derivative`. Boundary-point
-quirks follow installed R where covered by parity tests.
+around smooth `nns_reg` point estimates, stepping by
+`gravity(diff(sort(unique(x)))) * h` for each bandwidth `h` in R's `h_s` (the
+spacing of the sorted values, as in the patched R, so row order does not matter),
+and return a
+table-like dictionary with `eval.point`, `first.derivative`, and
+`second.derivative`. At `min(x)` or `max(x)` the first derivative is R's
+one-sided slope and the second derivative is NaN. As in R, every position in
+`h_s` counts once, so a bandwidth that repeats (n < 49) is averaged in each
+time it appears.
+`eval_point` must be given (a number, a vector, or `"overall"`).
+`nns_diff` finds the inferred step like R's `uniroot(extendInt = "yes")` with
+`tol = tol / 10`, and declares convergence when the bisection bracket on the
+intercept `B` is narrower than `tol * max(|point|, |f(point) - B|)`, a
+derivative error of about `tol * max(1, |f'(point)|)` (as in the patched R), so
+iterations and convergence flags match R.
 
 NNS Python derivative parity is defined at the public input/output level, while
 preserving R's cumulative finite-difference perturbation pattern for `dy_d`.
@@ -539,11 +650,26 @@ boundary row. NNS Python mirrors those boundary quirks for parity.
 
 ## ANOVA
 
-`nns_anova` maps to R's non-plotting `NNS.ANOVA` paths. Binary comparisons
+`nns_anova` maps to R's `NNS.ANOVA` paths (`plot=False` by default; see Plotting). Binary comparisons
 return a dictionary keyed like R's list output, aggregate multi-group
 comparisons return `{"Certainty": value}`, and `pairwise=True` returns R's
-symmetric certainty matrix. Confidence interval bootstrapping is structurally
-identical to R but uses NumPy RNG instead of R's `sample()`, so exact per-call
-parity is not achievable; numeric values converge to the same population CI.
-Pass `random_seed` for reproducible NNS Python results. Degenerate zero-variance
-groups preserve R's `NaN` CDF/certainty convention.
+symmetric certainty matrix. The grand statistic is the mean (or, with
+`medians=True`, the median) of all observations pooled, as in the patched R.
+`NaN` values are dropped from every group, as R does with `na.omit`; `±Inf` raises a `ValueError` (R's binary path fails on it in
+`LPM.VaR`). Confidence-interval bootstrapping draws from a
+reproduction of R's Mersenne-Twister `sample()` stream, so
+`random_seed=s` gives the same effect-size bounds as `set.seed(s)` followed by
+the same `NNS.ANOVA` call in R; without a seed the stream starts from fresh
+entropy. `robust=True` follows R's resampling exactly: 100 independent bootstrap
+resamples of each group, each from its own full sample and size (as in the patched
+R; 13.3 resampled only the first `min(n_control, n_treatment)` positions of both
+groups). It returns `Robust Certainty Estimate`, the median of the finite
+resampled certainties (R's `median(na.rm = TRUE)`), plus R's `Lower <level>% CI` and `Upper <level>% CI` bounds, and no bounds when
+`confidence_interval=None`. R names the effect-size keys of the robust output
+`Effect_Size_LB.2.5%` etc. (an `unlist()` artefact); NNS Python keeps
+`Effect_Size_LB`/`Effect_Size_UB`. One-sided effect-size intervals follow the
+patched R: `tails="left"` gives `(treatment_lower - control_upper, Inf)` and
+`tails="right"` gives `(-Inf, treatment_upper - control_lower)` (R 13.3 failed
+on them). Degenerate zero-variance groups preserve R's `NaN` CDF/certainty
+convention; where every robust certainty is `NaN`, R's VaR stops while NNS Python
+returns `NaN` bounds.

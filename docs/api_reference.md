@@ -38,12 +38,12 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Partial moments | `pm_matrix` | `PM.matrix` | implemented | Partial moment matrix helper. |
 | Co-moments | `co_lpm` | `Co.LPM` | implemented | Pairwise co-lower partial moment. |
 | Co-moments | `co_upm` | `Co.UPM` | implemented | Pairwise co-upper partial moment. |
-| Co-moments | `d_lpm` | `D.LPM` | implemented | Pairwise distance lower partial moment. |
-| Co-moments | `d_upm` | `D.UPM` | implemented | Pairwise distance upper partial moment. |
+| Co-moments | `d_lpm` | `D.LPM` | implemented | Divergent lower partial moment (x above, y below target). |
+| Co-moments | `d_upm` | `D.UPM` | implemented | Divergent upper partial moment (x below, y above target). |
 | Co-moments | `co_lpm_nd` | `Co.LPM_nD` | implemented | N-dimensional co-lower partial moment wrapper. |
 | Co-moments | `co_upm_nd` | `Co.UPM_nD` | implemented | N-dimensional co-upper partial moment wrapper. |
-| Co-moments | `dpm_nd` | `DPM_nD` | implemented | N-dimensional directional partial moment wrapper. |
-| Classical moments | `ecdf_pm` | ECDF partial-moment helper | implemented | Empirical distribution helper used by moment routines. |
+| Co-moments | `dpm_nd` | `DPM_nD` | implemented | N-dimensional divergent partial moment wrapper. |
+| Classical moments | `ecdf_pm` | ECDF partial-moment helper | implemented | Empirical CDF `lpm(0, points, x)` (standalone helper). |
 | Classical moments | `mean_pm` | `Mean` partial-moment helper | implemented | Mean via partial-moment conventions. |
 | Classical moments | `var_pm` | `Variance` partial-moment helper | implemented | Variance via partial-moment conventions. |
 | Classical moments | `skew_pm` | `Skewness` partial-moment helper | implemented | Skewness via partial-moment conventions. |
@@ -51,13 +51,13 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Classical moments | `nns_moments` | `NNS.moments` | implemented | Bundled NNS moment diagnostics. |
 | Dependence | `nns_dep` | `NNS.dep` | implemented | Nonlinear dependence and correlation. |
 | Dependence | `nns_cor` | `NNS.cor` | implemented | Nonlinear correlation convenience API. |
-| Dependence | `nns_copula` | `NNS.copula` | implemented | Bivariate copula surface. |
+| Dependence | `nns_copula` | `NNS.copula` | implemented | Bivariate or multivariate copula dependence. |
 | Causation | `nns_causation` | `NNS.caus` | implemented | Directional causation. |
-| Causation | `causal_matrix` | `Causal.matrix` | implemented | Matrix form of causation relationships. |
+| Causation | `causal_matrix` | `NNS.caus` (matrix input) | implemented | Matrix form of causation relationships. |
 | Regression | `nns_reg` | `NNS.reg` | implemented | Bivariate regression, classification, and interval surfaces. |
-| Regression | `nns_m_reg` | `NNS.M.reg` | partial | Multivariate regression. Raw factor expansion is guarded. |
+| Regression | `nns_m_reg` | `NNS.M.reg` | implemented | Multivariate regression, including raw factor predictors. |
 | Regression | `nns_stack` | `NNS.stack` | implemented | Stacked ensemble path. |
-| Regression | `nns_boost` | `NNS.boost` | partial | Boosted ensemble path with one high-feature stochastic threshold guard. |
+| Regression | `nns_boost` | `NNS.boost` | implemented | Boosted ensemble path. |
 | Regression helpers | `FactorDesign` | Python helper | implemented | Dataclass returned by factor-preparation helpers. |
 | Regression helpers | `prepare_factor_predictors` | Factor preparation path | implemented | Builds regression-ready factor design matrices. |
 | Categorical helpers | `encode_factor_codes` | Factor-code helper | implemented | Encodes categorical labels into deterministic numeric codes. |
@@ -67,14 +67,14 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Forecasting | `nns_arma` | `NNS.ARMA` | partial | Univariate ARMA-style forecast surface. |
 | Forecasting | `nns_arma_optim` | `NNS.ARMA.optim` | partial | ARMA optimizer surface. |
 | Forecasting | `nns_var` | `NNS.VAR` | partial | Multivariate VAR-style forecast surface. |
-| Distribution and ANOVA | `nns_cdf` | `NNS.cdf` | implemented | NNS empirical CDF path. |
+| Distribution and ANOVA | `nns_cdf` | `NNS.CDF` | implemented | NNS empirical CDF path. |
 | Distribution and ANOVA | `nns_anova` | `NNS.ANOVA` | implemented | Binary, multi-group, and pairwise ANOVA-style comparisons. |
 | Distribution and ANOVA | `nns_norm` | `NNS.norm` | implemented | NNS normalization helper. |
 | Distance and partitioning | `nns_distance` | `NNS.distance` | implemented | Single distance computation. |
 | Distance and partitioning | `nns_distance_bulk` | `NNS.distance.bulk` | implemented | Bulk distance computation. |
 | Distance and partitioning | `nns_part` | `NNS.part` | implemented | Partitioning helper returning Python-native structures. |
 | Central tendencies | `nns_gravity` | `NNS.gravity` | implemented | NNS gravity center helper. |
-| Central tendencies | `nns_mode` | `NNS.mode` | implemented | NNS mode helper. |
+| Central tendencies | `nns_mode` | `NNS.mode` | implemented | NNS mode helper. Default `multi=False` (R: `multi = TRUE`). |
 | Central tendencies | `nns_rescale` | `NNS.rescale` | implemented | Rescaling helper. |
 | Stochastic dominance | `fsd` | `NNS.FSD` | implemented | First-order stochastic dominance. |
 | Stochastic dominance | `ssd` | `NNS.SSD` | implemented | Second-order stochastic dominance. |
@@ -90,8 +90,10 @@ The generator introspects `nns.__all__`, imports each public object, records sig
 | Differentiation | `nns_diff` | `NNS.diff` | implemented | Numerical differentiation. |
 | Differentiation | `dy_dx` | `dy.dx` | implemented | Scalar derivative helper. |
 | Differentiation | `dy_d` | `dy.d_` | partial | Multivariate derivative helper. |
-| VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR helper. |
-| VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR helper. |
+| VaR helpers | `lpm_var` | `LPM.VaR` | implemented | Lower partial-moment VaR; scalar or vector `percentile`. |
+| VaR helpers | `upm_var` | `UPM.VaR` | implemented | Upper partial-moment VaR; scalar or vector `percentile`. |
+| Native threads | `set_num_threads` | `ncores` (per call) | Python-only | Default native thread count; `None` = `NNS_NUM_THREADS` or the hardware count. See conventions, Threads. |
+| Native threads | `get_num_threads` | - | Python-only | Current default native thread count. |
 
 ## Reference by API area
 
@@ -133,6 +135,8 @@ Closest R API: `PM.matrix`.
 
 Builds a partial-moment matrix surface used by dependence and co-moment routines.
 
+The package attribute `nns.pm_matrix` is this function, so it shadows the `nns.pm_matrix` submodule: `import nns.pm_matrix as m` binds the function. Use `from nns.pm_matrix import ...` to reach module-level names.
+
 ### Co-moments and n-dimensional partial moments
 
 #### `co_lpm`
@@ -151,23 +155,23 @@ Computes pairwise co-upper partial moments.
 
 Closest R API: `D.LPM`.
 
-Computes pairwise lower directional partial moments.
+Divergent lower partial moment: `mean(max(x - target_x, 0)^degree_upm * max(target_y - y, 0)^degree_lpm)`, the quadrant where `x` is above and `y` at or below its target.
 
 #### `d_upm`
 
 Closest R API: `D.UPM`.
 
-Computes pairwise upper directional partial moments.
+Divergent upper partial moment: `mean(max(target_x - x, 0)^degree_lpm * max(y - target_y, 0)^degree_upm)`, the quadrant where `x` is at or below and `y` above its target.
 
 #### `co_lpm_nd`, `co_upm_nd`, `dpm_nd`
 
-N-dimensional wrappers around the public co-moment and directional partial-moment concepts.
+N-dimensional co-lower, co-upper and divergent partial moments (R `Co.LPM_nD`, `Co.UPM_nD`, `DPM_nD`). At degree 0 they count rows at or below the target in every coordinate, strictly above it in every coordinate, and the rest, so the three shares sum to 1.
 
 ### Classical moment helpers
 
 #### `ecdf_pm`
 
-Empirical CDF helper used by partial-moment-based moment routines.
+Empirical CDF `lpm(0, points, x)` (the share of `x` at or below each point; sorted `x` when `points` is omitted). No other routine uses it.
 
 #### `mean_pm`
 
@@ -195,7 +199,7 @@ Returns bundled NNS moment diagnostics.
 
 Closest R API: `NNS.dep`.
 
-Returns NNS nonlinear dependence and correlation for bivariate input, or matrix-style dependence and correlation results for matrix input.
+Returns NNS nonlinear dependence and correlation for bivariate input, or `Correlation` and `Dependence` matrices for a 2-D array or DataFrame (`y=None`). `asym=True` measures `y` as a function of `x` (matrix entry `[i, j]`: row variable -> column variable).
 
 #### `nns_cor`
 
@@ -207,7 +211,7 @@ Convenience API for the NNS nonlinear correlation surface.
 
 Closest R API: `NNS.copula`.
 
-Computes the bivariate scalar copula surface supported by NNS Python.
+Computes R's co-partial-moment copula dependence in `[0, 1]` for two vectors (`nns_copula(x, y)`) or a matrix with any number of columns (`nns_copula(X)`).
 
 #### `nns_causation`
 
@@ -217,9 +221,9 @@ Computes directional causation relationships, including supported numeric lag an
 
 #### `causal_matrix`
 
-Closest R API: `Causal.matrix`.
+Closest R API: `NNS.caus` with a matrix argument (internally `NNS.caus.matrix`; there is no `Causal.matrix`).
 
-Computes a matrix representation of causation relationships.
+Computes the antisymmetric net-causation matrix; entry `[i, j]` is the net causation of column `j` on column `i` (positive: `j` causes `i`). DataFrame input returns a labelled DataFrame.
 
 ### Regression, classification, and ensembles
 
@@ -227,7 +231,7 @@ Computes a matrix representation of causation relationships.
 
 Closest R API: `NNS.reg`.
 
-Bivariate NNS regression and classification. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and public factor-expansion paths.
+Bivariate NNS regression and classification. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Supports numeric, class-code, confidence interval, smoothing, dimension-reduction, and factor paths. pandas column names are kept, `point_est` columns are matched by name, and string/categorical columns are factors (declared or sorted level order; `class_levels=` / `factor_levels=` declare levels).
 
 Returns Python-native structures, generally dictionaries containing estimates, diagnostics, residuals, intervals, and related arrays.
 
@@ -235,19 +239,19 @@ Returns Python-native structures, generally dictionaries containing estimates, d
 
 Closest R API: `NNS.M.reg`.
 
-Multivariate regression and classification surface. Numeric and class paths are implemented. Direct raw-factor `factor_2_dummy=True` is guarded because the installed R direct raw-factor path errors; use `prepare_factor_predictors(...)` first.
+Multivariate regression and classification surface (R `NNS.M.reg`). Numeric, class, and raw factor/character predictor paths are implemented; `factor_2_dummy=True` is the default, as in R 13.3, and pandas column names are kept.
 
 #### `nns_stack`
 
 Closest R API: `NNS.stack`.
 
-Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. `NNS.dim.red.variables` (0-based predictor indices, ranked by absolute coefficient) and `NNS.dim.red.coefficients` report the dimension-reduction selection; with `stack=True` those predictors are the only ones behind `stack`.
+Stacked ensemble API for numeric and classification workflows. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. `NNS.dim.red.variables` (predictor names, ranked by absolute coefficient) and `NNS.dim.red.coefficients` (dict of encoded column name to coefficient) report the dimension-reduction selection; with `stack=True` those predictors are the only ones behind `stack`.
 
 #### `nns_boost`
 
 Closest R API: `NNS.boost`.
 
-Boosted ensemble API. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Deterministic and stochastic structures are implemented. The high-feature stochastic threshold path is guarded to make an installed-R failure explicit.
+Boosted ensemble API. `dist=None` is the default and selects the native blended NNS distance; `dist="NNS"` is the explicit alias. Seeded runs reproduce R's random stream; `feature.weights` / `feature.frequency` are keyed by predictor name (`V1..Vp` for an unnamed matrix).
 
 ### Categorical and factor helpers
 
@@ -257,7 +261,7 @@ Python helper dataclass used to hold prepared factor design matrices and metadat
 
 #### `prepare_factor_predictors`
 
-Builds a regression-ready full-rank factor design matrix before calling `nns_m_reg(...)`.
+Builds a full-rank factor design matrix with the encoder `nns_reg` uses (bool columns are factors; dummy names such as `x_TRUE.` and `V1_a`). Not needed for `nns_reg` / `nns_m_reg`, which encode raw factor columns themselves.
 
 #### `encode_factor_codes`
 
@@ -301,7 +305,7 @@ Nonparametric vector autoregression: univariate `nns_arma_optim` forecasts plus,
 
 #### `nns_cdf`
 
-Closest R API: `NNS.cdf`.
+Closest R API: `NNS.CDF`.
 
 NNS empirical CDF path. Deterministic non-plotting behavior is implemented.
 
@@ -315,7 +319,8 @@ NNS ANOVA-style comparison helper covering binary, multi-group, pairwise, and de
 
 Closest R API: `NNS.norm`.
 
-NNS normalization helper. Accepts a 2-D matrix or, like R's list input, a
+NNS normalization helper. Accepts a 2-D matrix, a pandas DataFrame (returned
+as a DataFrame with R's `"<column> Normalized"` names) or, like R's list input, a
 sequence of 1-D vectors (one per variable). Equal-length vectors are
 column-stacked and normalized through the matrix path; unequal-length
 vectors force `linear=True` exactly as R does and return a list of scaled
@@ -351,7 +356,7 @@ Computes the NNS gravity center helper.
 
 Closest R API: `NNS.mode`.
 
-Computes the NNS mode helper.
+Computes the NNS mode. The default is `multi=False` (a single float), whereas R's `NNS.mode` defaults to `multi = TRUE` and returns every detected mode; pass `multi=True` for R's default. Explicit `multi` values match R.
 
 #### `nns_rescale`
 
@@ -433,13 +438,13 @@ Multivariate derivative helper. Scalar and vectorized point and distribution mod
 
 Closest R API: `LPM.VaR`.
 
-Lower partial-moment VaR helper used by deterministic interval paths.
+Returns the target `t` with `LPM.ratio(degree, t, x) = percentile`. `percentile` may be a scalar (returns a float) or array-like (returns an array of the same shape, like R's vectorised call); values are clamped to `[0, 1]`. Degree 0 is the type-7 sample quantile.
 
 #### `upm_var`
 
 Closest R API: `UPM.VaR`.
 
-Upper partial-moment VaR helper used by deterministic interval paths.
+Returns the target `t` with `UPM.ratio(degree, t, x) = percentile`; scalar or array-like `percentile` as for `lpm_var`.
 
 ## Documentation maintenance checklist
 

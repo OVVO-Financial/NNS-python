@@ -10,21 +10,18 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from numbers import Real
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
+from nns._native import honours_ncores
 from nns.core import lpm_ratio, upm_ratio
-
-_R_OPTIMIZE_TOL = float(np.finfo(float).eps ** 0.25)
 
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
 
-_METHOD1_GUARD_MESSAGE = (
-    "No Method 1 candidate produced a finite complete-coverage OOF objective."
-)
+_METHOD1_GUARD_MESSAGE = "No Method 1 candidate produced a finite complete-coverage OOF objective."
 
 
 class VarResult(TypedDict):
@@ -44,6 +41,7 @@ class _LagSpec(TypedDict):
     max: int
 
 
+@honours_ncores
 def nns_var(
     variables: Any,
     h: int,
@@ -56,6 +54,7 @@ def nns_var(
     status: bool = True,
     ncores: int | None = None,
     nowcast: bool = False,
+    validation: str = "pipeline",
 ) -> VarResult:
     """Nonparametric VAR forecast, matching R's ``NNS.VAR``.
 
@@ -74,11 +73,17 @@ def nns_var(
     ``nns_stack(method=1, stack=False)`` (``nns_reg``) on them, each as its own
     dimension.
 
+    ``validation="pipeline"`` (R14 default) rebuilds preprocessing and future
+    predictors at the validation origin, before observing the held-out targets.
+    ``validation="conditional"`` retains the older conditional split for an
+    explicitly requested comparison; it is not the default forecasting test.
+
     For ``h == 0`` the result is a dictionary with ``interpolated_and_extrapolated``
-    and ``names`` instead of R's bare data frame. ``ncores`` and ``nowcast``
-    (row labelling only in R) are accepted for API compatibility.
+    and ``names`` instead of R's bare data frame. ``nowcast`` (row labelling only
+    in R) is accepted for API compatibility. ``ncores`` caps the native threads
+    (see :func:`nns.set_num_threads`); R uses it for parallel ARMA.optim workers.
     """
-    _warn_unsupported(ncores=ncores is not None, nowcast=bool(nowcast))
+    _warn_unsupported(nowcast=bool(nowcast))
     del status  # R console progress flag; NNS Python emits no console output.
 
     h_value = _var_validate_h(h)
@@ -93,6 +98,32 @@ def nns_var(
     lag_spec = _var_lags(tau, variables_matrix.shape[1])
     if h_value > 0:
         _var_check_sample_size(variables_matrix.shape[0], h_value, lag_spec["max"])
+
+    if validation not in {"pipeline", "conditional"}:
+        raise ValueError("validation must be 'pipeline' or 'conditional'.")
+    validation_data = None
+    if h_value > 0 and validation == "pipeline":
+        validation_h = max(
+            2 * h_value, math.ceil(0.2 * (variables_matrix.shape[0] - lag_spec["max"]))
+        )
+        origin = variables_matrix.shape[0] - validation_h
+        if validation_h >= variables_matrix.shape[0] - lag_spec["max"]:
+            raise ValueError("The series is too short for the requested lagged validation window.")
+        prefix = _var_interpolate_and_extrapolate(
+            variables_matrix[:origin],
+            validation_h,
+            tau=tau,
+            names=names,
+            obj_fn=obj_fn,
+            objective=objective_value,
+        )
+        extended = np.vstack((prefix["interpolated_and_extrapolated"], prefix["univariate"]))
+        validation_lags, _, _ = _var_lag_matrix(extended, lag_spec["lags"], names)
+        validation_data = (
+            validation_lags[:-validation_h],
+            validation_lags[-validation_h:],
+            variables_matrix[origin:],
+        )
 
     first_stage = _var_interpolate_and_extrapolate(
         variables_matrix,
@@ -116,6 +147,7 @@ def nns_var(
         dim_red_method=method,
         obj_fn=obj_fn,
         objective=objective_value,
+        validation_data=validation_data,
     )
     multivariate = cast(NDArray[np.float64], multivariate_stage["multivariate"])
     relevant_variables = cast(NDArray[Any], multivariate_stage["relevant_variables"])
@@ -140,6 +172,7 @@ def nns_var(
 # --------------------------------------------------------------------------
 # Validation and input coercion
 # --------------------------------------------------------------------------
+
 
 def _var_validate_h(h: Any) -> int:
     if isinstance(h, (bool, np.bool_)) or not isinstance(h, Real):
@@ -267,8 +300,11 @@ def _var_lags(
     """
     if _is_lag_scalar(tau):
         lag = _var_lag_values(tau)[0]
-        return {"lags": [list(range(1, lag + 1)) for _ in range(n_vars)],
-                "modulo": [lag] * n_vars, "max": lag}
+        return {
+            "lags": [list(range(1, lag + 1)) for _ in range(n_vars)],
+            "modulo": [lag] * n_vars,
+            "max": lag,
+        }
     if isinstance(tau, (str, bytes)) or not _is_sequence(tau):
         _invalid_tau()
     entries = list(cast(Sequence[Any], tau))
@@ -282,8 +318,11 @@ def _var_lags(
             return _var_lags(values[0], n_vars)
         if len(values) != n_vars:
             _invalid_tau()
-        return {"lags": [[value] for value in values], "modulo": [min(values)] * n_vars,
-                "max": max(values)}
+        return {
+            "lags": [[value] for value in values],
+            "modulo": [min(values)] * n_vars,
+            "max": max(values),
+        }
 
     # A list of lag vectors (R list(...)): one per variable, or one shared.
     if len(entries) == 1:
@@ -314,6 +353,7 @@ def _var_check_sample_size(n_rows: int, h: int, max_tau: int) -> None:
 # Stage 1: interpolation / extrapolation and univariate forecasts
 # --------------------------------------------------------------------------
 
+
 def _var_interpolate_and_extrapolate(
     variables: NDArray[np.float64],
     h: int,
@@ -324,13 +364,12 @@ def _var_interpolate_and_extrapolate(
 ) -> VarResult:
     """Fill missing values and generate univariate ARMA forecasts per column.
 
-    With trailing NaNs every missing value comes from an ``nns_stack`` Method 1
-    fit on the index; otherwise interior NaNs come from an ``nns_reg`` fit on
-    the index. Observed values are never smoothed.
+    Trailing NaNs use R14's fixed index-cell gradient extrapolation; interior
+    NaNs use exact-support univariate interpolation. Observed values are never
+    smoothed, and neither branch reselects a Stack model on the full panel.
     """
     from nns.arma import nns_arma_optim
     from nns.seasonality import nns_seas
-    from nns.stack import nns_stack
 
     vars_matrix = np.asarray(variables, dtype=np.float64)
     if vars_matrix.ndim != 2:
@@ -358,22 +397,14 @@ def _var_interpolate_and_extrapolate(
         filled = x.copy()
 
         if missing.size and observed[-1] < n_rows - 1:
-            # Trailing NaN(s): nns_stack on the index, duplicated into two
-            # identical predictors so the multivariate machinery has two columns.
+            # R14 preserves the historical index-cell extrapolator here.
             at = missing.astype(np.float64) + 1.0
-            fill = nns_stack(
-                np.column_stack((index, index)),
-                x[observed],
-                ivs_test=np.column_stack((at, at)),
-                order=None,
-                folds=5,
-                method=1,
-                status=False,
-                dist=None,
-            )["stack"]
+            fill = _var_index_fit(index, x[observed], at)
             filled[missing] = np.asarray(fill, dtype=np.float64).reshape(-1)
         elif missing.size:
-            filled[missing] = _var_index_fit(index, x[observed], missing.astype(np.float64) + 1.0)
+            filled[missing] = _var_linear_index_fit(
+                index, x[observed], missing.astype(np.float64) + 1.0
+            )
         interpolated[:, j] = filled
 
         if h > 0:
@@ -415,6 +446,66 @@ def _var_index_fit(
     values: NDArray[np.float64],
     at: NDArray[np.float64],
 ) -> NDArray[np.float64]:
+    """R14 .nns_var_index_fit: nearest index cell plus boundary-gradient extension."""
+    from nns.central_tendencies import nns_gravity, nns_rescale
+    from nns.copula import nns_copula
+    from nns.dependence import nns_dep
+    from nns.regression import nns_reg
+
+    if values.size < 2:
+        return np.full(at.size, values[-1] if values.size else np.nan)
+    dep = float(nns_dep(index, values, asym=True)["Dependence"])
+    matrix = np.column_stack(
+        (nns_rescale(index, 0, 1), nns_rescale(index, 0, 1), nns_rescale(values, 0, 1))
+    )
+    dep = (dep + float(nns_copula(matrix))) / 2.0
+    if not np.isfinite(dep):
+        dep = 0.1
+    depth = math.floor(dep * 10)
+    if values.size < 100:
+        depth //= 2
+    order: Any = "max" if dep == 1 else max(1, depth)
+    rp = np.unique(nns_reg(index, values, order=order, type="REG", multivariate_call=True)["x"])
+    cells = np.searchsorted(rp, index, side="right")
+    ids = np.asarray([f"{v}.{v}" for v in cells])
+    groups = [np.flatnonzero(ids == key) for key in np.unique(ids)]
+    rx = np.asarray([nns_gravity(index[g]) for g in groups])
+    ry = np.asarray([nns_gravity(values[g]) for g in groups])
+
+    def nearest(q: float) -> float:
+        span = max(float(np.max(rx)), q) - min(float(np.min(rx)), q)
+        if math.isfinite(span) and span > 0:
+            d = (rx - q) * (1.0 / span)
+            scores = 2 * (d * d + np.abs(d))
+            scores[scores == 0] = 1e-10
+        else:
+            scores = np.full(rx.size, 1e-10)
+        return float(ry[np.argmin(scores)])
+
+    estimates = np.asarray([nearest(float(q)) for q in at])
+    lo, hi = float(np.min(index)), float(np.max(index))
+    outside = np.flatnonzero((at < lo) | (at > hi))
+    if outside.size:
+        center = float(nns_gravity(rx))
+        for i in outside:
+            boundary = float(np.clip(at[i], lo, hi))
+            mid = (boundary + center) / 2
+            near = (boundary + mid) / 2
+            e = nearest(boundary)
+            gradients = [
+                (e - nearest(q)) / max(math.sqrt(2 * (boundary - q) ** 2), 1e-10)
+                for q in (center, mid, near)
+            ]
+            gradient = (3 * gradients[0] + 2 * gradients[1] + gradients[2]) / 6
+            estimates[i] = math.sqrt(2 * (float(at[i]) - boundary) ** 2) * gradient + e
+    return estimates
+
+
+def _var_linear_index_fit(
+    index: NDArray[np.float64],
+    values: NDArray[np.float64],
+    at: NDArray[np.float64],
+) -> NDArray[np.float64]:
     """Fit a series on its index (``order="max"``) and evaluate it at ``at``."""
     if index.size < 2:
         return np.full(at.size, float(values[0]))
@@ -424,6 +515,7 @@ def _var_index_fit(
         index,
         values,
         order="max",
+        type="REG",
         point_est=at,
         plot=False,
         point_only=True,
@@ -435,6 +527,7 @@ def _var_index_fit(
 # --------------------------------------------------------------------------
 # Stage 2: multivariate estimates
 # --------------------------------------------------------------------------
+
 
 def _r_mean(values: NDArray[np.float64]) -> float:
     """R's two-pass ``mean()``: exact for constant vectors, so a constant
@@ -474,13 +567,15 @@ def _var_multivariate_stack_stage(
     dim_red_method: str = "cor",
     obj_fn: ObjectiveFn | None = None,
     objective: str = "min",
+    validation_data: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
+    | None = None,
 ) -> dict[str, object]:
     """Multivariate ``nns_stack`` forecasts over the lagged VAR design.
 
     Per variable, the relevant variables are the regressors the cross-validated
     dimension reduction threshold keeps, and the estimate is ``nns_stack`` on
     exactly those regressors, trained on the observed lagged rows and evaluated
-    on the last ``h`` of them (R's ``tail(IV, h)``).
+    on the ``h`` forecast-period rows (built from the univariate forecasts).
     """
     interpolated_matrix = np.asarray(interpolated, dtype=np.float64)
     univariate_matrix = np.asarray(univariate, dtype=np.float64)
@@ -524,6 +619,19 @@ def _var_multivariate_stack_stage(
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
         ts_test = max(2 * h, math.ceil(0.2 * lagged_dv.size))
 
+        fold = None
+        if validation_data is not None:
+            validation_train, validation_test, validation_actual = validation_data
+            observed = np.isfinite(validation_actual[:, i])
+            if not np.any(observed):
+                raise ValueError("A target has no observed values in the validation window.")
+            fold = {
+                "IVs.train": np.delete(validation_train, i, axis=1),
+                "DV.train": validation_train[:, i],
+                "IVs.test": np.delete(validation_test, i, axis=1)[observed],
+                "DV.test": validation_actual[observed, i],
+            }
+
         # Relevant variables (NNS 11.6): the regressors whose dimension
         # reduction coefficient meets the cross-validated threshold
         relevant = _var_relevant(
@@ -533,20 +641,33 @@ def _var_multivariate_stack_stage(
             obj_fn=stack_obj_fn,
             objective=objective_value,
             dim_red_method=dim_red_value,
+            _validation=fold,
         )
         relevant_variables.append([iv_names[k] for k in relevant])
 
         # Multivariate estimate: nns_stack (Method 1, nns_reg) on exactly the
         # relevant variables, each its own dimension.
+        # Forecast-period regressors: the last h rows of the lag matrix built on the
+        # series extended with the univariate forecasts (rows n+1..n+h).
+        # tail(IV, h) of the training rows was an in-sample refit of the last h
+        # observed periods.
+        forecast_iv = np.delete(lagged, i, axis=1)[-h:, :]
         result = _var_fit_stack(
             lagged_iv[:, relevant],
             lagged_dv,
-            lagged_iv[-h:, relevant],
+            forecast_iv[:, relevant],
             ts_test=ts_test,
             obj_fn=stack_obj_fn,
             objective=objective_value,
             use_default_objective=use_default_objective,
             dim_red_method=dim_red_value,
+            _validation=None
+            if fold is None
+            else {
+                **fold,
+                "IVs.train": fold["IVs.train"][:, relevant],
+                "IVs.test": fold["IVs.test"][:, relevant],
+            },
         )
 
         nns_dv = np.asarray(result["stack"], dtype=np.float64).reshape(-1)[:h].copy()
@@ -576,6 +697,7 @@ def _var_fit_stack(
     objective: str,
     use_default_objective: bool,
     dim_red_method: str,
+    _validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """NNS.VAR's ``nns_stack`` call (``method=1``, ``stack=False``). The built-in
     co-movement ratio objective falls back to plain MSE when it is undefined for
@@ -591,6 +713,8 @@ def _var_fit_stack(
         "order": None,
         "stack": False,
         "dist": None,
+        "type": "REG",
+        "_validation": _validation,
     }
     try:
         return nns_stack(
@@ -618,6 +742,7 @@ def _var_relevant(
     obj_fn: ObjectiveFn,
     objective: str,
     dim_red_method: str,
+    _validation: dict[str, Any] | None = None,
 ) -> list[int]:
     """R ``.nns_var_relevant``: relevant variables as NNS 11.6's NNS.VAR found them.
 
@@ -634,7 +759,13 @@ def _var_relevant(
     n_rows, n = x.shape
     if n == 1:
         return [0]
-    reg_args: dict[str, Any] = {"plot": False, "residual_plot": False, "order": None, "ncores": 1}
+    reg_args: dict[str, Any] = {
+        "plot": False,
+        "residual_plot": False,
+        "order": None,
+        "ncores": 1,
+        "type": "REG",
+    }
 
     def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
         if dim_red_method == "cor":
@@ -650,8 +781,11 @@ def _var_relevant(
     cv_x, cv_x_test = x[:split], x[split:]
     cv_y, actual = y[:split], y[split:]
 
-    cutoffs_1 = rounded(coefficients(x, y))
+    if _validation is not None:
+        cv_x, cv_x_test = _validation["IVs.train"], _validation["IVs.test"]
+        cv_y, actual = _validation["DV.train"], _validation["DV.test"]
     cutoffs_2 = rounded(coefficients(cv_x, cv_y))
+    cutoffs_1 = rounded(coefficients(x, y)) if _validation is None else cutoffs_2
     var_cutoffs = np.minimum(cutoffs_1, (cutoffs_1 + cutoffs_2) / 2.0)
     in_range = (var_cutoffs < 1.0) & (var_cutoffs >= 0.0)
     var_cutoffs = var_cutoffs[np.isnan(var_cutoffs) | in_range]
@@ -662,8 +796,15 @@ def _var_relevant(
 
     scores: list[float] = []
     for cutoff in cutoffs:
-        fit = nns_reg(cv_x, cv_y, point_est=cv_x_test, dim_red_method=dim_red_method,
-                      threshold=cutoff, point_only=True, **reg_args)
+        fit = nns_reg(
+            cv_x,
+            cv_y,
+            point_est=cv_x_test,
+            dim_red_method=dim_red_method,
+            threshold=cutoff,
+            point_only=True,
+            **reg_args,
+        )
         predicted = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1).copy()
         missing = np.isnan(predicted)
         if missing.any() and not missing.all():
@@ -680,8 +821,15 @@ def _var_relevant(
     threshold = cutoffs[best]
 
     # Every regressor the threshold keeps (positive or negative coefficient)
-    fit = nns_reg(x, y, dim_red_method=dim_red_method, threshold=threshold, point_only=True,
-                  **reg_args)
+    selection_x, selection_y = (x, y) if _validation is None else (cv_x, cv_y)
+    fit = nns_reg(
+        selection_x,
+        selection_y,
+        dim_red_method=dim_red_method,
+        threshold=threshold,
+        point_only=True,
+        **reg_args,
+    )
     coefficient = np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
     return np.flatnonzero(coefficient != 0.0).tolist() or list(range(n))
 
@@ -724,6 +872,7 @@ def _var_ensemble_weights(
 # --------------------------------------------------------------------------
 # Lag matrix
 # --------------------------------------------------------------------------
+
 
 def _var_lag_names(
     names: Sequence[str],
@@ -778,73 +927,141 @@ def _lag_mtx(
 # LPM / UPM Value-at-Risk (R LPM.VaR / UPM.VaR)
 # --------------------------------------------------------------------------
 
-def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
-    """Lower partial-moment VaR matching R's LPM.VaR."""
+
+@overload
+def lpm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float: ...
+
+
+@overload
+def lpm_var(
+    percentile: Sequence[float] | NDArray[np.float64], degree: float, x: NDArray[np.float64]
+) -> NDArray[np.float64]: ...
+
+
+def lpm_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+) -> float | NDArray[np.float64]:
+    """Lower partial-moment VaR matching R's ``LPM.VaR``.
+
+    Returns the target ``t`` with ``LPM.ratio(degree, t, x) = percentile``.
+    ``percentile`` may be a scalar (returns a float) or array-like (returns an
+    ndarray of the same shape, like R's vectorised call); values are clamped to
+    ``[0, 1]``. Non-finite ``x`` values are dropped. ``degree=0`` is the type-7
+    (linear) sample quantile.
+    """
+    return _partial_moment_var(percentile, degree, x, lower=True)
+
+
+@overload
+def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float: ...
+
+
+@overload
+def upm_var(
+    percentile: Sequence[float] | NDArray[np.float64], degree: float, x: NDArray[np.float64]
+) -> NDArray[np.float64]: ...
+
+
+def upm_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+) -> float | NDArray[np.float64]:
+    """Upper partial-moment VaR matching R's ``UPM.VaR``.
+
+    Returns the target ``t`` with ``UPM.ratio(degree, t, x) = percentile``.
+    ``percentile`` may be a scalar (returns a float) or array-like (returns an
+    ndarray of the same shape); values are clamped to ``[0, 1]``.
+    """
+    return _partial_moment_var(percentile, degree, x, lower=False)
+
+
+def _partial_moment_var(
+    percentile: float | Sequence[float] | NDArray[np.float64],
+    degree: float,
+    x: NDArray[np.float64],
+    *,
+    lower: bool,
+) -> float | NDArray[np.float64]:
     values = _finite_values(x)
-    pct = min(max(float(percentile), 0.0), 1.0)
+    requested = np.asarray(percentile, dtype=np.float64)
+    pcts = np.clip(requested.reshape(-1), 0.0, 1.0)
+    # LPM.ratio(t) = p; UPM.ratio(t) = p is equivalent to LPM.ratio(t) = 1 - p
+    # for the quantile and the integer-degree inversion.
+    lpm_pcts = pcts if lower else 1.0 - pcts
     if degree == 0:
-        return float(np.quantile(values, pct, method="linear"))
-    if _is_supported_integer_degree(degree):
-        return _lpm_var_integer(pct, int(degree), values)
+        out = np.asarray(np.quantile(values, lpm_pcts, method="linear"), dtype=np.float64)
+    elif _is_supported_integer_degree(degree):
+        solve = _lpm_var_integer_solver(int(degree), values)
+        out = np.array([solve(float(p)) for p in lpm_pcts], dtype=np.float64)
+    else:
+        ratio = lpm_ratio if lower else upm_ratio
+        out = np.array(
+            [_var_uniroot(ratio, float(p), degree, values) for p in pcts], dtype=np.float64
+        )
+    if requested.ndim == 0:
+        return float(out[0])
+    return out.reshape(requested.shape)
+
+
+def _var_uniroot(
+    ratio: Callable[..., Any],
+    pct: float,
+    degree: float,
+    values: NDArray[np.float64],
+) -> float:
+    """Fractional degree: solve ``ratio(degree, t, x) = p`` on [min, max], as R's uniroot().
+
+    The ratio is monotone in the target, so a bracketing root finder at a tolerance
+    relative to the range of ``x`` replaces R 13.3's optimize() on ``|ratio - p|``,
+    which stopped at its default absolute tolerance (about 1.2e-4 in x units).
+    A root at or beyond an end of the support returns that end.
+    """
     xmin = float(np.min(values))
     xmax = float(np.max(values))
     if xmin == xmax:
         return xmin
 
-    from scipy.optimize import minimize_scalar  # type: ignore[import-untyped]
+    def gap(target: float) -> float:
+        return float(ratio(degree, target, values)) - pct
 
-    result = minimize_scalar(
-        lambda target: abs(float(lpm_ratio(degree, target, values)) - pct),
-        bounds=(xmin, xmax),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return float(result.x)
-
-
-def upm_var(percentile: float, degree: float, x: NDArray[np.float64]) -> float:
-    """Upper partial-moment VaR matching R's UPM.VaR."""
-    values = _finite_values(x)
-    pct = min(max(float(percentile), 0.0), 1.0)
-    if degree == 0:
-        return float(np.quantile(values, 1.0 - pct, method="linear"))
-    if _is_supported_integer_degree(degree):
-        # UPM.ratio(t) = p is equivalent to LPM.ratio(t) = 1 - p.
-        return _lpm_var_integer(1.0 - pct, int(degree), values)
-    xmin = float(np.min(values))
-    xmax = float(np.max(values))
-    if xmin == xmax:
+    gap_lower = gap(xmin)
+    gap_upper = gap(xmax)
+    if gap_lower == 0.0:
         return xmin
+    if gap_upper == 0.0:
+        return xmax
+    if np.sign(gap_lower) == np.sign(gap_upper):
+        return xmin if abs(gap_lower) <= abs(gap_upper) else xmax
 
-    from scipy.optimize import minimize_scalar
+    from nns.diff import _zeroin2
 
-    result = minimize_scalar(
-        lambda target: abs(float(upm_ratio(degree, target, values)) - pct),
-        bounds=(xmin, xmax),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return float(result.x)
+    tol = _UNIROOT_TOL * (xmax - xmin)
+    return _zeroin2(gap, xmin, xmax, gap_lower, gap_upper, tol, 1000)
 
 
 _UNIROOT_TOL = float(np.finfo(float).eps ** 0.5)
 
 
 def _is_supported_integer_degree(degree: float) -> bool:
-    return (
-        math.isfinite(float(degree))
-        and float(degree) == int(degree)
-        and 1 <= int(degree) <= 4
-    )
+    return math.isfinite(float(degree)) and float(degree) == int(degree) and 1 <= int(degree) <= 4
 
 
 def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> float:
-    """Exact integer-degree LPM VaR inversion matching R NNS 13.0.
+    """Exact integer-degree LPM VaR inversion matching R NNS 13.0 (one percentile)."""
+    return _lpm_var_integer_solver(degree, values)(pct)
+
+
+def _lpm_var_integer_solver(degree: int, values: NDArray[np.float64]) -> Callable[[float], float]:
+    """Build the integer-degree LPM VaR inversion once and return a per-percentile solver.
 
     Mirrors R's ``.NNS_LPM_VaR_integer``: within an interval between sorted
     unique observations, LPM_d(t) and UPM_d(t) are degree-d polynomials in t,
     so VaR solves ``(1 - p) * LPM_d(t) - p * UPM_d(t) = 0`` exactly on the
-    located order-statistic interval.
+    located order-statistic interval. The sort and prefix powers depend only on
+    ``x``, so a vector of percentiles shares them (as R's vectorised call does).
     """
     n = values.size
     x_sorted = np.sort(values)
@@ -856,7 +1073,8 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
     x_min = float(x_sorted[0])
     x_max = float(x_sorted[-1])
     if n == 1 or x_min == x_max:
-        return x_min + shift
+        constant = x_min + shift
+        return lambda pct: constant
 
     unique_x, counts = np.unique(x_sorted, return_counts=True)
     k_break = np.cumsum(counts)
@@ -887,6 +1105,25 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
     ratio_break[0] = 0.0
     ratio_break[-1] = 1.0
 
+    def solve(pct: float) -> float:
+        return _lpm_var_integer_interval(
+            pct, degree, shift, x_min, x_max, unique_x, ratio_break, prefix_power, total_power
+        )
+
+    return solve
+
+
+def _lpm_var_integer_interval(
+    pct: float,
+    degree: int,
+    shift: float,
+    x_min: float,
+    x_max: float,
+    unique_x: NDArray[np.float64],
+    ratio_break: NDArray[np.float64],
+    prefix_power: NDArray[np.float64],
+    total_power: NDArray[np.float64],
+) -> float:
     if pct <= 0.0:
         return x_min + shift
     if pct >= 1.0:
@@ -903,7 +1140,7 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
 
     interval_prefix = prefix_power[:, interval - 1]
 
-    def root_value(t: float) -> float:
+    def raw_moments(t: float) -> tuple[float, float]:
         lpm_raw = 0.0
         upm_raw = 0.0
         for j in range(degree + 1):
@@ -911,33 +1148,42 @@ def _lpm_var_integer(pct: float, degree: int, values: NDArray[np.float64]) -> fl
             lpm_raw += coef * (-1.0) ** j * t ** (degree - j) * float(interval_prefix[j])
             suffix = float(total_power[j]) - float(interval_prefix[j])
             upm_raw += coef * (-1.0) ** (degree - j) * t ** (degree - j) * suffix
+        return lpm_raw, upm_raw
+
+    def root_value(t: float) -> float:
+        lpm_raw, upm_raw = raw_moments(t)
         return (1.0 - pct) * lpm_raw - pct * upm_raw
+
+    # The ratio residual is dimensionless, unlike root_value, whose size scales with x**degree.
+    def ratio_gap(t: float) -> float:
+        lpm_raw, upm_raw = raw_moments(t)
+        total = lpm_raw + upm_raw
+        return lpm_raw / total - pct if total != 0.0 else math.nan
 
     f_lower = root_value(lower)
     f_upper = root_value(upper)
-    tol = _UNIROOT_TOL
+    g_lower = ratio_gap(lower)
+    g_upper = ratio_gap(upper)
+    tol = _VAR_RATIO_TOL
 
-    if math.isfinite(f_lower) and abs(f_lower) <= tol:
+    if math.isfinite(g_lower) and abs(g_lower) <= tol:
         return lower + shift
-    if math.isfinite(f_upper) and abs(f_upper) <= tol:
+    if math.isfinite(g_upper) and abs(g_upper) <= tol:
         return upper + shift
 
     if math.isfinite(f_lower) and math.isfinite(f_upper) and f_lower * f_upper <= 0.0:
-        from scipy.optimize import brentq
+        from nns.diff import _zeroin2
 
-        root = float(brentq(root_value, lower, upper, xtol=tol))
+        # A tolerance on t does not bound the residual where the ratio is steep.
+        root_tol = float(np.finfo(float).eps) ** 2 * (upper - lower)
+        root = _zeroin2(root_value, lower, upper, f_lower, f_upper, root_tol, 1000)
         return min(max(root, lower), upper) + shift
 
-    # Numerical safety fallback, mirroring R's optimize() on |f|.
-    from scipy.optimize import minimize_scalar
+    # No sign change, from rounding at a break: take the closer endpoint.
+    return (lower if abs(g_lower) <= abs(g_upper) else upper) + shift
 
-    result = minimize_scalar(
-        lambda t: abs(root_value(t)),
-        bounds=(lower, upper),
-        method="bounded",
-        options={"xatol": _R_OPTIMIZE_TOL},
-    )
-    return min(max(float(result.x), lower), upper) + shift
+
+_VAR_RATIO_TOL = float(np.finfo(float).eps ** 0.75)
 
 
 def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -945,4 +1191,4 @@ def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         raise ValueError("x must contain at least one finite value.")
-    return finite
+    return np.asarray(finite, dtype=np.float64)

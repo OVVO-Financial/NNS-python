@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from nns import fsd, fsd_uni, lpm, ssd, ssd_uni, tsd, tsd_uni
+from nns import fsd, fsd_uni, lpm, nns_sd_cluster, sd_efficient_set, ssd, ssd_uni, tsd, tsd_uni
 
 
 def _r_sd_reference(x: NDArray[np.float64], y: NDArray[np.float64], degree: int) -> int:
@@ -110,3 +110,109 @@ def test_unequal_length_matches_r_decision_rule(degree: int, seed: int) -> None:
 
     function = {1: fsd, 2: ssd, 3: tsd}[degree]
     assert function(x, y) == _r_sd_reference(x, y, degree)
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_fsd_uni_continuous_matches_dense_ratio_definition(seed: int) -> None:
+    # Reference: LPM1/(LPM1 + UPM1) evaluated densely on the merged grid.
+    rng = np.random.default_rng(seed)
+    sizes = rng.integers(2, 40, size=2)
+    x = np.round(rng.normal(0.3, 1.0, int(sizes[0])), 1)
+    y = np.round(rng.normal(0.0, 1.0, int(sizes[1])), 1)
+
+    def dominates(a: NDArray[np.float64], b: NDArray[np.float64]) -> int:
+        if np.array_equal(np.sort(a), np.sort(b)) or a.min() < b.min():
+            return 0
+        grid = np.sort(np.concatenate((a, b)))
+        curves = []
+        for sample in (a, b):
+            lower = np.mean(np.maximum(grid[:, None] - sample, 0.0), axis=1)
+            upper = np.mean(np.maximum(sample - grid[:, None], 0.0), axis=1)
+            total = lower + upper
+            curves.append(np.divide(lower, total, out=np.zeros_like(lower), where=total != 0))
+        if np.allclose(curves[0], curves[1], rtol=0.0, atol=1e-12):
+            return 0
+        return int(not np.any(curves[0] > curves[1] + 1e-12))
+
+    assert fsd_uni(x, y, "continuous") == dominates(x, y)
+    assert fsd_uni(y, x, "continuous") == dominates(y, x)
+
+
+def test_merged_thresholds_equal_union_and_searchsorted() -> None:
+    from nns.stochastic_dominance import _merged_thresholds
+
+    rng = np.random.default_rng(31)
+    for n, m, digits in ((1, 1, 0), (7, 3, 0), (50, 80, 1), (400, 400, 6), (300, 120, 15)):
+        x = np.sort(np.round(rng.normal(size=n), digits))
+        y = np.sort(np.round(rng.normal(size=m), digits))
+        thresholds, x_counts, y_counts = _merged_thresholds(x, y)
+        expected = np.union1d(x, y)
+        np.testing.assert_array_equal(thresholds, expected)
+        np.testing.assert_array_equal(x_counts, np.searchsorted(x, expected, side="right"))
+        np.testing.assert_array_equal(y_counts, np.searchsorted(y, expected, side="right"))
+
+
+def test_a_common_shift_keeps_the_verdict_like_r() -> None:
+    from nns import sd_efficient_set
+
+    x = np.array([-0.0085, -0.0152, 0.0068])
+    y = np.array([-0.0021, -0.0033, -0.0167])
+    assert tsd_uni(x + 20000, y + 20000) == tsd_uni(x, y) == 0
+    x, y = np.array([0.01, 0.07]), np.array([0.0, 0.08])
+    assert tsd_uni(x + 1e6, y + 1e6) == 1
+    assert sd_efficient_set(np.column_stack([x, y]) + 1e6, degree=3) == [0]
+    x, y = np.array([0.01, 0.03]), np.array([0.0, 0.04])
+    assert (ssd_uni(x + 20000, y + 20000), tsd_uni(x + 20000, y + 20000)) == (1, 1)
+    body = np.arange(1, 997, dtype=np.float64)
+    x = np.r_[0.0, 0.01, 0.03, body, 1000.0]
+    y = np.r_[0.0, 0.02, 0.02, body, 999.0]
+    z = np.r_[0.0, 0.02, 0.02, body, 1000.0]
+    for shift in (20000.0, 1e6):
+        assert tsd_uni(x + shift, y + shift) == 0
+        assert tsd_uni(z + shift, x + shift) == 1
+
+
+def test_sd_efficient_set_does_not_depend_on_column_order() -> None:
+    # R NNS.SD.efficient.set: Y sorts first by LPM(1, tmax) and was kept, so the set was
+    # [Y, X] in this order and [X] in the other.
+    x = np.array([-1.0, -1.0, 2.0])
+    y = np.array([-2.0, 1.0, 1.0])
+    assert fsd_uni(x, y, "continuous") == 1
+    assert sd_efficient_set(np.column_stack([y, x]), 1, "continuous") == [1]
+    assert sd_efficient_set(np.column_stack([x, y]), 1, "continuous") == [0]
+    yx = nns_sd_cluster(np.column_stack([y, x]), 1, "continuous", names=["Y", "X"])
+    xy = nns_sd_cluster(np.column_stack([x, y]), 1, "continuous", names=["X", "Y"])
+    assert yx["Clusters"] == xy["Clusters"] == {"Cluster_1": ["X"], "Cluster_2": ["Y"]}
+
+
+def test_sd_efficient_set_keeps_every_member_of_a_dominance_cycle() -> None:
+    # Tolerance-level ties make A > B > C > A at second order; the scan kept whichever came
+    # first. R main returns all three, in LPM order, for every column order.
+    a = np.arange(6.0)
+    h = 3 * 2.0**-44
+    m = np.column_stack(
+        [a, a + h * np.array([0, -2, 3, 0, -1, 0]), a + h * np.array([0, -1, 0, 3, -2, 0])]
+    )
+    for perm, expected in [
+        ([0, 1, 2], [0, 1, 2]),
+        ([1, 2, 0], [1, 2, 0]),
+        ([2, 1, 0], [2, 1, 0]),
+        ([1, 0, 2], [1, 0, 2]),
+    ]:
+        assert [perm[i] for i in sd_efficient_set(m[:, perm], 2)] == expected
+    # A column below the cycle leaves it efficient; one above it dominates all three.
+    assert sorted(sd_efficient_set(np.column_stack([a - 1.0, m]), 2)) == [1, 2, 3]
+    assert sd_efficient_set(np.column_stack([m, a + 1.0]), 2) == [3]
+
+
+@pytest.mark.parametrize(
+    ("degree", "type_"), [(1, "discrete"), (1, "continuous"), (2, "discrete"), (3, "discrete")]
+)
+def test_sd_efficient_set_membership_is_permutation_invariant(degree: int, type_: str) -> None:
+    rng = np.random.default_rng(127)
+    for _ in range(100):
+        columns = int(rng.integers(4, 7))
+        m = rng.integers(-3, 4, size=(5, columns)).astype(np.float64)
+        perm = rng.permutation(columns)
+        permuted = {int(perm[i]) for i in sd_efficient_set(m[:, perm], degree, type_)}
+        assert permuted == set(sd_efficient_set(m, degree, type_))

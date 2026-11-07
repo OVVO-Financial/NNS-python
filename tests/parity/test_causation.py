@@ -9,14 +9,6 @@ from nns import causal_matrix, nns_causation
 
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "independent", "quadratic", "sin", "asymmetric"]
-TS_TOLERANCE = 7e-2
-# Net causation is a log-ratio of the two directional estimates. A modest
-# directional difference can therefore be amplified substantially while the
-# underlying causation estimates remain close. Keep directional checks tight
-# and give only the derived net statistic a wider tolerance.
-TS_NET_TOLERANCE = 5e-1
-TS_MATRIX_TOLERANCE = 3e-1
-
 
 @pytest.mark.parity
 @pytest.mark.parametrize("size", SIZES)
@@ -32,6 +24,39 @@ def test_nns_causation_matches_r(
     actual = np.fromiter(nns_causation(x, y).values(), dtype=np.float64)
 
     np.testing.assert_allclose(actual, _vector(expected), atol=EXACT)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("tau", [3, 3.0, 47])
+def test_nns_causation_integer_tau_matches_r(tau: float) -> None:
+    rng = np.random.default_rng(3)
+    x = rng.standard_normal(50)
+    y = x**2 + 0.1 * rng.standard_normal(50)
+
+    expected = nns("NNS.caus", x.tolist(), y.tolist(), False, tau, False, False)
+    actual = np.fromiter(nns_causation(x, y, tau=tau).values(), dtype=np.float64)
+
+    np.testing.assert_allclose(actual, _vector(expected), atol=EXACT)
+
+
+@pytest.mark.parametrize("tau", [1.5, -1, "3", "foo", 48, True, float("nan")])
+def test_nns_causation_rejects_invalid_tau(tau: object) -> None:
+    # Patched R: tau must be "cs", "ts" or a single non-negative integer
+    # smaller than length(x) - 2 (R used fractional subscripts, ignored -1, ...).
+    rng = np.random.default_rng(3)
+    x = rng.standard_normal(50)
+    with pytest.raises(ValueError, match="tau must be"):
+        nns_causation(x, x**2, tau=tau)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="tau must be"):
+        causal_matrix(np.column_stack((x, x**2)), tau=tau)  # type: ignore[arg-type]
+
+
+def test_nns_causation_rejects_constant_input() -> None:
+    x = np.linspace(-1.0, 1.0, 40)
+    with pytest.raises(ValueError, match="must not be constant"):
+        nns_causation(x, np.ones(40))
+    with pytest.raises(ValueError, match="must not be constant"):
+        causal_matrix(np.column_stack((x, np.ones(40))))
 
 
 @pytest.mark.parity
@@ -60,8 +85,11 @@ def test_nns_causation_ts_tau_matches_r(case: str) -> None:
     expected = _vector(nns("NNS.caus", x.tolist(), y.tolist(), False, "ts", False, False))
     actual = np.fromiter(nns_causation(x, y, tau="ts").values(), dtype=np.float64)
 
-    np.testing.assert_allclose(actual[:2], expected[:2], atol=TS_TOLERANCE)
-    np.testing.assert_allclose(actual[2], expected[2], atol=TS_NET_TOLERANCE)
+    # R14 returns exactly two complementary directional indices, not the
+    # old signed log-ratio as a third element.
+    assert actual.shape == (2,)
+    np.testing.assert_allclose(actual, expected, atol=EXACT)
+    np.testing.assert_allclose(actual.sum(), 1.0, atol=EXACT)
 
 
 @pytest.mark.parity
@@ -78,7 +106,7 @@ def test_causal_matrix_ts_tau_matches_r() -> None:
     expected = nns("NNS.caus", variable.tolist(), None, False, "ts", False, False)
     actual = causal_matrix(variable, tau="ts")
 
-    np.testing.assert_allclose(actual, _matrix(expected), atol=TS_MATRIX_TOLERANCE)
+    np.testing.assert_allclose(actual, _matrix(expected), atol=EXACT)
 
 
 def _vector(value: object) -> np.ndarray:
@@ -125,3 +153,19 @@ def _ts_relationship(case: str) -> tuple[np.ndarray, np.ndarray]:
     x = np.sin(2.0 * np.pi * t / 7.0)
     y = np.roll(x, 1) + 0.05 * np.cos(t / 3.0)
     return x, y
+
+
+def test_causal_matrix_keeps_dataframe_labels() -> None:
+    pd = pytest.importorskip("pandas")
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=100)
+    frame = pd.DataFrame(
+        {"x": x, "x2": x**2 + 0.1 * rng.normal(size=100), "z": rng.normal(size=100)}
+    )
+
+    labelled = causal_matrix(frame)
+
+    assert list(labelled.index) == ["x", "x2", "z"]
+    assert list(labelled.columns) == ["x", "x2", "z"]
+    np.testing.assert_array_equal(labelled.to_numpy(), causal_matrix(frame.to_numpy()))
+    assert isinstance(causal_matrix(frame.to_numpy()), np.ndarray)

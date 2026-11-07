@@ -1,0 +1,23 @@
+{
+  "entries": {
+    "76a217a9401399b73cae3470cea007aa90692b63801a85898cd864d6abe6aee5": {
+      "levels": [
+        "virginica",
+        "versicolor",
+        "setosa"
+      ],
+      "pe": [
+        1.0,
+        3.0,
+        1.0,
+        3.0,
+        3.0,
+        1.0
+      ],
+      "r2": 0.75
+    }
+  },
+  "label": "labels.reg.factor_y",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

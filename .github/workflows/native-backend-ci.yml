@@ -36,8 +36,8 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install -U pip
-          python -m pip install build scikit-build-core nanobind pytest ruff mypy "numpy<2.5" scipy
-          python -m pip install hypothesis pytest-benchmark pytest-xdist
+          python -m pip install build scikit-build-core nanobind pytest ruff==0.16.3 mypy==2.3.1 "numpy<2.5" scipy
+          python -m pip install hypothesis pytest-benchmark pytest-xdist pandas
 
       - name: Install package editable
         run: python -m pip install -e .
@@ -46,10 +46,24 @@ jobs:
         run: python -c "import nns._nnscore as c; print(c.lpm(2.0, 0.0, [-2.0, -1.0, 0.5, 3.0]))"
 
       - name: Run invariants without Rscript
-        run: python -m pytest -q tests/invariants
+        id: invariants
+        continue-on-error: true
+        run: python -m pytest -q tests/invariants --junitxml=artifacts/invariants.xml
 
       - name: Run parity from committed R cache
-        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
+        id: parity
+        continue-on-error: true
+        run: NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity --junitxml=artifacts/parity.xml
+
+      - name: Run invariants and cached parity with the pure-Python fallbacks
+        # NNS_DISABLE_NATIVE=1 makes nns._native report no extension, so every
+        # public function takes its NumPy fallback, as an install without the
+        # compiled extension would. Tests that call nns._nnscore
+        # directly still run against the extension.
+        env:
+          NNS_DISABLE_NATIVE: "1"
+          NNS_R_CACHE_ONLY: "1"
+        run: python -m pytest -q tests/invariants tests/parity
 
       - name: Run property tests
         run: python -m pytest -q tests/property
@@ -73,3 +87,23 @@ jobs:
 
       - name: Build distributions
         run: python -m build
+
+      # Diagnostics do not make a failing R14 parity check green.
+      - name: Archive R14 per-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r14-parity-python-${{ matrix.python-version }}
+          path: artifacts/*.xml
+          if-no-files-found: warn
+
+      - name: Enforce R14 invariant and parity gates
+        if: always()
+        shell: bash
+        run: |
+          echo "Invariants: ${{ steps.invariants.outcome }}"
+          echo "R14 parity: ${{ steps.parity.outcome }}"
+          if [ "${{ steps.invariants.outcome }}" != "success" ] || [ "${{ steps.parity.outcome }}" != "success" ]; then
+            echo "::error::R14 source-faithful parity or invariants did not pass."
+            exit 1
+          fi

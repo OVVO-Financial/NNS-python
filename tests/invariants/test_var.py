@@ -139,6 +139,23 @@ def _two_driver_variables(n: int = 80, seed: int = 2) -> np.ndarray:
     return np.column_stack((x, y, w))
 
 
+def test_nns_var_multivariate_depends_on_the_univariate_forecasts() -> None:
+    # Patched R: the multivariate stage used to replay the last h observed rows,
+    # so shifting every univariate forecast left it bit-identical.
+    from nns.var import _var_multivariate_stack_stage
+
+    variables = _two_driver_variables()
+    h = 3
+    result = nns_var(variables, h, tau=1)
+    base = _var_multivariate_stack_stage(
+        result["interpolated_and_extrapolated"], result["univariate"], h, 1
+    )
+    shifted = _var_multivariate_stack_stage(
+        result["interpolated_and_extrapolated"], result["univariate"] + 1000.0, h, 1
+    )
+    assert not np.array_equal(base["multivariate"], shifted["multivariate"])
+
+
 @pytest.mark.parametrize(
     ("variables", "tau"), [(_driven_variables(), 2), (_two_driver_variables(), 1)]
 )
@@ -156,7 +173,7 @@ def test_nns_var_multivariate_is_nns_stack_on_exactly_the_relevant_variables(
     )
 
     h = 3
-    result = nns_var(variables, h, tau=tau)
+    result = nns_var(variables, h, tau=tau, validation="conditional")
     names = result["names"]
     relevant = result["relevant_variables"]
 
@@ -167,16 +184,32 @@ def test_nns_var_multivariate_is_nns_stack_on_exactly_the_relevant_variables(
         iv = np.delete(train, i, axis=1)
         iv_names = lagged_names[:i] + lagged_names[i + 1 :]
         ts_test = max(2 * h, int(np.ceil(0.2 * iv.shape[0])))
-        columns = _var_relevant(iv, train[:, i], ts_test=ts_test, obj_fn=_var_default_objective,
-                                objective="min", dim_red_method="cor")
+        columns = _var_relevant(
+            iv,
+            train[:, i],
+            ts_test=ts_test,
+            obj_fn=_var_default_objective,
+            objective="min",
+            dim_red_method="cor",
+        )
         selected = [value for value in relevant[:, i].tolist() if value is not None]
         assert selected == [iv_names[k] for k in columns]
         assert f"{name}_tau_0" not in selected
 
         # Only the relevant regressors enter the stack, so the estimate cannot
-        # depend on anything outside relevant_variables.
-        args: dict[str, Any] = {"ivs_test": iv[-h:, columns], "ts_test": ts_test, "folds": 1,
-                                "method": 1, "order": None, "stack": False, "dist": None}
+        # depend on anything outside relevant_variables. It is evaluated on the h
+        # forecast-period rows (built from the univariate forecasts), not on the last
+        # h observed rows.
+        forecast_iv = np.delete(lagged, i, axis=1)[-h:, columns]
+        args: dict[str, Any] = {
+            "ivs_test": forecast_iv,
+            "ts_test": ts_test,
+            "folds": 1,
+            "method": 1,
+            "order": None,
+            "stack": False,
+            "dist": None,
+        }
         try:
             fit = nns_stack(iv[:, columns], train[:, i], obj_fn=_var_default_objective, **args)
         except ValueError as error:  # nns_var's MSE fallback, as in R
@@ -193,13 +226,20 @@ def test_var_relevant_keeps_the_regressors_meeting_the_threshold() -> None:
     )
     iv, dv = np.delete(lagged, 1, axis=1), lagged[:, 1]
     iv_names = lagged_names[:1] + lagged_names[2:]
-    relevant = _var_relevant(iv, dv, ts_test=16, obj_fn=_var_default_objective,
-                             objective="min", dim_red_method="cor")
+    relevant = _var_relevant(
+        iv, dv, ts_test=16, obj_fn=_var_default_objective, objective="min", dim_red_method="cor"
+    )
     assert relevant == sorted(set(relevant))
     assert {iv_names[k] for k in relevant} >= {"x_tau_1", "w_tau_1"}
     # A single regressor is relevant by definition.
-    assert _var_relevant(iv[:, :1], dv, ts_test=16, obj_fn=_var_default_objective,
-                         objective="min", dim_red_method="cor") == [0]
+    assert _var_relevant(
+        iv[:, :1],
+        dv,
+        ts_test=16,
+        obj_fn=_var_default_objective,
+        objective="min",
+        dim_red_method="cor",
+    ) == [0]
 
 
 def test_nns_var_selects_every_driver() -> None:

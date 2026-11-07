@@ -30,9 +30,10 @@ def test_nns_sd_cluster_structural_invariants_hold(
 
     assert list(clusters) == [f"Cluster_{index}" for index in range(1, len(clusters) + 1)]
     members = [name for cluster in clusters.values() for name in cluster]
+    expected_names = [f"X_{index + 1}" for index in range(cols)]
     if min_cluster >= cols:
-        assert members == []
+        # Nothing is peeled, and the variables left form the final cluster.
+        assert clusters == {"Cluster_1": expected_names}
     else:
-        expected_names = [f"X_{index + 1}" for index in range(cols)]
         assert sorted(members, key=lambda item: int(item.split("_")[1])) == expected_names
         assert len(members) == len(set(members))

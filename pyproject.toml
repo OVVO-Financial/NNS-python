@@ -44,6 +44,7 @@ dev = [
     # Pinned to the exact versions CI gates on, so a local `ruff check .` or
     # `mypy` cannot disagree with the run that blocks the merge.
     "mypy==2.3.1",
+    "pandas",
     "pre-commit",
     "pytest",
     "pytest-benchmark",
@@ -52,6 +53,7 @@ dev = [
     "ruff==0.16.3",
 ]
 docs = [
+    "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5",
     "pymdown-extensions>=10",
 ]

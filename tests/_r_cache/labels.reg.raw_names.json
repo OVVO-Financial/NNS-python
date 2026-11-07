@@ -1,0 +1,28 @@
+{
+  "entries": {
+    "18de44b665901db270459eef1df179e51c23f8128859f2eed2f7a6db5857d52b": {
+      "fitted": [
+        "my wt",
+        "2nd",
+        "my cyl_eight",
+        "my cyl_four",
+        "my cyl_six",
+        "y",
+        "y.hat",
+        "NNS.ID",
+        "residuals"
+      ],
+      "rpm": [
+        "my wt",
+        "2nd",
+        "my cyl_eight",
+        "my cyl_four",
+        "my cyl_six",
+        "y.hat"
+      ]
+    }
+  },
+  "label": "labels.reg.raw_names",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

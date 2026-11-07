@@ -1,6 +1,6 @@
 // src/partition.cpp
 //
-// Pure C++ port of NNS 13.0 NNS_part.cpp. Decoupled from Rcpp.
+// Pure C++ port of NNS NNS_part.cpp (synced to R 13.3, 82a92eb). Decoupled from Rcpp.
 //
 // This file preserves the original NNS_part_cpp semantics:
 //   - arguments: x, y, type, order_in, obs_req, min_obs_stop,
@@ -33,11 +33,15 @@ namespace {
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
+// R 13.2: NNS_part treats +-Inf as values and drops only NaN/NA
+// (complete_case_value = !ISNAN), so -Inf lands below any finite centre.
+inline bool complete_case_value(double x) { return !std::isnan(x); }
+
 inline double mean_no_na(const std::vector<double>& v) {
   long double s = 0.0L;
   std::size_t m = 0;
   for (double xi : v) {
-    if (std::isfinite(xi)) {
+    if (complete_case_value(xi)) {
       s += xi;
       ++m;
     }
@@ -49,7 +53,7 @@ inline double median_no_na(const std::vector<double>& v) {
   std::vector<double> a;
   a.reserve(v.size());
   for (double xi : v) {
-    if (std::isfinite(xi)) a.push_back(xi);
+    if (complete_case_value(xi)) a.push_back(xi);
   }
   if (a.empty()) return kNaN;
 
@@ -174,11 +178,11 @@ PartitionResult partition(const double* x,
         xv[k] = xi;
         yv[k] = yi;
 
-        if (std::isfinite(xi)) {
+        if (complete_case_value(xi)) {
           if (xi < minx) minx = xi;
           if (xi > maxx) maxx = xi;
         }
-        if (std::isfinite(yi)) {
+        if (complete_case_value(yi)) {
           if (yi < miny) miny = yi;
           if (yi > maxy) maxy = yi;
         }
@@ -188,12 +192,12 @@ PartitionResult partition(const double* x,
       centers[q] = c;
 
       if (!xonly) {
-        if (std::isfinite(c.y) && std::isfinite(minx) && std::isfinite(maxx)) {
+        if (complete_case_value(c.y) && complete_case_value(minx) && complete_case_value(maxx)) {
           H_x0.push_back(minx);
           H_x1.push_back(maxx);
           H_y.push_back(c.y);
         }
-        if (std::isfinite(c.x) && std::isfinite(miny) && std::isfinite(maxy)) {
+        if (complete_case_value(c.x) && complete_case_value(miny) && complete_case_value(maxy)) {
           V_x.push_back(c.x);
           V_y0.push_back(miny);
           V_y1.push_back(maxy);
@@ -208,13 +212,13 @@ PartitionResult partition(const double* x,
         double maxx = -std::numeric_limits<double>::infinity();
         for (int i : idx) {
           const double xi = x[i];
-          if (std::isfinite(xi)) {
+          if (complete_case_value(xi)) {
             if (xi < minx) minx = xi;
             if (xi > maxx) maxx = xi;
           }
         }
-        if (std::isfinite(minx)) V_lines.push_back(minx);
-        if (std::isfinite(maxx)) V_lines.push_back(maxx);
+        if (complete_case_value(minx)) V_lines.push_back(minx);
+        if (complete_case_value(maxx)) V_lines.push_back(maxx);
       }
     }
 
@@ -225,11 +229,11 @@ PartitionResult partition(const double* x,
 
         int qn = 1;
         if (!xonly) {
-          const int lox = (std::isfinite(x[i]) && std::isfinite(c.x)) ? (x[i] <= c.x) : 0;
-          const int loy = (std::isfinite(y[i]) && std::isfinite(c.y)) ? (y[i] <= c.y) : 0;
+          const int lox = (complete_case_value(x[i]) && complete_case_value(c.x)) ? (x[i] <= c.x) : 0;
+          const int loy = (complete_case_value(y[i]) && complete_case_value(c.y)) ? (y[i] <= c.y) : 0;
           qn = 1 + lox + 2 * loy;
         } else {
-          const int lox = (std::isfinite(x[i]) && std::isfinite(c.x)) ? (x[i] > c.x) : 0;
+          const int lox = (complete_case_value(x[i]) && complete_case_value(c.x)) ? (x[i] > c.x) : 0;
           qn = 1 + lox;
         }
 

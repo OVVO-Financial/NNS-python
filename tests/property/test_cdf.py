@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 import numpy as np
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
@@ -47,6 +48,13 @@ def test_nns_cdf_multivariate_shape_properties(
 ) -> None:
     values = np.linspace(-2.0, 2.0, rows * cols, dtype=np.float64).reshape(rows, cols)
     values = values + np.arange(cols, dtype=np.float64)
+
+    # R14 rejects positive-degree joint cumulative hazards because these
+    # generalized co-partial-moment ratios are not a joint distribution.
+    if degree > 0.0 and type_name == "cumulative hazard":
+        with pytest.raises(ValueError, match="needs degree = 0"):
+            nns_cdf(values, degree=degree, type=type_name)
+        return
 
     result = nns_cdf(values, degree=degree, type=type_name)
     function = cast(dict[str, np.ndarray], result["Function"])

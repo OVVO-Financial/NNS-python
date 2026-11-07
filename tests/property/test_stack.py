@@ -17,7 +17,7 @@ finite_matrices = arrays(
         allow_nan=False,
         allow_infinity=False,
         width=64,
-    ),
+    ).filter(lambda v: v == 0.0 or abs(v) >= 1e-100),  # R's NNS.stack errors near underflow too
 )
 
 
@@ -116,7 +116,7 @@ def test_nns_stack_class_shape_and_codes_hold(
 
 
 @given(finite_matrices, st.sampled_from([[1]]), st.integers(min_value=2, max_value=4))
-def test_nns_stack_class_pred_int_shape_invariants_hold(
+def test_nns_stack_class_uncertainty_matches_r14_probability_set_contract(
     x: np.ndarray,
     method: list[int],
     n_classes: int,
@@ -141,8 +141,23 @@ def test_nns_stack_class_pred_int_shape_invariants_hold(
 
     assert result["stack"].shape == (3,)
     assert np.all(np.isin(result["stack"], np.unique(y)))
-    assert result["pred.int"] is not None
-    assert all(values.shape == (3,) for values in result["pred.int"].values())
+    probabilities = np.asarray(result["probabilities"], dtype=np.float64)
+    labels = np.asarray(result["class.levels"], dtype=np.float64)
+    assert probabilities.shape == (3, labels.size)
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0, atol=1e-12)
+    sets = result["Prediction.set"]
+    assert len(sets) == 3
+    for row, selected in zip(probabilities, sets, strict=True):
+        assert selected and set(selected).issubset(set(y))
+        indices = [int(np.flatnonzero(labels == value)[0]) for value in selected]
+        assert float(np.sum(row[indices])) >= 0.95 - 1e-12
+    if labels.size == 2:
+        # R14 retains only the binary range-of-set compatibility fields.
+        assert result["pred.int"] is not None
+        np.testing.assert_array_equal(result["pred.int"]["pred.int.neg"], [min(s) for s in sets])
+        np.testing.assert_array_equal(result["pred.int"]["pred.int.pos"], [max(s) for s in sets])
+    else:
+        assert result["pred.int"] is None
 
 
 @pytest.mark.stochastic

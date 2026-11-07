@@ -2,40 +2,124 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from typing import Any, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
-from nns._native import native_fn
-from nns.co_moments import co_lpm, co_upm, d_lpm, d_upm
+from nns._native import native_fn as native_fn
 
 
+@overload
 def nns_dep(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
     asym: bool = False,
-) -> dict[str, float]:
-    """Return NNS nonlinear correlation and dependence for a pair of variables."""
+) -> dict[str, float]: ...
+
+
+@overload
+def nns_dep(
+    x: Any,
+    y: None = None,
+    asym: bool = False,
+) -> dict[str, Any]: ...
+
+
+def nns_dep(
+    x: Any,
+    y: NDArray[np.float64] | None = None,
+    asym: bool = False,
+) -> dict[str, float] | dict[str, Any]:
+    """Return NNS nonlinear correlation and dependence (R ``NNS.dep``).
+
+    Bivariate form ``nns_dep(x, y)``: returns ``{"Correlation": float,
+    "Dependence": float}``. ``Correlation`` is signed in ``[-1, 1]`` and
+    ``Dependence`` is in ``[0, 1]``. With ``asym=False`` (default) the measure is
+    symmetric, ``nns_dep(x, y) == nns_dep(y, x)``. With ``asym=True`` the
+    partition is built on ``x`` only and the result measures the dependence of
+    ``y`` on ``x`` (y as a function of x); e.g. ``nns_dep(x, x**2, asym=True)``
+    is close to 1 while ``nns_dep(x**2, x, asym=True)`` is not.
+
+    Matrix form ``nns_dep(X)`` (``y=None``, ``X`` a 2-D array or DataFrame with
+    one column per variable): returns ``{"Correlation": M, "Dependence": M}``
+    with ones on the diagonal, like R's ``NNS.dep(X)``. With ``asym=True`` entry
+    ``[i, j]`` is ``nns_dep(X[:, i], X[:, j], asym=True)``, i.e. row variable ->
+    column variable. A DataFrame input returns labelled DataFrames.
+
+    Inputs must be finite. R's ``p.value`` option is not implemented.
+    """
+    if y is None:
+        return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
 
-    native_dep_pair = native_fn("nns_dep_pair")
-    if native_dep_pair is not None:
-        res = native_dep_pair(
-            np.ascontiguousarray(x_values),
-            np.ascontiguousarray(y_values),
-            bool(asym),
-        )
-        return {"Correlation": float(res["Correlation"]), "Dependence": float(res["Dependence"])}
+    # Only use the versioned R14 adapter, never a stale R13 native statistic.
+    native = native_fn("nns_dep_pair_r14")
+    if native is not None:
+        result = native(np.ascontiguousarray(x_values), np.ascontiguousarray(y_values), asym)
+        return {
+            "Correlation": float(result["Correlation"]),
+            "Dependence": float(result["Dependence"]),
+        }
 
-    if _is_constant(x_values) or _is_constant(y_values):
-        return {"Correlation": 0.0, "Dependence": 0.0}
+    # Independent, source-equivalent fallback for installs without the extension.
+    from nns._dep_r14 import dep_pair_r14
 
-    obs_req = max(8, x_values.size // 8)
-    quad_xy = _xonly_partition(x_values, obs_req)
-    quad_yx = _xonly_partition(y_values, obs_req)
-    correlation, dependence = _dep_pair(x_values, y_values, quad_xy, quad_yx, asym)
+    correlation, dependence = dep_pair_r14(x_values, y_values, asym)
     return {"Correlation": correlation, "Dependence": dependence}
+
+
+def _dep_matrix(x: Any, asym: bool) -> dict[str, Any]:
+    """R NNS.dep.matrix: pairwise NNS.dep over the columns of ``x``."""
+    labels = _column_labels(x)
+    values = np.asarray(x, dtype=np.float64)
+    if values.ndim != 2:
+        raise ValueError("supply both 'x' and 'y' or a matrix-like 'x'.")
+    if values.shape[1] < 2:
+        raise ValueError("matrix input to nns_dep needs at least two columns.")
+    n_vars = values.shape[1]
+    rhos = np.zeros((n_vars, n_vars), dtype=np.float64)
+    deps = np.zeros((n_vars, n_vars), dtype=np.float64)
+    for i in range(n_vars - 1):
+        for j in range(i + 1, n_vars):
+            upper = nns_dep(values[:, i], values[:, j], asym=asym)
+            if asym:
+                # Lower triangle: [j, i] = NNS.dep(x_j, x_i); R zeroes NaN there.
+                lower = nns_dep(values[:, j], values[:, i], asym=True)
+                rhos[j, i] = _finite_or_zero(lower["Correlation"])
+                deps[j, i] = _finite_or_zero(lower["Dependence"])
+                rhos[i, j] = upper["Correlation"]
+                deps[i, j] = upper["Dependence"]
+            else:
+                rhos[i, j] = rhos[j, i] = upper["Correlation"]
+                deps[i, j] = deps[j, i] = upper["Dependence"]
+    np.fill_diagonal(rhos, 1.0)
+    np.fill_diagonal(deps, 1.0)
+    return {
+        "Correlation": _labelled_matrix(rhos, labels),
+        "Dependence": _labelled_matrix(deps, labels),
+    }
+
+
+def _column_labels(x: Any) -> list[Any] | None:
+    """Column labels of a DataFrame-like input (R keeps colnames as dimnames)."""
+    columns = getattr(x, "columns", None)
+    if columns is None:
+        return None
+    try:
+        return list(columns)
+    except TypeError:
+        return None
+
+
+def _labelled_matrix(matrix: NDArray[np.float64], labels: list[Any] | None) -> Any:
+    """Return ``matrix`` as a DataFrame indexed by ``labels`` when the input had them."""
+    if labels is None or len(labels) != matrix.shape[0]:
+        return matrix
+    import pandas as pd  # type: ignore[import-untyped]  # labels imply a pandas-like input
+
+    return pd.DataFrame(matrix, index=labels, columns=labels)
 
 
 def nns_cor(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
@@ -78,6 +162,9 @@ def _directional_dep(
     quadrants: list[str],
     fallback: float,
 ) -> tuple[float, float]:
+    # R (and the native kernel) add the cell terms in std::unordered_map order
+    # of the hashed labels; this adds them in first-seen order, so the totals
+    # can differ from R's in the last ulp (the cell copulas themselves match).
     groups: dict[str, list[int]] = defaultdict(list)
     for index, quadrant in enumerate(quadrants):
         groups[quadrant].append(index)
@@ -125,42 +212,75 @@ def _xonly_partition(x: NDArray[np.float64], obs_req: int) -> list[str]:
     return quadrants
 
 
+def _sequential_sum(values: NDArray[np.float64]) -> float:
+    """Left-to-right double sum, like a C++ ``for`` loop (``np.sum`` is pairwise)."""
+    if values.size == 0:
+        return 0.0
+    # C++ starts the sum at +0.0, so an all-(-0.0) sum is +0.0.
+    return 0.0 + float(np.cumsum(values)[-1])
+
+
+def _copula_moments(
+    x: NDArray[np.float64], y: NDArray[np.float64]
+) -> tuple[int, float, float, NDArray[np.float64], NDArray[np.float64]]:
+    """Degree-0 concordant count, co-moment and DPM shares about the cell means.
+
+    As R ``copula_signed``: a point is concordant when it is co-upper (both
+    deviations > 0) or co-lower (both <= 0) and discordant otherwise.
+
+    R's ``NNS_dep.cpp`` takes the cell means as a sequential double sum / n and
+    scales the counts by ``1 / n``. A pairwise (``np.mean``) cell mean can differ
+    in the last ulp on evenly spaced or tied data, and a point sitting exactly on
+    the mean then switches between the concordant and discordant counts.
+    """
+    n = x.size
+    dx = x - _sequential_sum(x) / n
+    dy = y - _sequential_sum(y) / n
+    inv_n = 1.0 / n
+    concordant = int(
+        np.count_nonzero((dx > 0.0) & (dy > 0.0)) + np.count_nonzero((dx <= 0.0) & (dy <= 0.0))
+    )
+    # Discordant = neither co-lower nor co-upper, the same split as the concordant
+    # count, so the degree-0 shares partition the cell (a tie used to count as
+    # co-lower and discordant at once before the R tie fix).
+    d0_co = float(concordant) * inv_n
+    dpm_d0 = float(n - concordant) * inv_n
+    return concordant, d0_co, dpm_d0, dx, dy
+
+
 def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
+    """Signed bivariate copula of one cell (R ``NNS_dep.cpp`` ``copula_signed``).
+
+    Every sum runs in R's order (one sequential pass), so tie-sensitive comparisons
+    and the result match R bit for bit.
+    """
     n = x.size
     if n < 2:
         return 0.0
 
-    target_x = float(np.mean(x))
-    target_y = float(np.mean(y))
-
-    d0_cupm = float(co_upm(0.0, x, y, target_x, target_y))
-    d0_clpm = float(co_lpm(0.0, x, y, target_x, target_y))
-    d0_co = d0_cupm + d0_clpm
-    if d0_co == 1.0 or d0_co == 0.0:
+    concordant, d0_co, dpm_d0, dx, dy = _copula_moments(x, y)
+    # Every point concordant: perfect positive dependence; every point discordant:
+    # perfect negative dependence (as in the patched R; this used to return +1 too). The
+    # count is compared with n, not the share with 1: count * (1/n) is not exactly 1
+    # for many n (49 * (1/49) != 1).
+    if concordant == n:
         return 1.0
+    if concordant == 0:
+        return -1.0
 
-    c1_cupm = float(co_upm(1.0, x, y, target_x, target_y))
-    c1_clpm = float(co_lpm(1.0, x, y, target_x, target_y))
-    c1_dlpm = float(d_lpm(1.0, 1.0, x, y, target_x, target_y))
-    c1_dupm = float(d_upm(1.0, 1.0, x, y, target_x, target_y))
-    if n > 1:
-        adjust = n / (n - 1)
-        c1_cupm *= adjust
-        c1_clpm *= adjust
-        c1_dlpm *= adjust
-        c1_dupm *= adjust
-    total = c1_cupm + c1_dupm + c1_dlpm + c1_clpm
-    if total > 0.0:
-        c1_cupm /= total
-        c1_clpm /= total
+    product = dx * dy
+    upper = (dx >= 0.0) & (dy >= 0.0)
+    lower = ~upper & (dx <= 0.0) & (dy <= 0.0)
+    discordant = ~(upper | lower)
+    c1_cupm = _sequential_sum(np.where(upper, product, 0.0))
+    c1_clpm = _sequential_sum(np.where(lower, product, 0.0))
+    c1_dpm = _sequential_sum(np.where(discordant, np.abs(dx) * np.abs(dy), 0.0))
+    c1_total = c1_cupm + c1_clpm + c1_dpm
+    co_d1 = (c1_cupm + c1_clpm) / c1_total if c1_total > 0.0 else 0.0
+    dpm_d1 = c1_dpm / c1_total if c1_total > 0.0 else 0.0
 
-    data = np.column_stack((x, y))
-    target = np.array([target_x, target_y], dtype=np.float64)
-    dpm_d0 = _dpm_nd(data, target, 0.0, norm=True)
-    dpm_d1 = _dpm_nd(data, target, 1.0, norm=True)
-
-    discrete_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
-    continuous_dep = min(max(abs(c1_cupm + c1_clpm - 0.5) / 0.5, 0.0), 1.0)
+    discrete_dep = min(1.0, max(0.0, abs(d0_co - 0.5) / 0.5))
+    continuous_dep = min(1.0, max(0.0, abs(co_d1 - 0.5) / 0.5))
     # DPM_nD counts a point as concordant when it is all-below OR all-above the
     # target (both fully-aligned orthants), so under independence the discordant
     # null is 1 - 2*0.5**n = 0.5 for the bivariate copula, not 1 - 0.5**n = 0.75.
@@ -170,19 +290,18 @@ def _copula_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     nd_cont_dep = abs(dpm_d1 - 0.5) / 0.5
 
     copula = math.sqrt((discrete_dep + continuous_dep + nd_disc_dep + nd_cont_dep) / 4.0)
-    return copula * _ols_sign(x, y)
+    cov = _sequential_sum(product)
+    varx = _sequential_sum(dx * dx)
+    slope_sign = 0.0 if varx == 0.0 else (1.0 if cov > 0.0 else (-1.0 if cov < 0.0 else 0.0))
+    return copula * slope_sign
 
 
 def _copula_degree0_unsigned(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
-    target_x = float(np.mean(x))
-    target_y = float(np.mean(y))
-    d0_co = float(co_upm(0.0, x, y, target_x, target_y)) + float(
-        co_lpm(0.0, x, y, target_x, target_y)
-    )
-    data = np.column_stack((x, y))
-    target = np.array([target_x, target_y], dtype=np.float64)
-    dpm_d0 = _dpm_nd(data, target, 0.0, norm=True)
-    disc_dep = min(max(abs(d0_co - 0.5) / 0.5, 0.0), 1.0)
+    """R ``NNS_dep.cpp`` ``copula_degree0_unsigned`` (the discrete-case blend term)."""
+    if x.size < 2:
+        return 0.0
+    _, d0_co, dpm_d0, _, _ = _copula_moments(x, y)
+    disc_dep = min(1.0, max(0.0, abs(d0_co - 0.5) / 0.5))
     # Bivariate discordant independence null is 1 - 2*0.5**2 = 0.5 (see
     # _copula_signed); the old 0.75 anchor never vanished for independent data.
     nd_disc = abs(dpm_d0 - 0.5) / 0.5
@@ -196,7 +315,11 @@ def _dpm_nd(
     norm: bool,
 ) -> float:
     diff = data - target[np.newaxis, :]
-    all_below = np.all(diff < 0.0, axis=1)
+    # Discordant = neither all-lower (x <= target, the CLPM count) nor all-upper
+    # (x > target, the CUPM count), so the degree-0 counts partition the sample
+    # (ties used to count as discordant and lower at once). At degree > 0
+    # a tied coordinate contributes a zero factor either way.
+    all_below = np.all(diff <= 0.0, axis=1)
     all_above = np.all(diff > 0.0, axis=1)
     discordant = ~(all_below | all_above)
 
@@ -220,15 +343,21 @@ def _clpm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     if degree == 0.0:
         return float(np.mean(np.all(diff >= 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    return float(np.mean(np.where(valid, np.prod(diff**degree, axis=1), 0.0)))
+    # Clamp before the power: rows with a negative deviation are masked out anyway,
+    # and a fractional power of a negative number only produced RuntimeWarnings.
+    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
+    return float(np.mean(np.where(valid, powered, 0.0)))
 
 
 def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: float) -> float:
     diff = data - target[np.newaxis, :]
     if degree == 0.0:
-        return float(np.mean(np.all(diff >= 0.0, axis=1)))
+        # Strictly above in every coordinate, as Co.UPM (x > target): ties belong
+        # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0.
+        return float(np.mean(np.all(diff > 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    return float(np.mean(np.where(valid, np.prod(diff**degree, axis=1), 0.0)))
+    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
+    return float(np.mean(np.where(valid, powered, 0.0)))
 
 
 def co_lpm_nd(
@@ -295,48 +424,84 @@ def _as_nd_moment_inputs(
 
 
 def _gravity(x: NDArray[np.float64]) -> float:
-    native_gravity_exact = native_fn("gravity_exact")
-    if native_gravity_exact is not None:
-        values = np.ascontiguousarray(np.asarray(x, dtype=np.float64).reshape(-1))
-        return float(native_gravity_exact(values))
-    values = np.sort(x[np.isfinite(x)])
-    n = values.size
+    """R14 gravity used to define the Python partition path.
+
+    CMake builds the native path with an explicit R14 source overlay; the
+    vendored NNS-core snapshot itself is unchanged.
+    """
+    values = np.asarray(x, dtype=np.float64).reshape(-1)
+    native = native_fn("gravity_exact_r14")
+    if native is not None:
+        return float(native(np.ascontiguousarray(values)))
+    return _gravity_python(values)
+
+
+def _gravity_python(x: NDArray[np.float64]) -> float:
+    """Match R 14.0 NNS_gravity_cpp, without allocating a dense histogram.
+
+    R 14.0 uses type-7 quartiles and the *observations* in the modal bin
+    neighborhood (not the left edges of the bins). Tied maximum-frequency
+    bins select the entire sample. Long-double accumulation follows R's
+    compiled implementation. Sparse bin indices preserve very large gaps.
+    """
+    values = np.asarray(x, dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    n = finite.size
     if n == 0:
         return float("nan")
     if n <= 3:
-        return float(np.median(values))
-    if np.all(values == values[0]):
-        return float(values[0])
+        return _small_median(finite)
+    if np.all(finite == finite[0]):
+        return float(finite[0])
+    ordered = np.sort(finite)
+    span = abs(float(ordered[-1]) - float(ordered[0]))
+    if span == 0.0:
+        return float(ordered[0])
 
-    value_range = float(np.ptp(values))
-    if abs(value_range) == 0.0:
-        return float(values[0])
+    # R's quantile(type=7): h = (n - 1) * p, with zero-based indices.
+    def type7(p: float) -> float:
+        h = (n - 1) * p
+        lo = math.floor(h)
+        hi = min(lo + 1, n - 1)
+        return float(ordered[lo] + (h - lo) * (ordered[hi] - ordered[lo]))
 
-    q1, q2, q3 = _quartiles_like_r_code(values)
+    q1, q2, q3 = type7(0.25), type7(0.50), type7(0.75)
     width = (q3 - q1) * n**-0.5
-    if width <= 0.0 or not np.isfinite(width):
-        width = value_range / 128.0
+    if not (width > 0.0 and math.isfinite(width)):
+        width = span / 128.0
 
-    bin_names, counts = _simple_bin_counts(values, width, float(values[0]))
+    _, used_width, occupied, counts = _sparse_bin_counts(ordered, width, float(ordered[0]))
     max_count = int(np.max(counts))
-    max_positions = np.flatnonzero(counts == max_count)
-    if max_positions.size == 1:
-        center = int(max_positions[0])
-        lo = max(0, center - 1)
-        hi = min(counts.size - 1, center + 1)
-    else:
-        lo = 0
-        hi = counts.size - 1
+    winners = np.flatnonzero(counts == max_count)
 
-    selected_names = bin_names[lo : hi + 1]
-    selected_counts = counts[lo : hi + 1]
-    denominator = float(np.sum(selected_counts))
-    mode_gravity = (
-        float(np.sum(selected_names * selected_counts) / denominator)
-        if denominator > 0.0
-        else float(bin_names[(lo + hi) // 2])
-    )
-    return float(0.25 * (q2 + mode_gravity + float(np.mean(values)) + 0.5 * (q1 + q3)))
+    zero = np.longdouble(0.0)
+    mean = float((zero + np.cumsum(ordered.astype(np.longdouble))[-1]) / np.longdouble(n))
+    if winners.size != 1:
+        modal_mean = mean
+    else:
+        # Include all observations from the winning bin and its two neighbors.
+        # This is a contiguous interval because the inputs are sorted.
+        center = int(occupied[int(winners[0])])
+        with np.errstate(over="ignore", divide="ignore"):
+            positions = np.floor((ordered - float(ordered[0])) / used_width)
+        selected = (positions >= center - 1) & (positions <= center + 1)
+        modal_observations = ordered[selected]
+        modal_mean = float(
+            (zero + np.cumsum(modal_observations.astype(np.longdouble))[-1])
+            / np.longdouble(modal_observations.size)
+        )
+
+    result = 0.25 * (q2 + modal_mean + mean + 0.5 * (q1 + q3))
+    return float(result) if math.isfinite(result) else float(q2)
+
+
+def _small_median(values: NDArray[np.float64]) -> float:
+    """Median as NNS-core computes it for n <= 3 (np.median maps -0.0 to +0.0)."""
+    ordered = np.sort(values)
+    half = ordered.size // 2
+    if ordered.size % 2:
+        return float(ordered[half])
+    return float(0.5 * (ordered[half - 1] + ordered[half]))
 
 
 def _quartiles_like_r_code(values: NDArray[np.float64]) -> tuple[float, float, float]:
@@ -367,48 +532,48 @@ def _interpolate_position(values: NDArray[np.float64], position: float) -> float
     return float(values[floor_pos - 1] + weight * (values[ceil_pos - 1] - values[floor_pos - 1]))
 
 
-_MAX_DENSE_BINS = 1_000_000
+# NNS-core simple_bin_counts widens bins whose index would exceed 2**52 (R's
+# int cast overflowed beyond INT_MAX instead and collapsed the histogram).
+_MAX_BIN_INDEX = 4503599627370496.0
 
 
-def _simple_bin_counts(
+def _sparse_bin_counts(
     values: NDArray[np.float64],
     width: float,
     origin: float,
-) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
-    int_max = np.iinfo(np.int32).max
-    if width <= 0.0 or not math.isfinite(width):
-        bin_count = 1
-    else:
-        bin_ratio = (float(values[-1]) - origin) / width + 1e-12
-        if not math.isfinite(bin_ratio) or bin_ratio > int_max:
-            bin_count = 1
-        else:
-            bin_count = math.floor(bin_ratio) + 1
-    # R (NNS 13.x) does not cap the bin count; the guard only bounds memory
-    # for pathologically narrow widths and never binds on realistic data.
-    bin_count = min(max(1, bin_count), _MAX_DENSE_BINS)
-    bin_names = origin + np.arange(bin_count, dtype=np.float64) * width
-    if bin_count == 1:
-        return bin_names, np.array([values.size], dtype=np.int64)
-    indices = np.floor((values - origin) / width).astype(np.int64)
-    indices = np.clip(indices, 0, bin_count - 1)
-    counts = np.bincount(indices, minlength=bin_count)
-    return bin_names, counts
+) -> tuple[int, float, NDArray[np.int64], NDArray[np.int64]]:
+    """Occupied bins of R's fixed-width gravity histogram, without allocating it.
+
+    ``values`` must be sorted. Bins are ``[origin + k * width, origin + (k + 1) *
+    width)`` for ``k < floor((max - origin) / width + 1e-12) + 1``, as NNS-core's
+    ``simple_bin_counts``. Returns that bin count, the (possibly widened) width,
+    and the indices and counts of the occupied bins (ascending), so any number of
+    empty bins costs nothing.
+    """
+    span = float(values[-1]) - origin
+    with np.errstate(over="ignore", divide="ignore"):
+        last = float(np.floor(np.float64(span) / width + 1e-12))
+        if not last < _MAX_BIN_INDEX:
+            width = span / _MAX_BIN_INDEX
+            last = min(float(np.floor(np.float64(span) / width + 1e-12)), _MAX_BIN_INDEX)
+    bin_count = int(last) + 1 if last >= 0.0 else 1
+    with np.errstate(over="ignore", divide="ignore"):
+        position = np.floor((values - origin) / width)
+    indices = np.clip(position, 0.0, float(bin_count - 1)).astype(np.int64)
+    # Sorted values give non-decreasing bin indices, so the bins are runs.
+    starts = np.flatnonzero(np.r_[True, indices[1:] != indices[:-1]])
+    counts = np.diff(np.r_[starts, indices.size]).astype(np.int64)
+    return bin_count, width, indices[starts], counts
 
 
-def _ols_sign(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
-    if x.size < 2:
-        return 0.0
-    dx = x - np.mean(x)
-    denominator = float(np.sum(dx * dx))
-    if denominator == 0.0:
-        return 0.0
-    slope = float(np.sum(dx * (y - np.mean(y))) / denominator)
-    if slope > 0.0:
-        return 1.0
-    if slope < 0.0:
-        return -1.0
-    return 0.0
+def _counts_at(
+    bins: NDArray[np.int64],
+    occupied: NDArray[np.int64],
+    counts: NDArray[np.int64],
+) -> NDArray[np.int64]:
+    position = np.clip(np.searchsorted(occupied, bins), 0, occupied.size - 1)
+    found = occupied[position] == bins
+    return np.where(found, counts[position], 0).astype(np.int64)
 
 
 def _is_discrete_case(x: NDArray[np.float64], y: NDArray[np.float64]) -> bool:

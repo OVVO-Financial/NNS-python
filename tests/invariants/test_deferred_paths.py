@@ -8,16 +8,16 @@ SRC = ROOT / "src" / "nns"
 API_STATUS = ROOT / "docs" / "api_status.md"
 
 
-EXPECTED_DEFERRED_FRAGMENTS = {
-    "direct nns_m_reg factor_2_dummy=True": "direct `factor_2_dummy=True` raw predictor path",
-}
+# Production NotImplementedError guards and the api_status.md fragment that
+# documents each. There are currently none: the last one (direct nns_m_reg
+# factor_2_dummy=True) was removed because R 13.3 NNS.M.reg encodes raw factors.
+EXPECTED_DEFERRED_FRAGMENTS: dict[str, str] = {}
 
 
 def test_production_notimplemented_guards_are_documented() -> None:
     messages = _production_notimplemented_messages()
     docs = API_STATUS.read_text(encoding="utf-8")
 
-    assert messages
     stale_mappings = [
         message_fragment
         for message_fragment in EXPECTED_DEFERRED_FRAGMENTS

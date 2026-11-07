@@ -20,11 +20,12 @@ from numpy.typing import NDArray
 _CACHE_DIR = Path(__file__).with_name("_r_cache")
 _LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
 _SCHEMA_VERSION = 2
-_NNS_VERSION = '13.3'
+_NNS_VERSION = '14.0'
 _KEY_SEPARATOR = "|"
 JsonValue: TypeAlias = str | float | list["JsonValue"] | dict[str, "JsonValue"] | None
 RValue: TypeAlias = (
-    float | str | list[str | None] | NDArray[np.float64] | dict[str, "RValue"] | None
+    float | str | list[str | None] | list["RValue"] | NDArray[np.float64]
+    | dict[str, "RValue"] | None
 )
 Cache: TypeAlias = dict[str, JsonValue]
 
@@ -504,8 +505,15 @@ def nns_meboot_stat_summary(
     rho: float,
     reps: int = 100,
     seed: int = 1,
+    drift: bool = True,
+    target_drift: float | None = None,
 ) -> RValue:
-    args = {"x": x, "rho": rho, "reps": reps, "seed": seed}
+    args: dict[str, Any] = {"x": x, "rho": rho, "reps": reps, "seed": seed}
+    # Only non-default options enter the payload, so existing cache keys are kept.
+    if not drift:
+        args["drift"] = False
+    if target_drift is not None:
+        args["target_drift"] = target_drift
     key = _cache_key("NNS.meboot.stat_summary", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -629,8 +637,15 @@ def nns_distance_bulk_custom(
         return result
 
 
-def nns_diff_custom(name: str, point: float) -> RValue:
-    args = {"name": name, "point": point}
+def nns_diff_custom(
+    name: str, point: float, h: float | None = None, tol: float | None = None
+) -> RValue:
+    args: dict[str, Any] = {"name": name, "point": point}
+    # Only a non-default h or tol enters the payload, so existing cache keys are kept.
+    if h is not None:
+        args["h"] = h
+    if tol is not None:
+        args["tol"] = tol
     key = _cache_key("NNS.diff.custom", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -807,8 +822,10 @@ def nns_arma_optim_custom(
     seasonal_factor: list[int],
     lin_only: bool = False,
     pred_int: float | None = 0.95,
+    objective: str = "min",
+    linear_approximation: bool = True,
 ) -> RValue:
-    args = {
+    args: dict[str, Any] = {
         "variable": variable,
         "h": h,
         "training_set": training_set,
@@ -816,6 +833,11 @@ def nns_arma_optim_custom(
         "lin_only": lin_only,
         "pred_int": pred_int,
     }
+    # Only non-default options enter the payload, so existing cache keys are kept.
+    if objective != "min":
+        args["objective"] = objective
+    if not linear_approximation:
+        args["linear_approximation"] = False
     key = _cache_key("NNS.ARMA.optim.custom", (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -895,6 +917,48 @@ def nns_cdf_custom(
         disk_cache[key] = _encode(result)
         _write_cache(disk_cache, changed=key)
         return result
+
+
+def nns_frame_call(label: str, expr: str, data: dict[str, Any]) -> RValue:
+    """Evaluate one R expression over typed data frames / vectors.
+
+    ``data`` maps an R variable name to a column spec (see :func:`r_column`)
+    or to ``{"frame": [column specs]}`` for a ``data.frame`` with
+    ``check.names = FALSE``. Factor columns carry their declared levels, so
+    tests can exercise R's name matching and factor/character handling.
+    Console output of ``expr`` is discarded; named atomic vectors come back as
+    ``{"names": [...], "values": [...]}``.
+    """
+    args = {"expr": expr, "data": data}
+    key = _cache_key(label, (args,))
+    cache, refresh = _cache_state()
+    if key in cache:
+        return _decode(cache[key])
+    if _offline():
+        raise RuntimeError(f"R cache miss for {label} with key {key}.")
+    with _cache_lock():
+        disk_cache, disk_refresh = _read_cache_from_disk()
+        if refresh or disk_refresh:
+            disk_cache = {}
+        if key in disk_cache:
+            return _decode(disk_cache[key])
+        result = _call_r_frame(args)
+        disk_cache[key] = _encode(result)
+        _write_cache(disk_cache, changed=key)
+        return result
+
+
+def r_column(
+    values: Sequence[Any], kind: str, name: str | None = None, levels: Sequence[Any] | None = None
+) -> dict[str, Any]:
+    """Column spec for :func:`nns_frame_call`: kind numeric/character/factor/logical."""
+    spec: dict[str, Any] = {"values": [v.item() if hasattr(v, "item") else v for v in values],
+                            "type": kind}
+    if name is not None:
+        spec["name"] = name
+    if levels is not None:
+        spec["levels"] = [str(v) for v in levels]
+    return spec
 
 
 def _uncached_nns(
@@ -1095,7 +1159,7 @@ def _call_r_stack_numeric(args: dict[str, Any]) -> RValue:
         "if (!is.null(levels_arg)) dv <- factor(as.character(dv), levels = levels_arg) "
         "else dv <- as.numeric(dv)\n"
         "seed_arg <- args$seed\n"
-        "if (length(seed_arg) != 0) set.seed(as.integer(seed_arg))\n"
+        "seed_value <- if (length(seed_arg) != 0) as.integer(seed_arg) else 123L\n"
         "result <- NNS::NNS.stack("
         "mat(args$x), dv, IVs.test = mat(args$x_test), "
         "CV.size = as.numeric(args$cv_size), folds = as.integer(args$folds), "
@@ -1103,7 +1167,7 @@ def _call_r_stack_numeric(args: dict[str, Any]) -> RValue:
         "stack = isTRUE(as.logical(unlist(args$stack))), "
         "dim.red.method = dim_arg, pred.int = pred_arg, ts.test = ts_arg, "
         "type = type_arg, balance = isTRUE(as.logical(unlist(args$balance))), "
-        "dist = dist_arg, status = FALSE, ncores = 1)\n"
+        "dist = dist_arg, status = FALSE, ncores = 1, seed = seed_value)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
@@ -1386,7 +1450,7 @@ def _call_r_boost_numeric(args: dict[str, Any]) -> RValue:
         "if (!is.null(levels_arg)) dv <- factor(as.character(dv), levels = levels_arg) "
         "else dv <- as.numeric(dv)\n"
         "seed_arg <- args$seed\n"
-        "if (length(seed_arg) != 0) set.seed(as.integer(seed_arg))\n"
+        "seed_value <- if (length(seed_arg) != 0) as.integer(seed_arg) else 123L\n"
         "result <- NNS::NNS.boost("
         "mat(args$x), dv, IVs.test = mat(args$x_test), "
         "learner.trials = as.integer(args$learner_trials), "
@@ -1397,7 +1461,8 @@ def _call_r_boost_numeric(args: dict[str, Any]) -> RValue:
         "pred.int = if (length(args$pred_int) == 0) NULL else as.numeric(args$pred_int), "
         "features.only = isTRUE(as.logical(unlist(args$features_only))), "
         "feature.importance = FALSE, "
-        "balance = isTRUE(as.logical(unlist(args$balance))), dist = dist_arg, status = FALSE)\n"
+        "balance = isTRUE(as.logical(unlist(args$balance))), dist = dist_arg, status = FALSE, "
+        "seed = seed_value)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
         "  if (is.matrix(x)) {\n"
@@ -1561,7 +1626,8 @@ def _call_r_meboot_stat_summary(args: dict[str, Any]) -> RValue:
         "f <- get('FUN', envir = environment(NNS::NNS.meboot))\n"
         "set.seed(as.integer(args$seed))\n"
         "result <- f(x = as.numeric(unlist(args$x)), reps = as.integer(args$reps), "
-        "rho = as.numeric(args$rho))\n"
+        "rho = as.numeric(args$rho), drift = !isFALSE(args$drift), "
+        "target_drift = args$target_drift)\n"
         "replicates <- result$replicates\n"
         "summary <- c(mean_ensemble = mean(result$ensemble), sd_ensemble = sd(result$ensemble), "
         "median_rep_means = median(colMeans(replicates)), "
@@ -1580,15 +1646,26 @@ def _call_r_meboot_stat_summary(args: dict[str, Any]) -> RValue:
 
 
 def _call_r_mc_grid(args: dict[str, Any]) -> RValue:
+    # NNS.MC's rho grid as R main (pull request #146) builds it.
     script = (
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
-        "rhos <- seq(as.numeric(args$lower_rho), as.numeric(args$upper_rho), "
-        "as.numeric(args$by))\n"
-        "neg_rhos <- abs(rhos[rhos <= 0])\n"
-        "pos_rhos <- rhos[rhos > 0]\n"
-        "exp_rhos <- rev(c((neg_rhos^as.numeric(args$exp)) * -1, "
-        "pos_rhos^(1/as.numeric(args$exp))))\n"
+        "lower_rho <- as.numeric(args$lower_rho); upper_rho <- as.numeric(args$upper_rho)\n"
+        "exp <- as.numeric(args$exp)\n"
+        "rhos <- seq(lower_rho, upper_rho, as.numeric(args$by))\n"
+        "if (exp != 1) {\n"
+        "  pivot <- min(max(0, lower_rho), upper_rho)\n"
+        "  low <- rhos <= pivot\n"
+        "  if (pivot > lower_rho) {\n"
+        "    w <- ((pivot - rhos[low]) / (pivot - lower_rho))^exp\n"
+        "    rhos[low] <- (1 - w) * pivot + w * lower_rho\n"
+        "  }\n"
+        "  if (upper_rho > pivot) {\n"
+        "    w <- ((rhos[!low] - pivot) / (upper_rho - pivot))^(1/exp)\n"
+        "    rhos[!low] <- (1 - w) * pivot + w * upper_rho\n"
+        "  }\n"
+        "}\n"
+        "exp_rhos <- rev(rhos)\n"
         "result <- list(values = as.numeric(exp_rhos), names = paste0('rho = ', exp_rhos))\n"
         "cat(jsonlite::toJSON(result, auto_unbox = TRUE, digits = NA))\n"
     )
@@ -1637,10 +1714,16 @@ def _call_r_anova_custom(args: dict[str, Any]) -> RValue:
         "simplifyVector = FALSE)\n"
         "if (args$mode == 'binary') {\n"
         "  ci <- if (isTRUE(args$robust)) 0.95 else NULL\n"
-        "  result <- NNS::NNS.ANOVA(as.numeric(unlist(args$control)), "
+        "  if (!is.null(args$ci)) ci <- if (identical(args$ci, 'none')) NULL "
+        "else as.numeric(args$ci)\n"
+        "  tails <- if (is.null(args$tails)) 'Both' else args$tails\n"
+        "  if (!is.null(args$seed)) set.seed(as.integer(args$seed))\n"
+        "  run <- function() NNS::NNS.ANOVA(as.numeric(unlist(args$control)), "
         "as.numeric(unlist(args$treatment)), means.only = args$means_only, "
-        "medians = args$medians, confidence.interval = ci, robust = args$robust, "
-        "plot = FALSE)\n"
+        "medians = args$medians, confidence.interval = ci, tails = tails, "
+        "robust = args$robust, plot = FALSE)\n"
+        "  result <- if (isTRUE(args$catch)) tryCatch(run(), "
+        "error = function(e) list(error = conditionMessage(e))) else run()\n"
         "} else {\n"
         "  groups <- lapply(args$groups, function(x) as.numeric(unlist(x)))\n"
         "  result <- NNS::NNS.ANOVA(groups, means.only = args$means_only, "
@@ -1728,8 +1811,17 @@ def _call_r_diff_custom(args: dict[str, Any]) -> RValue:
         "  sin = function(x) sin(x),\n"
         "  exp = function(x) exp(x),\n"
         "  constant = function(x) 5,\n"
-        "  identity = function(x) x)\n"
-        "result <- NNS::NNS.diff(f, args$point, plot = FALSE)\n"
+        "  identity = function(x) x,\n"
+        "  cube = function(x) x^3,\n"
+        "  log = function(x) log(x),\n"
+        "  tanh = function(x) tanh(x),\n"
+        "  abs = function(x) abs(x),\n"
+        "  quartic = function(x) x^4 - 3 * x,\n"
+        "  quintic = function(x) -.25 + x * (-1.25 + x * (-2 + x * (-1.25 - 1.25 * x))),\n"
+        "  sin_offset = function(x) sin(x) + 1000)\n"
+        "tol <- if (is.null(args$tol)) 1e-10 else args$tol\n"
+        "h <- if (is.null(args$h)) abs(args$point) * 0.1 + 0.01 else args$h\n"
+        "result <- NNS::NNS.diff(f, args$point, h = h, tol = tol, plot = FALSE)\n"
         "payload <- as.numeric(result[, 1])\n"
         "names(payload) <- rownames(result)\n"
         "cat(jsonlite::toJSON(as.list(payload), auto_unbox = TRUE, digits = NA))\n"
@@ -1877,10 +1969,14 @@ def _call_r_arma_optim_custom(args: dict[str, Any]) -> RValue:
         "h_arg <- if (is.null(args$h)) NULL else as.integer(args$h)\n"
         "training_arg <- if (is.null(args$training_set)) NULL else as.integer(args$training_set)\n"
         "pred_arg <- if (is.null(args$pred_int)) NULL else as.numeric(args$pred_int)\n"
+        "objective_arg <- if (is.null(args$objective)) 'min' else args$objective\n"
+        "approx_arg <- if (is.null(args$linear_approximation)) TRUE "
+        "else isTRUE(args$linear_approximation)\n"
         "result <- NNS::NNS.ARMA.optim("
         "as.numeric(unlist(args$variable)), h = h_arg, training.set = training_arg, "
         "seasonal.factor = as.integer(unlist(args$seasonal_factor)), "
         "lin.only = isTRUE(args$lin_only), pred.int = pred_arg, ncores = 1, "
+        "objective = objective_arg, linear.approximation = approx_arg, "
         "print.trace = FALSE, plot = FALSE)\n"
         "encode <- function(x) {\n"
         "  if (is.null(x)) return(NULL)\n"
@@ -1992,6 +2088,64 @@ def _call_r_var_custom(args: dict[str, Any]) -> RValue:
     return _decode(json.loads(completed.stdout))
 
 
+def _call_r_frame(args: dict[str, Any]) -> RValue:
+    script = (
+        "library(NNS)\n"
+        "spec <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
+        "simplifyVector = FALSE)\n"
+        "build_col <- function(col) {\n"
+        "  v <- unlist(col$values)\n"
+        "  if (identical(col$type, 'numeric')) return(as.numeric(v))\n"
+        "  if (identical(col$type, 'character')) return(as.character(v))\n"
+        "  if (identical(col$type, 'logical')) return(as.logical(v))\n"
+        "  factor(as.character(v), levels = as.character(unlist(col$levels)))\n"
+        "}\n"
+        "env <- new.env()\n"
+        "for (nm in names(spec$data)) {\n"
+        "  item <- spec$data[[nm]]\n"
+        "  if (!is.null(item$frame)) {\n"
+        "    cols <- lapply(item$frame, build_col)\n"
+        "    names(cols) <- vapply(item$frame, function(cl) cl$name, '')\n"
+        "    value <- as.data.frame(cols, check.names = FALSE, stringsAsFactors = FALSE)\n"
+        "  } else {\n"
+        "    value <- build_col(item)\n"
+        "  }\n"
+        "  assign(nm, value, envir = env)\n"
+        "}\n"
+        "result <- NULL\n"
+        "invisible(utils::capture.output("
+        "result <- eval(parse(text = spec$expr), envir = env)))\n"
+        "encode <- function(x) {\n"
+        "  if (is.null(x)) return(NULL)\n"
+        "  if (is.data.frame(x)) {\n"
+        "    out <- lapply(x, encode)\n"
+        "    names(out) <- names(x)\n"
+        "    return(out)\n"
+        "  }\n"
+        "  if (is.matrix(x)) {\n"
+        "    return(unname(lapply(seq_len(nrow(x)), function(i) as.numeric(x[i, ]))))\n"
+        "  }\n"
+        "  if (is.list(x)) return(lapply(x, encode))\n"
+        "  if (is.factor(x) || is.character(x)) return(as.character(x))\n"
+        "  if (!is.null(names(x))) {\n"
+        "    return(list(names = I(names(x)), values = I(as.numeric(x))))\n"
+        "  }\n"
+        "  as.numeric(x)\n"
+        "}\n"
+        "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, "
+        "null = 'null', na = 'string'))\n"
+    )
+    completed = subprocess.run(
+        ["Rscript", "-e", script],
+        check=True,
+        capture_output=True,
+        env=_r_env(),
+        input=json.dumps(args),
+        text=True,
+    )
+    return _decode(json.loads(completed.stdout))
+
+
 def _r_env() -> dict[str, str]:
     env = os.environ.copy()
     if os.name != "nt":
@@ -2005,36 +2159,25 @@ def _decode(value: JsonValue) -> RValue:
     if isinstance(value, dict):
         return {key: _decode(item) for key, item in value.items()}
     if isinstance(value, str):
-        if value == "NA":
-            return float("nan")
-        if value == "NaN":
+        if value in ("NA", "NaN"):
             return float("nan")
         if value == "Inf":
             return float("inf")
         if value == "-Inf":
             return float("-inf")
         return value
-    if isinstance(value, list) and all(isinstance(item, str) or item is None for item in value):
-        return cast(list[str | None], [None if item is None else item for item in value])
     if isinstance(value, list):
-        if any(isinstance(item, list | dict) for item in value):
-            return np.asarray([_decode(item) for item in value], dtype=np.float64)
-        converted: list[JsonValue] = []
-        has_numeric_special = False
-        for item in value:
-            if item == "NA":
-                converted.append(float("nan"))
-                has_numeric_special = True
-            elif item == "Inf":
-                converted.append(float("inf"))
-                has_numeric_special = True
-            elif item == "-Inf":
-                converted.append(float("-inf"))
-                has_numeric_special = True
-            else:
-                converted.append(item)
-        if has_numeric_special:
-            return np.asarray(converted, dtype=np.float64)
+        # Keep character vectors as labels, not floating-point arrays.
+        if all(isinstance(item, str) or item is None for item in value):
+            return cast(list[str | None], value)
+        decoded = [_decode(item) for item in value]
+        # A JSON array can represent either an R numeric matrix or a genuinely
+        # heterogeneous R list (e.g. [[1, 2], 2]).  Never discard a successful
+        # R call merely because its list is ragged or has named members.
+        try:
+            return np.asarray(decoded, dtype=np.float64)
+        except (TypeError, ValueError):
+            return cast(list[RValue], decoded)
     return np.asarray(value, dtype=np.float64)
 
 
@@ -2048,6 +2191,8 @@ def _encode(value: RValue) -> JsonValue:
     if isinstance(value, float):
         return value
     if isinstance(value, list):
-        return cast(JsonValue, value)
+        # Ragged list members can contain decoded ndarray values; recurse so
+        # the committed fixture remains plain JSON rather than numpy objects.
+        return cast(JsonValue, [_encode(item) for item in value])
     encoded = value.tolist()
     return cast(JsonValue, encoded)

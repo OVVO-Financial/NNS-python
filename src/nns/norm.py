@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
-from typing import cast, overload
+from typing import Any, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,25 +12,37 @@ from nns.dependence import nns_dep
 
 
 @overload
-def nns_norm(x: NDArray[np.float64], linear: bool = ...) -> NDArray[np.float64]: ...
+def nns_norm(
+    x: NDArray[np.float64], linear: bool = ..., *, plot: bool = ...
+) -> NDArray[np.float64]: ...
 
 
 @overload
 def nns_norm(
     x: Sequence[NDArray[np.float64]],
     linear: bool = ...,
+    *,
+    plot: bool = ...,
 ) -> NDArray[np.float64] | list[NDArray[np.float64]]: ...
 
 
+@overload
+def nns_norm(x: Any, linear: bool = ..., *, plot: bool = ...) -> Any: ...
+
+
 def nns_norm(
-    x: NDArray[np.float64] | Sequence[NDArray[np.float64]],
+    x: NDArray[np.float64] | Sequence[NDArray[np.float64]] | Any,
     linear: bool = False,
-) -> NDArray[np.float64] | list[NDArray[np.float64]]:
+    *,
+    plot: bool = False,
+) -> NDArray[np.float64] | list[NDArray[np.float64]] | Any:
     """Normalize variables following R's NNS.norm scaling.
 
-    Two input conventions are supported, matching R's ``NNS.norm(X, ...)``:
+    Three input conventions are supported, matching R's ``NNS.norm(X, ...)``:
 
     * A 2-D array whose columns are variables. Returns the scaled 2-D array.
+    * A pandas DataFrame (R's data.frame input). Returns a DataFrame with the
+      same index and R's ``"<column> Normalized"`` column names.
     * A list or tuple of 1-D arrays, one per variable (R's list input; the
       elements are variables/columns, not observation rows). Equal-length
       vectors are column-stacked and normalized through the matrix path,
@@ -38,7 +51,23 @@ def nns_norm(
       ``linear=True`` exactly as R does (dependence-based scale factors need
       aligned columns) and return a list of scaled arrays, one per input
       vector.
+
+    ``plot=True`` also draws R's ``chart.type = "l"`` figure: the raw series
+    above the normalized ones (``nns.plotting.plot_nns_norm``). It is not drawn
+    for unequal-length lists (R draws no chart for list input); a warning says so.
     """
+    if not isinstance(x, np.ndarray) and hasattr(x, "columns") and hasattr(x, "to_numpy"):
+        # Iterating a DataFrame yields its column labels, not its columns.
+        frame: Any = x
+        values = _as_matrix(np.ascontiguousarray(frame.to_numpy(dtype=np.float64)), "x")
+        normalized = _norm_matrix(values, linear)
+        if plot:
+            _plot_norm(values, normalized)
+        return type(frame)(
+            normalized,
+            index=frame.index,
+            columns=[f"{name} Normalized" for name in frame.columns],
+        )
     if isinstance(x, np.ndarray):
         values = _as_matrix(x, "x")
     else:
@@ -46,8 +75,31 @@ def nns_norm(
         if not series:
             raise ValueError("x must be non-empty.")
         if len({item.size for item in series}) > 1:
+            if plot:
+                warnings.warn(
+                    "plot=True is not supported for unequal-length inputs; nothing is drawn.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             return _norm_unequal_series(series)
         values = _as_matrix(np.column_stack(series), "x")
+    normalized = _norm_matrix(values, linear)
+    if plot:
+        _plot_norm(values, normalized)
+    return normalized
+
+
+def _plot_norm(values: NDArray[np.float64], normalized: NDArray[np.float64]) -> None:
+    """Draw R's ``chart.type = "l"`` panels: raw series on top, normalized below."""
+    from nns.plotting._mpl import require_mpl
+    from nns.plotting.normalization import plot_nns_norm
+
+    _, (top, bottom) = require_mpl().subplots(2, 1, sharex=True)
+    plot_nns_norm(values, ax=top)
+    plot_nns_norm(normalized, ax=bottom)
+
+
+def _norm_matrix(values: NDArray[np.float64], linear: bool) -> NDArray[np.float64]:
     means = np.mean(values.astype(np.longdouble), axis=0).astype(np.float64)
     means = means.copy()
     means[means == 0.0] = 1e-10

@@ -19,6 +19,10 @@ finite_arrays = arrays(
         max_value=1e4,
         allow_nan=False,
         allow_infinity=False,
+        # Subnormal inputs (|x| < 2.2e-308) make interpolation slopes overflow to
+        # inf * 0 = NaN; that edge is tracked separately and is not what these
+        # shape/bounds properties are about.
+        allow_subnormal=False,
         width=64,
     ),
 )
@@ -160,7 +164,7 @@ def test_nns_reg_classification_bounds_hold(x: np.ndarray, n_classes: int) -> No
     st.integers(min_value=2, max_value=4),
     st.sampled_from([0.8, 0.95]),
 )
-def test_nns_reg_class_confidence_interval_shape_invariants_hold(
+def test_nns_reg_nominal_prediction_sets_have_requested_probability_mass(
     x: np.ndarray,
     n_classes: int,
     confidence_interval: float,
@@ -178,10 +182,21 @@ def test_nns_reg_class_confidence_interval_shape_invariants_hold(
         confidence_interval=confidence_interval,
     )
 
-    assert result["Fitted.xy"]["conf.int.pos"].shape == (x.shape[0],)
-    assert result["Fitted.xy"]["conf.int.neg"].shape == (x.shape[0],)
-    assert result["pred.int"] is not None
-    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
-    for values in result["pred.int"].values():
-        assert np.all(np.isfinite(values))
-        np.testing.assert_allclose(values, np.round(values))
+    # R14 class uncertainty is a nominal probability set, not an ordinal interval.
+    assert result["pred.int"] is None
+    assert "conf.int.pos" not in result["Fitted.xy"]
+    assert "conf.int.neg" not in result["Fitted.xy"]
+    probabilities = np.column_stack(list(result["Point.probabilities"].values()))
+    fitted_probabilities = np.column_stack(list(result["Fitted.probabilities"].values()))
+    assert probabilities.shape == (points.size, n_classes)
+    assert fitted_probabilities.shape == (x.size, n_classes)
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0, atol=1e-12)
+    np.testing.assert_allclose(fitted_probabilities.sum(axis=1), 1.0, atol=1e-12)
+    sets = result["Prediction.set"]
+    assert len(sets) == points.size
+    for row, selected in zip(probabilities, sets, strict=True):
+        assert selected and set(selected).issubset(set(classes))
+        indices = [int(np.flatnonzero(result["class.values"] == c)[0]) for c in selected]
+        mass = float(np.sum(row[indices]))
+        assert mass >= confidence_interval - 1e-12
+        assert mass - float(row[indices[-1]]) < confidence_interval + 1e-12

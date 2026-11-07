@@ -61,6 +61,22 @@ def test_nns_anova_multi_group_certainty_matches_r(size: int) -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.parametrize("medians", [False, True])
+def test_nns_anova_multi_group_grand_statistic_pools_observations_like_r(medians: bool) -> None:
+    # Patched R: the grand mean / median is that of all observations pooled (it was
+    # the unweighted mean of the group means / medians).
+    rng = np.random.default_rng(8)
+    groups = [rng.exponential(1.0, 12), rng.exponential(2.0, 60), rng.exponential(1.5, 25)]
+
+    expected = _r_anova_groups(groups, pairwise=False, medians=medians)
+    actual = nns_anova(groups, medians=medians, confidence_interval=None)
+
+    assert isinstance(actual, dict)
+    assert isinstance(expected, float)
+    np.testing.assert_allclose(actual["Certainty"], expected, atol=ANOVA_PARITY)
+
+
+@pytest.mark.parity
 def test_nns_anova_pairwise_matches_r() -> None:
     groups = _multi_groups(100)
 
@@ -73,18 +89,121 @@ def test_nns_anova_pairwise_matches_r() -> None:
 
 
 @pytest.mark.parity
-@pytest.mark.stochastic
-def test_nns_anova_robust_structure_matches_r_shape() -> None:
-    control, treatment = _groups(30)
+def test_nns_anova_quantile_targets_match_r_exactly() -> None:
+    # The 25%/12.5% targets use the exact LPM.VaR/UPM.VaR inversion (nns.var),
+    # not an optimiser, so the full Certainty agrees with R to rounding error.
+    rng = np.random.default_rng(14)
+    groups = [rng.standard_t(3, 400) * 0.01 + shift for shift in (0.0, 0.001, -0.002)]
 
-    expected = _r_anova_binary(control, treatment, robust=True)
-    actual = nns_anova(control, treatment, robust=True, random_seed=123)
+    binary = nns_anova(groups[0], groups[1], confidence_interval=None)
+    expected = _r_anova_binary(groups[0], groups[1])
+    assert isinstance(binary, dict)
+    for key, value in expected.items():
+        np.testing.assert_allclose(binary[key], value, rtol=0.0, atol=1e-12)
+
+    pairwise = nns_anova(groups, confidence_interval=None, pairwise=True)
+    np.testing.assert_allclose(
+        pairwise, _r_anova_groups(groups, pairwise=True), rtol=0.0, atol=1e-12
+    )
+    aggregate = nns_anova(groups, confidence_interval=None)
+    assert isinstance(aggregate, dict)
+    np.testing.assert_allclose(
+        aggregate["Certainty"], _r_anova_groups(groups, pairwise=False), rtol=0.0, atol=1e-12
+    )
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("seed", [3, 77])
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9, None])
+@pytest.mark.parametrize("medians", [False, True])
+def test_nns_anova_robust_matches_seeded_r(
+    seed: int,
+    confidence_interval: float | None,
+    medians: bool,
+) -> None:
+    # Same resample indices as the patched R (each group bootstrapped from its own
+    # full sample), so the robust estimate and its bounds match set.seed(seed).
+    control, treatment = _groups(30)
+    treatment = np.sin(3.0 * treatment[:26]) + 0.1
+
+    expected = _r_anova_seeded(
+        control,
+        treatment,
+        seed=seed,
+        ci=confidence_interval,
+        robust=True,
+        medians=medians,
+    )
+    actual = nns_anova(
+        control,
+        treatment,
+        robust=True,
+        medians=medians,
+        confidence_interval=confidence_interval,
+        random_seed=seed,
+    )
 
     assert isinstance(actual, dict)
-    assert set(expected).issuperset(
-        {"Control", "Treatment", "Grand_Statistic", "Control_CDF", "Treatment_CDF", "Certainty"}
+    # R's unlist() turns the effect-size keys into "Effect_Size_LB.2.5%" etc.;
+    # NNS Python keeps the plain names used by the non-robust path.
+    renamed = {
+        key.split(".")[0] if key.startswith("Effect_Size") else key: value
+        for key, value in expected.items()
+    }
+    assert set(actual) == set(renamed)
+    if confidence_interval is None:
+        assert "Robust Certainty Estimate" in actual and len(actual) == 7
+    else:
+        level = round(100 * confidence_interval)
+        assert {f"Lower {level}% CI", f"Upper {level}% CI"} <= set(actual)
+    for key, value in renamed.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parity
+def test_nns_anova_robust_resamples_all_of_the_longer_group() -> None:
+    # Patched R: control = 50 x N(0,1)-like values then 150 shifted by 5; the
+    # treatment matches only the first 50. Resampling just the first min(n1, n2)
+    # control observations made the robust certainty look high.
+    idx = np.arange(200, dtype=np.float64)
+    control = np.where(idx < 50, np.sin(idx), 5.0 + np.sin(idx))
+    treatment = np.sin(np.arange(50, dtype=np.float64) + 0.5)
+
+    expected = _r_anova_seeded(control, treatment, seed=1, ci=0.95, robust=True)
+    actual = nns_anova(control, treatment, robust=True, random_seed=1)
+
+    assert isinstance(actual, dict)
+    for key in ("Robust Certainty Estimate", "Lower 95% CI", "Upper 95% CI", "Certainty"):
+        np.testing.assert_allclose(actual[key], np.asarray(expected[key]), atol=1e-12)
+    assert actual["Robust Certainty Estimate"] < 0.05
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("seed", [5, 2024])
+@pytest.mark.parametrize("medians", [False, True])
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9])
+def test_nns_anova_effect_size_bootstrap_matches_seeded_r(
+    seed: int,
+    medians: bool,
+    confidence_interval: float,
+) -> None:
+    # random_seed=s replays R's set.seed(s) stream, so the bootstrap CI is exact.
+    control, treatment = _groups(30)
+    treatment = treatment[:23] ** 2
+
+    expected = _r_anova_seeded(
+        control, treatment, seed=seed, ci=confidence_interval, medians=medians
     )
-    assert set(actual) == {
+    actual = nns_anova(
+        control,
+        treatment,
+        medians=medians,
+        confidence_interval=confidence_interval,
+        random_seed=seed,
+    )
+
+    assert isinstance(actual, dict)
+    assert list(actual) == [
         "Control",
         "Treatment",
         "Grand_Statistic",
@@ -94,13 +213,85 @@ def test_nns_anova_robust_structure_matches_r_shape() -> None:
         "Effect_Size_LB",
         "Effect_Size_UB",
         "Confidence_Level",
-        "Robust Certainty Estimate",
-        "Lower Bound Robust Certainty",
-        "Upper Bound Robust Certainty",
+    ]
+    assert set(actual) == set(expected)
+    for key, value in expected.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("tails", ["left", "right"])
+@pytest.mark.parametrize("robust", [False, True])
+@pytest.mark.parametrize("confidence_interval", [0.95, 0.9])
+def test_nns_anova_one_sided_ci_matches_patched_r(
+    tails: str, robust: bool, confidence_interval: float
+) -> None:
+    # Patched R: both bootstrap quantiles are computed for one-sided tails, so
+    # tails="left" gives (treatment_lower - control_upper, Inf) and "right" gives
+    # (-Inf, treatment_upper - control_lower); R 13.3 stopped with "object not found".
+    control, treatment = _groups(30)
+
+    expected = _r_anova_seeded(
+        control, treatment, seed=1, ci=confidence_interval, tails=tails, robust=robust
+    )
+    actual = nns_anova(
+        control,
+        treatment,
+        tails=tails,
+        robust=robust,
+        confidence_interval=confidence_interval,
+        random_seed=1,
+    )
+
+    assert isinstance(actual, dict)
+    renamed = {
+        key.split(".")[0] if key.startswith("Effect_Size") else key: value
+        for key, value in expected.items()
     }
-    assert 0.0 <= actual["Robust Certainty Estimate"] <= 1.0
-    assert 0.0 <= actual["Lower Bound Robust Certainty"] <= 1.0
-    assert 0.0 <= actual["Upper Bound Robust Certainty"] <= 1.0
+    assert set(actual) == set(renamed)
+    for key, value in renamed.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+    if tails == "left":
+        assert actual["Effect_Size_UB"] == np.inf and np.isfinite(actual["Effect_Size_LB"])
+    else:
+        assert actual["Effect_Size_LB"] == -np.inf and np.isfinite(actual["Effect_Size_UB"])
+
+    # Without an interval the tail choice is irrelevant to the binary test.
+    expected = _r_anova_seeded(control, treatment, seed=1, ci=None, tails=tails)
+    actual = nns_anova(control, treatment, tails=tails, confidence_interval=None)
+    assert isinstance(actual, dict)
+    assert set(actual) == set(expected)
+    for key, value in expected.items():
+        np.testing.assert_allclose(actual[key], np.asarray(value), rtol=0.0, atol=1e-12)
+
+
+def _r_anova_seeded(
+    control: np.ndarray,
+    treatment: np.ndarray,
+    *,
+    seed: int,
+    ci: float | None,
+    tails: str = "both",
+    robust: bool = False,
+    medians: bool = False,
+    catch: bool = False,
+) -> dict[str, RValue]:
+    payload: dict[str, object] = {
+        "mode": "binary",
+        "control": control.tolist(),
+        "treatment": treatment.tolist(),
+        "means_only": False,
+        "medians": medians,
+        "robust": robust,
+        "seed": seed,
+        "ci": "none" if ci is None else ci,
+        "tails": tails,
+    }
+    if catch:
+        payload["catch"] = True
+    result = _r_anova(payload)
+    assert isinstance(result, dict)
+    return result
 
 
 def _groups(size: int) -> tuple[np.ndarray, np.ndarray]:
@@ -138,13 +329,15 @@ def _r_anova_binary(
     return _scalar_dict(result)
 
 
-def _r_anova_groups(groups: list[np.ndarray], *, pairwise: bool) -> float | np.ndarray:
+def _r_anova_groups(
+    groups: list[np.ndarray], *, pairwise: bool, medians: bool = False
+) -> float | np.ndarray:
     result = _r_anova(
         {
             "mode": "groups",
             "groups": [group.tolist() for group in groups],
             "means_only": False,
-            "medians": False,
+            "medians": medians,
             "pairwise": pairwise,
         }
     )

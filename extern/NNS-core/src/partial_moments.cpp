@@ -2,10 +2,17 @@
 //
 // Implementation extracted from NNS 13.0 src/partial_moments.{h,cpp}.
 // Every numerical rule (>= vs > boundaries, integer-degree fast powers,
-// median shift in the prefix backend, min/max-length recycling, population
-// adjustment gating, crossed DUPM/DLPM mirroring) is preserved verbatim.
+// min/max-length recycling, population adjustment gating, crossed DUPM/DLPM
+// mirroring) is preserved verbatim.  The vectorised (> 32 target) backend uses
+// a cancellation-free formulation instead of the upstream median-shifted
+// binomial expansion (see the comment above PrefixBackend).
 //
 // SPDX-License-Identifier: GPL-3.0-only
+
+// ---- NNS-CORE PROVENANCE (managed by scripts/sync_adapter.py; do not hand-edit) ----
+// NNS-R-SOURCE: src/partial_moments.cpp @ 82a92eb45c1a1892acce82e66175cf2e29434b65
+// NNS-R-SOURCE: src/partial_moments.h @ 82a92eb45c1a1892acce82e66175cf2e29434b65
+// ---- end NNS-CORE PROVENANCE ----
 #include "nns/partial_moments.hpp"
 
 #include <algorithm>
@@ -13,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "nns/parallel.hpp"
@@ -32,6 +40,15 @@ inline double repeat_multiplication(double value, int n) {
 
 inline bool is_integer(double v) { return v == static_cast<double>(static_cast<int>(v)); }
 
+// Rejects negative and NaN degrees (NNS 13.3 returned the degree-0 count for a
+// negative degree).
+inline void check_degree(double degree, const char* what = "degree") {
+  if (!(degree >= 0.0)) {
+    throw std::invalid_argument(std::string("`") + what +
+                                "` must be a non-negative number");
+  }
+}
+
 inline double lower_component(double diff, double degree, bool degree_is_int) {
   if (degree == 0) return diff >= 0.0 ? 1.0 : 0.0;
   if (diff < 0.0) return 0.0;
@@ -46,7 +63,22 @@ inline double upper_component(double diff, double degree, bool degree_is_int) {
                        : std::pow(diff, degree);
 }
 
-// --- prefix-power backend (port of nns_pm_detail, NNS 13.0) ----------------
+// --- sorted-anchor prefix backend (vectorised LPM/UPM, > 32 targets) -------
+//
+// NNS 13.0-13.3 expanded sum_{x_i <= t} (t - x_i)^d binomially around the
+// sample median, which cancels catastrophically for d >= 3. This backend keeps
+// the O((n + m) log n) cost but anchors every expansion at an adjacent order
+// statistic, so all terms are non-negative:
+//
+//   lower_j(k) = sum_{i < k}  (x_(k-1) - x_(i))^j   (anchor = largest point <= t)
+//   upper_j(k) = sum_{i >= k} (x_(i) - x_(k))^j     (anchor = smallest point > t)
+//
+// Both tables are built with the exact recurrence
+//   lower_j(k+1) = sum_{l <= j} C(j,l) delta^(j-l) lower_l(k) + [j == 0],
+//   delta = x_(k) - x_(k-1) >= 0,
+// and a target t with k = #{x_i <= t} is evaluated as
+//   LPM = sum_j C(d,j) (t - x_(k-1))^(d-j) lower_j(k) / n
+//   UPM = sum_j C(d,j) (x_(k) - t)^(d-j)   upper_j(k) / n.
 
 constexpr int kPrefixMaxDegree = 32;
 constexpr std::size_t kDirectPathMaxTargets = 32;  // NNS_DIRECT_PATH_MAX_TARGETS
@@ -60,33 +92,16 @@ bool prefix_supported_degree(double degree, int& degree_int) {
   return true;
 }
 
-std::vector<double> binomial_coefficients(int degree) {
-  std::vector<double> choose(static_cast<std::size_t>(degree) + 1U, 1.0);
-  for (int j = 1; j < degree; ++j) {
-    choose[static_cast<std::size_t>(j)] =
-        choose[static_cast<std::size_t>(j - 1)] *
-        static_cast<double>(degree - j + 1) / static_cast<double>(j);
-  }
-  return choose;
-}
-
 struct PrefixBackend {
   std::vector<double> sorted;
-  std::vector<std::vector<double>> prefix_power;
-  std::vector<double> total_power;
-  std::vector<double> choose;
+  std::vector<double> lower;   // (n + 1) x (degree + 1), row k = lower_j(k)
+  std::vector<double> upper;   // (n + 1) x (degree + 1), row k = upper_j(k)
+  std::vector<double> pascal;  // (degree + 1) x (degree + 1), C(j, l)
   std::size_t n;
   int degree;
-  double shift;
 
   PrefixBackend(const double* variable, std::size_t n_, int degree_)
-      : sorted(variable, variable + n_),
-        prefix_power(static_cast<std::size_t>(degree_) + 1U),
-        total_power(static_cast<std::size_t>(degree_) + 1U, 0.0),
-        choose(binomial_coefficients(degree_)),
-        n(n_),
-        degree(degree_),
-        shift(0.0) {
+      : sorted(variable, variable + n_), n(n_), degree(degree_) {
     for (std::size_t i = 0; i < n; ++i) {
       if (!std::isfinite(sorted[i])) {  // defensive guard, as upstream
         sorted.clear();
@@ -95,22 +110,61 @@ struct PrefixBackend {
       }
     }
     std::sort(sorted.begin(), sorted.end());
-    shift = sorted[n / 2U];
-    for (int p = 0; p <= degree; ++p)
-      prefix_power[static_cast<std::size_t>(p)].assign(n + 1U, 0.0);
-    for (std::size_t i = 0; i < n; ++i) {
-      const double x = sorted[i] - shift;
-      double x_power = 1.0;
-      for (int p = 0; p <= degree; ++p) {
-        const std::size_t ps = static_cast<std::size_t>(p);
-        prefix_power[ps][i + 1U] = prefix_power[ps][i] + x_power;
-        x_power *= x;
+    const std::size_t w = static_cast<std::size_t>(degree) + 1U;
+
+    pascal.assign(w * w, 0.0);
+    for (std::size_t j = 0; j < w; ++j) {
+      pascal[j * w] = 1.0;
+      for (std::size_t l = 1; l <= j; ++l)
+        pascal[j * w + l] = pascal[(j - 1U) * w + l - 1U] +
+                            (l < j ? pascal[(j - 1U) * w + l] : 0.0);
+    }
+
+    lower.assign((n + 1U) * w, 0.0);
+    upper.assign((n + 1U) * w, 0.0);
+    if (n == 0U) return;
+    std::vector<double> dpow(w);
+
+    lower[1U * w] = 1.0;  // k = 1: the single point equals its anchor
+    for (std::size_t k = 1; k < n; ++k) {
+      fill_powers(sorted[k] - sorted[k - 1U], dpow);
+      step(&lower[k * w], &lower[(k + 1U) * w], dpow);
+    }
+    upper[(n - 1U) * w] = 1.0;  // k = n - 1: the single point equals its anchor
+    for (std::size_t k = n - 1U; k > 0; --k) {
+      fill_powers(sorted[k] - sorted[k - 1U], dpow);
+      step(&upper[k * w], &upper[(k - 1U) * w], dpow);
+    }
+  }
+
+  void fill_powers(double base, std::vector<double>& pw) const {
+    pw[0] = 1.0;
+    for (std::size_t p = 1; p < pw.size(); ++p) pw[p] = pw[p - 1U] * base;
+  }
+
+  // next_j = sum_{l <= j} C(j,l) delta^(j-l) prev_l + [j == 0]
+  void step(const double* prev, double* next, const std::vector<double>& dpow) const {
+    const std::size_t w = static_cast<std::size_t>(degree) + 1U;
+    for (std::size_t j = 0; j < w; ++j) {
+      double acc = (j == 0U) ? 1.0 : 0.0;
+      for (std::size_t l = 0; l <= j; ++l) {
+        if (prev[l] != 0.0) acc += pascal[j * w + l] * dpow[j - l] * prev[l];
       }
+      next[j] = acc;
     }
-    for (int p = 0; p <= degree; ++p) {
-      const std::size_t ps = static_cast<std::size_t>(p);
-      total_power[ps] = prefix_power[ps][n];
+  }
+
+  // sum_j C(d,j) gap^(d-j) sums_j, all terms >= 0.
+  double combine(const double* sums, double gap) const {
+    const std::size_t d = static_cast<std::size_t>(degree);
+    const std::size_t w = d + 1U;
+    double out = 0.0;
+    double gpow = 1.0;  // gap^(d-j), built from j = d downwards
+    for (std::size_t jj = w; jj-- > 0U;) {
+      if (sums[jj] != 0.0) out += pascal[d * w + jj] * gpow * sums[jj];
+      gpow *= gap;
     }
+    return out;
   }
 
   bool ok() const { return n > 0U; }
@@ -124,51 +178,21 @@ struct PrefixBackend {
   double lpm(double target) const {
     if (!std::isfinite(target)) return kNaN;
     const std::size_t k = count_leq(target);
-    const double tc = target - shift;
     const double nd = static_cast<double>(n);
     if (degree == 0) return static_cast<double>(k) / nd;
-    if (degree == 1)
-      return (static_cast<double>(k) * tc - prefix_power[1][k]) / nd;
-    if (degree == 2) {
-      const double t2 = tc * tc;
-      return (static_cast<double>(k) * t2 - 2.0 * tc * prefix_power[1][k] +
-              prefix_power[2][k]) /
-             nd;
-    }
-    double out = 0.0;
-    for (int j = 0; j <= degree; ++j) {
-      const std::size_t js = static_cast<std::size_t>(j);
-      const double sign = (j % 2 == 0) ? 1.0 : -1.0;
-      out += choose[js] * sign * std::pow(tc, static_cast<double>(degree - j)) *
-             prefix_power[js][k];
-    }
-    return out / nd;
+    if (k == 0U) return 0.0;
+    const std::size_t w = static_cast<std::size_t>(degree) + 1U;
+    return combine(&lower[k * w], target - sorted[k - 1U]) / nd;
   }
 
   double upm(double target) const {
     if (!std::isfinite(target)) return kNaN;
     const std::size_t k = count_leq(target);
-    const double tc = target - shift;
-    const std::size_t above = n - k;
     const double nd = static_cast<double>(n);
-    if (degree == 0) return static_cast<double>(above) / nd;
-    const double suffix1 = total_power[1] - prefix_power[1][k];
-    if (degree == 1) return (suffix1 - static_cast<double>(above) * tc) / nd;
-    if (degree == 2) {
-      const double suffix2 = total_power[2] - prefix_power[2][k];
-      const double t2 = tc * tc;
-      return (suffix2 - 2.0 * tc * suffix1 + static_cast<double>(above) * t2) /
-             nd;
-    }
-    double out = 0.0;
-    for (int j = 0; j <= degree; ++j) {
-      const std::size_t js = static_cast<std::size_t>(j);
-      const double suffix_j = total_power[js] - prefix_power[js][k];
-      const double sign = ((degree - j) % 2 == 0) ? 1.0 : -1.0;
-      out += choose[js] * sign * std::pow(tc, static_cast<double>(degree - j)) *
-             suffix_j;
-    }
-    return out / nd;
+    if (degree == 0) return static_cast<double>(n - k) / nd;
+    if (k == n) return 0.0;
+    const std::size_t w = static_cast<std::size_t>(degree) + 1U;
+    return combine(&upper[k * w], sorted[k] - target) / nd;
   }
 
   std::pair<double, double> both(double target) const {
@@ -192,6 +216,7 @@ std::shared_ptr<const PrefixBackend> make_prefix_backend(double degree,
 // --- univariate scalar kernels (ports of LPM_C / UPM_C) --------------------
 
 double lpm(double degree, double target, const double* x, std::size_t n) {
+  check_degree(degree);
   double out = 0;
   const bool deg_is_int = is_integer(degree);
   for (std::size_t i = 0; i < n; ++i) {
@@ -214,6 +239,7 @@ double lpm(double degree, double target, const double* x, std::size_t n) {
 }
 
 double upm(double degree, double target, const double* x, std::size_t n) {
+  check_degree(degree);
   double out = 0;
   const bool deg_is_int = is_integer(degree);
   for (std::size_t i = 0; i < n; ++i) {
@@ -245,6 +271,7 @@ template <PMKind K>
 void pm_vectorized(double degree, const double* target, std::size_t n_targets,
                    const double* x, std::size_t n, double* out,
                    int n_threads) {
+  check_degree(degree);
   // Direct path for few targets: bit-identical to pre-13.0 semantics and
   // avoids building the prefix backend (port of the <=32 guard).
   const bool few_targets = n_targets <= kDirectPathMaxTargets;
@@ -286,7 +313,9 @@ void pm_vectorized(double degree, const double* target, std::size_t n_targets,
   if (few_targets) {
     body(0, n_targets);  // serial direct path, as upstream
   } else {
-    parallel_for(0, n_targets, body, n_threads);
+    // Prefix lookups are O(log n + degree); the direct scan (fractional or
+    // > 32 degree) is O(n) per target.
+    parallel_for(0, n_targets, body, n_threads, prefix ? 64U : n);
   }
 }
 
@@ -329,6 +358,8 @@ void upm_ratio_v(double degree, const double* target, std::size_t n_targets,
 double co_upm(double degree_x, double degree_y, const double* x,
               const double* y, std::size_t n_x, std::size_t n_y,
               double target_x, double target_y) {
+  check_degree(degree_x, "degree_x");
+  check_degree(degree_y, "degree_y");
   const std::size_t max_size = (n_x > n_y ? n_x : n_y);
   const std::size_t min_size = (n_x < n_y ? n_x : n_y);
   if (min_size == 0) return 0;
@@ -360,6 +391,8 @@ double co_upm(double degree_x, double degree_y, const double* x,
 double co_lpm(double degree_x, double degree_y, const double* x,
               const double* y, std::size_t n_x, std::size_t n_y,
               double target_x, double target_y) {
+  check_degree(degree_x, "degree_x");
+  check_degree(degree_y, "degree_y");
   const std::size_t max_size = (n_x > n_y ? n_x : n_y);
   const std::size_t min_size = (n_x < n_y ? n_x : n_y);
   if (min_size == 0) return 0;
@@ -391,6 +424,8 @@ double co_lpm(double degree_x, double degree_y, const double* x,
 double d_lpm(double degree_lpm, double degree_upm, const double* x,
              const double* y, std::size_t n_x, std::size_t n_y,
              double target_x, double target_y) {
+  check_degree(degree_lpm, "degree_lpm");
+  check_degree(degree_upm, "degree_upm");
   const std::size_t max_size = (n_x > n_y ? n_x : n_y);
   const std::size_t min_size = (n_x < n_y ? n_x : n_y);
   if (min_size == 0) return 0;
@@ -429,6 +464,8 @@ double d_lpm(double degree_lpm, double degree_upm, const double* x,
 double d_upm(double degree_lpm, double degree_upm, const double* x,
              const double* y, std::size_t n_x, std::size_t n_y,
              double target_x, double target_y) {
+  check_degree(degree_lpm, "degree_lpm");
+  check_degree(degree_upm, "degree_upm");
   const std::size_t max_size = (n_x > n_y ? n_x : n_y);
   const std::size_t min_size = (n_x < n_y ? n_x : n_y);
   if (min_size == 0) return 0;
@@ -471,7 +508,8 @@ namespace {
 template <typename ScalarFn>
 void two_var_vectorized(ScalarFn&& scalar, const double* target_x,
                         std::size_t n_tx, const double* target_y,
-                        std::size_t n_ty, double* out, int n_threads) {
+                        std::size_t n_ty, double* out, int n_threads,
+                        std::size_t work_per_target) {
   const std::size_t n_out = (n_tx > n_ty ? n_tx : n_ty);
   parallel_for(
       0, n_out,
@@ -479,7 +517,7 @@ void two_var_vectorized(ScalarFn&& scalar, const double* target_x,
         for (std::size_t i = begin; i < end; ++i)
           out[i] = scalar(target_x[i % n_tx], target_y[i % n_ty]);
       },
-      n_threads);
+      n_threads, work_per_target);
 }
 
 }  // namespace
@@ -488,44 +526,56 @@ void co_lpm_v(double degree_x, double degree_y, const double* x,
               const double* y, std::size_t n_x, std::size_t n_y,
               const double* target_x, std::size_t n_tx, const double* target_y,
               std::size_t n_ty, double* out, int n_threads) {
+  // Validate before the parallel region: an exception must not escape a worker.
+  check_degree(degree_x, "degree_x");
+  check_degree(degree_y, "degree_y");
   two_var_vectorized(
       [&](double tx, double ty) {
         return co_lpm(degree_x, degree_y, x, y, n_x, n_y, tx, ty);
       },
-      target_x, n_tx, target_y, n_ty, out, n_threads);
+      target_x, n_tx, target_y, n_ty, out, n_threads, std::min(n_x, n_y));
 }
 
 void co_upm_v(double degree_x, double degree_y, const double* x,
               const double* y, std::size_t n_x, std::size_t n_y,
               const double* target_x, std::size_t n_tx, const double* target_y,
               std::size_t n_ty, double* out, int n_threads) {
+  // Validate before the parallel region: an exception must not escape a worker.
+  check_degree(degree_x, "degree_x");
+  check_degree(degree_y, "degree_y");
   two_var_vectorized(
       [&](double tx, double ty) {
         return co_upm(degree_x, degree_y, x, y, n_x, n_y, tx, ty);
       },
-      target_x, n_tx, target_y, n_ty, out, n_threads);
+      target_x, n_tx, target_y, n_ty, out, n_threads, std::min(n_x, n_y));
 }
 
 void d_lpm_v(double degree_lpm, double degree_upm, const double* x,
              const double* y, std::size_t n_x, std::size_t n_y,
              const double* target_x, std::size_t n_tx, const double* target_y,
              std::size_t n_ty, double* out, int n_threads) {
+  // Validate before the parallel region: an exception must not escape a worker.
+  check_degree(degree_lpm, "degree_lpm");
+  check_degree(degree_upm, "degree_upm");
   two_var_vectorized(
       [&](double tx, double ty) {
         return d_lpm(degree_lpm, degree_upm, x, y, n_x, n_y, tx, ty);
       },
-      target_x, n_tx, target_y, n_ty, out, n_threads);
+      target_x, n_tx, target_y, n_ty, out, n_threads, std::min(n_x, n_y));
 }
 
 void d_upm_v(double degree_lpm, double degree_upm, const double* x,
              const double* y, std::size_t n_x, std::size_t n_y,
              const double* target_x, std::size_t n_tx, const double* target_y,
              std::size_t n_ty, double* out, int n_threads) {
+  // Validate before the parallel region: an exception must not escape a worker.
+  check_degree(degree_lpm, "degree_lpm");
+  check_degree(degree_upm, "degree_upm");
   two_var_vectorized(
       [&](double tx, double ty) {
         return d_upm(degree_lpm, degree_upm, x, y, n_x, n_y, tx, ty);
       },
-      target_x, n_tx, target_y, n_ty, out, n_threads);
+      target_x, n_tx, target_y, n_ty, out, n_threads, std::min(n_x, n_y));
 }
 
 // --- n-dimensional co-partial moments (ports of *_nD_cpp) ------------------
@@ -547,14 +597,14 @@ void check_nd_args(std::size_t n, std::size_t d) {
 // Mirrors R's parallelFor-into-vector + sum() pattern (same summation order
 // as the upstream NumericVector accumulation).
 template <typename RowFn>
-double reduce_rows(std::size_t n, int n_threads, RowFn&& row_value) {
+double reduce_rows(std::size_t n, std::size_t d, int n_threads, RowFn&& row_value) {
   std::vector<double> out(n);
   parallel_for(
       0, n,
       [&](std::size_t begin, std::size_t end) {
         for (std::size_t i = begin; i < end; ++i) out[i] = row_value(i);
       },
-      n_threads);
+      n_threads, d);
   double total = 0.0;
   for (std::size_t i = 0; i < n; ++i) total += out[i];
   return total;
@@ -564,14 +614,14 @@ double clpm_nd_impl(const double* data, std::size_t n, std::size_t d,
                     const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
-    const double count = reduce_rows(n, n_threads, [&](std::size_t i) {
+    const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       for (std::size_t j = 0; j < d; ++j)
         if (at(data, n, i, j) > target[j]) return 0.0;
       return 1.0;
     });
     return count / static_cast<double>(n);
   }
-  const double s = reduce_rows(n, n_threads, [&](std::size_t i) {
+  const double s = reduce_rows(n, d, n_threads, [&](std::size_t i) {
     double prod = 1.0;
     for (std::size_t j = 0; j < d; ++j) {
       const double diff = target[j] - at(data, n, i, j);
@@ -588,14 +638,16 @@ double cupm_nd_impl(const double* data, std::size_t n, std::size_t d,
                     const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
-    const double count = reduce_rows(n, n_threads, [&](std::size_t i) {
+    // Strictly above, as Co.UPM does: ties go to the lower side so that at
+    // degree 0 CLPM + CUPM + DPM partition the sample.
+    const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       for (std::size_t j = 0; j < d; ++j)
-        if (at(data, n, i, j) < target[j]) return 0.0;
+        if (at(data, n, i, j) <= target[j]) return 0.0;
       return 1.0;
     });
     return count / static_cast<double>(n);
   }
-  const double s = reduce_rows(n, n_threads, [&](std::size_t i) {
+  const double s = reduce_rows(n, d, n_threads, [&](std::size_t i) {
     double prod = 1.0;
     for (std::size_t j = 0; j < d; ++j) {
       const double diff = at(data, n, i, j) - target[j];
@@ -612,11 +664,12 @@ double dpm_nd_impl(const double* data, std::size_t n, std::size_t d,
                    const double* target, double degree, int n_threads) {
   const bool deg_is_int = is_integer(degree);
   if (degree == 0.0) {
-    const double count = reduce_rows(n, n_threads, [&](std::size_t i) {
+    // Discordant = neither all-lower (x <= target) nor all-upper (x > target).
+    const double count = reduce_rows(n, d, n_threads, [&](std::size_t i) {
       bool all_below = true, all_above = true;
       for (std::size_t j = 0; j < d; ++j) {
         const double diff = at(data, n, i, j) - target[j];
-        if (diff >= 0.0) all_below = false;
+        if (diff > 0.0) all_below = false;
         if (diff <= 0.0) all_above = false;
         if (!all_below && !all_above) break;
       }
@@ -624,7 +677,7 @@ double dpm_nd_impl(const double* data, std::size_t n, std::size_t d,
     });
     return count / static_cast<double>(n);
   }
-  const double s = reduce_rows(n, n_threads, [&](std::size_t i) {
+  const double s = reduce_rows(n, d, n_threads, [&](std::size_t i) {
     bool all_below = true, all_above = true;
     for (std::size_t j = 0; j < d; ++j) {
       const double diff = at(data, n, i, j) - target[j];
@@ -649,6 +702,7 @@ double dpm_nd_impl(const double* data, std::size_t n, std::size_t d,
 
 double clpm_nd(const double* data, std::size_t n, std::size_t d,
                const double* target, double degree, bool norm, int n_threads) {
+  check_degree(degree);
   check_nd_args(n, d);
   const double clpm_un = clpm_nd_impl(data, n, d, target, degree, n_threads);
   if (degree == 0.0 || !norm) return clpm_un;
@@ -660,6 +714,7 @@ double clpm_nd(const double* data, std::size_t n, std::size_t d,
 
 double cupm_nd(const double* data, std::size_t n, std::size_t d,
                const double* target, double degree, bool norm, int n_threads) {
+  check_degree(degree);
   check_nd_args(n, d);
   const double cupm_un = cupm_nd_impl(data, n, d, target, degree, n_threads);
   if (degree == 0.0 || !norm) return cupm_un;
@@ -671,6 +726,7 @@ double cupm_nd(const double* data, std::size_t n, std::size_t d,
 
 double dpm_nd(const double* data, std::size_t n, std::size_t d,
               const double* target, double degree, bool norm, int n_threads) {
+  check_degree(degree);
   check_nd_args(n, d);
   const double dpm_un = dpm_nd_impl(data, n, d, target, degree, n_threads);
   if (degree == 0.0 || !norm) return dpm_un;
@@ -685,6 +741,7 @@ double dpm_nd(const double* data, std::size_t n, std::size_t d,
 void clpm_nd_batch(const double* data, std::size_t n, std::size_t d,
                    const double* targets, std::size_t n_targets, double degree,
                    bool norm, double* out, int n_threads) {
+  check_degree(degree);
   if (n == 0) throw std::invalid_argument("`data` must have at least one row");
   const bool deg_is_int = is_integer(degree);
 
@@ -740,7 +797,7 @@ void clpm_nd_batch(const double* data, std::size_t n, std::size_t d,
           }
         }
       },
-      n_threads);
+      n_threads, n * d);
 }
 
 // --- PM matrix (port of the 13.0 tensorized PMMatrix_CPv) -------------------
@@ -749,6 +806,8 @@ PMMatrixResult pm_matrix(double degree_lpm, double degree_upm,
                          const double* target, const double* variable,
                          std::size_t n, std::size_t d, bool pop_adj, bool norm,
                          int n_threads) {
+  check_degree(degree_lpm, "degree_lpm");
+  check_degree(degree_upm, "degree_upm");
   // Mirrors Rcpp::stop("variable matrix cols != target vector length") —
   // bindings pass target length separately, so enforce d > 0 here and let
   // the binding layer validate target length against d before calling.
@@ -780,7 +839,7 @@ PMMatrixResult pm_matrix(double degree_lpm, double degree_upm,
           }
         }
       },
-      n_threads);
+      n_threads, n);
 
   double adjust = 1.0;
   if (pop_adj && n > 1)
@@ -836,7 +895,7 @@ PMMatrixResult pm_matrix(double degree_lpm, double degree_upm,
           }
         }
       },
-      n_threads);
+      n_threads, (d + 1) * n / 2 + 1);  // row i contracts d - i column pairs
 
   // Step 3: cellular normalization, preserving the crossed mirror.
   if (norm) {

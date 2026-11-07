@@ -6,6 +6,7 @@ Instructional Python port of:
 Run directly to print the important returned structures and write the figures to
 ``examples/vignettes/output/07_clustering_and_regression``.
 """
+
 from __future__ import annotations
 
 import itertools
@@ -179,13 +180,19 @@ def main() -> None:
     iris_x, iris_y, levels = load_iris()
     feature_names = ["Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"]
     dim_red = nns_reg(iris_x, iris_y, dim_red_method="cor", class_levels=levels)
-    equation = dim_red["equation"]
-    coefficients = np.asarray(equation["Coefficient"], dtype=float)
-    show("Dimension reduction equation", equation)
-    terms = " + ".join(
-        f"{coefficients[i]:.3f}*{feature_names[i]}" for i in range(len(feature_names))
-    )
-    print(f"\nSpecies = ({terms}) / {coefficients[-1]:g}")
+
+    # R14 nominal classification builds one signed index per class indicator,
+    # rather than regressing the arbitrary numeric species codes themselves.
+    def show_class_indices(equations: dict) -> None:
+        for label, equation in equations.items():
+            coefficients = np.asarray(equation["Coefficient"], dtype=float)
+            terms = " + ".join(
+                f"{coefficients[i]:.3f}*{feature_names[i]}" for i in range(len(feature_names))
+            )
+            print(f"\n{label} index = ({terms}) / {coefficients[-1]:g}")
+
+    show("Class-specific dimension reduction equations", dim_red["equation"])
+    show_class_indices(dim_red["equation"])
 
     # %% [markdown]
     # ### Threshold
@@ -194,13 +201,8 @@ def main() -> None:
     # below the requested level, reducing the denominator accordingly.
     subsection("Dimension reduction with threshold")
     reduced = nns_reg(iris_x, iris_y, dim_red_method="cor", threshold=0.75, class_levels=levels)
-    equation = reduced["equation"]
-    coefficients = np.asarray(equation["Coefficient"], dtype=float)
-    show("Thresholded dimension reduction equation", equation)
-    terms = " + ".join(
-        f"{coefficients[i]:.3f}*{feature_names[i]}" for i in range(len(feature_names))
-    )
-    print(f"\nSpecies = ({terms}) / {coefficients[-1]:g}")
+    show("Thresholded class-specific equations", reduced["equation"])
+    show_class_indices(reduced["equation"])
 
     point_est = nns_reg(
         iris_x,
@@ -215,8 +217,8 @@ def main() -> None:
     # %% [markdown]
     # # Classification
     #
-    # ``type = "CLASS"`` rounds estimates to class values. The base category of
-    # the response must be 1, not 0.
+    # ``type = "CLASS"`` selects nominal classes from estimated probabilities.
+    # Declared factor levels give the code-to-label map used in this example.
     subsection("Classification")
     classified = nns_reg(iris_x, iris_y, type="CLASS", point_est=iris_x[:10], class_levels=levels)
     show(

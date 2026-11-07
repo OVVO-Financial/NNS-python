@@ -11,11 +11,6 @@ from nns import nns_reg
 from nns.part import NoiseReduction
 from nns.regression import Order
 
-# smooth=TRUE ports R's stats::smooth.spline penalized fit. The smoothing-
-# parameter ratio comes from R's Fortran band trace, which the pure-Python port
-# reproduces to ~1e-4 rather than machine precision (documented deviation).
-SMOOTH_SPLINE_PARITY = 5e-4
-
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]
 MODE_RELATIONSHIPS = ["linear", "quadratic", "sin", "random"]
@@ -112,10 +107,7 @@ def test_nns_reg_order_max_smooth_fallback_matches_r() -> None:
     )
     actual = nns_reg(x, y, order="max", point_est=point, smooth=True, confidence_interval=0.95)
 
-    # smooth=TRUE reproduces R's stats::smooth.spline penalized fit; the
-    # smoothing-parameter ratio derives from R's Fortran band trace, so the port
-    # tracks R to ~1e-4 rather than machine precision (documented deviation).
-    _assert_reg_matches(actual, expected, atol=SMOOTH_SPLINE_PARITY)
+    _assert_reg_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -133,7 +125,26 @@ def test_nns_reg_spline_eligible_smooth_matches_r() -> None:
     )
     actual = nns_reg(x, y, order=2, point_est=point, smooth=True, confidence_interval=0.95)
 
-    _assert_reg_matches(actual, expected, atol=5e-5)
+    _assert_reg_matches(actual, expected)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(("size", "order"), [(600, None), (400, "max"), (1000, "max")])
+def test_nns_reg_smooth_thinned_knots_matches_r(size: int, order: str | None) -> None:
+    # More than 49 regression points: smooth.spline places .nknots.smspl(nx)
+    # knots instead of one per unique x.
+    rng = np.random.default_rng(20261031)
+    x = np.sort(rng.uniform(0.0, 10.0, size))
+    y = np.sin(x) + 0.1 * rng.standard_normal(size)
+    point = np.array([1.0, 2.5, 5.0, 7.25, 9.5])
+
+    expected = _r_nns_reg_smooth(x, y, order=order, point_est=point, confidence_interval=0.95)
+    actual = nns_reg(
+        x, y, order=cast(Order, order), point_est=point, smooth=True, confidence_interval=0.95
+    )
+
+    assert len(actual["regression.points"]["x"]) > 49
+    _assert_reg_matches(actual, expected)
 
 
 @pytest.mark.parity
@@ -164,7 +175,7 @@ def test_nns_reg_dimred_smooth_matches_r() -> None:
         smooth=True,
     )
 
-    _assert_reg_matches(actual, expected, check_dimred=True, atol=5e-5)
+    _assert_reg_matches(actual, expected, check_dimred=True)
 
 
 @pytest.mark.parity
@@ -199,7 +210,7 @@ def test_nns_reg_dimred_smooth_out_of_range_points_match_r() -> None:
         smooth=True,
     )
 
-    _assert_reg_matches(actual, expected, check_dimred=True, atol=5e-3)
+    _assert_reg_matches(actual, expected, check_dimred=True)
 
 
 @pytest.mark.parity
@@ -218,6 +229,28 @@ def test_nns_reg_mode_noise_reduction_matches_r(
     actual = nns_reg(x, y, order=order, noise_reduction="mode")
 
     _assert_reg_matches(actual, expected)
+
+
+@pytest.mark.parity
+def test_nns_reg_multivariate_mode_noise_reduction_matches_r() -> None:
+    # R's native multivariate setup reduced noise_reduction="mode"
+    # cells with the exact most-frequent value, while the pure-R reference uses
+    # NNS.mode(discrete = FALSE); NNS Python follows the reference, which the
+    # patched R's default path now matches.
+    rng = np.random.default_rng(3)
+    x = np.round(rng.uniform(0.0, 5.0, (300, 2)), 0)
+    y = np.round(x[:, 0] + np.sin(x[:, 1]) + rng.normal(0.0, 0.5, 300), 1)
+
+    expected = _r_nns_reg(x, y, order=None, noise="mode", point_est=None)
+    actual = nns_reg(x, y, noise_reduction="mode")
+
+    assert isinstance(expected, dict)
+    np.testing.assert_allclose(actual["R2"], float(np.asarray(expected["R2"])), rtol=1e-10)
+    np.testing.assert_allclose(
+        actual["Fitted.xy"]["y.hat"],
+        np.asarray(expected["Fitted.xy"]["y.hat"], dtype=np.float64),
+        atol=1e-10,
+    )
 
 
 def test_nns_reg_mode_class_noise_reduction_rejected_like_r() -> None:
@@ -729,6 +762,8 @@ def test_nns_reg_factor_levels_return_numeric_codes() -> None:
         class_levels=levels,
     )
 
+    # The R reference is fitted on the codes; the port maps them to the labels.
+    assert actual["class.levels"] == levels
     _assert_reg_matches(actual, expected)
 
 
@@ -758,6 +793,8 @@ def test_nns_reg_factor_levels_class_confidence_interval_matches_r() -> None:
         class_levels=levels,
     )
 
+    # The R reference is fitted on the codes; the port maps them to the labels.
+    assert actual["class.levels"] == levels
     _assert_reg_matches(actual, expected)
 
 
@@ -787,9 +824,10 @@ def test_nns_reg_class_confidence_interval_below_range_row_drop_matches_r() -> N
 
     _assert_reg_matches(actual, expected)
     assert actual["Point.est"].shape == (4,)
-    assert actual["pred.int"] is not None
-    # Repaired contract returns one interval row per point.est (no row dropping).
-    assert actual["pred.int"]["pred.int.neg"].shape == (4,)
+    assert actual["pred.int"] is None  # R14 nominal intervals are class sets.
+    assert len(actual["Prediction.set"]) == point_est.size
+    for got, want in zip(actual["Prediction.set"], expected["Prediction.set"], strict=True):
+        np.testing.assert_array_equal(np.atleast_1d(got), np.atleast_1d(want))
 
 
 @pytest.mark.parity
@@ -801,10 +839,8 @@ def test_nns_reg_raw_character_class_labels_encode_like_r() -> None:
 
     result = nns_reg(x, y, type="class")
 
-    np.testing.assert_array_equal(
-        np.asarray(result["Fitted.xy"]["y.hat"], dtype=np.float64),
-        np.array([1.0, 1.0, 1.0, 2.0, 2.0, 2.0]),
-    )
+    expected = _r_nns_reg(x, y, order=None, noise="off", point_est=None, type="class")
+    _assert_reg_matches(result, expected)
     assert list(result["class.levels"]) == ["A", "B"]
 
 
@@ -942,9 +978,7 @@ def _assert_reg_matches(
     if actual["Point.est"] is None:
         assert _array(expected["Point.est"]).size == 0
     else:
-        np.testing.assert_allclose(
-            actual["Point.est"], _array(expected["Point.est"]), atol=atol
-        )
+        np.testing.assert_allclose(actual["Point.est"], _array(expected["Point.est"]), atol=atol)
     if actual["pred.int"] is None:
         assert _array(expected["pred.int"]).size == 0
     else:
@@ -1042,3 +1076,34 @@ def _relationship(
     if relationship == "sin":
         return x, np.sin(x)
     return x, rng.normal(size=size)
+
+
+@pytest.mark.parity
+def test_public_multivariate_nominal_probabilities_match_r14() -> None:
+    x = np.array(
+        [
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [3.0, 0.0],
+            [3.0, 1.0],
+        ]
+    )
+    y = np.array([1.0, 1.0, 2.0, 3.0, 2.0, 3.0, 1.0, 3.0])
+    points = np.array([[0.5, 0.0], [2.5, 1.0], [3.0, 0.0]])
+    expected = _r_nns_reg(
+        x, y, order=2, noise="off", point_est=points, confidence_interval=0.8, type="CLASS"
+    )
+    actual = nns_reg(x, y, order=2, type="CLASS", point_est=points, confidence_interval=0.8)
+    _assert_reg_matches(actual, expected)
+    for key in ("Fitted.probabilities", "Point.probabilities", "RPM.probabilities"):
+        values = np.column_stack(list(actual[key].values()))
+        np.testing.assert_allclose(values, expected[key], atol=COMPOUND)
+        np.testing.assert_allclose(values.sum(axis=1), 1.0, atol=COMPOUND)
+    assert actual["pred.int"] is None
+    assert len(actual["Prediction.set"]) == len(points)
+    for got, want in zip(actual["Prediction.set"], expected["Prediction.set"], strict=True):
+        np.testing.assert_array_equal(np.atleast_1d(got), np.atleast_1d(want))

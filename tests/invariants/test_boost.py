@@ -57,7 +57,9 @@ def test_nns_boost_factor_predictor_encodes_natively() -> None:
     # Factor predictors are one-hot encoded natively (no explicit levels needed).
     x = np.linspace(-2.0, 2.0, 20)
     labels = np.where(x > 0.0, "B", "A")
-    variable = np.column_stack((labels, x))
+    # Object columns keep x numeric (a '<U' array would make every column a
+    # factor, as a character matrix does in R).
+    variable = np.column_stack((labels.astype(object), x.astype(object)))
     y = x + np.where(labels == "B", 1.0, 0.0)
 
     result = nns_boost(variable, y, variable[:3], cv_size=0.25, feature_importance=False)
@@ -70,7 +72,7 @@ def test_nns_boost_multiple_factor_predictors_are_positional(features_only: bool
     x = np.linspace(-2.0, 2.0, 24)
     first = np.where(x < -0.5, "low", np.where(x > 0.75, "high", "mid"))
     second = np.where(np.sin(x) > 0.0, "up", "down")
-    variable = np.column_stack((first, x, second))
+    variable = np.column_stack((first.astype(object), x.astype(object), second.astype(object)))
     y = x + np.where(first == "low", 1.0, np.where(first == "mid", 2.0, 3.0)) * 0.25
 
     result = nns_boost(
@@ -324,3 +326,34 @@ def test_nns_boost_ts_test_stochastic_epoch_path_shape_and_seed_determinism() ->
     assert first["feature.frequency"] == second["feature.frequency"]
 
 
+
+
+def test_nns_boost_feature_importance_warns_and_obj_fn_checked() -> None:
+    rng = np.random.default_rng(23)
+    x = rng.normal(size=(60, 2))
+    y = x[:, 0] + rng.normal(scale=0.1, size=60)
+    kwargs = {"epochs": 2, "learner_trials": 2, "folds": 2}
+    with pytest.warns(UserWarning, match="feature_importance=True draws no figure"):
+        nns_boost(x, y, x[:3], feature_importance=True, **kwargs)
+    with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
+        nns_boost(x, y, x[:3], obj_fn=lambda p, a: (p - a) ** 2, **kwargs)
+    with pytest.raises(ValueError, match="random_seed"):
+        nns_boost(x, y, x[:3], seed=7, random_seed=5, **kwargs)
+
+
+def test_objective_sees_response_values_for_a_two_valued_numeric_response() -> None:
+    rng = np.random.default_rng(1)
+    x = rng.normal(size=(80, 3))
+    y = np.where(x[:, 0] + rng.normal(scale=0.5, size=80) > 0, 5.0, -5.0)
+    for response, values in ((y, {-5.0, 5.0}), (np.where(y > 0, 0.2, -0.1), {-0.1, 0.2})):
+        seen: list[float] = []
+
+        def loss(predicted: np.ndarray, actual: np.ndarray, seen: list[float] = seen) -> float:
+            seen.extend(np.asarray(actual, dtype=np.float64).tolist())
+            return float(np.sum((predicted - actual) ** 2))
+
+        nns_boost(
+            x, response, x[:10], obj_fn=loss, learner_trials=3, epochs=0, threshold=1,
+            cv_size=0.25, seed=1, status=False,
+        )
+        assert set(seen) == values

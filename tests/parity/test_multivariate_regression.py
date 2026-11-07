@@ -261,7 +261,10 @@ def test_nns_m_reg_factor_levels_return_numeric_codes() -> None:
         dist=None,
     )
 
-    _assert_m_reg_matches(actual, expected)
+    # The R reference is fitted on the 1..K codes, so its class.levels are the
+    # codes; the port reports the labels behind them.
+    assert actual["class.levels"] == levels
+    _assert_m_reg_matches(_without_levels(actual), _without_levels(expected))
 
 
 @pytest.mark.parity
@@ -295,11 +298,14 @@ def test_nns_m_reg_factor_levels_class_confidence_interval_matches_r() -> None:
         dist=None,
     )
 
-    _assert_m_reg_matches(actual, expected)
+    # The R reference is fitted on the 1..K codes, so its class.levels are the
+    # codes; the port reports the labels behind them.
+    assert actual["class.levels"] == levels
+    _assert_m_reg_matches(_without_levels(actual), _without_levels(expected))
 
 
 @pytest.mark.parity
-def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
+def test_nns_m_reg_retains_its_separate_classification_contract() -> None:
     x, _ = _dataset(9, 3, "mixed", np.random.default_rng(654))
     y = np.array([1, 1, 2, 2, 3, 3, 2, 1, 3], dtype=np.float64)
     point_est = np.array([[0.0, 0.0, 1.0], [1.5, 0.8, -0.2]])
@@ -316,7 +322,7 @@ def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
         "off",
         type="class",
     )
-    actual = nns_reg(x, y, order=1, type="class", point_est=point_est, dist=None)
+    actual = nns_m_reg(x, y, order=1, n_best=1, type="class", point_est=point_est, dist=None)
 
     _assert_m_reg_matches(actual, expected)
 
@@ -352,6 +358,10 @@ def _r_nns_m_reg(
         1,
         confidence_interval,
     )
+
+
+def _without_levels(result: Any) -> dict[str, Any]:
+    return {key: value for key, value in result.items() if key != "class.levels"}
 
 
 def _assert_m_reg_matches(actual: dict[str, Any], expected: Any) -> None:
@@ -417,3 +427,31 @@ def _assert_levels_equal(actual: object, expected: object) -> None:
 
 def _array(value: object) -> np.ndarray:
     return np.asarray(value, dtype=np.float64)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize("dist", ["NNS", "L1", "L2"])
+def test_native_mreg_kernels_match_r_far_outside_the_ranges(dist: str) -> None:
+    # Far outside the training ranges the Student-t ensemble weights underflow;
+    # NNS-core factors dt as Rmath does, so the native kernels follow R there too.
+    from nns._native import native_fn
+    from nns._reg_engine import _MREG_DIST_CODES, _mreg_predict, _mreg_predict_path
+
+    if native_fn("mreg_predict") is None:
+        pytest.skip("native extension not available")
+    rng = np.random.default_rng(5)
+    rpm = rng.random((300, 3))
+    yhat = rng.normal(size=300)
+    mins, maxs = rpm.min(axis=0), rpm.max(axis=0)
+    far = np.array([[0.2, 0.5, 300.0], [5.0, -40.0, 0.3], [1e3, 0.5, 0.5]])
+    args = (rpm.tolist(), yhat.tolist(), far.tolist())
+    ranges = (mins.tolist(), maxs.tolist(), False, 1)
+    code = _MREG_DIST_CODES[dist]
+
+    for k in (50, 300):
+        expected = nns("NNS_mreg_predict_v2_cpp", *args, k, code, *ranges)
+        actual = _mreg_predict(far, rpm, yhat, k, dist, mins, maxs, False)
+        np.testing.assert_allclose(actual, np.asarray(expected).reshape(-1), rtol=1e-12)
+    expected_path = nns("NNS_mreg_predict_path_v2_cpp", *args, 200, code, *ranges)
+    actual_path = _mreg_predict_path(far, rpm, yhat, 200, dist, mins, maxs)
+    np.testing.assert_allclose(actual_path, np.asarray(expected_path), rtol=1e-12)

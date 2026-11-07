@@ -30,8 +30,10 @@ def skew_pm(x: NDArray[np.float64]) -> float:
     values = _as_1d_values(x)
     mean = float(np.mean(values))
     variance = var_pm(values)
-    skew_base = float(upm(3, mean, values) - lpm(3, mean, values))
-    return float(skew_base / variance**1.5)
+    skew_base = np.float64(upm(3, mean, values) - lpm(3, mean, values))
+    # IEEE division like R: a constant series gives 0 / 0 = NaN instead of raising.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return float(skew_base / np.float64(variance) ** 1.5)
 
 
 def kurt_pm(x: NDArray[np.float64], excess: bool = True) -> float:
@@ -39,37 +41,52 @@ def kurt_pm(x: NDArray[np.float64], excess: bool = True) -> float:
     values = _as_1d_values(x)
     mean = float(np.mean(values))
     variance = var_pm(values)
-    kurtosis = float(upm(4, mean, values) + lpm(4, mean, values)) / variance**2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kurtosis = float(
+            np.float64(upm(4, mean, values) + lpm(4, mean, values)) / np.float64(variance) ** 2
+        )
     if excess:
         return kurtosis - 3.0
     return kurtosis
 
 
 def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, float]:
-    """Return R NNS.moments' first four partial-moment moments."""
+    """Return R NNS.moments' first four partial-moment moments.
+
+    As in R, undefined moments are NaN (or +-Inf) rather than errors: a constant
+    series has NaN skewness and kurtosis, and the sample (``population=False``)
+    estimators need n > 2 (skewness) and n > 3 (kurtosis).
+    """
     values = _as_1d_values(x)
-    n = values.size
+    # float64 scalars give R's IEEE results (0/0 = NaN, x/0 = +-Inf) where plain
+    # Python floats and ints would raise ZeroDivisionError.
+    n = np.float64(values.size)
     center = float(np.mean(values))
     mean = float(upm(1, 0.0, values) - lpm(1, 0.0, values))
-    variance = float(upm(2, center, values) + lpm(2, center, values))
-    skew_base = float(upm(3, center, values) - lpm(3, center, values))
-    kurt_base = float(upm(4, center, values) + lpm(4, center, values))
+    variance = np.float64(upm(2, center, values) + lpm(2, center, values))
+    skew_base = np.float64(upm(3, center, values) - lpm(3, center, values))
+    kurt_base = np.float64(upm(4, center, values) + lpm(4, center, values))
 
-    if population:
-        skewness = float(skew_base / variance**1.5)
-        kurtosis = float(kurt_base / variance**2 - 3.0)
-    else:
-        skewness = float((n / ((n - 1) * (n - 2))) * ((n * skew_base) / variance**1.5))
-        kurtosis = float(
-            ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3)))
-            * ((n * kurt_base) / (variance * (n / (n - 1))) ** 2)
-            - ((3 * ((n - 1) ** 2)) / ((n - 2) * (n - 3)))
-        )
-        variance = float(variance * (n / (n - 1)))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if population:
+            skewness = float(skew_base / variance**1.5)
+            kurtosis = float(kurt_base / variance**2 - 3.0)
+        else:
+            # Adjusted Fisher-Pearson G1: n/((n-1)(n-2)) * sum(z^3) / s^3 with s the
+            # sample (n-1) standard deviation, as in the kurtosis branch below.
+            skewness = float(
+                (n / ((n - 1) * (n - 2))) * ((n * skew_base) / (variance * (n / (n - 1))) ** 1.5)
+            )
+            kurtosis = float(
+                ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3)))
+                * ((n * kurt_base) / (variance * (n / (n - 1))) ** 2)
+                - ((3 * ((n - 1) ** 2)) / ((n - 2) * (n - 3)))
+            )
+            variance = variance * (n / (n - 1))
 
     return {
         "mean": mean,
-        "variance": variance,
+        "variance": float(variance),
         "skewness": skewness,
         "kurtosis": kurtosis,
     }
