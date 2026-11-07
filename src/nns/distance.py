@@ -74,7 +74,9 @@ def nns_distance_path_single_bulk(
             out[row_index] = float(selected_y[0])
             continue
 
-        weights = _combined_weights(selected_distances, rank_sd_population=True)
+        # R14 NNS_distance_path_single_parallel_cpp now uses sample sd(1:k),
+        # exactly as the scalar R path (not the legacy population variance).
+        weights = _combined_weights(selected_distances, rank_sd_population=False)
         if class_ is not None:
             out[row_index] = _weighted_mode(selected_y, weights)
         else:
@@ -89,26 +91,10 @@ def nns_distance_bulk(
     class_: object | None = None,
 ) -> NDArray[np.float64]:
     """Return R's NNS.distance.bulk predictions for many target rows."""
-    features, y_hat = _split_rpm(rpm)
-    tests = _as_matrix(x_test, "x_test")
-    if tests.shape[1] != features.shape[1]:
-        raise ValueError("x_test column count must match rpm feature column count.")
-
-    k_value = _resolve_k(k, features.shape[0])
-    # NNS_distance_bulk_cpp: raw (un-normalized) d^2 + |d| distance with simple
-    # 1/d weights over the k nearest regression points.
-    diff = features[np.newaxis, :, :] - tests[:, np.newaxis, :]
-    distances = np.sum(diff * diff + np.abs(diff), axis=2)
-    distances[distances == 0.0] = 1e-12
-    order = np.argsort(distances, axis=1, kind="stable")[:, :k_value]
-
-    predictions = np.empty(tests.shape[0], dtype=np.float64)
-    for row_index, row_order in enumerate(order):
-        row_distances = distances[row_index, row_order]
-        row_y = y_hat[row_order]
-        weights = 1.0 / row_distances
-        predictions[row_index] = float(np.dot(row_y, weights) / np.sum(weights))
-    return predictions
+    # R14 R/NNS_Distance_bulk.R routes the public bulk API through the
+    # SAME eight-channel distance ensemble as the scalar call, not the old
+    # 1/d-only NNS_distance_bulk_cpp regression helper.
+    return nns_distance_path_single_bulk(rpm, x_test, k, class_)
 
 
 def _rescale_joint(
@@ -152,7 +138,10 @@ def _combined_weights(
     empirical = _normalized(
         np.divide(1.0, distances, out=np.zeros_like(distances), where=distances > 0.0)
     )
-    exponential = _normalized(stats.expon.pdf(ranks, scale=1.0 / count))
+    # Rf_dexp's second argument is *scale* k, corresponding to rate 1/k.
+    # The earlier Python port inverted it (scale=1/k), concentrating all mass
+    # on the nearest rank and disagreeing whenever k>1.
+    exponential = _normalized(stats.expon.pdf(ranks, scale=float(count)))
 
     lognormal = np.zeros(count, dtype=np.float64)
     if count >= 2:

@@ -16,7 +16,7 @@
         2.0,
         3.0,
         3.0,
-        2.0
+        3.0
       ],
       "stack": [
         2.0,
@@ -36,13 +36,13 @@
           "dim.red"
         ],
         "values": [
-          0.01,
-          0.99
+          0.535250207354161,
+          0.464749792645839
         ]
       }
     }
   },
   "label": "labels.stack.factor_y",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }

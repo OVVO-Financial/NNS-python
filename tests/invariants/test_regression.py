@@ -243,7 +243,7 @@ def test_nns_reg_classification_outputs_numeric_codes() -> None:
     assert set(result["Point.est"]).issubset(set(y))
 
 
-def test_nns_reg_class_confidence_interval_outputs_rounded_pred_int_only() -> None:
+def test_nns_reg_class_confidence_interval_returns_nominal_prediction_sets_r14() -> None:
     x = np.linspace(0.0, 11.0, 12)
     y = np.array([1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2], dtype=np.float64)
 
@@ -255,12 +255,18 @@ def test_nns_reg_class_confidence_interval_outputs_rounded_pred_int_only() -> No
         confidence_interval=0.95,
     )
 
-    assert result["Fitted.xy"]["conf.int.pos"].shape == y.shape
-    assert result["Fitted.xy"]["conf.int.neg"].shape == y.shape
-    assert result["pred.int"] is not None
-    assert set(result["pred.int"]) == {"pred.int.neg", "pred.int.pos"}
-    for values in result["pred.int"].values():
-        np.testing.assert_allclose(values, np.round(values))
+    # R14 Classification.R returns nominal class sets, not ordinal intervals.
+    assert "conf.int.pos" not in result["Fitted.xy"]
+    assert "conf.int.neg" not in result["Fitted.xy"]
+    assert result["pred.int"] is None
+    sets = result["Prediction.set"]
+    assert len(sets) == 3
+    assert all(len(row) > 0 and set(row).issubset(set(y)) for row in sets)
+    point_probs = np.column_stack(list(result["Point.probabilities"].values()))
+    np.testing.assert_allclose(np.sum(point_probs, axis=1), 1.0, atol=1e-12)
+    for row, classes in zip(point_probs, sets, strict=True):
+        included = [i for i, val in enumerate(result["class.values"]) if val in classes]
+        assert float(np.sum(row[included])) >= 0.95 - 1e-12
     assert set(result["Point.est"]).issubset(set(y))
 
 
@@ -346,10 +352,14 @@ def test_prepared_bool_factors_predict_like_direct_regression() -> None:
 
     design = prepare_factor_predictors(x, point_est=point)
     direct = nns_reg(x, y, point_est=point)["Point.est"]
-    prepared = nns_reg(design.x, y, point_est=design.point_est)["Point.est"]
+    # R14 flags a wholly categorical design and uses exact joint cells.
+    # Pre-encoded numeric dummy columns must explicitly request order=max
+    # to preserve the same cell model rather than a continuous partition.
+    prepared = nns_reg(
+        design.x, y, point_est=design.point_est, order="max"
+    )["Point.est"]
 
     assert design.feature_names == ("x_FALSE.", "x_TRUE.")
-    np.testing.assert_allclose(direct, [48.75, 48.75])
     np.testing.assert_array_equal(prepared, direct)
 
 
@@ -382,3 +392,22 @@ def test_prepared_names_rename_outputs_and_keep_point_columns_aligned() -> None:
         assert design.feature_names == tuple(names)
         np.testing.assert_array_equal(design.x, x.to_numpy())
         np.testing.assert_array_equal(design.point_est, [[2.5, 25.0]])
+
+
+def test_explicit_reg_overrides_binary_numeric_auto_classification_like_r14() -> None:
+    x = np.arange(8.0)
+    y = np.array([0., 0., 0., 1., 1., 1., 0., 1.])
+
+    automatic = nns_reg(x, y)
+    assert "Point.probabilities" in automatic  # automatic 0/1 nominal task
+
+    forced = nns_reg(x, y, type="REG", order="max", point_est=[2.5])
+    assert forced["class.levels"] is None
+    assert "regression.points" in forced
+    assert "Point.probabilities" not in forced
+    assert forced["Prediction.Accuracy"] is None
+    np.testing.assert_array_equal(forced["Fitted.xy"]["y"], y)
+
+    for nonnumeric in (y.astype(bool), y.astype(str)):
+        with pytest.raises(ValueError, match="requires a numeric response"):
+            nns_reg(x, nonnumeric, type="REG")

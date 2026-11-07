@@ -434,6 +434,68 @@ def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> f
     return float(upper - lower)
 
 
+def _r14_fd_weights(
+    nodes: NDArray[np.float64], at: float, degree: int
+) -> NDArray[np.float64]:
+    """R .nns_fd_weights: scaled Vandermonde finite-difference coefficients."""
+    n = int(nodes.size)
+    if n <= degree or np.unique(nodes).size != n:
+        return np.full(n, np.nan)
+    scale = float(np.max(np.abs(nodes - at)))
+    if not np.isfinite(scale) or scale == 0.0:
+        return np.full(n, np.nan)
+    z = (nodes - at) / scale
+    powers = z[None, :] ** np.arange(n)[:, None]
+    rhs = np.zeros(n, dtype=np.float64)
+    rhs[degree] = float(math.factorial(degree))
+    try:
+        return np.linalg.solve(powers, rhs) / (scale**degree)
+    except np.linalg.LinAlgError:
+        return np.full(n, np.nan)
+
+
+def _r14_dy_stencil(
+    column: NDArray[np.float64], at: float, probability_width: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """R .nns_dy_stencil with local degree-1 partial-moment quantiles."""
+    from nns.core import lpm_ratio
+    from nns.var import lpm_var
+
+    support = np.unique(column)
+    lower, upper = float(support[0]), float(support[-1])
+    if not np.isfinite(at) or at < lower or at > upper:
+        raise ValueError(
+            "Derivative evaluation points must lie inside the observed coordinate support."
+        )
+    if support.size < 2:
+        z = np.asarray([at], dtype=np.float64)
+        return z, np.asarray([np.nan]), np.asarray([np.nan])
+    if support.size == 2:
+        nodes = np.asarray(support, dtype=np.float64)
+    else:
+        share = float(lpm_ratio(1.0, at, column))
+        lo = float(lpm_var(max(0.0, share - probability_width), 1.0, column))
+        hi = float(lpm_var(min(1.0, share + probability_width), 1.0, column))
+        h = min((hi - lo) / 2.0, (upper - lower) / 4.0)
+        if not np.isfinite(h) or h <= 0.0:
+            h = float(np.min(np.diff(support)))
+        if at == lower:
+            nodes = np.asarray([at, at + h, at + 2.0 * h])
+        elif at == upper:
+            nodes = np.asarray([at - 2.0 * h, at - h, at])
+        else:
+            nodes = np.asarray([max(lower, at - h), at, min(upper, at + h)])
+    return nodes, _r14_fd_weights(nodes, at, 1), _r14_fd_weights(nodes, at, 2)
+
+
+def _r14_spread_rows(n: int, k: int) -> NDArray[np.intp]:
+    """R .nns_spread_rows: golden-ratio/Weyl phase rows, 0-based."""
+    if k >= n:
+        return np.arange(n, dtype=np.intp)
+    phase = np.mod(np.arange(1, n + 1, dtype=np.float64) * 0.6180339887498949, 1.0)
+    return np.sort(np.argsort(phase, kind="stable")[:k]).astype(np.intp)
+
+
 def _dy_d_best_plan(
     x_values: NDArray[np.float64],
     y_values: NDArray[np.float64],
@@ -447,181 +509,122 @@ def _dy_d_best_plan(
     list[NDArray[np.float64]],
     Callable[[list[NDArray[np.float64]]], dict[str, NDArray[np.float64]]],
 ]:
-    """Build every test block this regressor needs, plus a reducer.
+    """R 14.0 dy.d_: two locally capped probability windows and polynomial stencils.
 
-    The reducer turns the predicted chunks back into the derivative dict. All
-    regressors share the same X* training design, so ``dy_d_best`` gathers the
-    chunks from every plan and runs a single NNS.stack fit for the whole call.
+    R/ dy_d_wrt.R builds every perturbed context from the original observed
+    regressors, fits NNS.reg once, then subtracts the first evaluation before
+    applying each stencil. No old tenfold/four-band CV approximation is used.
     """
-    from nns.dependence import nns_dep
-    from nns.var import lpm_var
+    from nns._dep_r14 import dep_local_r14
 
-    _n_rows, n_predictors = x_values.shape
-    if wrt_index < 0 or wrt_index >= n_predictors:
-        raise ValueError("`wrt` must select exactly one column of the expanded predictor matrix.")
-    if n_predictors != 2:
-        mixed = False
+    n, p = x_values.shape
+    if wrt_index < 0 or wrt_index >= p:
+        raise ValueError("wrt must identify one expanded predictor column.")
+
+    eval_values, marginal = _dy_d_eval_points(x_values, wrt_index, eval_points)
+    if marginal:
+        points = np.asarray(eval_values, dtype=np.float64).reshape(-1)
+        context_count = min(n, max(21, 10000 // max(1, int(points.size))))
+        other = x_values[_r14_spread_rows(n, context_count)]
+        contexts = []
+        for point in points:
+            z = other.copy()
+            z[:, wrt_index] = point
+            contexts.append(z)
+    else:
+        locations = np.asarray(eval_values, dtype=np.float64)
+        if locations.ndim != 2 or locations.shape[1] != p:
+            raise ValueError(
+                "eval.points must have one column per expanded predictor."
+            )
+        if np.any(~np.isfinite(locations)) or np.any(
+            locations < np.min(x_values, axis=0)
+        ) or np.any(locations > np.max(x_values, axis=0)):
+            raise ValueError(
+                "Derivative evaluation points must lie inside the observed coordinate support."
+            )
+        contexts = [locations[i : i + 1] for i in range(locations.shape[0])]
+        points = locations[:, wrt_index]
+
+    if points.size == 0:
+        raise ValueError("eval.points must contain at least one point.")
+    # R: 1/log(max(nrow(x),3), c(2,10)), half and full windows capped at .25.
+    base = np.log(np.asarray([2.0, 10.0])) / np.log(float(max(n, 3)))
+    widths = np.minimum(0.25, np.r_[base / 2.0, base])
+    if dep_local_r14(x_values[:, wrt_index], y_values, asym=False) < 0.5:
+        widths = np.minimum(0.25, 2.0 * widths)
+
+    chunks: list[NDArray[np.float64]] = []
+    specifications: list[
+        tuple[int, int, int, int, NDArray[np.float64], NDArray[np.float64]]
+    ] = []
+    column = x_values[:, wrt_index]
+    for band, width in enumerate(widths):
+        for i, context in enumerate(contexts):
+            nodes, w_first, w_second = _r14_dy_stencil(
+                column, float(points[i]), float(width)
+            )
+            blocks = []
+            for node in nodes:
+                amended = context.copy()
+                amended[:, wrt_index] = node
+                blocks.append(amended)
+            specifications.append(
+                (len(chunks), band, i, context.shape[0], w_first, w_second)
+            )
+            chunks.append(np.vstack(blocks))
+
+    mixed_specs: list[tuple[int, int, int, NDArray[np.float64]]] = []
+    if mixed:
+        if p != 2 or marginal:
+            raise ValueError(
+                "Mixed derivatives require two predictors and explicit matrix evaluation points."
+            )
+        for band, width in enumerate(widths):
+            for i, context in enumerate(contexts):
+                at = context[0]
+                s1, weight1, _ = _r14_dy_stencil(x_values[:, 0], float(at[0]), float(width))
+                s2, weight2, _ = _r14_dy_stencil(x_values[:, 1], float(at[1]), float(width))
+                grid = np.asarray([[v1, v2] for v2 in s2 for v1 in s1], dtype=np.float64)
+                weights = np.outer(weight1, weight2).ravel(order="F")
+                mixed_specs.append((len(chunks), band, i, weights))
+                chunks.append(grid)
 
     if messages:
-        print(
-            "Currently generating NNS.reg finite difference estimates...Regressor "
-            f"{wrt_label}\r"
-        )
+        print(f"Generating local NNS.reg finite-difference estimates...Regressor {wrt_label}")
 
-    eval_values, vector_branch = _dy_d_eval_points(x_values, wrt_index, eval_points)
-
-    column = x_values[:, wrt_index]
-    dependence = float(nns_dep(column, y_values)["Dependence"])
-    h_s = _v057_bandwidths(x_values.size, dependence)
-
-    # The NNS.stack fit (CV n.best, dimension-reduction coefficients, blend
-    # weight) depends only on (x, y), never on the evaluation points, so every
-    # bandwidth - and the mixed-derivative corners - are predicted from a single
-    # fit. Gather every test block, run ONE NNS.stack, then slice it back.
-    chunks: list[NDArray[np.float64]] = []
-    sizes: list[int] = []
-
-    def _add(block: NDArray[np.float64]) -> int:
-        chunks.append(block)
-        sizes.append(block.shape[0])
-        return len(chunks) - 1
-
-    def _row_nanmean(bands: list[NDArray[np.float64]]) -> NDArray[np.float64]:
-        matrix = np.column_stack([np.asarray(b, dtype=np.float64).reshape(-1) for b in bands])
-        with np.errstate(invalid="ignore"):
-            return np.asarray(np.nanmean(matrix, axis=1), dtype=np.float64)
-
-    steps_per_band: list[NDArray[np.float64]] = []
-    main_chunk_idx: list[int] = []
-    mixed_eval: NDArray[np.float64] | None = None
-
-    if vector_branch:
-        eval_vec = np.asarray(eval_values, dtype=np.float64).reshape(-1)
-        grid = np.column_stack(
-            [
-                np.asarray(
-                    [lpm_var(float(p), 0.0, x_values[:, col]) for p in _r_seq(0.0, 1.0, 0.05)],
-                    dtype=np.float64,
-                )
-                for col in range(n_predictors)
-            ]
-        )
-        sample_size = grid.shape[0]
-        k = eval_vec.size
-        for band in h_s:
-            steps = np.array([_dydx_step(column, ev, float(band)) for ev in eval_vec])
-            blocks: list[NDArray[np.float64]] = []
-            for g in range(k):
-                lower = grid.copy()
-                middle = grid.copy()
-                upper = grid.copy()
-                lower[:, wrt_index] = eval_vec[g] - steps[g]
-                middle[:, wrt_index] = eval_vec[g]
-                upper[:, wrt_index] = eval_vec[g] + steps[g]
-                blocks.extend((lower, middle, upper))
-            steps_per_band.append(steps)
-            main_chunk_idx.append(_add(np.vstack(blocks)))
-        if k == 2:
-            mixed_eval = eval_vec.reshape(1, 2)
-    else:
-        eval_mat = _as_eval_matrix(eval_values, n_predictors)
-        n_eval = eval_mat.shape[0]
-        for band in h_s:
-            steps = np.array(
-                [_dydx_step(column, eval_mat[i, wrt_index], float(band)) for i in range(n_eval)]
-            )
-            lower = eval_mat.copy()
-            upper = eval_mat.copy()
-            lower[:, wrt_index] = eval_mat[:, wrt_index] - steps
-            upper[:, wrt_index] = eval_mat[:, wrt_index] + steps
-            steps_per_band.append(steps)
-            main_chunk_idx.append(_add(np.vstack((lower, eval_mat, upper))))
-        mixed_eval = eval_mat
-
-    # Mixed-derivative corners (also predicted from the same single fit).
-    mixed_meta: list[tuple[int | None, NDArray[np.float64]]] = []
-    if mixed:
-        if mixed_eval is None or mixed_eval.shape[1] != 2:
-            raise ValueError("Mixed Derivatives are only for 2 IV")
-        for band in h_s:
-            corner_blocks: list[NDArray[np.float64]] = []
-            scales: list[float] = []
-            for point in mixed_eval:
-                s1 = _dydx_step(x_values[:, 0], point[0], float(band))
-                s2 = _dydx_step(x_values[:, 1], point[1], float(band))
-                if np.isfinite(s1) and np.isfinite(s2) and s1 != 0.0 and s2 != 0.0:
-                    corner_blocks.append(
-                        np.array(
-                            [
-                                [point[0] + s1, point[1] + s2],
-                                [point[0] - s1, point[1] + s2],
-                                [point[0] + s1, point[1] - s2],
-                                [point[0] - s1, point[1] - s2],
-                            ]
-                        )
-                    )
-                    scales.append(4.0 * s1 * s2)
-                else:
-                    scales.append(np.nan)
-            scale_arr = np.asarray(scales, dtype=np.float64)
-            if corner_blocks:
-                mixed_meta.append((_add(np.vstack(corner_blocks)), scale_arr))
-            else:
-                mixed_meta.append((None, scale_arr))
-
-    # ---- reduction: given this plan's predicted chunks, build the result -----
     def reduce(parts: list[NDArray[np.float64]]) -> dict[str, NDArray[np.float64]]:
-        firsts: list[NDArray[np.float64]] = []
-        seconds: list[NDArray[np.float64]] = []
-        for bi, steps in enumerate(steps_per_band):
-            block = parts[main_chunk_idx[bi]]
-            if vector_branch:
-                k = steps.size
-                means = np.mean(block.reshape(k, 3, sample_size), axis=2)
-                lo = means[:, 0]
-                mid = means[:, 1]
-                up = means[:, 2]
-                finite = np.isfinite(steps) & (steps != 0.0)
-                with np.errstate(invalid="ignore", divide="ignore"):
-                    f = (up - lo) / (2.0 * steps)
-                    s = (up - 2.0 * mid + lo) / (steps**2)
-                f = np.where(finite, f, np.nan)
-                s = np.where(finite, s, np.nan)
-            else:
-                n_eval = steps.size
-                lo = block[:n_eval]
-                mid = block[n_eval : 2 * n_eval]
-                up = block[2 * n_eval :]
-                finite = np.isfinite(steps) & (steps != 0.0)
-                with np.errstate(invalid="ignore", divide="ignore"):
-                    f = (up - lo) / (2.0 * steps)
-                    s = (up - 2.0 * mid + lo) / (steps**2)
-                f = np.where(finite, f, np.nan)
-                s = np.where(finite, s, np.nan)
-            firsts.append(f)
-            seconds.append(s)
+        first = np.full((points.size, widths.size), np.nan)
+        second = np.full((points.size, widths.size), np.nan)
+        for index, band, point_index, context_rows, w_first, w_second in specifications:
+            predicted = np.asarray(parts[index], dtype=np.float64)
+            means = np.mean(predicted.reshape(-1, context_rows), axis=1)
+            centered = means - means[0]
+            first[point_index, band] = float(np.sum(w_first * centered))
+            second[point_index, band] = float(np.sum(w_second * centered))
 
-        result = {"First": _row_nanmean(firsts), "Second": _row_nanmean(seconds)}
+        def average(a: NDArray[np.float64]) -> NDArray[np.float64]:
+            with np.errstate(invalid="ignore"):
+                numerator = np.nansum(a, axis=1)
+                count = np.sum(~np.isnan(a), axis=1)
+                return np.divide(
+                    numerator, count,
+                    out=np.full(a.shape[0], np.nan),
+                    where=count > 0,
+                )
 
+        result = {"First": average(first), "Second": average(second)}
         if mixed:
-            mixeds: list[NDArray[np.float64]] = []
-            for chunk_idx, scale_arr in mixed_meta:
-                vals = np.full(scale_arr.size, np.nan)
-                if chunk_idx is not None:
-                    z = parts[chunk_idx]
-                    pos = 0
-                    for m in range(scale_arr.size):
-                        if np.isfinite(scale_arr[m]):
-                            c = z[pos : pos + 4]
-                            vals[m] = (c[0] + c[3] - c[1] - c[2]) / scale_arr[m]
-                            pos += 4
-                mixeds.append(vals)
-            result["Mixed"] = _row_nanmean(mixeds)
+            matrix = np.full((points.size, widths.size), np.nan)
+            for index, band, point_index, weights in mixed_specs:
+                predicted = np.asarray(parts[index], dtype=np.float64)
+                matrix[point_index, band] = float(
+                    np.sum(weights * (predicted - predicted[0]))
+                )
+            result["Mixed"] = average(matrix)
         return result
 
     return chunks, reduce
-
-
 
 
 def _dy_d_expand_predictors(

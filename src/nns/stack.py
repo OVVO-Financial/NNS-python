@@ -491,7 +491,7 @@ def nns_stack(
         return rng.sample(combined).astype(np.int64)
 
     def numeric_design(
-        train: NDArray[np.float64], test: NDArray[np.float64]
+        train: NDArray[np.float64], test: NDArray[np.float64], *, scale: bool = True
     ) -> dict[str, Any]:
         # Factor columns hold 1..K codes of the full-training levels (R keeps a
         # factor's levels when the rows are subset), so every split gets one
@@ -546,8 +546,8 @@ def nns_stack(
         trange = tmax - tmin
         trange = np.where(~np.isfinite(trange) | (trange == 0), 1.0, trange)
         return {
-            "train": (train_matrix - tmin) / trange,
-            "test": (test_matrix - tmin) / trange,
+            "train": (train_matrix - tmin) / trange if scale else train_matrix,
+            "test": (test_matrix - tmin) / trange if scale else test_matrix,
             "minimum": tmin,
             "range": trange,
             "source": np.concatenate(source_blocks),
@@ -809,6 +809,26 @@ def nns_stack(
         best = scores[valid].min() if objective_value == "min" else scores[valid].max()
         tied = valid[scores[valid] == best]
         return int(tied[math.ceil(tied.size / 2) - 1])
+
+    if is_class:
+        # R 14.0 delegates nominal outcomes to Classification_Stack.R, which
+        # scores *probability matrices*, not regression on numeric class codes.
+        # This branch is intentionally separate from the legacy numeric fit.
+        from nns._stack_class_r14 import classify_stack_r14
+
+        return classify_stack_r14(
+            x=x, z=z, y=y, class_values=class_values,
+            response_categorical=response_categorical,
+            predictor_levels=predictor_levels,
+            methods=methods, order=order_value, dist=dist_value,
+            dim_red_method=dim_red_value,
+            splits=splits, balance_indices=balance_indices,
+            numeric_design=numeric_design, score=score, stack=stack,
+            objective=objective_value, optimize_threshold=optimize_threshold,
+            pred_int=pred_int, status=status,
+            tau="ts" if ts_test_value is not None else None,
+            return_fit=return_fit,
+        )
 
     full_design = numeric_design(x, z)
     encoded_p = full_design["train"].shape[1]

@@ -12,11 +12,12 @@ def test_nns_anova_identical_degenerate_groups_match_r_convention() -> None:
 
     result = nns_anova(constant, constant, confidence_interval=None)
 
-    # The degree-1 ratios at a point mass are the degree-0 ratios, so
-    # the CDFs are 1 and the patched R reports Certainty 0 (13.3 gave NaN).
+    # R 14.0 Binary_ANOVA.R: identical constants attain rho = 1, then
+    # apply ((n_control + n_treatment - 2) / total_n)**2.  For two
+    # 100-observation groups this is exactly 0.9801, not the old 0.
     assert isinstance(result, dict)
     assert result["Control_CDF"] == result["Treatment_CDF"] == 1.0
-    assert result["Certainty"] == 0.0
+    assert result["Certainty"] == pytest.approx(((200 - 2) / 200) ** 2)
     assert result["Control"] == result["Treatment"]
 
 
@@ -56,7 +57,9 @@ def test_nns_anova_robust_degenerate_inputs_do_not_crash() -> None:
 
     assert isinstance(result, dict)
     assert "Robust Certainty Estimate" in result
-    assert result["Robust Certainty Estimate"] == 0.0
+    # Every bootstrap draw contains the same constant, so the robust
+    # estimate is the R14 population-adjusted rho of two 20-row groups.
+    assert result["Robust Certainty Estimate"] == pytest.approx(((40 - 2) / 40) ** 2)
 
 
 @pytest.mark.stochastic

@@ -159,10 +159,17 @@ def _task(
     """
     if type_value is not None:
         if not isinstance(type_value, str):
-            raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
+            raise ValueError("[type] must be NULL, 'REG', 'CLASS', or 'XONLY'.")
         type_value = type_value.lower()
-        if type_value not in {"class", "xonly"}:
-            raise ValueError("[type] must be NULL, 'CLASS', or 'XONLY'.")
+        if type_value not in {"reg", "class", "xonly"}:
+            raise ValueError("[type] must be NULL, 'REG', 'CLASS', or 'XONLY'.")
+        # R .nns_reg_type explicitly permits REG to override automatic
+        # binary (0/1) classification, but rejects a nonnumeric response.
+        if type_value == "reg" and (
+            categories is not None or class_levels is not None
+            or y.dtype.kind == "b" or is_text(y)
+        ):
+            raise ValueError("[type = 'REG'] requires a numeric response.")
 
     declared = class_levels if class_levels is not None else categories
     what = "class_levels" if class_levels is not None else "y categories"
@@ -479,15 +486,24 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
     if np.unique(x).size < 2 or np.unique(y).size < 2:
         return 0.1
     try:
-        d1 = float(nns_dep(x, y, asym=True)["Dependence"])
+        # R14 Regression.R .nns_reg_dependence deliberately uses the
+        # finest-cell/local statistic, *not* public NNS.dep's max-level score.
+        from nns._dep_r14 import dep_local_r14
+
+        d1 = float(dep_local_r14(x, y, asym=True))
     except Exception:
         d1 = float("nan")
     try:
         from nns.copula import _copula, _r_col_means
 
         m = np.column_stack((_rescale_01(x), _rescale_01(x), _rescale_01(y)))
-        target = _r_col_means(m)
-        d2 = float(_copula(m, target, continuous=True))
+        reflected = m.copy()
+        reflected[:, 2] = 1.0 - reflected[:, 2]
+        # R14 takes both orientations to make the depth independent of the
+        # sign convention for the response.
+        d2_forward = float(_copula(m, _r_col_means(m), continuous=True))
+        d2_reverse = float(_copula(reflected, _r_col_means(reflected), continuous=True))
+        d2 = 0.5 * (d2_forward + d2_reverse)
     except Exception:
         d2 = float("nan")
     parts = [v for v in (d1, d2) if math.isfinite(v)]
@@ -1522,6 +1538,7 @@ def _m_reg(
     class_values: NDArray[np.float64] | None,
     class_levels: list[str] | None,
     variable_names: list[str] | None = None,
+    categorical: bool = False,
 ) -> dict[str, Any]:
     if x.shape[0] != y.size:
         raise ValueError(f"[X_n] has {x.shape[0]} rows but [Y] has {y.size} values.")
@@ -1533,12 +1550,17 @@ def _m_reg(
     mins = np.min(x, axis=0)
     maxs = np.max(x, axis=0)
 
+    # R 14.0 NNS.M.reg: fully categorical designs are exact joint-cell
+    # models, not continuous multivariate neighbor models.  Factor dummies
+    # retain their original categorical status after numeric encoding.
+    if categorical:
+        order = "max"
     partition = _mreg_partition_matrix(x, y, order, noise_reduction, is_class)
     rpm_x, rpm_yhat = _mreg_build_rpm(x, y, partition["ids"], noise_reduction, is_class)
     if rpm_x.shape[0] == 0:
         raise ValueError("NNS.M.reg produced an empty RPM.")
 
-    if n_best is None and order == "max":
+    if n_best is None and (categorical or order == "max"):
         k = 1
     elif n_best is None:
         k = _mreg_default_nbest(x, y, rpm_x.shape[0])
@@ -1695,6 +1717,19 @@ def nns_reg_engine(
     if task["is_xonly"] and ex.shape[1] != 1:
         raise ValueError("[type = 'XONLY'] is only valid for a single encoded predictor.")
 
+    # R14 nominal classes are probability-valued indicators, never numeric
+    # regression on arbitrary class codes. This branch precedes NNS.M.reg and
+    # the former univariate class interpolation. NNS.M.reg's standalone
+    # `multivariate_only` mode retains its own separate public contract.
+    if task["is_class"] and not multivariate_only and not multivariate_call:
+        from nns._class_r14 import classify
+
+        return classify(
+            encoded, task, order=order, n_best=n_best, dist=dist,
+            dim_red_method=dim_red_method, tau=tau, threshold=threshold,
+            point_only=point_only, confidence_interval=confidence_interval,
+        )
+
     # Full multivariate regression.
     if ex.shape[1] > 1 and dim_red_method is None:
         return _m_reg(
@@ -1711,6 +1746,7 @@ def nns_reg_engine(
             class_values=task["class_values"],
             class_levels=task["class_levels"],
             variable_names=encoded.get("encoded_names"),
+            categorical=all(meta["categorical"] for meta in encoded["metadata"]),
         )
 
     synthetic_equation = None

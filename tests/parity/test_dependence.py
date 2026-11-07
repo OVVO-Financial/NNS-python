@@ -221,4 +221,10 @@ def test_nns_dep_fallback_keeps_the_sign_of_fully_discordant_cells(
 
     np.testing.assert_allclose(actual["Correlation"], _scalar(expected["Correlation"]), atol=EXACT)
     np.testing.assert_allclose(actual["Dependence"], _scalar(expected["Dependence"]), atol=EXACT)
-    assert actual["Correlation"] < 0.0
+    if x.size == 2:
+        # R14's null_T0 for two distinct observations is exactly 1:
+        # concordance/discordance is forced by the finite sample and carries
+        # zero debiased evidence. The old "negative" test cannot apply here.
+        assert actual["Correlation"] == pytest.approx(0.0, abs=EXACT)
+    else:
+        assert actual["Correlation"] < 0.0

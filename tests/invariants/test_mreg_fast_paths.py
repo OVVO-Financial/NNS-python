@@ -116,27 +116,38 @@ def test_rpm_cell_reduction_matches_per_cell_reducer(
 
 
 @pytest.mark.parametrize("noise_reduction", ["off", "mean", "median"])
-@pytest.mark.parametrize("type_", [None, "CLASS"])
 def test_order_max_identity_shortcut_matches_k1_distance_rule(
-    noise_reduction: str, type_: str | None
+    noise_reduction: str
 ) -> None:
     rng = np.random.default_rng(11)
     x = rng.integers(0, 4, size=(300, 3)).astype(float)  # many duplicate rows
     x[:100] = rng.normal(size=(100, 3))
     y = x.sum(axis=1) + rng.normal(size=300)
-    if type_ is not None:
-        y = (y > np.median(y)).astype(float)
-    fit = nns_reg(x, y, order="max", noise_reduction=noise_reduction, type=type_)
+    # Numeric REG follows NNS.M.reg; R14 CLASS uses a different nominal
+    # probability model, so it must not be tested against its RPM y.hat rule.
+    fit = nns_reg(x, y, order="max", noise_reduction=noise_reduction)
     rpm = fit["RPM"]
     rpm_x = np.column_stack([rpm[k] for k in rpm if k != "y.hat"])
     expected = _mreg_predict(
-        x, rpm_x, rpm["y.hat"], 1, "NNS", x.min(axis=0), x.max(axis=0), type_ is not None
+        x, rpm_x, rpm["y.hat"], 1, "NNS", x.min(axis=0), x.max(axis=0), False
     )
     assert expected is not None
-    if type_ is not None:
-        expected = np.unique(y)[np.argmin(np.abs(expected[:, None] - np.unique(y)), axis=1)]
     assert fit["n.best"] == 1
     assert _same(np.asarray(fit["Fitted.xy"]["y.hat"]), expected)
+
+
+def test_order_max_nominal_class_uses_r14_probability_contract() -> None:
+    rng = np.random.default_rng(11)
+    x = rng.integers(0, 4, size=(300, 3)).astype(float)
+    y = (x[:, 0] + 2 * x[:, 1] > 5).astype(float)
+    fit = nns_reg(x, y, order="max", type="CLASS")
+    assert fit["n.best"] == 1
+    assert "y.hat" not in fit["RPM"]  # centres, not REG target averages
+    fitted = fit["Fitted.xy"]["y.hat"]
+    assert set(np.unique(fitted)).issubset(set(np.unique(y)))
+    posterior = np.column_stack(list(fit["Fitted.probabilities"].values()))
+    np.testing.assert_allclose(np.sum(posterior, axis=1), 1.0, atol=1e-12)
+    assert fit["R2"] == pytest.approx(float(np.mean(fitted == y)))
 
 
 def _tied_distances(rng: np.random.Generator, c: int, n: int) -> np.ndarray:

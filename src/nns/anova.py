@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._rmean import r_mean
+from nns.central_tendencies import nns_gravity
 from nns._rrng import RRNG
 from nns.core import lpm_ratio, upm_ratio
 from nns.var import lpm_var, upm_var
@@ -171,6 +172,15 @@ def _anova_bin(
         treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
         if medians:
             mean_of_means = float(np.median(np.concatenate((control, treatment))))
+        elif (
+            control.size > 0 and treatment.size > 0
+            and np.all(control == control[0])
+            and np.all(treatment == treatment[0])
+            and control[0] == treatment[0]
+        ):
+            # R14 Binary_ANOVA.R: identical constants are their own benchmark,
+            # bypassing a weighted mean that may move the target by one ULP.
+            mean_of_means = float(control[0])
         else:
             mean_of_means = (control.size * control_stat + treatment.size * treatment_stat) / (
                 control.size + treatment.size
@@ -209,23 +219,33 @@ def _anova_bin(
     lower_125_ratio_1 = float(lpm_ratio(1, lower_125_target, control))
     lower_125_ratio_2 = float(lpm_ratio(1, lower_125_target, treatment))
 
-    mad_cdf = _r_min(0.5, _r_max(abs(lpm_ratio_1 - 0.5), abs(lpm_ratio_2 - 0.5)))
-    upper_25_cdf = _r_min(
-        0.25,
-        _r_max(abs(upper_25_ratio_1 - 0.25), abs(upper_25_ratio_2 - 0.25)),
-    )
-    lower_25_cdf = _r_min(
-        0.25,
-        _r_max(abs(lower_25_ratio_1 - 0.25), abs(lower_25_ratio_2 - 0.25)),
-    )
-    upper_125_cdf = _r_min(
-        0.125,
-        _r_max(abs(upper_125_ratio_1 - 0.125), abs(upper_125_ratio_2 - 0.125)),
-    )
-    lower_125_cdf = _r_min(
-        0.125,
-        _r_max(abs(lower_125_ratio_1 - 0.125), abs(lower_125_ratio_2 - 0.125)),
-    )
+    # R14's median reference is an interval F(t-) <= 0.5 <= F(t).
+    # For discrete/tied observations, F(t) alone need not be 0.5 even when
+    # identical samples have the correct median. In the area comparisons an
+    # all-constant sample exactly at its target contributes zero discrepancy
+    # rather than the degenerate public step-ratio convention.
+    constant_1 = float(control[0]) if control.size and np.all(control == control[0]) else None
+    constant_2 = float(treatment[0]) if treatment.size and np.all(treatment == treatment[0]) else None
+
+    def area_distance(r1: float, r2: float, target: float, p: float) -> float:
+        d1 = 0.0 if constant_1 is not None and constant_1 == target else abs(r1 - p)
+        d2 = 0.0 if constant_2 is not None and constant_2 == target else abs(r2 - p)
+        return _r_min(p, _r_max(d1, d2))
+
+    if medians:
+        median_distance_1 = max(
+            0.0, float(np.mean(control < mean_of_means)) - 0.5, 0.5 - lpm_ratio_1
+        )
+        median_distance_2 = max(
+            0.0, float(np.mean(treatment < mean_of_means)) - 0.5, 0.5 - lpm_ratio_2
+        )
+        mad_cdf = max(median_distance_1, median_distance_2)
+    else:
+        mad_cdf = area_distance(lpm_ratio_1, lpm_ratio_2, mean_of_means, 0.5)
+    upper_25_cdf = area_distance(upper_25_ratio_1, upper_25_ratio_2, upper_25_target, 0.25)
+    lower_25_cdf = area_distance(lower_25_ratio_1, lower_25_ratio_2, lower_25_target, 0.25)
+    upper_125_cdf = area_distance(upper_125_ratio_1, upper_125_ratio_2, upper_125_target, 0.125)
+    lower_125_cdf = area_distance(lower_125_ratio_1, lower_125_ratio_2, lower_125_target, 0.125)
 
     if means_only:
         rho = ((0.5 - mad_cdf) ** 2) / 0.25
@@ -309,7 +329,9 @@ def _anova_robust(
         rng=rng,
     )
     finite = certainties[~np.isnan(certainties)]
-    base["Robust Certainty Estimate"] = float(np.median(finite)) if finite.size else math.nan
+    # R14 uses NNS.gravity, not the median, on the 100 bootstrap certainty
+    # values. A robust point estimate is therefore not their middle order stat.
+    base["Robust Certainty Estimate"] = nns_gravity(finite) if finite.size else math.nan
     if confidence_interval is None:
         return base
 

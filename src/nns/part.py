@@ -7,8 +7,8 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import native_fn
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
+from nns._native import native_fn
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 
@@ -191,18 +191,10 @@ def _nns_part(
 
     xonly = type is not None
 
-    native_part = native_fn("nns_part_off")
-    if native_part is not None and noise == "off":
-        res = native_part(
-            np.ascontiguousarray(x_values),
-            np.ascontiguousarray(y_values),
-            xonly,
-            int(max_order),
-            int(obs_req),
-            bool(min_obs_stop),
-        )
-        return _part_result_from_native(res, x_values, y_values)
-
+    # The vendored native NNS-core partition routine still embeds R 13.3
+    # gravity. R 14.0 partitions split at the new type-7, observation-centered
+    # gravity. Until the accepted core is synchronized, use the NumPy path for
+    # all noise modes; otherwise even an unmodified input changes its cells.
     # Groups are tracked as dense integer ids whose numeric order equals the
     # lexicographic order of their quadrant labels: the current labels are the
     # leaves of the partition tree (prefix-free), so ordering children by
@@ -445,7 +437,9 @@ def _aggregate_x(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     if finite.size == 0:
         return float("nan")
     if noise == "mode":
-        return _mode(finite)
+        # R14 NNS_part.cpp Agg::for_x uses the *continuous* data mode, not
+        # the rounded integer-class mode used for classification responses.
+        return float(nns_mode(finite, discrete=False, multi=False))
     return _gravity(finite)
 
 
@@ -457,7 +451,9 @@ def _aggregate_y(values: NDArray[np.float64], noise: NoiseReduction) -> float:
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         return float("nan")
-    if noise in {"mode", "mode_class"}:
+    if noise == "mode":
+        return float(nns_mode(finite, discrete=False, multi=False))
+    if noise == "mode_class":
         return _mode(finite)
     return _gravity(finite)
 

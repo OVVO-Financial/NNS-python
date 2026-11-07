@@ -1,5 +1,26 @@
 {
   "entries": {
+    "0ae83df1fa78ecfdc6c601ee27784450b69403cdd9cd1d102377223a61762d89": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.242424242424242,
+          1.18518518518519
+        ],
+        "Period": [
+          2.0,
+          1.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          1.18518518518519,
+          1.18518518518519
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        1.0
+      ]
+    },
     "149f1c0517cb12d3cf62397ab26bdcdbee4291281fc3b07925af6a63e7128016": {
       "all.periods": {
         "Coefficient.of.Variation": [
@@ -21,6 +42,15 @@
         14.0
       ]
     },
+    "18698e25b759ce9d6439b103f6ee16cece864e0aad66fb7b5b0539e3f5fdb5d9": {
+      "all.periods": {
+        "Coefficient.of.Variation": 0.330357142857143,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 0.330357142857143
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
     "2a465bf4355259271dfd64adc3644b333f05b83b4179fb6a5e53c19d99c5b756": {
       "all.periods": {
         "Coefficient.of.Variation": 0.0,
@@ -30,6 +60,76 @@
       "best.period": 0.0,
       "periods": 0.0
     },
+    "36216562e6c7694cc8562058aa72b046800469c2cafc246ce3962a19442eb0d6": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.104714743068686,
+          0.484429065743945,
+          0.484429065743945
+        ],
+        "Period": [
+          3.0,
+          1.0,
+          7.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.484429065743945,
+          0.484429065743945,
+          0.484429065743945
+        ]
+      },
+      "best.period": 3.0,
+      "periods": [
+        3.0,
+        1.0,
+        7.0
+      ]
+    },
+    "3699d065eb51ea099d98c460d68c74cf4397c4fa786d4918052aa7cf5bf61cb3": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.0874794329283644,
+          0.704785431339528,
+          0.756118416298636,
+          0.77833913049957,
+          0.791061122070961,
+          0.807262555283618,
+          0.807292898921154,
+          0.812687279477668
+        ],
+        "Period": [
+          12.0,
+          6.0,
+          13.0,
+          4.0,
+          18.0,
+          2.0,
+          3.0,
+          8.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758,
+          0.815065564701758
+        ]
+      },
+      "best.period": 12.0,
+      "periods": [
+        12.0,
+        6.0,
+        13.0,
+        4.0,
+        18.0,
+        2.0,
+        3.0,
+        8.0
+      ]
+    },
     "47dad0a7925cc4506650cd3be4a2dc17f1e0468e280b7f8bce01fe09d9ac3073": {
       "all.periods": {
         "Coefficient.of.Variation": 0.0,
@@ -38,6 +138,64 @@
       },
       "best.period": 0.0,
       "periods": 0.0
+    },
+    "53f4f87585fa7aaa0550343e64d192fc80db702deae472721872a000a586da9a": {
+      "all.periods": {
+        "Coefficient.of.Variation": 1.32,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 1.32
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
+    "58fdb063182469619d7f98b02c08747b4d253365a914ef5cd47731a15252d08a": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.111067951606957,
+          0.104043881749918,
+          0.108550902899183,
+          0.108675503458388,
+          0.108744599034086,
+          0.109514012137309,
+          0.110933470575983,
+          0.111131803805213,
+          0.11140609037681
+        ],
+        "Period": [
+          10.0,
+          29.0,
+          34.0,
+          23.0,
+          37.0,
+          35.0,
+          8.0,
+          24.0,
+          2.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191,
+          0.111579245769191
+        ]
+      },
+      "best.period": 10.0,
+      "periods": [
+        10.0,
+        29.0,
+        34.0,
+        23.0,
+        37.0,
+        35.0,
+        8.0,
+        24.0,
+        2.0
+      ]
     },
     "6e69e649e3d9ad39f6a795c927c2651c12705d49beba836885c7afa4cdb6d8f6": {
       "all.periods": {
@@ -112,6 +270,15 @@
         4.0,
         8.0
       ]
+    },
+    "7eb75c6dbcd2b0769dfdd86f25fe75a057b0e74ca77246863db66869e6fc8617": {
+      "all.periods": {
+        "Coefficient.of.Variation": 0.484429065743945,
+        "Period": 7.0,
+        "Variable.Coefficient.of.Variation": 0.484429065743945
+      },
+      "best.period": 7.0,
+      "periods": 7.0
     },
     "833045ed8b28ed050ad935047c36f9c6482faac9f826ea118d780c811e62a3ee": {
       "all.periods": {
@@ -190,6 +357,81 @@
         6.0,
         8.0
       ]
+    },
+    "962eed7355172e676faf99ad250144679f4c6f2f971861b24f86e54b01cc874e": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.0986044535709393,
+          0.103363701855254,
+          0.153478258101664,
+          0.158169649782585,
+          0.167566539183155,
+          0.168601245618771,
+          0.174590061085736,
+          0.174727125799227
+        ],
+        "Period": [
+          12.0,
+          24.0,
+          25.0,
+          6.0,
+          18.0,
+          23.0,
+          4.0,
+          3.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933,
+          0.17767570187933
+        ]
+      },
+      "best.period": 12.0,
+      "periods": [
+        12.0,
+        24.0,
+        25.0,
+        6.0,
+        18.0,
+        23.0,
+        4.0,
+        3.0
+      ]
+    },
+    "99eab72e041a9a9a52e1868b5c426ab33517a5c41373c5b7d66b794c74cc3d8e": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.551378446115288,
+          0.601503759398496
+        ],
+        "Period": [
+          2.0,
+          4.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          5.48476454293629,
+          5.48476454293629
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        4.0
+      ]
+    },
+    "b3776005273d5b4de09d8708f1171783baa5e875e6be7ed9f594186e7c53e144": {
+      "all.periods": {
+        "Coefficient.of.Variation": 1.11224489795918,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 1.11224489795918
+      },
+      "best.period": 1.0,
+      "periods": 1.0
     },
     "b93e008a38dbda637112c3455857671da5ca1168fb9d70f7475311dcd6faa937": {
       "all.periods": {
@@ -273,6 +515,15 @@
         10.0
       ]
     },
+    "ce977597e5c76e64b77528e20645e5b7878fbe8011722afda1e239a06e38566a": {
+      "all.periods": {
+        "Coefficient.of.Variation": 0.514285714285714,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 0.514285714285714
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
     "d40ea665298a3a2c14aec59fe57f49ed8d6873e393ea1f5c071c990e9042c6ef": {
       "all.periods": {
         "Coefficient.of.Variation": 0.0,
@@ -287,6 +538,36 @@
         "Coefficient.of.Variation": 0.0,
         "Period": 1.0,
         "Variable.Coefficient.of.Variation": 0.0
+      },
+      "best.period": 1.0,
+      "periods": 1.0
+    },
+    "ee5a39ba8997e666d275e754854839f198a3f736063c61e0cdb74e2e6579991d": {
+      "all.periods": {
+        "Coefficient.of.Variation": [
+          0.116773623937546,
+          0.11572718761337
+        ],
+        "Period": [
+          2.0,
+          4.0
+        ],
+        "Variable.Coefficient.of.Variation": [
+          0.13197629841149,
+          0.13197629841149
+        ]
+      },
+      "best.period": 2.0,
+      "periods": [
+        2.0,
+        4.0
+      ]
+    },
+    "fad1f5c95603fdd43f17dd2341e4894c87bc5b7c6530c60c96cab27192fe8522": {
+      "all.periods": {
+        "Coefficient.of.Variation": 1.18518518518519,
+        "Period": 1.0,
+        "Variable.Coefficient.of.Variation": 1.18518518518519
       },
       "best.period": 1.0,
       "periods": 1.0

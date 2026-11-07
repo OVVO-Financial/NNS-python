@@ -162,6 +162,13 @@ def test_nns_cdf_multivariate_cdf_matches_r(degree: float) -> None:
 def test_nns_cdf_multivariate_types_and_target_match_r(type_name: str) -> None:
     matrix = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 3.0]])
 
+    if type_name == "hazard":
+        # R14 Partial_Moments.R rejects a multivariate hazard; no numerical
+        # oracle value exists. Do not silently invent one in the cache.
+        with pytest.raises(ValueError, match="Multivariate type.*hazard.*not implemented"):
+            nns_cdf(matrix, degree=0.0, target=np.array([2.0, 2.0]), type=type_name)
+        return
+
     expected = cast(
         dict[str, object],
         nns_cdf_custom(matrix.tolist(), degree=0.0, target=[2.0, 2.0], type=type_name),
@@ -205,6 +212,19 @@ def test_nns_cdf_trivariate_types_and_target_match_r(type_name: str, degree: flo
     # subsets, and target.value is the same function as the rows.
     matrix = _trivariate_matrix()
     target = [0.1, 0.0, -0.2]
+
+    if type_name == "hazard":
+        # A joint hazard is explicitly not implemented in R14; test its
+        # rejection instead of requesting a missing R cache value.
+        with pytest.raises(ValueError, match="Multivariate type.*hazard.*not implemented"):
+            nns_cdf(matrix, degree=degree, target=np.array(target), type=type_name)
+        return
+    if degree > 0.0 and type_name == "cumulative hazard":
+        # Degree-positive co-partial ratios are not joint distribution
+        # functions. R14 refuses the cumulative-hazard interpretation.
+        with pytest.raises(ValueError, match="needs degree = 0"):
+            nns_cdf(matrix, degree=degree, target=np.array(target), type=type_name)
+        return
 
     expected = cast(
         dict[str, object],

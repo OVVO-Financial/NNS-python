@@ -138,6 +138,19 @@ def _multivariate_cdf(
         raise ValueError("variable must have at least one complete row and one column.")
     if not np.all(np.isfinite(values)):
         raise ValueError("variable must contain only finite values.")
+    # R14 explicitly rejects the joint hazard without a defined multivariate
+    # density or coordinate-hazard construction. At positive degree, its
+    # normalized co-partial moments are not a joint CDF and cannot be used
+    # for a cumulative-hazard interpretation either.
+    if type_value == "hazard":
+        raise ValueError(
+            "Multivariate type = 'hazard' is not implemented: a joint density "
+            "or coordinate-hazard definition is required."
+        )
+    if degree > 0.0 and type_value == "cumulative hazard":
+        raise ValueError(
+            "type = 'cumulative hazard' needs degree = 0 for multivariate variable"
+        )
     target_values = _multivariate_target(target, values)
     column_names = _matrix_names(values.shape[1], names)
 

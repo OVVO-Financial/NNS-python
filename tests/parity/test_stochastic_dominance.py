@@ -371,6 +371,15 @@ def _sd_result_from_r(
 def _sd_result_from_r_typed(x: np.ndarray, y: np.ndarray, type_: str) -> int:
     result = nns("NNS.FSD", x.tolist(), y.tolist(), type_, False)
     assert isinstance(result, str)
+    # R14 intentionally renamed the *continuous* FSD option to Omega/
+    # expectile order: it is not ordinary first-order stochastic dominance.
+    # The numerical comparison is unchanged; require the current R labels.
+    if type_ != "discrete":
+        return {
+            "X OMEGA Y": 1,
+            "Y OMEGA X": -1,
+            "NO OMEGA DOMINANCE EXISTS": 0,
+        }[result]
     return {"X FSD Y": 1, "Y FSD X": -1, "NO FSD EXISTS": 0}[result]
 
 

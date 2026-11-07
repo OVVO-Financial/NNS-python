@@ -155,7 +155,9 @@ def test_discrete_nns_mode_breaks_ties_by_gravity_not_their_mean() -> None:
     )
     beyond_int = np.array([3e9, 3e9, -5e9, -5e9, 1.0])
     np.testing.assert_array_equal(nns_mode(beyond_int, discrete=True, multi=True), [-5e9, 3e9])
-    assert nns_mode(beyond_int, discrete=True, multi=False) == -5e9
+    # R 14.0's type-7 gravity can select the positive tie instead of the
+    # old floor-quartile winner; selection must follow gravity, not hardcode it.
+    assert nns_mode(beyond_int, discrete=True, multi=False) == nearest(beyond_int)
 
 
 @pytest.mark.invariant

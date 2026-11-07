@@ -303,15 +303,44 @@ def test_nns_arma_optim_returns_forecast_dictionary() -> None:
         "shrink",
         "nns.regress",
         "bias.shift",
+        "bias.validation",
+        "raw.results",
+        "validation.forecast",
         "errors",
         "results",
         "lower.pred.int",
         "upper.pred.int",
     ]
+    assert result["bias.validation"]["policy"] == "none"
+    assert result["bias.validation"]["applied.shift"] == 0.0
+    assert result["raw.results"].shape == (3,)
+    assert result["validation.forecast"].shape == (8,)
     assert result["results"].shape == (3,)
     assert result["lower.pred.int"].shape == (3,)
     assert result["upper.pred.int"].shape == (3,)
     assert np.all(np.isfinite(result["results"]))
+
+
+def test_nns_arma_optim_bias_policy_matches_r14_chronological_split() -> None:
+    raw = np.array([2., 4., 6., 8., 10., 12.])
+    actual = raw + 1.
+    objective = lambda predicted, target: float(np.mean((predicted - target) ** 2))
+
+    no_bias = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "none")
+    assert no_bias["policy"] == "none"
+    assert no_bias["applied.shift"] == 0.0
+    assert no_bias["status"] == "disabled"
+    assert no_bias["estimate.rows"].size == no_bias["acceptance.rows"].size == 0
+
+    split = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "split")
+    np.testing.assert_array_equal(split["estimate.rows"], [1, 2, 3])
+    np.testing.assert_array_equal(split["acceptance.rows"], [4, 5, 6])
+    assert split["estimated.shift"] == pytest.approx(1.0)
+    assert split["applied.shift"] == pytest.approx(1.0)
+    assert split["raw.score"] == pytest.approx(1.0)
+    assert split["adjusted.score"] == pytest.approx(0.0)
+    assert split["accepted"] is True
+    assert split["status"] == "accepted"
 
 
 def test_nns_arma_optim_validation_matches_installed_r() -> None:
@@ -460,6 +489,8 @@ def test_nns_arma_optim_clamps_validation_forecasts_from_a_nonnegative_training_
     np.testing.assert_allclose(
         o["errors"], [-0.77795363490564584, -0.5, -0.2, -0.1, 0.1], rtol=1e-12
     )
-    assert o["bias.shift"] == pytest.approx(0.32960245291969226, rel=1e-12)
+    # R14 defaults to bias.correction = "none": no in-sample gravity shift.
+    assert o["bias.shift"] == 0.0
+    assert o["bias.validation"]["status"] == "disabled"
     # The out-of-sample forecast is fitted on the whole series, which is negative.
     assert np.any(run(h=3)["results"] < 0.0)

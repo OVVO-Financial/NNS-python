@@ -54,22 +54,14 @@ def nns_dep(
         return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
 
-    native_dep_pair = native_fn("nns_dep_pair")
-    if native_dep_pair is not None:
-        res = native_dep_pair(
-            np.ascontiguousarray(x_values),
-            np.ascontiguousarray(y_values),
-            bool(asym),
-        )
-        return {"Correlation": float(res["Correlation"]), "Dependence": float(res["Dependence"])}
+    # Native NNS-core currently exposes the R 13.3 finest-cell estimator.
+    # R 14.0 is *not* the same statistic: each distinct prefix-partition
+    # level is debiased under its permutation null and the strongest of the
+    # conditional / joint partitions is selected. Do not call the old native
+    # kernel until the upstream NNS-core sync is approved and rebuilt.
+    from nns._dep_r14 import dep_pair_r14
 
-    if _is_constant(x_values) or _is_constant(y_values):
-        return {"Correlation": 0.0, "Dependence": 0.0}
-
-    obs_req = max(8, x_values.size // 8)
-    quad_xy = _xonly_partition(x_values, obs_req)
-    quad_yx = _xonly_partition(y_values, obs_req)
-    correlation, dependence = _dep_pair(x_values, y_values, quad_xy, quad_yx, asym)
+    correlation, dependence = dep_pair_r14(x_values, y_values, asym)
     return {"Correlation": correlation, "Dependence": dependence}
 
 
@@ -427,64 +419,77 @@ def _as_nd_moment_inputs(
 
 
 def _gravity(x: NDArray[np.float64]) -> float:
-    """NNS gravity central tendency (R ``NNS.gravity``) used by the partitioners.
+    """R 14.0 gravity for partition splits while NNS-core is being synchronized.
 
-    The native ``gravity_exact`` kernel is NNS-core's ``nns::gravity``; the
-    NumPy fallback below computes the same value bit for bit.
+    The vendored native gravity_exact implements the earlier 13.3 statistic:
+    using it would change the partition tree and every derived regression
+    estimate. Do not silently substitute it for this R 14.0 oracle.
     """
     values = np.asarray(x, dtype=np.float64).reshape(-1)
-    native_gravity_exact = native_fn("gravity_exact")
-    if native_gravity_exact is not None:
-        return float(native_gravity_exact(np.ascontiguousarray(values)))
     return _gravity_python(values)
 
 
 def _gravity_python(x: NDArray[np.float64]) -> float:
-    """NumPy port of NNS-core ``nns::gravity`` (R ``NNS_gravity_cpp``), non-discrete.
+    """Match R 14.0 NNS_gravity_cpp, without allocating a dense histogram.
 
-    Like R, the mean and the weighted bin average are long-double sequential
-    sums. The histogram stores only the occupied bins: gravity reads at most the
-    neighbours of the fullest bin, so the empty ones never matter.
+    R 14.0 uses type-7 quartiles and the *observations* in the modal bin
+    neighborhood (not the left edges of the bins). Tied maximum-frequency
+    bins select the entire sample. Long-double accumulation follows R's
+    compiled implementation. Sparse bin indices preserve very large gaps.
     """
-    finite = x[np.isfinite(x)]
+    values = np.asarray(x, dtype=np.float64)
+    finite = values[np.isfinite(values)]
     n = finite.size
     if n == 0:
         return float("nan")
     if n <= 3:
         return _small_median(finite)
     if np.all(finite == finite[0]):
-        return float(finite[0])  # the first value in input order (+-0.0 kept)
-    values = np.sort(finite)
+        return float(finite[0])
+    ordered = np.sort(finite)
+    span = abs(float(ordered[-1]) - float(ordered[0]))
+    if span == 0.0:
+        return float(ordered[0])
 
-    value_range = abs(float(values[-1]) - float(values[0]))
-    if value_range == 0.0:
-        return float(values[0])
+    # R's quantile(type=7): h = (n - 1) * p, with zero-based indices.
+    def type7(p: float) -> float:
+        h = (n - 1) * p
+        lo = math.floor(h)
+        hi = min(lo + 1, n - 1)
+        return float(ordered[lo] + (h - lo) * (ordered[hi] - ordered[lo]))
 
-    q1, q2, q3 = _quartiles_like_r_code(values)
+    q1, q2, q3 = type7(0.25), type7(0.50), type7(0.75)
     width = (q3 - q1) * n**-0.5
     if not (width > 0.0 and math.isfinite(width)):
-        width = value_range / 128.0
+        width = span / 128.0
 
-    origin = float(values[0])
-    bin_count, width, occupied, counts = _sparse_bin_counts(values, width, origin)
+    _, used_width, occupied, counts = _sparse_bin_counts(
+        ordered, width, float(ordered[0])
+    )
     max_count = int(np.max(counts))
-    max_positions = np.flatnonzero(counts == max_count)
-    if max_positions.size == 1:
-        center = int(occupied[max_positions[0]])
-        bins = np.arange(max(0, center - 1), min(bin_count - 1, center + 1) + 1, dtype=np.int64)
-        selected_counts = _counts_at(bins, occupied, counts)
-    else:
-        # Every bin is averaged; empty ones add exact zeros to R's sums.
-        bins = occupied
-        selected_counts = counts
-    names = (origin + bins.astype(np.float64) * width).astype(np.longdouble)
-    # R's long-double sums start at +0.0 (an all-(-0.0) sum is +0.0).
+    winners = np.flatnonzero(counts == max_count)
+
     zero = np.longdouble(0.0)
-    weighted = zero + np.cumsum(names * selected_counts.astype(np.longdouble))[-1]
-    mode_gravity = float(weighted / np.longdouble(int(np.sum(selected_counts))))
-    mean = float((zero + np.cumsum(values.astype(np.longdouble))[-1]) / np.longdouble(n))
-    out = 0.25 * (q2 + mode_gravity + mean + 0.5 * (q1 + q3))
-    return float(out) if math.isfinite(out) else float(q2)
+    mean = float(
+        (zero + np.cumsum(ordered.astype(np.longdouble))[-1]) / np.longdouble(n)
+    )
+    if winners.size != 1:
+        modal_mean = mean
+    else:
+        # Include all observations from the winning bin and its two neighbors.
+        # This is a contiguous interval because the inputs are sorted.
+        center = int(occupied[int(winners[0])])
+        with np.errstate(over="ignore", divide="ignore"):
+            positions = np.floor((ordered - float(ordered[0])) / used_width)
+        selected = (positions >= center - 1) & (positions <= center + 1)
+        modal_observations = ordered[selected]
+        modal_mean = float(
+            (zero + np.cumsum(modal_observations.astype(np.longdouble))[-1])
+            / np.longdouble(modal_observations.size)
+        )
+
+    result = 0.25 * (q2 + modal_mean + mean + 0.5 * (q1 + q3))
+    return float(result) if math.isfinite(result) else float(q2)
 
 
 def _small_median(values: NDArray[np.float64]) -> float:

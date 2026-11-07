@@ -2,16 +2,16 @@
   "entries": {
     "e8d2399a748bb02de1549c54317866a366a54e811dabd605217c3695657f1e92": {
       "names": [
+        "gear_X10",
         "gear_X3",
         "gear_X4",
-        "gear_X10",
         "wt",
         "y.hat"
       ],
-      "r2": 0.885518708441752
+      "r2": 0.731161385675825
     }
   },
   "label": "labels.reg.numeric_strings",
-  "nns_version": "13.3",
+  "nns_version": "14.0",
   "schema_version": 2
 }
