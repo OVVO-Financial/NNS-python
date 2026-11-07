@@ -303,11 +303,18 @@ def test_nns_arma_optim_returns_forecast_dictionary() -> None:
         "shrink",
         "nns.regress",
         "bias.shift",
+        "bias.validation",
+        "raw.results",
+        "validation.forecast",
         "errors",
         "results",
         "lower.pred.int",
         "upper.pred.int",
     ]
+    assert result["bias.validation"]["policy"] == "none"
+    assert result["bias.validation"]["applied.shift"] == 0.0
+    assert result["raw.results"].shape == (3,)
+    assert result["validation.forecast"].shape == (7,)
     assert result["results"].shape == (3,)
     assert result["lower.pred.int"].shape == (3,)
     assert result["upper.pred.int"].shape == (3,)
@@ -460,6 +467,8 @@ def test_nns_arma_optim_clamps_validation_forecasts_from_a_nonnegative_training_
     np.testing.assert_allclose(
         o["errors"], [-0.77795363490564584, -0.5, -0.2, -0.1, 0.1], rtol=1e-12
     )
-    assert o["bias.shift"] == pytest.approx(0.32960245291969226, rel=1e-12)
+    # R14 defaults to bias.correction = "none": no in-sample gravity shift.
+    assert o["bias.shift"] == 0.0
+    assert o["bias.validation"]["status"] == "disabled"
     # The out-of-sample forecast is fitted on the whole series, which is negative.
     assert np.any(run(h=3)["results"] < 0.0)
