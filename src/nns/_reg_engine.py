@@ -1531,6 +1531,7 @@ def _m_reg(
     class_values: NDArray[np.float64] | None,
     class_levels: list[str] | None,
     variable_names: list[str] | None = None,
+    categorical: bool = False,
 ) -> dict[str, Any]:
     if x.shape[0] != y.size:
         raise ValueError(f"[X_n] has {x.shape[0]} rows but [Y] has {y.size} values.")
@@ -1542,12 +1543,17 @@ def _m_reg(
     mins = np.min(x, axis=0)
     maxs = np.max(x, axis=0)
 
+    # R 14.0 NNS.M.reg: fully categorical designs are exact joint-cell
+    # models, not continuous multivariate neighbor models.  Factor dummies
+    # retain their original categorical status after numeric encoding.
+    if categorical:
+        order = "max"
     partition = _mreg_partition_matrix(x, y, order, noise_reduction, is_class)
     rpm_x, rpm_yhat = _mreg_build_rpm(x, y, partition["ids"], noise_reduction, is_class)
     if rpm_x.shape[0] == 0:
         raise ValueError("NNS.M.reg produced an empty RPM.")
 
-    if n_best is None and order == "max":
+    if n_best is None and (categorical or order == "max"):
         k = 1
     elif n_best is None:
         k = _mreg_default_nbest(x, y, rpm_x.shape[0])
@@ -1733,6 +1739,7 @@ def nns_reg_engine(
             class_values=task["class_values"],
             class_levels=task["class_levels"],
             variable_names=encoded.get("encoded_names"),
+            categorical=all(meta["categorical"] for meta in encoded["metadata"]),
         )
 
     synthetic_equation = None
