@@ -7,8 +7,8 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._native import native_fn as native_fn
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
-from nns._native import native_fn
 from nns.central_tendencies import nns_mode
 from nns.dependence import _gravity
 
@@ -191,10 +191,9 @@ def _nns_part(
 
     xonly = type is not None
 
-    # The vendored native NNS-core partition routine still embeds R 13.3
-    # gravity. R 14.0 partitions split at the new type-7, observation-centered
-    # gravity. Until the accepted core is synchronized, use the NumPy path for
-    # all noise modes; otherwise even an unmodified input changes its cells.
+    # Use the independent NumPy R14 partition path for all noise modes.
+    # The native build uses an explicit R14 gravity overlay and is compared
+    # separately, without mutating the accepted NNS-core vendor snapshot.
     # Groups are tracked as dense integer ids whose numeric order equals the
     # lexicographic order of their quadrant labels: the current labels are the
     # leaves of the partition tree (prefix-free), so ordering children by
@@ -244,9 +243,7 @@ def _nns_part(
 
         keys, group = np.unique(group * 5 + digit, return_inverse=True)
         group = group.reshape(-1)
-        labels = [
-            labels[key // 5] + (str(key % 5) if key % 5 else "") for key in keys.tolist()
-        ]
+        labels = [labels[key // 5] + (str(key % 5) if key % 5 else "") for key in keys.tolist()]
         depth += 1
 
         if min_obs_stop and int(np.min(np.bincount(group))) <= obs_req:
@@ -254,9 +251,7 @@ def _nns_part(
 
     all_prior_labels = [*prior_labels, "pq"]
     prior_group[prior_group < 0] = len(prior_labels)
-    regression_points = _regression_points(
-        x_values, y_values, prior_group, all_prior_labels, noise
-    )
+    regression_points = _regression_points(x_values, y_values, prior_group, all_prior_labels, noise)
 
     return {
         "order": depth,
@@ -332,9 +327,9 @@ def _part_result_from_native(
     }
 
 
-def _group_slices(group: NDArray[np.intp], counts: NDArray[np.intp]) -> tuple[
-    NDArray[np.intp], NDArray[np.intp]
-]:
+def _group_slices(
+    group: NDArray[np.intp], counts: NDArray[np.intp]
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     """Stable ordering of the points by group and each group's start offset.
 
     ``values[order[start:start + count]]`` equals ``values[group == g]`` element for

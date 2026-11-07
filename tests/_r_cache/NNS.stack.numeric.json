@@ -2980,6 +2980,41 @@
         0.671140939597315
       ]
     },
+    "e6614fdccaa6077aaced3ddcf90001e01f81bac0a85b56557780b7c9eecb9a2a": {
+      "NNS.dim.red.coefficients": [
+        1.0,
+        0.0
+      ],
+      "NNS.dim.red.threshold": 1.0,
+      "NNS.dim.red.variables": "V1",
+      "NNS.reg.n.best": NaN,
+      "OBJfn.dim.red": 0.000167851268018598,
+      "OBJfn.reg": 0.000167851268018598,
+      "class.levels": null,
+      "dim.red": [
+        1.0,
+        1.09103425830931,
+        1.18455536200761
+      ],
+      "dim.red.pred.int": null,
+      "pred.int": null,
+      "probability.threshold": 0.5,
+      "reg": [
+        1.0,
+        1.09103425830931,
+        1.18455536200761
+      ],
+      "reg.pred.int": null,
+      "stack": [
+        1.0,
+        1.09103425830931,
+        1.18455536200761
+      ],
+      "weights": [
+        0.47,
+        0.53
+      ]
+    },
     "eae09228ec360eef14d96c6b138799a8aaa87746df1400c3e5b1443b90f6bf9c": {
       "NNS.dim.red.coefficients": null,
       "NNS.dim.red.count": NaN,

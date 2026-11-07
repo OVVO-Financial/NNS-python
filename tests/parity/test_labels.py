@@ -27,8 +27,9 @@ def _spec(frame: pd.DataFrame) -> dict[str, Any]:
     for name in frame.columns:
         col = frame[name]
         if isinstance(col.dtype, pd.CategoricalDtype):
-            cols.append(r_column(col.astype(object).tolist(), "factor", name,
-                                 col.cat.categories.tolist()))
+            cols.append(
+                r_column(col.astype(object).tolist(), "factor", name, col.cat.categories.tolist())
+            )
         elif not pd.api.types.is_numeric_dtype(col.dtype):
             cols.append(r_column(col.tolist(), "character", name))
         else:
@@ -38,8 +39,9 @@ def _spec(frame: pd.DataFrame) -> dict[str, Any]:
 
 def _vec(series: pd.Series) -> dict[str, Any]:
     if isinstance(series.dtype, pd.CategoricalDtype):
-        return r_column(series.astype(object).tolist(), "factor",
-                        levels=series.cat.categories.tolist())
+        return r_column(
+            series.astype(object).tolist(), "factor", levels=series.cat.categories.tolist()
+        )
     if not pd.api.types.is_numeric_dtype(series.dtype):
         return r_column(series.tolist(), "character")
     return r_column(series.astype(float).tolist(), "numeric")
@@ -85,13 +87,14 @@ def _flowers(seed: int = 3) -> pd.DataFrame:
 # point.est columns are matched by name
 # --------------------------------------------------------------------------
 
+
 def test_nns_reg_point_est_columns_matched_by_name() -> None:
     cars = _cars()
     x = cars[["wt", "hp"]]
     permuted = x.iloc[:4][["hp", "wt"]]
     expected = nns_frame_call(
         "labels.reg.point_names",
-        "NNS.reg(x, y, point.est = pe, ncores = 1)$Point.est",
+        "NNS.reg(x, y, point.est = pe, plot = FALSE, ncores = 1)$Point.est",
         {"x": _spec(x), "y": _vec(cars.mpg), "pe": _spec(permuted)},
     )
     actual = nns_reg(x, cars.mpg, point_est=permuted)
@@ -122,6 +125,7 @@ def test_point_est_partial_name_overlap_is_an_error() -> None:
 # Declared response and predictor levels
 # --------------------------------------------------------------------------
 
+
 def test_nns_reg_categorical_response_uses_declared_levels() -> None:
     flowers = _flowers()
     levels = ["virginica", "versicolor", "setosa"]
@@ -151,7 +155,8 @@ def test_nns_reg_categorical_predictor_uses_declared_levels(dummy: bool) -> None
     x = pd.DataFrame({"wt": cars.wt, "cyl": cyl})
     expected = nns_frame_call(
         "labels.reg.factor_x",
-        "r <- NNS.reg(x, y, point.est = x[c(1, 5, 9), ], factor.2.dummy = d, ncores = 1); "
+        "r <- NNS.reg(x, y, point.est = x[c(1, 5, 9), ], "
+        "factor.2.dummy = d, plot = FALSE, ncores = 1); "
         "list(pe = r$Point.est, r2 = r$R2, names = names(r$RPM))",
         {"x": _spec(x), "y": _vec(cars.mpg), "d": r_column([dummy], "logical")},
     )
@@ -163,7 +168,10 @@ def test_nns_reg_categorical_predictor_uses_declared_levels(dummy: bool) -> None
     # factor_levels= gives the same coding for a plain string column.
     plain = pd.DataFrame({"wt": cars.wt, "cyl": cars.cyl})
     declared = nns_reg(
-        plain, cars.mpg, point_est=plain.iloc[[0, 4, 8]], factor_2_dummy=dummy,
+        plain,
+        cars.mpg,
+        point_est=plain.iloc[[0, 4, 8]],
+        factor_2_dummy=dummy,
         factor_levels={"cyl": ["four", "six", "eight"]},
     )
     np.testing.assert_allclose(declared["Point.est"], actual["Point.est"])
@@ -212,7 +220,7 @@ def test_object_numeric_response_is_regression() -> None:
 
 def test_missing_values_in_categorical_columns_raise() -> None:
     cars = _cars()
-    g = pd.Series(cars.cyl.to_numpy(dtype=object))
+    g = pd.Series(cars.cyl.to_numpy(dtype=object, copy=True))
     g.iloc[3] = None
     with pytest.raises(ValueError, match="Predictor 'g' contains missing values"):
         nns_reg(pd.DataFrame({"g": g, "wt": cars.wt}), cars.mpg)
@@ -228,6 +236,7 @@ def test_missing_values_in_categorical_columns_raise() -> None:
 # --------------------------------------------------------------------------
 # nns_m_reg
 # --------------------------------------------------------------------------
+
 
 def test_nns_m_reg_raw_factor_frame_matches_r() -> None:
     cars = _cars()
@@ -272,6 +281,7 @@ def test_nns_m_reg_class_levels_stay_classification() -> None:
 # nns_stack
 # --------------------------------------------------------------------------
 
+
 def test_nns_stack_test_columns_matched_by_name_and_named_outputs() -> None:
     cars = _cars()
     x = cars[["wt", "hp", "disp"]]
@@ -293,7 +303,8 @@ def test_nns_stack_test_columns_matched_by_name_and_named_outputs() -> None:
     assert isinstance(coef, dict)
     assert list(actual["NNS.dim.red.coefficients"]) == list(coef["names"])
     np.testing.assert_allclose(
-        list(actual["NNS.dim.red.coefficients"].values()), _num(coef["values"]),
+        list(actual["NNS.dim.red.coefficients"].values()),
+        _num(coef["values"]),
         atol=COMPOUND,
     )
 
@@ -321,7 +332,10 @@ def test_nns_stack_categorical_response_uses_declared_levels() -> None:
     plain = nns_stack(x.iloc[:50], flowers.species.iloc[:50], x.iloc[50:60], folds=3)
     np.testing.assert_allclose(plain["stack"], actual["stack"])
     reverse = nns_stack(
-        x.iloc[:50], flowers.species.iloc[:50], x.iloc[50:60], folds=3,
+        x.iloc[:50],
+        flowers.species.iloc[:50],
+        x.iloc[50:60],
+        folds=3,
         class_levels=levels[::-1],
     )
     assert reverse["class.levels"] == levels[::-1]
@@ -349,11 +363,9 @@ def test_nns_stack_factor_predictor_levels_and_names() -> None:
     assert isinstance(coef, dict)
     # The "0"/"1" strings are a factor (one dummy per level), not a number.
     assert list(actual["NNS.dim.red.coefficients"]) == list(coef["names"])
-    assert list(coef["names"]) == ["wt", "flag__X1", "flag__X0", "hp"]
+    assert list(coef["names"]) == ["wt", "flag__X0", "flag__X1", "hp"]
     np.testing.assert_allclose(actual["stack"], _num(expected["stack"]), atol=COMPOUND)
-    by_levels = nns_stack(
-        x, cars.mpg, x.iloc[:5], folds=2, factor_levels={"flag": ["1", "0"]}
-    )
+    by_levels = nns_stack(x, cars.mpg, x.iloc[:5], folds=2, factor_levels={"flag": ["1", "0"]})
     np.testing.assert_allclose(by_levels["stack"], actual["stack"])
 
 
@@ -387,6 +399,7 @@ def test_nns_stack_univariate_n_best_matches_r() -> None:
 # nns_boost feature names
 # --------------------------------------------------------------------------
 
+
 def test_nns_boost_feature_names_are_column_names() -> None:
     cars = _cars()
     x = cars[["wt", "hp", "disp"]]
@@ -398,14 +411,13 @@ def test_nns_boost_feature_names_are_column_names() -> None:
         {"x": _spec(x), "y": _vec(cars.mpg)},
     )
     assert isinstance(expected, dict)
-    actual = nns_boost(x.iloc[:30], cars.mpg.iloc[:30], x.iloc[30:], learner_trials=7,
-                       epochs=10, cv_size=0.25)
+    actual = nns_boost(
+        x.iloc[:30], cars.mpg.iloc[:30], x.iloc[30:], learner_trials=7, epochs=10, cv_size=0.25
+    )
     freq = expected["freq"]
     assert isinstance(freq, dict)
     assert list(actual["feature.frequency"]) == list(freq["names"])
-    np.testing.assert_allclose(
-        list(actual["feature.frequency"].values()), _num(freq["values"])
-    )
+    np.testing.assert_allclose(list(actual["feature.frequency"].values()), _num(freq["values"]))
     np.testing.assert_allclose(actual["results"], _num(expected["results"]), atol=COMPOUND)
 
 
@@ -428,7 +440,7 @@ def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
     x, y, pe = _factor_frame()
     expected = nns_frame_call(
         "labels.reg.factor_design",
-        "NNS.reg(x, y, point.est = pe, ncores = 1)$Point.est",
+        "NNS.reg(x, y, point.est = pe, plot = FALSE, ncores = 1)$Point.est",
         {"x": _spec(x), "y": _vec(y), "pe": _spec(pe)},
     )
     design = prepare_factor_predictors(
@@ -438,7 +450,7 @@ def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
         names=("rating", "score"),
     )
     # R's factor_2_dummy_FR: one column per level (not a dropped reference level).
-    assert design.feature_names == ("rating_low", "rating_mid", "rating_high", "score")
+    assert design.feature_names == ("rating_high", "rating_low", "rating_mid", "score")
     assert design.x.shape == (60, 4)
     np.testing.assert_allclose(design.x[:, :3].sum(axis=1), 1.0)
 
@@ -451,6 +463,7 @@ def test_prepare_factor_predictors_design_matches_r_factor_regression() -> None:
 # --------------------------------------------------------------------------
 # Raw column names (check.names = FALSE) and numeric class labels
 # --------------------------------------------------------------------------
+
 
 def test_nns_reg_keeps_raw_column_names() -> None:
     cars = _cars()
@@ -484,6 +497,7 @@ def test_nns_reg_numeric_class_levels_print_like_r(scale: float) -> None:
 # Logical predictors are factors, as R's is.logical branch
 # --------------------------------------------------------------------------
 
+
 def _logical_frame() -> tuple[pd.DataFrame, pd.Series]:
     cars = _cars()
     heavy = (cars.wt > 3.2).to_numpy().copy()
@@ -496,7 +510,7 @@ def test_nns_reg_univariate_logical_predictor_is_a_factor() -> None:
     heavy = x["heavy"]
     expected = nns_frame_call(
         "labels.reg.logical_uni",
-        "r <- NNS.reg(x, y, point.est = c(TRUE, FALSE), ncores = 1); "
+        "r <- NNS.reg(x, y, point.est = c(TRUE, FALSE), plot = FALSE, ncores = 1); "
         "list(pe = r$Point.est, r2 = r$R2, rpm = names(r$RPM))",
         {"x": r_column(heavy.tolist(), "logical"), "y": _vec(y)},
     )
@@ -510,11 +524,16 @@ def test_nns_reg_univariate_logical_predictor_is_a_factor() -> None:
 @pytest.mark.parametrize("dummy", [True, False])
 def test_nns_reg_logical_column_is_a_factor(dummy: bool) -> None:
     x, y = _logical_frame()
-    spec = {"frame": [r_column(x["heavy"].tolist(), "logical", "heavy"),
-                      r_column(x["hp"].astype(float).tolist(), "numeric", "hp")]}
+    spec = {
+        "frame": [
+            r_column(x["heavy"].tolist(), "logical", "heavy"),
+            r_column(x["hp"].astype(float).tolist(), "numeric", "hp"),
+        ]
+    }
     expected = nns_frame_call(
         "labels.reg.logical_frame",
-        f"r <- NNS.reg(x, y, point.est = x[1:5, ], factor.2.dummy = {str(dummy).upper()}, "
+        "r <- NNS.reg(x, y, point.est = x[1:5, ], "
+        f"factor.2.dummy = {str(dummy).upper()}, plot = FALSE, "
         "ncores = 1); list(pe = r$Point.est, r2 = r$R2, rpm = names(r$RPM))",
         {"x": spec, "y": _vec(y)},
     )

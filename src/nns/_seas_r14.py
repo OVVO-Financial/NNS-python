@@ -4,6 +4,7 @@ Behavioral oracle: OVVO-Financial/NNS@7b07a837, R/Seasonality_Test.R
 and src/NNS_seas.cpp. This intentionally replaces the 13.3 standard-deviation
 scoring and n/2 default scan; those are different statistical definitions.
 """
+
 from __future__ import annotations
 
 import math
@@ -15,7 +16,7 @@ from numpy.typing import NDArray
 from nns._helpers import _fast_lm
 
 F = NDArray[np.float64]
-I = NDArray[np.int64]
+IntArray = NDArray[np.int64]
 
 
 def _as_float_series(values: F, dispersion: str, detrend: bool) -> F:
@@ -109,13 +110,13 @@ def _delete_one_scores(x: F, lag: int, use_cv: bool) -> F | None:
     weighted = float(np.sum(sizes * component_full))
     for j in range(lag):
         k = sizes[j]
-        output[j::lag] = (
-            weighted - k * component_full[j] + (k - 1.0) * component_del[j]
-        ) / (n - 1.0)
+        output[j::lag] = (weighted - k * component_full[j] + (k - 1.0) * component_del[j]) / (
+            n - 1.0
+        )
     return output
 
 
-def _fundamental(x: F, periods: I, scores: F, use_cv: bool) -> tuple[I, F]:
+def _fundamental(x: F, periods: IntArray, scores: F, use_cv: bool) -> tuple[IntArray, F]:
     """R #129: smallest plausible divisor of strongest lag within 2 paired SE."""
     if periods.size < 2 or periods[0] <= 3:
         return periods, scores
@@ -136,7 +137,7 @@ def _fundamental(x: F, periods: I, scores: F, use_cv: bool) -> tuple[I, F]:
         if jack is None:
             continue
         diff = jack - denom
-        se = math.sqrt((x.size - 1.0) / x.size * float(np.sum((diff - np.mean(diff))**2)))
+        se = math.sqrt((x.size - 1.0) / x.size * float(np.sum((diff - np.mean(diff)) ** 2)))
         if math.isfinite(se) and scores[idx] <= scores[0] + 2.0 * se:
             order = np.r_[idx, np.arange(periods.size)[np.arange(periods.size) != idx]]
             return periods[order], scores[order]
@@ -145,7 +146,7 @@ def _fundamental(x: F, periods: I, scores: F, use_cv: bool) -> tuple[I, F]:
 
 def r14_seasonality(
     values: F,
-    modulo: int | Sequence[int] | None,
+    modulo: int | Sequence[int] | IntArray | None,
     mod_only: bool,
     *,
     detrend: bool = True,
@@ -158,7 +159,7 @@ def r14_seasonality(
     if max_period is not None and (max_period < 1 or not np.isfinite(max_period)):
         raise ValueError("max.period must be NULL or a single number >= 1.")
 
-    def result(periods: I, scores: F, cov: float) -> dict[str, object]:
+    def result(periods: IntArray, scores: F, cov: float) -> dict[str, object]:
         return {
             "all.periods": {
                 "Period": periods,
@@ -204,12 +205,9 @@ def r14_seasonality(
         # over equal-VarCV injected rows, insertion order is user-visible.
         for lag in sorted(added):
             if lag not in current and lag <= n // 2:
-                if lag in scored:
-                    score = scored[lag]
-                else:
-                    score = _lag_score(x, lag, use_cv)
-                    if score >= base:
-                        score = base
+                # The scan already rejected in-range lags not in current;
+                # R's added_cv gives them the baseline, not their worse score.
+                score = min(_lag_score(x, lag, use_cv), base) if lag > max_lag else base
                 current[lag] = score
         if not current:
             current = {1: base}

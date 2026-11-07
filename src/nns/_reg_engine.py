@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 from nns._labels import (
     Columns,
     as_float,
+    canonical_predictor_codes,
     codes_for,
     declared_codes,
     declared_levels,
@@ -62,6 +63,7 @@ _MREG_DIST_CODES = {"NNS": 0, "L2": 1, "L1": 2, "FACTOR": 3}
 # --------------------------------------------------------------------------
 # Validation helpers (mirroring .nns_reg_validate_* / .nns_reg_scalar_logical)
 # --------------------------------------------------------------------------
+
 
 def _scalar_logical(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
@@ -124,15 +126,14 @@ def _validate_ci(confidence_interval: Any) -> float | None:
         return None
     value = float(confidence_interval)
     if not math.isfinite(value) or value <= 0.0 or value >= 1.0:
-        raise ValueError(
-            "[confidence.interval] must be NULL or a scalar strictly between 0 and 1."
-        )
+        raise ValueError("[confidence.interval] must be NULL or a scalar strictly between 0 and 1.")
     return value
 
 
 # --------------------------------------------------------------------------
 # Response / task resolution (.nns_reg_response_vector / .nns_reg_type)
 # --------------------------------------------------------------------------
+
 
 def _response_vector(y: Any) -> tuple[NDArray[Any], list[Any] | None]:
     """R ``.nns_reg_response_vector``: the values plus any declared categories."""
@@ -166,8 +167,7 @@ def _task(
         # R .nns_reg_type explicitly permits REG to override automatic
         # binary (0/1) classification, but rejects a nonnumeric response.
         if type_value == "reg" and (
-            categories is not None or class_levels is not None
-            or y.dtype.kind == "b" or is_text(y)
+            categories is not None or class_levels is not None or y.dtype.kind == "b" or is_text(y)
         ):
             raise ValueError("[type = 'REG'] requires a numeric response.")
 
@@ -177,9 +177,7 @@ def _task(
         levels = declared_levels(declared, what)
         y_numeric, _, unknown = declared_codes(y, levels, "[y] contains missing values.")
         if unknown:
-            raise ValueError(
-                f"[y] contains values absent from {what}: " + ", ".join(unknown)
-            )
+            raise ValueError(f"[y] contains values absent from {what}: " + ", ".join(unknown))
         class_values = np.unique(y_numeric)
         class_levels_out: list[str] | None = levels
         auto_class = True
@@ -220,6 +218,7 @@ def _task(
 # --------------------------------------------------------------------------
 # Predictor encoding (.nns_reg_encode_predictors, numeric/object columns)
 # --------------------------------------------------------------------------
+
 
 def _train_columns(x: Any) -> Columns:
     if np.ndim(x) == 0:
@@ -324,10 +323,9 @@ def _encode_predictors(
 
     A column is categorical when it is a pandas categorical, has declared
     ``factor_levels``, or holds labels (strings, including numeric-looking
-    strings). Levels are the declared levels in their order; undeclared label
-    columns use sorted levels. (R uses first-appearance order for character
-    columns, which makes its fit depend on the row order; the sorted order is
-    R's ``factor()`` order.) bool columns are factors with levels FALSE/TRUE,
+    strings). R14 sorts unordered predictor levels, retaining declared but
+    unused levels; ordered pandas categoricals retain their declared order.
+    bool columns are factors with levels FALSE/TRUE,
     as R treats logicals. Missing values in a categorical column are an
     error, as in R.
     """
@@ -374,7 +372,9 @@ def _encode_predictors(
             codes_point = None
             if zp is not None:
                 codes_point, unseen = point_codes(
-                    zp, levels, by_code,
+                    zp,
+                    levels,
+                    by_code,
                     f"[point.est] predictor '{raw}' contains missing values.",
                 )
                 if unseen:
@@ -382,20 +382,23 @@ def _encode_predictors(
                         f"[point.est] predictor {j + 1} contains unseen level(s): "
                         + ", ".join(unseen)
                     )
+            levels, codes_train, codes_point = canonical_predictor_codes(
+                levels,
+                codes_train,
+                codes_point,
+                ordered=bool(cols.ordered and cols.ordered[j]),
+            )
             if factor_2_dummy:
                 train_parts.append(
                     np.column_stack(
                         [(codes_train == k + 1).astype(np.float64) for k in range(len(levels))]
                     )
                 )
-                encoded_names.extend(
-                    f"{nm}_{sanitized}" for sanitized in r_make_names(levels)
-                )
+                encoded_names.extend(f"{nm}_{sanitized}" for sanitized in r_make_names(levels))
                 if codes_point is not None and point_parts is not None:
                     point_parts.append(
                         np.column_stack(
-                            [(codes_point == k + 1).astype(np.float64)
-                             for k in range(len(levels))]
+                            [(codes_point == k + 1).astype(np.float64) for k in range(len(levels))]
                         )
                     )
             else:
@@ -407,9 +410,7 @@ def _encode_predictors(
         else:
             tr = as_float(z).reshape(-1, 1)
             if not np.all(np.isfinite(tr)):
-                raise ValueError(
-                    f"Predictor {j + 1} must contain only finite numeric values."
-                )
+                raise ValueError(f"Predictor {j + 1} must contain only finite numeric values.")
             train_parts.append(tr)
             encoded_names.append(nm)
             if zp is not None and point_parts is not None:
@@ -434,6 +435,7 @@ def _encode_predictors(
 # --------------------------------------------------------------------------
 # Shared reducers / class snapping (.nns_reg_reduce_value / .nns_reg_snap_class)
 # --------------------------------------------------------------------------
+
 
 def _reduce_value(z: NDArray[np.float64], noise_reduction: str, is_class: bool = False) -> float:
     z = z[np.isfinite(z)]
@@ -463,9 +465,7 @@ def _snap_class(
     finite = np.isfinite(values)
     out[~finite] = np.nan
     if np.any(finite):
-        idx = np.argmin(
-            np.abs(values[finite, None] - class_values[None, :]), axis=1
-        )
+        idx = np.argmin(np.abs(values[finite, None] - class_values[None, :]), axis=1)
         out[finite] = class_values[idx]
     return out
 
@@ -473,6 +473,7 @@ def _snap_class(
 # --------------------------------------------------------------------------
 # Dependence-driven default order (.nns_reg_dependence / .nns_reg_default_order)
 # --------------------------------------------------------------------------
+
 
 def _rescale_01(values: NDArray[np.float64]) -> NDArray[np.float64]:
     vmin = float(np.min(values))
@@ -524,6 +525,7 @@ def _default_order(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
 # --------------------------------------------------------------------------
 # Univariate regression points (.nns_reg_build_points)
 # --------------------------------------------------------------------------
+
 
 def _group_reduce_sorted(
     keys: NDArray[np.float64],
@@ -641,9 +643,7 @@ def _nknots_smspl(n: int) -> int:
     return math.trunc(value)
 
 
-def _smooth_spline_predictor(
-    rx: NDArray[np.float64], ry: NDArray[np.float64], spar: float
-) -> Any:
+def _smooth_spline_predictor(rx: NDArray[np.float64], ry: NDArray[np.float64], spar: float) -> Any:
     """Port of R's ``stats::smooth.spline(x, y, spar)`` with default arguments.
 
     R ties the smoothing parameter to dependence via an explicit ``spar`` rather
@@ -706,11 +706,7 @@ def _smooth_spline_predictor(
     y2 = d2[1:] - y1
     width = np.diff(inner)[:, None]
     cross = (width * y2).T @ y1
-    sigma = (
-        (width * y1).T @ y1
-        + 0.5 * (cross + cross.T)
-        + 0.333 * ((width * y2).T @ y2)
-    )
+    sigma = (width * y1).T @ y1 + 0.5 * (cross + cross.T) + 0.333 * ((width * y2).T @ y2)
 
     diag_h = np.diag(xtwx)
     diag_s = np.diag(sigma)
@@ -786,6 +782,7 @@ def _predict_univariate(
 # Metrics and intervals (.nns_reg_r2 / .nns_reg_intervals)
 # --------------------------------------------------------------------------
 
+
 def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
     """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
     actual_centered = actual - float(np.mean(actual))
@@ -835,9 +832,7 @@ def _intervals(
         return {"conf_lower": None, "conf_upper": None, "pred_int": None}
     alpha = 1.0 - confidence_interval
     errors = actual - fitted
-    q_lo, q_hi = np.quantile(
-        errors, [alpha / 2.0, 1.0 - alpha / 2.0], method="median_unbiased"
-    )
+    q_lo, q_hi = np.quantile(errors, [alpha / 2.0, 1.0 - alpha / 2.0], method="median_unbiased")
     conf_lower = fitted + q_lo
     conf_upper = fitted + q_hi
 
@@ -859,6 +854,7 @@ def _intervals(
 # Dimension reduction (.nns_reg_dimred_coefficients / .nns_reg_dimreduce)
 # --------------------------------------------------------------------------
 
+
 def _dimred_coefficients(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
@@ -879,9 +875,7 @@ def _dimred_coefficients(
             )
         method = "numeric"
     else:
-        raise ValueError(
-            "[dim.red.method] must be NULL, a supported method, or a numeric vector."
-        )
+        raise ValueError("[dim.red.method] must be NULL, a supported method, or a numeric vector.")
 
     threshold_value = float(threshold)
     if not math.isfinite(threshold_value) or threshold_value < 0:
@@ -936,9 +930,7 @@ def _dimred_coefficients(
     elif method == "nns.caus":
         coef = caus_coef()
     elif method == "all":
-        coef = np.mean(
-            np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1
-        )
+        coef = np.mean(np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1)
     elif method == "equal":
         coef = np.ones(p, dtype=np.float64)
     else:
@@ -1001,6 +993,7 @@ def _dimreduce(
 # Multivariate prediction rule (.nns_mreg_* helpers, vectorized)
 # --------------------------------------------------------------------------
 
+
 def _mreg_weighted_mode(values: NDArray[np.float64], weights: NDArray[np.float64]) -> float:
     keep = np.isfinite(values) & np.isfinite(weights) & (weights >= 0)
     values, weights = values[keep], weights[keep]
@@ -1045,7 +1038,7 @@ def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
         normal = np.where(valid_sd, normal, 0.0)
         total += np.where(valid_sd, _normalize_weights_rows(normal), 0.0)
 
-    dist_var = dist_sd ** 2
+    dist_var = dist_sd**2
     valid_var = np.isfinite(dist_var) & (dist_var > 0)
     if np.any(valid_var):
         with np.errstate(all="ignore"):
@@ -1072,7 +1065,7 @@ def _rank_weight_rows(k: int) -> tuple[NDArray[np.float64], ...]:
     if math.isfinite(rank_sd) and rank_sd > 0:
         lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
         rows.append(_normalize_weights_rows(lognormal_row[None, :])[0, ::-1].copy())
-    rows.append(_normalize_weights_rows((ranks ** -2.0)[None, :])[0])
+    rows.append(_normalize_weights_rows((ranks**-2.0)[None, :])[0])
     for row in rows:
         row.flags.writeable = False
     return tuple(rows)
@@ -1264,8 +1257,13 @@ def _mreg_predict(
         # R's NNS_mreg_predict_v2_cpp, ported to NNS-core; equal to the NumPy
         # code below to floating-point rounding.
         return np.asarray(
-            native(*_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs), k,
-                   _MREG_DIST_CODES[dist], *_native_mreg_ranges(mins, maxs), is_class),
+            native(
+                *_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs),
+                k,
+                _MREG_DIST_CODES[dist],
+                *_native_mreg_ranges(mins, maxs),
+                is_class,
+            ),
             dtype=np.float64,
         )
     out = np.empty(xtest.shape[0], dtype=np.float64)
@@ -1312,8 +1310,13 @@ def _mreg_predict_path(
     if native is not None and kmax >= 1:
         # R's NNS_mreg_predict_path_v2_cpp, ported to NNS-core.
         return np.asarray(
-            native(*_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs), kmax,
-                   _MREG_DIST_CODES[dist], *_native_mreg_ranges(mins, maxs), False),
+            native(
+                *_native_mreg_args(rpm_x, rpm_yhat, xtest, mins, maxs),
+                kmax,
+                _MREG_DIST_CODES[dist],
+                *_native_mreg_ranges(mins, maxs),
+                False,
+            ),
             dtype=np.float64,
         )
     out = np.empty((m, kmax), dtype=np.float64)
@@ -1371,9 +1374,7 @@ def _native_mreg_ranges(
     )
 
 
-def _find_interval(
-    x: NDArray[np.float64], boundaries: NDArray[np.float64]
-) -> NDArray[np.int64]:
+def _find_interval(x: NDArray[np.float64], boundaries: NDArray[np.float64]) -> NDArray[np.int64]:
     """R findInterval(x, v, left.open = FALSE, rightmost.closed = TRUE)."""
     idx = np.searchsorted(boundaries, x, side="right").astype(np.int64)
     if boundaries.size:
@@ -1390,34 +1391,31 @@ def _mreg_partition_matrix(
 ) -> dict[str, Any]:
     p = x.shape[1]
     boundaries: list[NDArray[np.float64]] = []
-    if order == "max":
-        for j in range(p):
-            boundaries.append(np.unique(x[:, j]))
-    else:
-        for j in range(p):
+    # R14 preserves both atoms of binary coordinates, even at finite order.
+    # Rightmost-closed intervals would otherwise collapse the two endpoints.
+    exact = [order == "max" or np.unique(x[:, j]).size == 2 for j in range(p)]
+    for j in range(p):
+        if exact[j]:
+            b = np.unique(x[:, j])
+        else:
             rp = _build_points(x[:, j], y, order, noise_reduction, is_class)
             b = np.unique(rp["x"])
             if b.size == 0:
                 b = np.unique(x[:, j])
-            boundaries.append(b)
+        boundaries.append(b)
 
     max_len = max(b.size for b in boundaries)
     rhs = np.full((max_len, p), np.nan, dtype=np.float64)
     for j, b in enumerate(boundaries):
         rhs[: b.size, j] = b
 
-    if order == "max":
-        # order = "max" is a rank problem, not an interval problem: use each
-        # coordinate's exact 1-based rank (R's match) so the maximum value keeps
-        # its own ID rather than folding into the preceding interval.
-        id_parts = [
-            np.searchsorted(boundaries[j], x[:, j]).astype(np.int64) + 1 for j in range(p)
-        ]
-    else:
-        id_parts = [_find_interval(x[:, j], boundaries[j]) for j in range(p)]
-    ids = np.asarray(
-    [".".join(str(int(part[i])) for part in id_parts) for i in range(x.shape[0])]
-    )
+    id_parts = [
+        np.searchsorted(boundaries[j], x[:, j]).astype(np.int64) + 1
+        if exact[j]
+        else _find_interval(x[:, j], boundaries[j])
+        for j in range(p)
+    ]
+    ids = np.asarray([".".join(str(int(part[i])) for part in id_parts) for i in range(x.shape[0])])
     return {"rhs": rhs, "ids": ids, "boundaries": boundaries}
 
 
@@ -1508,13 +1506,14 @@ def _mreg_prepare(
     return _mreg_build_rpm(x, y, partition["ids"], noise_reduction, is_class)
 
 
-def _mreg_default_nbest(
-    x: NDArray[np.float64], y: NDArray[np.float64], rpm_rows: int
-) -> int:
+def _mreg_default_nbest(x: NDArray[np.float64], y: NDArray[np.float64], rpm_rows: int) -> int:
     try:
         from nns.copula import nns_copula
 
-        dep = float(nns_copula(np.column_stack((x, y))))
+        # R14's smoothing heuristic is unsigned: reflect only the response.
+        dep = 0.5 * (
+            float(nns_copula(np.column_stack((x, y)))) + float(nns_copula(np.column_stack((x, -y))))
+        )
     except Exception:
         dep = float("nan")
     if not math.isfinite(dep):
@@ -1603,7 +1602,11 @@ def _m_reg(
     if not point_only:
         metric = float(np.mean(fitted_pred == y)) if is_class else _r2(y, fitted_pred)
     intervals = _intervals(
-        y, fitted_pred, point_pred, confidence_interval, is_class,
+        y,
+        fitted_pred,
+        point_pred,
+        confidence_interval,
+        is_class,
         np.unique(y) if is_class else None,
     )
 
@@ -1621,9 +1624,7 @@ def _m_reg(
     # rhs.partitions is R's data.frame of per-column interval boundaries, padded
     # with NaN to the longest column and keyed by the encoded predictor names.
     rhs = partition["rhs"]
-    rhs_dict: dict[str, NDArray[np.float64]] = {
-        names[j]: rhs[:, j] for j in range(rhs.shape[1])
-    }
+    rhs_dict: dict[str, NDArray[np.float64]] = {names[j]: rhs[:, j] for j in range(rhs.shape[1])}
 
     fitted_xy: dict[str, Any] = {names[j]: x[:, j] for j in range(x.shape[1])}
     fitted_xy.update(
@@ -1655,6 +1656,7 @@ def _m_reg(
 # --------------------------------------------------------------------------
 # Main entry point (NNS.reg)
 # --------------------------------------------------------------------------
+
 
 def nns_reg_engine(
     x: Any,
@@ -1709,9 +1711,7 @@ def nns_reg_engine(
     ex = cast(NDArray[np.float64], encoded["x"])
     ep = cast(NDArray[np.float64] | None, encoded["point_est"])
     if ex.shape[0] != y_numeric.size:
-        raise ValueError(
-            f"[x] has {ex.shape[0]} rows but [y] has {y_numeric.size} values."
-        )
+        raise ValueError(f"[x] has {ex.shape[0]} rows but [y] has {y_numeric.size} values.")
     if multivariate_only and ex.shape[1] < 2:
         raise ValueError("NNS.M.reg requires at least two encoded predictors.")
     if task["is_xonly"] and ex.shape[1] != 1:
@@ -1725,9 +1725,16 @@ def nns_reg_engine(
         from nns._class_r14 import classify
 
         return classify(
-            encoded, task, order=order, n_best=n_best, dist=dist,
-            dim_red_method=dim_red_method, tau=tau, threshold=threshold,
-            point_only=point_only, confidence_interval=confidence_interval,
+            encoded,
+            task,
+            order=order,
+            n_best=n_best,
+            dist=dist,
+            dim_red_method=dim_red_method,
+            tau=tau,
+            threshold=threshold,
+            point_only=point_only,
+            confidence_interval=confidence_interval,
         )
 
     # Full multivariate regression.
@@ -1753,7 +1760,12 @@ def nns_reg_engine(
     x_star = None
     if ex.shape[1] > 1:
         dr = _dimreduce(
-            ex, ep, y_numeric, dim_red_method, tau, threshold,
+            ex,
+            ep,
+            y_numeric,
+            dim_red_method,
+            tau,
+            threshold,
             variable_names=encoded.get("encoded_names"),
         )
         ux = dr["x_star"]
@@ -1783,9 +1795,7 @@ def nns_reg_engine(
     point_pred = (
         None
         if up is None
-        else _predict_univariate(
-            up, rp, smooth, task["is_class"], task["class_values"], smooth_fit
-        )
+        else _predict_univariate(up, rp, smooth, task["is_class"], task["class_values"], smooth_fit)
     )
 
     derivative = _derivative(rp)
@@ -1801,8 +1811,12 @@ def nns_reg_engine(
     )
     se = float(np.sqrt(np.mean((fitted_pred - y_numeric) ** 2)))
     intervals = _intervals(
-        y_numeric, fitted_pred, point_pred, confidence_interval,
-        task["is_class"], task["class_values"],
+        y_numeric,
+        fitted_pred,
+        point_pred,
+        confidence_interval,
+        task["is_class"],
+        task["class_values"],
     )
 
     fitted_xy: dict[str, Any] = {

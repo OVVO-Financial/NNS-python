@@ -824,9 +824,10 @@ def test_nns_reg_class_confidence_interval_below_range_row_drop_matches_r() -> N
 
     _assert_reg_matches(actual, expected)
     assert actual["Point.est"].shape == (4,)
-    assert actual["pred.int"] is not None
-    # Repaired contract returns one interval row per point.est (no row dropping).
-    assert actual["pred.int"]["pred.int.neg"].shape == (4,)
+    assert actual["pred.int"] is None  # R14 nominal intervals are class sets.
+    assert len(actual["Prediction.set"]) == point_est.size
+    for got, want in zip(actual["Prediction.set"], expected["Prediction.set"], strict=True):
+        np.testing.assert_array_equal(np.atleast_1d(got), np.atleast_1d(want))
 
 
 @pytest.mark.parity
@@ -838,12 +839,8 @@ def test_nns_reg_raw_character_class_labels_encode_like_r() -> None:
 
     result = nns_reg(x, y, type="class")
 
-    # R 13.3 + patches gives 1 1 2 2 2 2: x is integer-valued and the regression
-    # points keep their x centroids (13.3 rounded them: 1 1 1 2 2 2).
-    np.testing.assert_array_equal(
-        np.asarray(result["Fitted.xy"]["y.hat"], dtype=np.float64),
-        np.array([1.0, 1.0, 2.0, 2.0, 2.0, 2.0]),
-    )
+    expected = _r_nns_reg(x, y, order=None, noise="off", point_est=None, type="class")
+    _assert_reg_matches(result, expected)
     assert list(result["class.levels"]) == ["A", "B"]
 
 
@@ -981,9 +978,7 @@ def _assert_reg_matches(
     if actual["Point.est"] is None:
         assert _array(expected["Point.est"]).size == 0
     else:
-        np.testing.assert_allclose(
-            actual["Point.est"], _array(expected["Point.est"]), atol=atol
-        )
+        np.testing.assert_allclose(actual["Point.est"], _array(expected["Point.est"]), atol=atol)
     if actual["pred.int"] is None:
         assert _array(expected["pred.int"]).size == 0
     else:
@@ -1081,3 +1076,34 @@ def _relationship(
     if relationship == "sin":
         return x, np.sin(x)
     return x, rng.normal(size=size)
+
+
+@pytest.mark.parity
+def test_public_multivariate_nominal_probabilities_match_r14() -> None:
+    x = np.array(
+        [
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [3.0, 0.0],
+            [3.0, 1.0],
+        ]
+    )
+    y = np.array([1.0, 1.0, 2.0, 3.0, 2.0, 3.0, 1.0, 3.0])
+    points = np.array([[0.5, 0.0], [2.5, 1.0], [3.0, 0.0]])
+    expected = _r_nns_reg(
+        x, y, order=2, noise="off", point_est=points, confidence_interval=0.8, type="CLASS"
+    )
+    actual = nns_reg(x, y, order=2, type="CLASS", point_est=points, confidence_interval=0.8)
+    _assert_reg_matches(actual, expected)
+    for key in ("Fitted.probabilities", "Point.probabilities", "RPM.probabilities"):
+        values = np.column_stack(list(actual[key].values()))
+        np.testing.assert_allclose(values, expected[key], atol=COMPOUND)
+        np.testing.assert_allclose(values.sum(axis=1), 1.0, atol=COMPOUND)
+    assert actual["pred.int"] is None
+    assert len(actual["Prediction.set"]) == len(points)
+    for got, want in zip(actual["Prediction.set"], expected["Prediction.set"], strict=True):
+        np.testing.assert_array_equal(np.atleast_1d(got), np.atleast_1d(want))

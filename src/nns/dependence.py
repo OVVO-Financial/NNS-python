@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
-from nns._native import native_fn
+from nns._native import native_fn as native_fn
 
 
 @overload
@@ -54,11 +54,16 @@ def nns_dep(
         return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
 
-    # Native NNS-core currently exposes the R 13.3 finest-cell estimator.
-    # R 14.0 is *not* the same statistic: each distinct prefix-partition
-    # level is debiased under its permutation null and the strongest of the
-    # conditional / joint partitions is selected. Do not call the old native
-    # kernel until the upstream NNS-core sync is approved and rebuilt.
+    # Only use the versioned R14 adapter, never a stale R13 native statistic.
+    native = native_fn("nns_dep_pair_r14")
+    if native is not None:
+        result = native(np.ascontiguousarray(x_values), np.ascontiguousarray(y_values), asym)
+        return {
+            "Correlation": float(result["Correlation"]),
+            "Dependence": float(result["Dependence"]),
+        }
+
+    # Independent, source-equivalent fallback for installs without the extension.
     from nns._dep_r14 import dep_pair_r14
 
     correlation, dependence = dep_pair_r14(x_values, y_values, asym)
@@ -419,13 +424,15 @@ def _as_nd_moment_inputs(
 
 
 def _gravity(x: NDArray[np.float64]) -> float:
-    """R 14.0 gravity for partition splits while NNS-core is being synchronized.
+    """R14 gravity used to define the Python partition path.
 
-    The vendored native gravity_exact implements the earlier 13.3 statistic:
-    using it would change the partition tree and every derived regression
-    estimate. Do not silently substitute it for this R 14.0 oracle.
+    CMake builds the native path with an explicit R14 source overlay; the
+    vendored NNS-core snapshot itself is unchanged.
     """
     values = np.asarray(x, dtype=np.float64).reshape(-1)
+    native = native_fn("gravity_exact_r14")
+    if native is not None:
+        return float(native(np.ascontiguousarray(values)))
     return _gravity_python(values)
 
 
@@ -463,16 +470,12 @@ def _gravity_python(x: NDArray[np.float64]) -> float:
     if not (width > 0.0 and math.isfinite(width)):
         width = span / 128.0
 
-    _, used_width, occupied, counts = _sparse_bin_counts(
-        ordered, width, float(ordered[0])
-    )
+    _, used_width, occupied, counts = _sparse_bin_counts(ordered, width, float(ordered[0]))
     max_count = int(np.max(counts))
     winners = np.flatnonzero(counts == max_count)
 
     zero = np.longdouble(0.0)
-    mean = float(
-        (zero + np.cumsum(ordered.astype(np.longdouble))[-1]) / np.longdouble(n)
-    )
+    mean = float((zero + np.cumsum(ordered.astype(np.longdouble))[-1]) / np.longdouble(n))
     if winners.size != 1:
         modal_mean = mean
     else:

@@ -5,7 +5,7 @@ import math
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._native import native_fn
+from nns._native import native_fn as native_fn
 from nns.dependence import (
     _gravity_python,
     _quartiles_like_r_code,
@@ -75,11 +75,11 @@ def nns_mode(
     if n == 0:
         return np.array([np.nan], dtype=np.float64) if multi else float("nan")
 
-    # The vendored NNS-core still implements R 13.3's continuous mode: it
-    # excludes endpoint peaks, centers modes at bin edges, and averages tied
-    # peaks. R 14.0 uses actual observations and gravity-based tie breaking.
-    # Use the source-faithful Python implementation until native sync.
-    result = _discrete_mode(finite, multi) if discrete else _continuous_mode(finite, multi)
+    native = native_fn("mode_r14")
+    if native is not None:
+        result = np.asarray(native(np.ascontiguousarray(finite), discrete, multi), dtype=np.float64)
+    else:
+        result = _discrete_mode(finite, multi) if discrete else _continuous_mode(finite, multi)
     return result if multi else float(result[0])
 
 
@@ -96,10 +96,13 @@ def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     if bool(np.all(finite == finite[0])):
         return float(finite[0])
 
-    # NNS-core's vendored gravity still follows the 13.3 bin-edge and quartile
-    # algorithm. R 14.0's observation-centered type-7 gravity is authoritative
-    # until an accepted native core snapshot implements it.
-    out = _gravity_python(finite)
+    # A versioned name avoids accidentally selecting an old R13 extension.
+    native = native_fn("gravity_exact_r14")
+    out = (
+        float(native(np.ascontiguousarray(finite)))
+        if native is not None
+        else _gravity_python(finite)
+    )
     return _nearest_int_half_up(out) if discrete else out
 
 
@@ -156,10 +159,10 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
         if multi:
             return np.asarray(modes, dtype=np.float64)
         top = int(np.max(frequencies[idx]))
-        candidates = modes[frequencies[idx] == top]
+        top_modes = modes[frequencies[idx] == top]
         gravity = nns_gravity(ordered)
-        return np.asarray([candidates[int(np.argmin(np.abs(candidates - gravity)))]])
- 
+        return np.asarray([top_modes[int(np.argmin(np.abs(top_modes - gravity)))]])
+
     names, counts = _core_bin_list(ordered, width, float(ordered[0]))
     lz = counts.size
     max_count = int(np.max(counts))
@@ -187,10 +190,8 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
                 continue
             if (i < 3 or i > lz - 4) and height < max_height:
                 continue
-            left_max = max((cs[i - d] for d in (1, 2, 3) if i - d >= 0),
-                           default=-math.inf)
-            right_max = max((cs[i + d] for d in (1, 2, 3) if i + d < lz),
-                            default=-math.inf)
+            left_max = max((cs[i - d] for d in (1, 2, 3) if i - d >= 0), default=-math.inf)
+            right_max = max((cs[i + d] for d in (1, 2, 3) if i + d < lz), default=-math.inf)
             if not (height > left_max and height > right_max):
                 continue
             left = cs[i - 1] if i > 0 else cs[i + 1]
@@ -214,9 +215,7 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
         highest = max(cs[i] for i in kept)
         top = centers[np.array([cs[i] == highest for i in kept])]
         gravity = nns_gravity(ordered)
-        return np.asarray(
-            [sorted(top, key=lambda v: (abs(v - gravity), v))[0]], dtype=np.float64
-        )
+        return np.asarray([sorted(top, key=lambda v: (abs(v - gravity), v))[0]], dtype=np.float64)
 
     winners = np.flatnonzero(counts == max_count)
     if winners.size > 1:
@@ -300,7 +299,7 @@ def _peak_indices(smoothed: NDArray[np.float64]) -> NDArray[np.int64]:
     right = np.maximum(np.maximum(smoothed[i + 1], smoothed[i + 2]), smoothed[i + 3])
     curvature = smoothed[i - 1] - 2.0 * center + smoothed[i + 1]
     peak = (center > 0.0) & (center > left) & (center > right) & (curvature < 0.0)
-    return i[peak].astype(np.int64)
+    return np.asarray(i[peak], dtype=np.int64)
 
 
 def _nearest_int_half_up(value: float) -> float:

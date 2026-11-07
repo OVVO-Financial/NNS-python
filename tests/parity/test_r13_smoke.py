@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _r import nns, nns_stack_numeric
 from _tolerances import COMPOUND, EXACT
 
 from nns import lpm, nns_arma, nns_copula, nns_reg, nns_stack, pm_matrix, upm
@@ -62,7 +63,7 @@ def test_r_nns_13_pm_matrix_names_smoke() -> None:
 
 
 @pytest.mark.parity
-def test_r_nns_13_arma_airline_smoke_values() -> None:
+def test_r_nns_14_arma_airline_smoke_values() -> None:
     series = np.array(
         [
             112,
@@ -97,13 +98,30 @@ def test_r_nns_13_arma_airline_smoke_values() -> None:
     nonseasonal = nns_arma(series, h=4, seasonal_factor=False, method="nonlin")
 
     np.testing.assert_allclose(seasonal, np.array([118, 134, 150, 141, 129, 163]), atol=EXACT)
-    # NNS.ARMA nonseasonal forecast from patched R (NNS.seas scores every phase).
-    np.testing.assert_allclose(nonseasonal, np.array([120.0, 153.0, 149.0, 115.0]), atol=COMPOUND)
+    reference = nns(
+        "NNS.ARMA",
+        series.tolist(),
+        4,
+        None,
+        False,
+        None,
+        1,
+        None,
+        True,
+        False,
+        "nonlin",
+        False,
+        False,
+        False,
+        False,
+        None,
+    )
+    np.testing.assert_allclose(nonseasonal, reference, atol=COMPOUND)
 
 
 @pytest.mark.parity
 @pytest.mark.stochastic
-def test_r_nns_13_seeded_stack_smoke_sample() -> None:
+def test_r_nns_14_seeded_stack_smoke_sample() -> None:
     x0 = np.linspace(0.0, 1.0, 12)
     x = np.column_stack((x0, np.sin(x0)))
     y = 1.0 + 2.0 * x[:, 0] - x[:, 1]
@@ -119,15 +137,18 @@ def test_r_nns_13_seeded_stack_smoke_sample() -> None:
         random_seed=123,
     )
 
-    # Live R 13.1 values under the reproduced Mersenne-Twister split stream.
-    np.testing.assert_allclose(
-        result["stack"], np.array([1.0, 1.09179031, 1.18433667]), atol=COMPOUND
+    expected = nns_stack_numeric(
+        x.tolist(),
+        y.tolist(),
+        x[:3].tolist(),
+        cv_size=0.25,
+        folds=2,
+        method=[1, 2],
+        order=None,
+        stack=True,
+        dim_red_method="cor",
+        seed=123,
     )
-    np.testing.assert_allclose(
-        result["reg"], np.array([1.0, 1.13692627, 1.13692627]), atol=COMPOUND
-    )
-    np.testing.assert_allclose(
-        result["dim.red"], np.array([1.0, 1.09179031, 1.18433667]), atol=COMPOUND
-    )
-    np.testing.assert_allclose(result["NNS.reg.n.best"], 1.0, atol=EXACT)
-    np.testing.assert_allclose(result["NNS.dim.red.threshold"], 1.0, atol=EXACT)
+    assert isinstance(expected, dict)
+    for key in ("stack", "reg", "dim.red", "NNS.reg.n.best", "NNS.dim.red.threshold"):
+        np.testing.assert_allclose(result[key], expected[key], atol=COMPOUND)

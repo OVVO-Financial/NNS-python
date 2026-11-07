@@ -992,9 +992,7 @@ def _assert_selection_matches(
         # Compare every equation's variables and numerical coefficients;
         # silently flattening class indices would lose their identity.
         assert isinstance(actual, dict)
-        if isinstance(expected, dict) and all(
-            isinstance(v, dict) for v in expected.values()
-        ):
+        if isinstance(expected, dict) and all(isinstance(v, dict) for v in expected.values()):
             assert set(actual) == set(expected)
             for class_name, reference in expected.items():
                 equation = actual[class_name]
@@ -1087,8 +1085,13 @@ def _assert_nested_stack_values(actual: Any, expected: Any) -> None:
         return
     if isinstance(actual, (list, tuple)):
         if isinstance(expected, np.ndarray):
-            assert expected.ndim > 0
             expected = expected.tolist()
+        if not isinstance(expected, (list, tuple)):
+            # jsonlite auto_unbox turns a singleton class set into a scalar.
+            # Accept only a one-element set; no broadcasting across rows.
+            assert len(actual) == 1
+            _assert_nested_stack_values(actual[0], expected)
+            return
         assert isinstance(expected, (list, tuple))
         assert len(actual) == len(expected)
         for value, reference in zip(actual, expected, strict=True):
@@ -1181,8 +1184,12 @@ def test_nns_stack_univariate_class_threshold_uses_the_deployed_fit(balance: boo
     # (the k-NN candidates it used to rank were never deployed), so the class
     # threshold is tuned on that fit's out-of-fold predictions.
     rng = np.random.default_rng(12)
-    x = np.round(np.concatenate([rng.normal(1.5, 0.3, 30), rng.normal(4.3, 0.5, 30),
-                                 rng.normal(5.6, 0.6, 30)]), 6)
+    x = np.round(
+        np.concatenate(
+            [rng.normal(1.5, 0.3, 30), rng.normal(4.3, 0.5, 30), rng.normal(5.6, 0.6, 30)]
+        ),
+        6,
+    )
     y = np.repeat([1.0, 2.0, 3.0], 30)
     test = np.array([2.1, 2.4, 4.9, 5.1])
 
@@ -1214,7 +1221,9 @@ def test_nns_stack_univariate_class_threshold_uses_the_deployed_fit(balance: boo
     )
 
     assert isinstance(expected, dict)
-    assert np.isnan(actual["NNS.reg.n.best"])
+    np.testing.assert_allclose(
+        actual["NNS.reg.n.best"], _numeric(expected["NNS.reg.n.best"]), equal_nan=True
+    )
     np.testing.assert_allclose(
         actual["probability.threshold"], float(np.asarray(expected["probability.threshold"]))
     )

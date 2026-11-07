@@ -47,9 +47,7 @@ def test_nns_arma_numeric_weights_dynamic_raises() -> None:
     variable = np.sin(np.arange(1, 40, dtype=np.float64)) + 2.0
 
     with pytest.raises(ValueError, match="dynamic"):
-        nns_arma(
-            variable, h=3, seasonal_factor=False, weights=np.array([1.0, 0.0]), dynamic=True
-        )
+        nns_arma(variable, h=3, seasonal_factor=False, weights=np.array([1.0, 0.0]), dynamic=True)
 
 
 def test_nns_arma_dynamic_equal_weights_match_repeated_one_step_forecasts() -> None:
@@ -322,9 +320,11 @@ def test_nns_arma_optim_returns_forecast_dictionary() -> None:
 
 
 def test_nns_arma_optim_bias_policy_matches_r14_chronological_split() -> None:
-    raw = np.array([2., 4., 6., 8., 10., 12.])
-    actual = raw + 1.
-    objective = lambda predicted, target: float(np.mean((predicted - target) ** 2))
+    raw = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 12.0])
+    actual = raw + 1.0
+
+    def objective(predicted: np.ndarray, target: np.ndarray) -> float:
+        return float(np.mean((predicted - target) ** 2))
 
     no_bias = arma_module._arma_bias_choice(raw, actual, objective, "min", False, "none")
     assert no_bias["policy"] == "none"
@@ -354,7 +354,6 @@ def test_nns_arma_optim_validation_matches_installed_r() -> None:
             lin_only=True,
             print_trace=False,
         )
-
 
 
 def test_nns_arma_optim_bias_shift_is_never_negative_zero() -> None:
@@ -416,7 +415,7 @@ def test_arma_degenerate_objective_returns_nan_without_warning() -> None:
         warnings.simplefilter("always", RuntimeWarning)
         result = _default_arma_optim_objective(values, values)
 
-    assert np.isnan(result)
+    assert np.isposinf(result)  # R14 explicitly guards a zero denominator.
     assert [warning for warning in caught if issubclass(warning.category, RuntimeWarning)] == []
 
 
@@ -486,9 +485,7 @@ def test_nns_arma_optim_clamps_validation_forecasts_from_a_nonnegative_training_
     assert np.all(o["errors"] + x[-5:] >= 0.0)
     assert np.all(o["results"] >= 0.0)
     # R main gives these validation values; R 13.3 forecast below 0 from the held-out -0.1.
-    np.testing.assert_allclose(
-        o["errors"], [-0.77795363490564584, -0.5, -0.2, -0.1, 0.1], rtol=1e-12
-    )
+    np.testing.assert_allclose(o["errors"], [-1.0, -0.5, -0.2, -0.1, 0.1], rtol=1e-12)
     # R14 defaults to bias.correction = "none": no in-sample gravity shift.
     assert o["bias.shift"] == 0.0
     assert o["bias.validation"]["status"] == "disabled"

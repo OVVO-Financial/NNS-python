@@ -38,6 +38,7 @@ class Columns:
     labels: list[str] | None
     row_labels: list[str] | None
     vector: bool
+    ordered: list[bool] | None = None
 
 
 def _categories_of(obj: Any) -> list[Any] | None:
@@ -70,6 +71,9 @@ def split_columns(x: Any) -> Columns:
             labels=[_label(c) for c in list(columns)],
             row_labels=None,
             vector=False,
+            ordered=[
+                bool(getattr(x.iloc[:, j].dtype, "ordered", False)) for j in range(x.shape[1])
+            ],
         )
 
     categories_1d = _categories_of(x)
@@ -84,18 +88,20 @@ def split_columns(x: Any) -> Columns:
                 labels=None,
                 row_labels=row_labels,
                 vector=True,
+                ordered=[bool(getattr(getattr(x, "dtype", None), "ordered", False))],
             )
 
     arr = np.asarray(x)
     if arr.ndim == 0:
         return Columns(
-            values=[arr.reshape(1)], categories=[None], labels=None, row_labels=None,
+            values=[arr.reshape(1)],
+            categories=[None],
+            labels=None,
+            row_labels=None,
             vector=True,
         )
     if arr.ndim == 1:
-        return Columns(
-            values=[arr], categories=[None], labels=None, row_labels=None, vector=True
-        )
+        return Columns(values=[arr], categories=[None], labels=None, row_labels=None, vector=True)
     if arr.ndim != 2:
         raise ValueError("Expected a vector, matrix, or data frame.")
     return Columns(
@@ -122,6 +128,7 @@ def response_values(
 # --------------------------------------------------------------------------
 # Value typing
 # --------------------------------------------------------------------------
+
 
 def is_missing(value: Any) -> bool:
     """R ``is.na`` for one element: None, NaN, pandas NA / NaT."""
@@ -281,14 +288,53 @@ def point_codes(
     return codes, unseen
 
 
+def canonical_predictor_codes(
+    levels: list[str],
+    train: NDArray[np.float64],
+    point: NDArray[np.float64] | None,
+    *,
+    ordered: bool = False,
+) -> tuple[list[str], NDArray[np.float64], NDArray[np.float64] | None]:
+    """R14 sorts unordered predictor levels, but preserves ordered factors.
+
+    Recode already-integerized factors against their original levels before
+    changing column order. Response-class level mappings are not canonicalized.
+    """
+    if ordered or levels == sorted(levels):
+        return levels, train, point
+    canonical = sorted(levels)
+    lookup = np.asarray([canonical.index(level) + 1.0 for level in levels])
+    return (
+        canonical,
+        lookup[train.astype(np.intp) - 1],
+        None if point is None else lookup[point.astype(np.intp) - 1],
+    )
+
+
 # --------------------------------------------------------------------------
 # R name helpers
 # --------------------------------------------------------------------------
 
 _RESERVED = {
-    "if", "else", "repeat", "while", "function", "for", "next", "break", "TRUE",
-    "FALSE", "NULL", "Inf", "NaN", "NA", "NA_integer_", "NA_real_",
-    "NA_character_", "NA_complex_", "in",
+    "if",
+    "else",
+    "repeat",
+    "while",
+    "function",
+    "for",
+    "next",
+    "break",
+    "TRUE",
+    "FALSE",
+    "NULL",
+    "Inf",
+    "NaN",
+    "NA",
+    "NA_integer_",
+    "NA_real_",
+    "NA_character_",
+    "NA_complex_",
+    "in",
 }
 
 

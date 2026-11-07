@@ -28,13 +28,15 @@ DY_D_PARITY = 5e-2
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
         ("square", lambda x: x * x, 3.0),
-        ("cube", lambda x: x**3, 2.0),
+        # R uses repeated multiplication for these small integer powers.
+        # libm pow (Python **) differs by one ulp and changes inferred h.
+        ("cube", lambda x: x * x * x, 2.0),
         ("log", np.log, 5.0),
         # math.tanh is the C library tanh R uses; np.tanh can differ by an ulp,
         # which changes the bisection path.
         ("tanh", lambda x: cmath.tanh(x) if isinstance(x, complex) else math.tanh(x), 0.5),
         ("abs", abs, -1.0),
-        ("quartic", lambda x: x**4 - 3 * x, -2.0),
+        ("quartic", lambda x: x * x * x * x - 3 * x, -2.0),
     ],
 )
 def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:
@@ -299,7 +301,10 @@ def test_dy_d_vectorized_wrt_mixed_mean_matches_scalar_python_calls() -> None:
 def test_dy_d_vectorized_wrt_numeric_eval_mixed_matches_scalar_python_calls() -> None:
     x = np.column_stack((np.linspace(-1.0, 1.0, 12), np.cos(np.linspace(0.0, 2.0, 12))))
     y = x[:, 0] ** 2 + x[:, 1]
-    eval_points = np.array([0.1, 0.4], dtype=np.float64)
+    marginal_points = np.array([0.1, 0.4], dtype=np.float64)
+    with pytest.raises(ValueError, match="explicit matrix evaluation points"):
+        dy_d(x, y, wrt=np.array([1, 2]), eval_points=marginal_points, mixed=True)
+    eval_points = marginal_points.reshape(1, -1)
     expected = _stacked_scalar_python_dy_d(x, y, [1, 2], eval_points, mixed=True)
     actual = dy_d(x, y, wrt=np.array([1, 2]), eval_points=eval_points, mixed=True)
     _assert_dy_d_dict_close(actual, expected, atol=1e-12)

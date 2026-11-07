@@ -23,13 +23,13 @@ def test_nns_reg_shapes_and_bounds() -> None:
     assert result["derivative"]["Coefficient"].size == result["regression.points"]["x"].size - 1
 
 
-def test_nns_reg_class_predicts_one_of_a_cells_tied_classes() -> None:
-    # The cell x = 1:4 holds classes 1, 1, 3, 3; the mean of the tied modes made it class 2.
+def test_nns_reg_nominal_probability_interpolation_matches_r14() -> None:
+    # Pinned R14 interpolates class probabilities, not numeric class codes.
     x = np.arange(1.0, 9.0)
     y = np.array([1.0, 1.0, 3.0, 3.0, 2.0, 2.0, 2.0, 2.0])
     result = nns_reg(x, y, type="CLASS", order=2)
     assert set(result["Fitted.xy"]["y.hat"][:4].tolist()) <= {1.0, 3.0}
-    np.testing.assert_array_equal(result["Fitted.xy"]["y.hat"], [1, 1, 1, 1, 2, 2, 2, 2])
+    np.testing.assert_array_equal(result["Fitted.xy"]["y.hat"], [1, 1, 1, 3, 2, 2, 2, 2])
 
 
 def test_nns_reg_degenerate_run_derivative_without_warning() -> None:
@@ -90,6 +90,7 @@ def test_nns_reg_dim_red_shapes_and_equation() -> None:
     assert np.asarray(result["equation"]["Coefficient"]).shape == (x.shape[1] + 1,)
     assert np.asarray(result["Point.est"]).shape == (2,)
 
+
 def test_nns_reg_dim_red_multivariate_call_returns_regression_points() -> None:
     x1 = np.linspace(-2.0, 2.0, 30)
     x = np.column_stack((x1, np.sin(x1), np.cos(x1)))
@@ -120,6 +121,7 @@ def test_nns_reg_confidence_interval_shapes_and_row_drop() -> None:
     assert result["pred.int"]["pred.int.neg"].shape == (4,)
     assert result["pred.int"]["pred.int.pos"].shape == (4,)
     assert np.all(result["pred.int"]["pred.int.neg"] <= result["pred.int"]["pred.int.pos"])
+
 
 def test_nns_reg_confidence_interval_none_output_unchanged() -> None:
     x = np.linspace(-2.0, 2.0, 50)
@@ -183,6 +185,7 @@ def test_nns_reg_order_max_smooth_applies_spline() -> None:
     assert np.all(np.isfinite(smoothed["Point.est"]))
     assert smoothed["pred.int"] is not None
 
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -211,6 +214,7 @@ def test_nns_reg_univariate_point_only_matches_regular_shape() -> None:
     assert result["regression.points"]["x"].ndim == 1
     assert np.asarray(result["Point.est"]).shape == (3,)
 
+
 def test_nns_reg_univariate_multi_column_point_est_rejected() -> None:
     x = np.linspace(-2.0, 2.0, 20)
     y = np.sin(x)
@@ -219,6 +223,7 @@ def test_nns_reg_univariate_multi_column_point_est_rejected() -> None:
     # column; the silent column-major flattening was removed.
     with pytest.raises(ValueError, match="exactly"):
         nns_reg(x, y, point_est=np.array([[-1.0, 1.0], [0.0, 2.0]]))
+
 
 def test_nns_reg_dimred_tau_validation() -> None:
     x1 = np.linspace(-2.0, 2.0, 30)
@@ -231,6 +236,7 @@ def test_nns_reg_dimred_tau_validation() -> None:
     # Repaired contract: tau must be NULL, 'cs', or 'ts'.
     with pytest.raises(ValueError, match="tau"):
         nns_reg(x, y, dim_red_method="NNS.caus", tau=3)
+
 
 def test_nns_reg_classification_outputs_numeric_codes() -> None:
     x = np.linspace(0.0, 5.0, 6)
@@ -280,6 +286,7 @@ def test_nns_reg_raw_string_class_labels_supported() -> None:
     assert result["class.levels"] == ["A", "B"]
     assert set(np.asarray(result["Point.est"]).tolist()).issubset({1.0, 2.0})
 
+
 def test_nns_reg_factor_predictor_encoded_natively() -> None:
     x = np.array(["a", "b", "a", "b", "a", "b"])
     y = np.array([1.0, 2.0, 1.5, 2.5, 0.5, 1.8])
@@ -287,6 +294,7 @@ def test_nns_reg_factor_predictor_encoded_natively() -> None:
     # Training-fitted dummy encoding requires no factor_levels argument.
     result = nns_reg(x, y, factor_2_dummy=True, point_est=np.array(["a", "b"]))
     assert np.asarray(result["Point.est"]).shape == (2,)
+
 
 def test_nns_reg_factor_predictor_expands_point_est_with_training_levels() -> None:
     x = np.array(["b", "a", "b", "c"])
@@ -306,6 +314,7 @@ def test_nns_reg_factor_predictor_expands_point_est_with_training_levels() -> No
     # Unseen prediction levels are rejected rather than silently encoded.
     with pytest.raises(ValueError, match="unseen"):
         nns_reg(x, y, factor_2_dummy=True, point_est=np.array(["d"]))
+
 
 def test_nns_reg_factor_predictor_dimred_expands_before_projection() -> None:
     factor = np.array(["b", "a", "b", "c", "a", "c"], dtype=object)
@@ -355,9 +364,7 @@ def test_prepared_bool_factors_predict_like_direct_regression() -> None:
     # R14 flags a wholly categorical design and uses exact joint cells.
     # Pre-encoded numeric dummy columns must explicitly request order=max
     # to preserve the same cell model rather than a continuous partition.
-    prepared = nns_reg(
-        design.x, y, point_est=design.point_est, order="max"
-    )["Point.est"]
+    prepared = nns_reg(design.x, y, point_est=design.point_est, order="max")["Point.est"]
 
     assert design.feature_names == ("x_FALSE.", "x_TRUE.")
     np.testing.assert_array_equal(prepared, direct)
@@ -396,7 +403,7 @@ def test_prepared_names_rename_outputs_and_keep_point_columns_aligned() -> None:
 
 def test_explicit_reg_overrides_binary_numeric_auto_classification_like_r14() -> None:
     x = np.arange(8.0)
-    y = np.array([0., 0., 0., 1., 1., 1., 0., 1.])
+    y = np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0])
 
     automatic = nns_reg(x, y)
     assert "Point.probabilities" in automatic  # automatic 0/1 nominal task

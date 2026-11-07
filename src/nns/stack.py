@@ -33,6 +33,7 @@ from nns._indices import ordered_complement
 from nns._labels import (
     Columns,
     as_float,
+    canonical_predictor_codes,
     codes_for,
     declared_codes,
     declared_levels,
@@ -61,7 +62,6 @@ from nns.dependence import nns_dep
 
 Objective = Literal["min", "max"]
 
-_RESPONSE_OFFSET = 0.123456789
 
 StackResult = dict[str, Any]
 """R-style NNS.stack result dict (OBJfn.reg, NNS.reg.n.best,
@@ -82,6 +82,7 @@ single predictor, whose univariate ``nns_reg`` fit has no ``n_best`` to tune."""
 # --------------------------------------------------------------------------
 # Small shared helpers (kept for nns.var imports)
 # --------------------------------------------------------------------------
+
 
 def _rank_average(values: NDArray[np.float64]) -> NDArray[np.float64]:
     """Average ranks of tied values (R's rank(ties.method = "average")).
@@ -225,6 +226,7 @@ def _scalar_integer(
 # Main entry point
 # --------------------------------------------------------------------------
 
+
 @honours_ncores
 def nns_stack(
     ivs_train: NDArray[Any],
@@ -253,6 +255,7 @@ def nns_stack(
     class_levels: Any = None,
     factor_levels: Any = None,
     random_seed: int | None = None,
+    _validation: dict[str, Any] | None = None,
 ) -> StackResult:
     del ncores
     seed = _resolve_seed(seed, random_seed)
@@ -280,15 +283,17 @@ def nns_stack(
     objective_value: Objective = cast(Objective, objective.lower())
 
     if type is not None:
-        if not isinstance(type, str) or type.lower() != "class":
-            raise ValueError("[type] must be NULL or 'CLASS'.")
-        type = "class"
+        if not isinstance(type, str) or type.lower() not in {"class", "reg"}:
+            raise ValueError("[type] must be NULL, 'REG', or 'CLASS'.")
+        type = type.lower()
 
     order_value = _validate_order(order)
 
     method_arr = np.atleast_1d(np.asarray(method))
-    if method_arr.size == 0 or not np.issubdtype(method_arr.dtype, np.number) or np.any(
-        method_arr != np.floor(method_arr.astype(np.float64))
+    if (
+        method_arr.size == 0
+        or not np.issubdtype(method_arr.dtype, np.number)
+        or np.any(method_arr != np.floor(method_arr.astype(np.float64)))
     ):
         raise ValueError("[method] must contain only 1 and/or 2.")
     methods = sorted(set(int(v) for v in method_arr.tolist()))
@@ -320,7 +325,7 @@ def nns_stack(
     response_categorical = response_kind in {"factor", "character", "logical"}
 
     auto_class = response_categorical or np.unique(dv).size == 2
-    if auto_class and type is None:
+    if auto_class and type is None and _validation is None:
         type = "class"
     if balance and type is None:
         warnings.warn(
@@ -340,11 +345,6 @@ def nns_stack(
             y = np.asarray([position[v] for v in dv.tolist()], dtype=np.float64)
         if np.unique(y).size < 2:
             raise ValueError("Classification requires at least two response classes.")
-        _, counts = np.unique(y, return_counts=True)
-        if counts.min() < 2:
-            raise ValueError(
-                "Each response class requires at least two observations for cross-validation."
-            )
         if obj_fn is None:
             obj_fn = lambda predicted, actual: float(np.mean(predicted == actual))  # noqa: E731
             objective_value = "max"
@@ -362,9 +362,7 @@ def nns_stack(
     original_p = x.shape[1]
 
     if ts_test_value is not None and ts_test_value >= n_obs:
-        raise ValueError(
-            "[ts.test] must be smaller than the number of training observations."
-        )
+        raise ValueError("[ts.test] must be smaller than the number of training observations.")
 
     if original_p == 1 and 2 in methods:
         warnings.warn(
@@ -389,9 +387,8 @@ def nns_stack(
             if dim_red_value not in {"cor", "nns.dep", "nns.caus", "equal", "all"}:
                 raise ValueError("Unsupported [dim.red.method].")
 
-    # Constant non-integer translation keeps NNS.reg from auto-classifying
-    # integer-valued regression or class-code targets.
-    y_fit_all = y + _RESPONSE_OFFSET
+    # Numeric learners use explicit REG, without translating the response.
+    y_fit_all = y.copy()
 
     # ----------------------------------------------------------------------
     # Shared closures
@@ -441,9 +438,7 @@ def nns_stack(
         tied = valid[scores[valid] == best]
         return float(grid[tied[math.ceil(tied.size / 2) - 1]])
 
-    def evaluate_raw(
-        raw: NDArray[np.float64], actual: NDArray[np.float64]
-    ) -> tuple[float, float]:
+    def evaluate_raw(raw: NDArray[np.float64], actual: NDArray[np.float64]) -> tuple[float, float]:
         threshold = best_threshold(raw, actual) if is_class else 0.5
         predicted = round_codes(raw, threshold) if is_class else raw
         return score(predicted, actual), threshold
@@ -460,16 +455,14 @@ def nns_stack(
     ) -> dict[str, NDArray[np.float64]] | None:
         if interval is None:
             return None
-        return {
-            k: decode_codes(round_codes(v, threshold)) for k, v in interval.items()
-        }
+        return {k: decode_codes(round_codes(v, threshold)) for k, v in interval.items()}
 
     def translate_interval(
         interval: dict[str, NDArray[np.float64]] | None,
     ) -> dict[str, NDArray[np.float64]] | None:
         if interval is None:
             return None
-        return {k: np.asarray(v, dtype=np.float64) - _RESPONSE_OFFSET for k, v in interval.items()}
+        return {k: np.asarray(v, dtype=np.float64) for k, v in interval.items()}
 
     def has_all_classes(train_y: NDArray[np.float64]) -> bool:
         return not is_class or set(np.unique(train_y).tolist()) == set(np.unique(y).tolist())
@@ -477,7 +470,7 @@ def nns_stack(
     def balance_indices(train_y: NDArray[np.float64]) -> NDArray[np.int64]:
         if not balance:
             return np.arange(train_y.size, dtype=np.int64)
-        values = np.unique(train_y)
+        values = train_y[np.sort(np.unique(train_y, return_index=True)[1])]
         groups = [np.flatnonzero(train_y == v) for v in values]
         if len(groups) < 2 or any(g.size == 0 for g in groups):
             raise ValueError(
@@ -508,14 +501,10 @@ def nns_stack(
             levels = predictor_levels[j]
             if levels is not None:
                 train_blocks.append(
-                    np.column_stack(
-                        [(tr == k + 1).astype(np.float64) for k in range(len(levels))]
-                    )
+                    np.column_stack([(tr == k + 1).astype(np.float64) for k in range(len(levels))])
                 )
                 test_blocks.append(
-                    np.column_stack(
-                        [(te == k + 1).astype(np.float64) for k in range(len(levels))]
-                    )
+                    np.column_stack([(te == k + 1).astype(np.float64) for k in range(len(levels))])
                 )
                 block_names.extend(
                     f"{predictor_names[j]}__{level}" for level in r_make_names(levels)
@@ -525,15 +514,13 @@ def nns_stack(
                     raise ValueError("[IVs.train] contains missing values.")
                 if np.any(~np.isfinite(tr)):
                     raise ValueError(
-                        f"[IVs.train] predictor [{predictor_names[j]}] contains non-finite "
-                        "values."
+                        f"[IVs.train] predictor [{predictor_names[j]}] contains non-finite values."
                     )
                 if np.any(np.isnan(te)):
                     raise ValueError("[IVs.test] contains missing values.")
                 if np.any(~np.isfinite(te)):
                     raise ValueError(
-                        f"[IVs.test] predictor [{predictor_names[j]}] contains non-finite "
-                        "values."
+                        f"[IVs.test] predictor [{predictor_names[j]}] contains non-finite values."
                     )
                 train_blocks.append(tr.reshape(-1, 1))
                 test_blocks.append(te.reshape(-1, 1))
@@ -554,7 +541,51 @@ def nns_stack(
             "names": r_make_unique(block_names, "_"),
         }
 
+    # R14's caller-supplied forecast fold is separate from the final fit.
+    # Prefix preprocessing and future predictor forecasts were built using
+    # only information available at the forecast origin.
+    x_cv, y_cv = x.copy(), y.copy()
+    validation_rows = None
+    if _validation is not None:
+        if is_class or ts_test_value is None or folds_value != 1 or cv_size is not None:
+            raise ValueError(
+                "[_validation] requires regression with ts_test, folds=1, cv_size=None."
+            )
+        required = {"IVs.train", "DV.train", "IVs.test", "DV.test"}
+        if not isinstance(_validation, dict) or not required.issubset(_validation):
+            raise ValueError(
+                "[_validation] must provide IVs.train, DV.train, IVs.test and DV.test."
+            )
+        vt = np.asarray(_validation["IVs.train"], dtype=np.float64)
+        vv = np.asarray(_validation["IVs.test"], dtype=np.float64)
+        yt = np.asarray(_validation["DV.train"], dtype=np.float64).reshape(-1)
+        yv = np.asarray(_validation["DV.test"], dtype=np.float64).reshape(-1)
+        prefix = n_obs - ts_test_value
+        if (
+            vt.shape != (prefix, original_p)
+            or vv.ndim != 2
+            or vv.shape[1] != original_p
+            or not 1 <= vv.shape[0] <= ts_test_value
+            or yt.size != prefix
+            or yv.size != vv.shape[0]
+            or any(not np.all(np.isfinite(a)) for a in (vt, vv, yt, yv))
+        ):
+            raise ValueError(
+                "[_validation] needs N-ts_test finite training rows and 1..ts_test test rows."
+            )
+        validation_rows = np.arange(prefix, prefix + vv.shape[0], dtype=np.int64)
+        x_cv[:prefix], x_cv[validation_rows] = vt, vv
+        y_cv[:prefix], y_cv[validation_rows] = yt, yv
+    y_fit_cv = y_cv
+
     def make_splits() -> list[dict[str, NDArray[np.int64]]]:
+        if validation_rows is not None:
+            return [
+                {
+                    "train": np.arange(n_obs - ts_test_value, dtype=np.int64),
+                    "validation": validation_rows,
+                }
+            ]
         all_index = np.arange(n_obs, dtype=np.int64)
 
         if ts_test_value is not None:
@@ -573,11 +604,7 @@ def nns_stack(
                 validation = np.arange(start, start + ts_test_value, dtype=np.int64)
                 training = np.arange(start, dtype=np.int64)
                 out.append({"train": training, "validation": validation})
-            out = [
-                s
-                for s in out
-                if s["train"].size >= 3 and has_all_classes(y[s["train"]])
-            ]
+            out = [s for s in out if s["train"].size >= 3 and has_all_classes(y[s["train"]])]
             if not out:
                 raise ValueError(
                     "No chronological fold retained enough training observations "
@@ -594,7 +621,7 @@ def nns_stack(
             for _ in range(folds_value):
                 if is_class:
                     validation_parts = []
-                    for v in np.unique(y):
+                    for v in y[np.sort(np.unique(y, return_index=True)[1])]:
                         g = np.flatnonzero(y == v)
                         size = min(g.size - 1, max(1, round(holdout_size * g.size)))
                         if size > 0:
@@ -602,9 +629,9 @@ def nns_stack(
                     validation = np.unique(np.concatenate(validation_parts)).astype(np.int64)
                 else:
                     size = max(1, min(n_obs - 1, round(holdout_size * n_obs)))
-                    validation = np.sort(
-                        rng.sample_int(n_obs, size, replace=False) - 1
-                    ).astype(np.int64)
+                    validation = np.sort(rng.sample_int(n_obs, size, replace=False) - 1).astype(
+                        np.int64
+                    )
                 training = ordered_complement(all_index, validation)
                 if training.size < 3 or not has_all_classes(y[training]):
                     raise ValueError(
@@ -633,7 +660,7 @@ def nns_stack(
             )
         fold_id = np.zeros(n_obs, dtype=np.int64)
         if is_class:
-            for v in np.unique(y):
+            for v in y[np.sort(np.unique(y, return_index=True)[1])]:
                 g = np.flatnonzero(y == v)
                 shuffled = rng.sample(g)
                 fold_id[shuffled] = np.resize(np.arange(1, use_folds + 1), g.size)
@@ -659,9 +686,7 @@ def nns_stack(
         if isinstance(dim_red_value, np.ndarray):
             coef = dim_red_value.astype(np.float64).copy()
             if coef.size != p:
-                raise ValueError(
-                    f"Numeric [dim.red.method] must contain {p} encoded coefficients."
-                )
+                raise ValueError(f"Numeric [dim.red.method] must contain {p} encoded coefficients.")
             coef[~np.isfinite(coef)] = 0.0
             return coef
 
@@ -754,7 +779,7 @@ def nns_stack(
                 train_y_fit,
                 point_est=test_x,
                 order=order_value,
-                type=None,
+                type="REG",
                 factor_2_dummy=False,
                 dist=dist_value,
                 point_only=point_only,
@@ -765,8 +790,8 @@ def nns_stack(
                 return {"raw": np.full(test_x.size, np.nan), "fit": None}
             raise
         raw = sanitize_raw(
-            np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1) - _RESPONSE_OFFSET,
-            train_y_fit - _RESPONSE_OFFSET,
+            np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1),
+            train_y_fit,
         )
         return {"raw": raw, "fit": fit}
 
@@ -780,9 +805,7 @@ def nns_stack(
         rpm_yhat = np.asarray(rpm["y.hat"], dtype=np.float64)
         mins = train_design.min(axis=0)
         maxs = train_design.max(axis=0)
-        path = _mreg_predict_path(
-            xtest, rpm_x, rpm_yhat, rpm_x.shape[0], dist_value, mins, maxs
-        )
+        path = _mreg_predict_path(xtest, rpm_x, rpm_yhat, rpm_x.shape[0], dist_value, mins, maxs)
         if path.shape[0] != xtest.shape[0]:
             raise ValueError("The production distance path returned an invalid row count.")
         return path
@@ -799,7 +822,7 @@ def nns_stack(
         valid = has & np.isfinite(raw)
         if not np.any(valid):
             return {"score": float("nan"), "threshold": 0.5, "raw": raw}
-        s, t = evaluate_raw(raw[valid], y[valid])
+        s, t = evaluate_raw(raw[valid], y_cv[valid])
         return {"score": s, "threshold": t, "raw": raw}
 
     def select_best(scores: NDArray[np.float64]) -> int:
@@ -817,15 +840,25 @@ def nns_stack(
         from nns._stack_class_r14 import classify_stack_r14
 
         return classify_stack_r14(
-            x=x, z=z, y=y, class_values=class_values,
+            x=x,
+            z=z,
+            y=y,
+            class_values=class_values,
             response_categorical=response_categorical,
             predictor_levels=predictor_levels,
-            methods=methods, order=order_value, dist=dist_value,
+            methods=methods,
+            order=order_value,
+            dist=dist_value,
             dim_red_method=dim_red_value,
-            splits=splits, balance_indices=balance_indices,
-            numeric_design=numeric_design, score=score, stack=stack,
-            objective=objective_value, optimize_threshold=optimize_threshold,
-            pred_int=pred_int, status=status,
+            splits=splits,
+            balance_indices=balance_indices,
+            numeric_design=numeric_design,
+            score=score,
+            stack=stack,
+            objective=objective_value,
+            optimize_threshold=optimize_threshold,
+            pred_int=pred_int,
+            status=status,
             tau="ts" if ts_test_value is not None else None,
             return_fit=return_fit,
         )
@@ -833,14 +866,8 @@ def nns_stack(
     full_design = numeric_design(x, z)
     encoded_p = full_design["train"].shape[1]
 
-    if (
-        2 in methods
-        and isinstance(dim_red_value, np.ndarray)
-        and dim_red_value.size != encoded_p
-    ):
-        raise ValueError(
-            f"Numeric [dim.red.method] must contain {encoded_p} encoded coefficients."
-        )
+    if 2 in methods and isinstance(dim_red_value, np.ndarray) and dim_red_value.size != encoded_p:
+        raise ValueError(f"Numeric [dim.red.method] must contain {encoded_p} encoded coefficients.")
 
     # ----------------------------------------------------------------------
     # Method 2: dimension count from OOF predictions
@@ -867,9 +894,9 @@ def nns_stack(
             for b, split in enumerate(splits):
                 train_idx = split["train"]
                 valid_idx = split["validation"]
-                fold_design = numeric_design(x[train_idx], x[valid_idx])
-                coef_fold = coefficient_vector(fold_design["train"], y[train_idx])
-                balanced_idx = balance_indices(y[train_idx])
+                fold_design = numeric_design(x_cv[train_idx], x_cv[valid_idx])
+                coef_fold = coefficient_vector(fold_design["train"], y_cv[train_idx])
+                balanced_idx = balance_indices(y_cv[train_idx])
 
                 # R builds every cumulative projection with NNS_xstar_path_cpp.
                 path_train = _r_xstar_path(fold_design["train"], coef_fold)
@@ -879,7 +906,7 @@ def nns_stack(
                     xs_test = path_test[:, m - 1]
                     fit = fit_univariate_raw(
                         xs_train[balanced_idx],
-                        y_fit_all[train_idx][balanced_idx],
+                        y_fit_cv[train_idx][balanced_idx],
                         xs_test,
                         point_only=True,
                         allow_failure=True,
@@ -912,9 +939,8 @@ def nns_stack(
             dim_component_threshold = float(dim_thresholds[best_idx])
             dim_oof_raw = dim_raws[best_idx]
 
-        dim_full_coef = active_coefficients(
-            coefficient_vector(full_design["train"], y), dim_best_count
-        )
+        dim_full_coef_original = coefficient_vector(full_design["train"], y)
+        dim_full_coef = active_coefficients(dim_full_coef_original, dim_best_count)
         dim_full_xstar_train = _r_xstar_path(full_design["train"], dim_full_coef)[
             :, dim_best_count - 1
         ]
@@ -941,8 +967,7 @@ def nns_stack(
         active_order = np.argsort(-np.abs(dim_full_coef), kind="stable")
         active_order = active_order[np.abs(dim_full_coef[active_order]) > 0]
         dim_active_variables = [
-            predictor_names[j]
-            for j in dict.fromkeys(full_design["source"][active_order].tolist())
+            predictor_names[j] for j in dict.fromkeys(full_design["source"][active_order].tolist())
         ]
 
     # ----------------------------------------------------------------------
@@ -956,17 +981,13 @@ def nns_stack(
     def method1_design_for_split(
         train_idx: NDArray[np.int64], valid_idx: NDArray[np.int64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        fold_design = numeric_design(x[train_idx], x[valid_idx])
+        fold_design = numeric_design(x_cv[train_idx], x_cv[valid_idx])
         if stack and 2 in methods:
-            coef_fold = coefficient_vector(fold_design["train"], y[train_idx])
-            active = active_coefficients(coef_fold, cast(int, dim_best_count))
-            xs_train, xs_test = project_xstar(
-                fold_design["train"], fold_design["test"], active
-            )
-            return (
-                np.column_stack((xs_train, xs_train)),
-                np.column_stack((xs_test, xs_test)),
-            )
+            coef_fold = coefficient_vector(fold_design["train"], y_cv[train_idx])
+            # R14 Method 1 retains the selected original coordinates;
+            # the synthetic X* index belongs only to Method 2.
+            selected = np.argsort(-np.abs(coef_fold), kind="stable")[:dim_best_count]
+            return fold_design["train"][:, selected], fold_design["test"][:, selected]
         return fold_design["train"], fold_design["test"]
 
     reg_best_is_all = False
@@ -979,7 +1000,7 @@ def nns_stack(
         else:
             # A single predictor's nns_reg fit has no neighbour count to tune (it
             # ignores n_best), so ALL, the deployed fit, is its only candidate.
-            univariate = encoded_p == 1
+            univariate = encoded_p == 1 or (stack and 2 in methods and dim_best_count == 1)
             l_small = 0 if univariate else max(1, math.floor(math.sqrt(n_obs)))
             candidate_ids = [str(k) for k in range(1, l_small + 1)] + ["all"]
             sum_list = {cid: np.zeros(n_obs) for cid in candidate_ids}
@@ -990,9 +1011,9 @@ def nns_stack(
                 train_idx = split["train"]
                 valid_idx = split["validation"]
                 train_design, valid_design = method1_design_for_split(train_idx, valid_idx)
-                balanced_idx = balance_indices(y[train_idx])
+                balanced_idx = balance_indices(y_cv[train_idx])
                 train_design = train_design[balanced_idx]
-                train_y_fit = y_fit_all[train_idx][balanced_idx]
+                train_y_fit = y_fit_cv[train_idx][balanced_idx]
 
                 small_raw: list[NDArray[np.float64]] = []
                 if train_design.shape[1] > 1:
@@ -1000,9 +1021,7 @@ def nns_stack(
                         train_design, train_y_fit, order_value, "off", False
                     )
                     if rpm_x_f.shape[0] < 1:
-                        raise ValueError(
-                            "NNS.reg did not return a usable regression-point matrix."
-                        )
+                        raise ValueError("NNS.reg did not return a usable regression-point matrix.")
                     small_kmax = min(l_small, rpm_x_f.shape[0])
                     if small_kmax >= 1:
                         small_path = _mreg_predict_path(
@@ -1013,9 +1032,9 @@ def nns_stack(
                             dist_value,
                             train_design.min(axis=0),
                             train_design.max(axis=0),
-                        ) - _RESPONSE_OFFSET
+                        )
                         small_raw = [
-                            sanitize_raw(small_path[:, k], y[train_idx])
+                            sanitize_raw(small_path[:, k], y_cv[train_idx])
                             for k in range(small_kmax)
                         ]
 
@@ -1053,7 +1072,7 @@ def nns_stack(
                             False,
                         ),
                     )
-                    all_raw = sanitize_raw(all_pred - _RESPONSE_OFFSET, y[train_idx])
+                    all_raw = sanitize_raw(all_pred, y_cv[train_idx])
                 good = np.isfinite(all_raw)
                 rows = valid_idx[good]
                 sum_list["all"][rows] += all_raw[good]
@@ -1085,7 +1104,7 @@ def nns_stack(
                     candidate_scores[cid] = float("nan")
                     candidate_thresholds[cid] = 0.5
                     return False
-                s, t = evaluate_raw(raw[valid], y[valid])
+                s, t = evaluate_raw(raw[valid], y_cv[valid])
                 candidate_scores[cid] = s
                 candidate_thresholds[cid] = t
                 return math.isfinite(s)
@@ -1155,9 +1174,7 @@ def nns_stack(
     else:
         valid = np.isfinite(reg_oof_raw) & np.isfinite(dim_oof_raw)
         if not np.any(valid):
-            raise ValueError(
-                "The two component models have no common finite OOF predictions."
-            )
+            raise ValueError("The two component models have no common finite OOF predictions.")
         weight_grid = np.round(np.arange(0.0, 1.0 + 1e-9, 0.01), 2)
         blend_scores = np.full(weight_grid.size, np.nan)
         blend_thresholds = np.full(weight_grid.size, 0.5)
@@ -1207,12 +1224,11 @@ def nns_stack(
 
     if 1 in methods:
         if stack and 2 in methods:
-            final_train: NDArray[np.float64] = np.column_stack(
-                (dim_full_xstar_train, dim_full_xstar_train)
-            )
-            final_test: NDArray[np.float64] = np.column_stack(
-                (dim_full_xstar_test, dim_full_xstar_test)
-            )
+            selected_columns = np.argsort(-np.abs(dim_full_coef_original), kind="stable")[
+                :dim_best_count
+            ]
+            final_train: NDArray[np.float64] = full_design["train"][:, selected_columns]
+            final_test: NDArray[np.float64] = full_design["test"][:, selected_columns]
         else:
             final_train = full_design["train"]
             final_test = full_design["test"]
@@ -1228,15 +1244,14 @@ def nns_stack(
                 point_est=final_test[:, 0],
                 n_best=final_n_best,
                 order=order_value,
-                type=None,
+                type="REG",
                 factor_2_dummy=False,
                 dist=dist_value,
                 point_only=False,
                 confidence_interval=pred_int,
             )
             reg_raw_final = sanitize_raw(
-                np.asarray(reg_fit["Point.est"], dtype=np.float64).reshape(-1)
-                - _RESPONSE_OFFSET,
+                np.asarray(reg_fit["Point.est"], dtype=np.float64).reshape(-1),
                 y,
             )
             reg_pred_int_raw = translate_interval(reg_fit["pred.int"])
@@ -1252,22 +1267,19 @@ def nns_stack(
                 point_est=final_test,
                 n_best=final_n_best,
                 order=order_value,
-                type=None,
+                type="REG",
                 factor_2_dummy=False,
                 dist=dist_value,
                 point_only=False,
                 confidence_interval=pred_int,
             )
             reg_raw_final = sanitize_raw(
-                np.asarray(reg_fit["Point.est"], dtype=np.float64).reshape(-1)
-                - _RESPONSE_OFFSET,
+                np.asarray(reg_fit["Point.est"], dtype=np.float64).reshape(-1),
                 y,
             )
             reg_pred_int_raw = translate_interval(reg_fit["pred.int"])
             if reg_best_is_all:
-                rpm_full_x, _ = _mreg_prepare(
-                    train_design, train_y_fit, order_value, "off", False
-                )
+                rpm_full_x, _ = _mreg_prepare(train_design, train_y_fit, order_value, "off", False)
                 reg_best_k = rpm_full_x.shape[0] if rpm_full_x.size else train_design.shape[0]
 
     # Component outputs with their own OOF thresholds.
@@ -1301,25 +1313,17 @@ def nns_stack(
             )
         reg_use[reg_bad] = dim_use[reg_bad]
         dim_use[dim_bad] = reg_use[dim_bad]
-        stacked_raw = (
-            component_weights["reg"] * reg_use + component_weights["dim.red"] * dim_use
-        )
+        stacked_raw = component_weights["reg"] * reg_use + component_weights["dim.red"] * dim_use
 
     stacked_output = (
-        decode_codes(round_codes(stacked_raw, probability_threshold))
-        if is_class
-        else stacked_raw
+        decode_codes(round_codes(stacked_raw, probability_threshold)) if is_class else stacked_raw
     )
 
     reg_pred_int = (
-        decode_interval(reg_pred_int_raw, reg_component_threshold)
-        if is_class
-        else reg_pred_int_raw
+        decode_interval(reg_pred_int_raw, reg_component_threshold) if is_class else reg_pred_int_raw
     )
     dim_pred_int = (
-        decode_interval(dim_pred_int_raw, dim_component_threshold)
-        if is_class
-        else dim_pred_int_raw
+        decode_interval(dim_pred_int_raw, dim_component_threshold) if is_class else dim_pred_int_raw
     )
 
     if pred_int is None:
@@ -1552,6 +1556,12 @@ def _prepare_inputs(
                             f"Test predictor [{names[j]}] contains levels absent from the "
                             "training data."
                         )
+            levels, codes, test_codes = canonical_predictor_codes(
+                levels,
+                codes,
+                test_codes,
+                ordered=bool(cols.ordered and cols.ordered[j]),
+            )
             x[:, j] = codes
             if test_codes is not None:
                 z[:, j] = test_codes

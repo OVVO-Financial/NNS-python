@@ -305,7 +305,7 @@ def test_nns_m_reg_factor_levels_class_confidence_interval_matches_r() -> None:
 
 
 @pytest.mark.parity
-def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
+def test_nns_m_reg_retains_its_separate_classification_contract() -> None:
     x, _ = _dataset(9, 3, "mixed", np.random.default_rng(654))
     y = np.array([1, 1, 2, 2, 3, 3, 2, 1, 3], dtype=np.float64)
     point_est = np.array([[0.0, 0.0, 1.0], [1.5, 0.8, -0.2]])
@@ -322,7 +322,7 @@ def test_nns_reg_matrix_classification_dispatches_to_m_reg() -> None:
         "off",
         type="class",
     )
-    actual = nns_reg(x, y, order=1, type="class", point_est=point_est, dist=None)
+    actual = nns_m_reg(x, y, order=1, n_best=1, type="class", point_est=point_est, dist=None)
 
     _assert_m_reg_matches(actual, expected)
 

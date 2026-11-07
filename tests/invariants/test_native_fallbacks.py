@@ -55,15 +55,10 @@ def _vectors() -> list[np.ndarray]:
 
 @pytest.mark.parametrize("discrete", [False, True])
 @pytest.mark.parametrize("multi", [False, True])
-def test_mode_fallback_is_bit_identical_to_native(
-    discrete: bool, multi: bool, request: pytest.FixtureRequest
-) -> None:
+def test_mode_fallback_is_bit_identical_to_native(discrete: bool, multi: bool) -> None:
     native = native_fn("mode")
     if native is None:
         pytest.skip("native extension not available")
-    if discrete and not multi:
-        reason = "the vendored NNS-core still averages tied discrete modes"
-        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
     fallback = _discrete_mode if discrete else _continuous_mode
     for x in _vectors():
         expected = np.asarray(native(np.ascontiguousarray(x), discrete, multi))
@@ -74,7 +69,6 @@ def test_mode_fallback_is_bit_identical_to_native(
 
 
 @pytest.mark.parametrize("multi", [False, True])
-@pytest.mark.xfail(strict=True, reason="the vendored NNS-core still averages tied discrete modes")
 def test_discrete_mode_fallback_matches_native_on_tiny_samples(multi: bool) -> None:
     native = native_fn("mode")
     if native is None:
@@ -118,9 +112,7 @@ def _dep_pairs() -> list[tuple[np.ndarray, np.ndarray]]:
 
 
 @pytest.mark.parametrize("asym", [False, True])
-def test_dep_fallback_matches_native_on_ties(
-    asym: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dep_fallback_matches_native_on_ties(asym: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     native = native_fn("nns_dep_pair")
     if native is None:
         pytest.skip("native extension not available")

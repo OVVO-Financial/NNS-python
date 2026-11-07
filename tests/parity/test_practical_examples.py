@@ -248,14 +248,6 @@ def test_sunspots_arma_example_matches_installed_r() -> None:
     np.testing.assert_allclose(actual, _array(expected["estimates"]), atol=COMPOUND)
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
-        "forecast rows; unpatched R 13.3 still refits the last h observed "
-        "rows, so this passes only against R with that patch."
-    ),
-)
 @pytest.mark.parity
 @pytest.mark.practical
 def test_var_macro_like_example_matches_installed_r() -> None:
@@ -270,14 +262,6 @@ def test_var_macro_like_example_matches_installed_r() -> None:
         )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Compares with live installed R. NNS.VAR's multivariate stage now uses the "
-        "forecast rows; unpatched R 13.3 still refits the last h observed "
-        "rows, so this passes only against R with that patch."
-    ),
-)
 @pytest.mark.parity
 @pytest.mark.practical
 def test_var_macro_like_multivariate_stage_matches_installed_r() -> None:
@@ -350,7 +334,7 @@ def _r_partial_moment_equivalences() -> dict[str, Any]:
             )
           )
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -378,7 +362,7 @@ def _r_curve_fitting() -> dict[str, Any]:
           point_est = as.numeric(point_est),
           orders = list(order_1 = one(1), order_2 = one(2), order_3 = one(3))
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -413,7 +397,7 @@ def _r_regression_residuals() -> dict[str, Any]:
             stack_head = as.numeric(head(stack, 5))
           )
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -462,7 +446,7 @@ def _r_boston_housing_original_factor_path() -> dict[str, Any]:
             rf_rmse = rmse(rf_pred, testing$medv)
           )
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -507,7 +491,7 @@ def _r_boston_housing_numeric_chas_path() -> dict[str, Any]:
             stack_head = as.numeric(head(nns_result$stack, 5))
           )
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -570,7 +554,7 @@ def _r_iris_classification_vignette() -> dict[str, Any]:
             dim_red_threshold = as.numeric(stacked$NNS.dim.red.threshold)
           )
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -592,7 +576,7 @@ def _r_sunspots_arma_example() -> dict[str, Any]:
           seasonal.plot = FALSE
         )
         out <- list(training = as.numeric(training), estimates = as.numeric(result))
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
@@ -622,13 +606,16 @@ def _r_var_macro_like_example() -> dict[str, Any]:
           multivariate = unname(result$multivariate),
           ensemble = unname(result$ensemble)
         )
-        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = NA, null = 'null'))
+        cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 17, null = 'null'))
         """,
         {},
     )
 
 
 def _run_r_json(script: str, payload: dict[str, Any]) -> dict[str, Any]:
+    # The fixtures export R-generated inputs as well as outputs. 17 digits
+    # preserve those doubles: digits=NA emits only 15 significant digits and
+    # can move a point across a deterministic partition boundary on replay.
     try:
         completed = subprocess.run(
             ["Rscript", "-e", script],

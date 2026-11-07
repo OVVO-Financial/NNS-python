@@ -2,6 +2,20 @@
 
 > **Do not merge, squash, force-push, or close the open function-port PRs while the cumulative R 14.0 gate is red.** This is a coordination ledger for the existing implementation, not a proposal to rewrite it.
 
+## Local repair verification (2026-11-07; not yet published)
+
+The repair patch described in [R14 local parity repair](R14_LOCAL_PARITY_REPAIR.md)
+passes 2,961 native tests (13 existing skips), 2,815 public-fallback tests
+(37 skips), and 9 live-R practical examples (2 missing optional-caret skips).
+Ruff, mypy, the sdist-to-wheel build, and an isolated wheel smoke test also pass.
+The cache now has 2,764 R-authored entries in 80 shards. `extern/NNS-core` is
+unchanged; separately attributed native R14 overlays replace stale dispatch.
+
+These are **local** results for a patch targeting remote head `71ae8e8...`.
+They are not a claim that the patch has been pushed or that GitHub's matrix is
+green. The earlier baseline table below is preserved as historical evidence.
+Do not merge until the repaired head passes remote CI.
+
 ## Authoritative source and branch structure
 
 - R behavior: `OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae`, NNS 14.0.

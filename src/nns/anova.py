@@ -8,8 +8,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._rmean import r_mean
-from nns.central_tendencies import nns_gravity
 from nns._rrng import RRNG
+from nns.central_tendencies import nns_gravity
 from nns.core import lpm_ratio, upm_ratio
 from nns.var import lpm_var, upm_var
 
@@ -173,7 +173,8 @@ def _anova_bin(
         if medians:
             mean_of_means = float(np.median(np.concatenate((control, treatment))))
         elif (
-            control.size > 0 and treatment.size > 0
+            control.size > 0
+            and treatment.size > 0
             and np.all(control == control[0])
             and np.all(treatment == treatment[0])
             and control[0] == treatment[0]
@@ -225,7 +226,9 @@ def _anova_bin(
     # all-constant sample exactly at its target contributes zero discrepancy
     # rather than the degenerate public step-ratio convention.
     constant_1 = float(control[0]) if control.size and np.all(control == control[0]) else None
-    constant_2 = float(treatment[0]) if treatment.size and np.all(treatment == treatment[0]) else None
+    constant_2 = (
+        float(treatment[0]) if treatment.size and np.all(treatment == treatment[0]) else None
+    )
 
     def area_distance(r1: float, r2: float, target: float, p: float) -> float:
         d1 = 0.0 if constant_1 is not None and constant_1 == target else abs(r1 - p)
@@ -297,12 +300,10 @@ def _anova_robust(
     # TRUE)) for the control and then for the treatment, each group from its own
     # full sample and size (the shared min(n1, n2) index matrix only
     # ever resampled the first min(n1, n2) observations of the longer group).
-    control_draws = (rng.sample_int_replace(control.size, control.size * 100) - 1).reshape(
+    control_draws = (rng.sample_int_replace(control.size, control.size * 100) - 1).reshape(100, -1)
+    treatment_draws = (rng.sample_int_replace(treatment.size, treatment.size * 100) - 1).reshape(
         100, -1
     )
-    treatment_draws = (
-        rng.sample_int_replace(treatment.size, treatment.size * 100) - 1
-    ).reshape(100, -1)
     certainties = np.array(
         [
             _anova_bin(
@@ -433,7 +434,7 @@ def _as_group(value: object, name: str) -> NDArray[np.float64]:
     values = values[~np.isnan(values)]
     if values.size == 0:
         raise ValueError(f"{name} must contain at least one finite value.")
-    return values
+    return np.asarray(values, dtype=np.float64)
 
 
 def _as_groups(

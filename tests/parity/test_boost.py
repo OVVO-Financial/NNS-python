@@ -131,7 +131,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
             learner_trials=10,
             cv_size=0.25,
             feature_importance=False,
-        dist=None,
+            dist=None,
         )["results"],
         dtype=np.float64,
     )
@@ -144,7 +144,7 @@ def test_nns_boost_ivs_test_none_is_seed_invariant() -> None:
                 cv_size=0.25,
                 feature_importance=False,
                 random_seed=seed,
-            dist=None,
+                dist=None,
             )["results"],
             dtype=np.float64,
         )
@@ -1053,6 +1053,7 @@ def _assert_boost_class_structure(
     else:
         assert actual["pred.int"] is None
         assert expected["pred.int"] is None
+
     # The port keeps feature.weights/frequency as named dicts; R serializes the
     # named vector as a plain array.
     def _weight_values(value: Any) -> np.ndarray:
@@ -1063,3 +1064,38 @@ def _assert_boost_class_structure(
     assert _weight_values(expected["feature.weights"]).ndim == 1
     assert _weight_values(actual["feature.frequency"]).ndim == 1
     assert _weight_values(expected["feature.frequency"]).ndim == 1
+
+
+@pytest.mark.parity
+def test_nns_boost_multiclass_interval_is_null_like_live_r14() -> None:
+    x = np.linspace(-2.0, 2.0, 30)
+    design = np.column_stack((x, np.sin(x), np.cos(x)))
+    y = (np.arange(30) % 3 + 1).astype(float)
+    points = design[::7]
+    expected = nns_boost_numeric(
+        design.tolist(),
+        y.tolist(),
+        points.tolist(),
+        learner_trials=10,
+        features_only=False,
+        cv_size=0.25,
+        depth=1,
+        type="class",
+        pred_int=0.95,
+    )
+    actual = nns_boost(
+        design,
+        y,
+        points,
+        learner_trials=10,
+        cv_size=0.25,
+        depth=1,
+        type="class",
+        pred_int=0.95,
+        feature_importance=False,
+        dist=None,
+    )
+    _assert_boost_matches(actual, expected)
+    assert isinstance(expected, dict)
+    assert expected["pred.int"] is None
+    assert actual["pred.int"] is None

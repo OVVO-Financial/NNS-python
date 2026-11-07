@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "nns/nns.hpp"
+#include "_r14_dependence.hpp"
 
 namespace nb = nanobind;
 
@@ -502,35 +503,26 @@ std::vector<std::string> dep_xonly_partition(const double* x, std::size_t n, int
   return quad;
 }
 
-// NNS.dep = R NNS_dep_pair_cpp on the X-only partitions of x and y. The
-// labels are hashed with std::hash<std::string> exactly as the R wrapper does,
-// and nns::dep_pair is the NNS-core port of R's NNS_dep_pair_core: cell
-// means are sequential double sums / n, the moments are one-pass sums, and the
-// cell weights are accumulated in the same unordered_map order as R. A
-// pairwise (NumPy) cell mean differs from R's in the last ulp on evenly spaced
-// or tied cells, and a point sitting exactly on the mean then changes
-// quadrant counts (R seq(0, 4*pi, pi/100), sin: dependence 0.92402 vs R
-// 0.92466).
-std::vector<uint64_t> hash_labels(const std::vector<std::string>& labels) {
-  const std::hash<std::string> hasher;
-  std::vector<uint64_t> out(labels.size());
-  for (std::size_t i = 0; i < labels.size(); ++i) out[i] = hasher(labels[i]);
-  return out;
-}
-
+// R14 dependence consumes the full prefix labels of all three partition
+// families. Hashing only the leaves loses the multilevel maximum entirely.
 nb::dict nns_dep_pair(const Vector& xa, const Vector& ya, bool asym) {
   const std::size_t n = checked_size(xa, "x");
   if (ya.shape(0) != n) throw std::invalid_argument("x and y must have the same length.");
   const double* x = xa.data();
   const double* y = ya.data();
 
-  nns::DepResult res;
+  nns_r14::DepResult res;
   {
     nb::gil_scoped_release release;
     const int obs_req = std::max<int>(8, static_cast<int>(n / 8U));
-    const std::vector<uint64_t> quad_xy = hash_labels(dep_xonly_partition(x, n, obs_req));
-    const std::vector<uint64_t> quad_yx = hash_labels(dep_xonly_partition(y, n, obs_req));
-    res = nns::dep_pair(x, y, n, quad_xy.data(), quad_yx.data(), asym);
+    const auto quad_xy = dep_xonly_partition(x, n, obs_req);
+    const auto quad_yx = asym ? std::vector<std::string>{} : dep_xonly_partition(y, n, obs_req);
+    int depth = 1;
+    while (static_cast<std::size_t>(1) << depth < n) ++depth;
+    const auto joint = asym ? std::vector<std::string>{}
+                           : partition_labels(x, y, n, false, depth, obs_req, false).quadrant;
+    res = nns_r14::dep_pair(std::vector<double>(x, x + n), std::vector<double>(y, y + n),
+                            quad_xy, quad_yx, joint, asym);
   }
 
   nb::dict out;
@@ -890,6 +882,14 @@ NB_MODULE(_nnscore, m) {
         nb::arg("p"), nb::arg("yhat"), nb::arg("xtest"), nb::arg("m"), nb::arg("kmax"),
         nb::arg("dist_code"), nb::arg("mins"), nb::arg("maxs"), nb::arg("is_class"));
   m.def("nns_dep_pair", &nns_dep_pair, nb::arg("x"), nb::arg("y"), nb::arg("asym"));
+  // Versioned aliases prevent new Python code from loading the old R13
+  // statistic when an installation accidentally retains a stale extension.
+  m.attr("gravity_r14") = m.attr("gravity");
+  m.attr("mode_r14") = m.attr("mode");
+  m.attr("gravity_exact_r14") = m.attr("gravity_exact");
+  m.attr("nns_dep_pair_r14") = m.attr("nns_dep_pair");
+  m.attr("r14_source_commit") = "7b07a837c130ba7220dbe16c584221508757d5ae";
+
   m.def(
       "copula_nd",
       [](const Vector& data, std::size_t n, std::size_t d, const Vector& target, bool continuous) {

@@ -28,7 +28,9 @@ def nns_causation(
     """
     x_values, y_values = _as_pair(x, y)
     if _is_constant(x_values) or _is_constant(y_values):
-        raise ValueError("x and y must not be constant: causation is undefined for a variable with no variation.")
+        raise ValueError(
+            "x and y must not be constant: causation is undefined for a variable with no variation."
+        )
     lag = _ts_tau_lag(x_values, y_values) if tau == "ts" else _tau_value(tau, x_values.size)
     xy, yx = index(x_values, y_values, lag)
     return {"C(x--->y)": float(xy), "C(y--->x)": float(yx)}
@@ -85,13 +87,12 @@ def _tau_value(tau: object, n: int | None = None) -> int:
     return int(tau_float)
 
 
-
 def _ts_tau_lag(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
     """R .nns_caus_ts_lag: one common rounded mean of eligible periods."""
     limit = math.sqrt(float(x.size))
     px = _first_period_at_or_below_limit(x, limit)
     py = _first_period_at_or_below_limit(y, limit)
-    return min(int(round((px + py) / 2.0)), int(x.size) - 3)
+    return min(round((px + py) / 2.0), int(x.size) - 3)
 
 
 def _first_period_at_or_below_limit(values: NDArray[np.float64], limit: float) -> int:
@@ -99,6 +100,7 @@ def _first_period_at_or_below_limit(values: NDArray[np.float64], limit: float) -
     eligible = periods[periods <= limit]
     if eligible.size == 0:
         raise ValueError(
-            'tau="ts": NNS.seas found no seasonal period <= sqrt(len(x)); supply a numeric tau instead.'
+            'tau="ts": NNS.seas found no seasonal period <= sqrt(len(x)); '
+            "supply a numeric tau instead."
         )
     return int(eligible[0])

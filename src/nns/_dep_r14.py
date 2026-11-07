@@ -1,9 +1,10 @@
 """Source-faithful R 14.0 multilevel dependence and causation levels.
 
 Port of OVVO-Financial/NNS@7b07a837 src/NNS_dep.cpp. This is deliberately
-separate from the R-13.3 native kernel until the NNS-core port is synchronized.
+independent of the explicit R14 native build adapter for cross-checking.
 No statistical redefinition, softened comparisons, or fixture substitutions.
 """
+
 from __future__ import annotations
 
 import math
@@ -53,9 +54,7 @@ def _null_t0(m: int, a: int, b: int) -> float:
         conc = float(m - a - b + 2 * k)
         e += pk * abs(2.0 * conc / md - 1.0)
         if k < k_hi:
-            pk *= (float(a - k) * float(b - k)) / (
-                float(k + 1) * float(m - a - b + k + 1)
-            )
+            pk *= (float(a - k) * float(b - k)) / (float(k + 1) * float(m - a - b + k + 1))
     return e
 
 
@@ -183,9 +182,7 @@ def _between_sign(x: FloatArray, y: FloatArray) -> float:
     return 1.0 if cov > tol else (-1.0 if cov < -tol else 0.0)
 
 
-def _p_constant(
-    m: int, counts: list[int], n: int, cache: dict[int, float]
-) -> float:
+def _p_constant(m: int, counts: list[int], n: int, cache: dict[int, float]) -> float:
     if m not in cache:
         denom = math.comb(n, m)
         p = sum(math.comb(c, m) / denom for c in counts if c >= m)
@@ -207,9 +204,11 @@ def _best_level(
     n = int(u.size)
     order = sorted(range(n), key=lambda i: labels[i])
     longest = max((len(label) for label in labels), default=1)
-    v_counts = sorted(
-        np.unique(v, return_counts=True)[1].tolist(), reverse=True
-    ) if conditional and v_ties else []
+    v_counts = (
+        sorted(np.unique(v, return_counts=True)[1].tolist(), reverse=True)
+        if conditional and v_ties
+        else []
+    )
     p0_cache: dict[int, float] = {}
     best_dep, best_corr = -1e300, 0.0
     previous_cell_count = -1
@@ -254,16 +253,19 @@ def _best_level(
     return min(dep, max(-dep, best_corr)), dep
 
 
-def _labels(
-    x: FloatArray, y: FloatArray, *, xonly: bool, obs: int
-) -> list[str]:
+def _labels(x: FloatArray, y: FloatArray, *, xonly: bool, obs: int) -> list[str]:
     # Import locally: nns.part uses the shared nns.dependence._gravity and
     # must not be imported while dependence.py is still being initialized.
     from nns.part import _nns_part
 
     part = _nns_part(
-        x, y, type="XONLY" if xonly else None, order=None,
-        obs_req=obs, min_obs_stop=False, noise_reduction="off",
+        x,
+        y,
+        type="XONLY" if xonly else None,
+        order=None,
+        obs_req=obs,
+        min_obs_stop=False,
+        noise_reduction="off",
     )
     return [str(q) for q in part["dt"]["quadrant"]]
 
@@ -281,12 +283,22 @@ def dep_pair_r14(x: FloatArray, y: FloatArray, asym: bool) -> tuple[float, float
     if asym:
         return best
     joint = _best_level(
-        x, y, _labels(x, y, xonly=False, obs=obs),
-        sign, False, x_ties, y_ties,
+        x,
+        y,
+        _labels(x, y, xonly=False, obs=obs),
+        sign,
+        False,
+        x_ties,
+        y_ties,
     )
     on_y = _best_level(
-        y, x, _labels(y, x, xonly=True, obs=obs),
-        sign, True, y_ties, x_ties,
+        y,
+        x,
+        _labels(y, x, xonly=True, obs=obs),
+        sign,
+        True,
+        y_ties,
+        x_ties,
     )
     out = joint
     if best[1] > out[1]:
@@ -303,15 +315,24 @@ def dep_levels_r14(x: FloatArray, y: FloatArray) -> list[float]:
         return [0.0]
     scores: list[float] = []
     _best_level(
-        x, y, _labels(x, y, xonly=True, obs=max(8, n // 8)),
-        0.0, True, _has_ties(x), _has_ties(y), scores,
+        x,
+        y,
+        _labels(x, y, xonly=True, obs=max(8, n // 8)),
+        0.0,
+        True,
+        _has_ties(x),
+        _has_ties(y),
+        scores,
     )
     return scores
 
 
 def _local_dir(
-    u: FloatArray, v: FloatArray, labels: Sequence[str],
-    u_ties: bool, v_ties: bool,
+    u: FloatArray,
+    v: FloatArray,
+    labels: Sequence[str],
+    u_ties: bool,
+    v_ties: bool,
 ) -> float:
     """R local_dep_dir: signed-square-root finest-cell dependence."""
     n = int(u.size)
@@ -372,9 +393,7 @@ def dep_local_r14(x: FloatArray, y: FloatArray, asym: bool = True) -> float:
     xtie, ytie = _has_ties(x), _has_ties(y)
     dep = _local_dir(x, y, _labels(x, y, xonly=True, obs=obs), xtie, ytie)
     if not asym:
-        dep = max(dep, _local_dir(
-            y, x, _labels(y, x, xonly=True, obs=obs), ytie, xtie
-        ))
+        dep = max(dep, _local_dir(y, x, _labels(y, x, xonly=True, obs=obs), ytie, xtie))
     if np.unique(x).size < math.sqrt(n) and np.unique(y).size < math.sqrt(n):
         disc = _copula_degree0_unsigned(x, y)
         if not math.isfinite(disc):

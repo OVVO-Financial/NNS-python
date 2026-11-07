@@ -6,6 +6,7 @@ counts and method-2 class-indicator dimensions are selected from out-of-fold
 probability matrices.  Synthetic class indices describe feature engineering
 only; using them as ordinal target values changes the model.
 """
+
 from __future__ import annotations
 
 import math
@@ -24,23 +25,35 @@ Index = NDArray[np.int64]
 
 def classify_stack_r14(
     *,
-    x: F, z: F, y: F, class_values: list[Any] | None,
-    response_categorical: bool, predictor_levels: list[list[str] | None],
-    methods: list[int], order: Any, dist: str,
-    dim_red_method: Any, splits: list[dict[str, Index]],
+    x: F,
+    z: F,
+    y: F,
+    class_values: list[Any] | None,
+    response_categorical: bool,
+    predictor_levels: list[list[str] | None],
+    methods: list[int],
+    order: Any,
+    dist: str,
+    dim_red_method: Any,
+    splits: list[dict[str, Index]],
     balance_indices: Callable[[F], Index],
     numeric_design: Callable[..., dict[str, Any]],
     score: Callable[[F, F], float],
-    stack: bool, objective: str, optimize_threshold: bool,
-    pred_int: float | None, status: bool, tau: Any,
+    stack: bool,
+    objective: str,
+    optimize_threshold: bool,
+    pred_int: float | None,
+    status: bool,
+    tau: Any,
     return_fit: bool = False,
 ) -> dict[str, Any]:
     """Direct translation of R .nns_stack_classify's CV and final return."""
     values = np.unique(y)
     class_count = values.size
     original = class_values if class_values is not None else values.tolist()
-    labels = [str(v) if not isinstance(v, (float, np.floating)) else f"{float(v):.15g}"
-              for v in original]
+    labels = [
+        str(v) if not isinstance(v, (float, np.floating)) else f"{float(v):.15g}" for v in original
+    ]
     if class_count != len(original):
         raise ValueError("The encoded response and class levels disagree.")
     first_seen = list(dict.fromkeys(y.tolist()))
@@ -59,8 +72,7 @@ def classify_stack_r14(
             "x": np.asarray(design["train"], dtype=np.float64),
             "point_est": np.asarray(design["test"], dtype=np.float64),
             "encoded_names": design["names"],
-            "metadata": [{"categorical": level is not None}
-                         for level in predictor_levels],
+            "metadata": [{"categorical": level is not None} for level in predictor_levels],
         }
 
     full = encode(x, z)
@@ -70,9 +82,14 @@ def classify_stack_r14(
 
     def choose(probabilities: F, threshold: float = 0.5) -> F:
         if class_count == 2:
-            return np.where(probabilities[:, tie_order[1]] > threshold,
-                            values[tie_order[1]], values[tie_order[0]])
-        return values[tie_order[np.argmax(probabilities[:, tie_order], axis=1)]]
+            return np.where(
+                probabilities[:, tie_order[1]] > threshold,
+                values[tie_order[1]],
+                values[tie_order[0]],
+            )
+        return np.asarray(
+            values[tie_order[np.argmax(probabilities[:, tie_order], axis=1)]], dtype=np.float64
+        )
 
     def evaluate(probabilities: F, actual: F) -> tuple[float, float]:
         thresholds = (
@@ -81,8 +98,8 @@ def classify_stack_r14(
             else np.asarray([0.5])
         )
         losses = np.asarray(
-            [score(decode(choose(probabilities, float(t))), decode(actual))
-             for t in thresholds], dtype=np.float64
+            [score(decode(choose(probabilities, float(t))), decode(actual)) for t in thresholds],
+            dtype=np.float64,
         )
         usable = np.flatnonzero(np.isfinite(losses))
         if usable.size == 0:
@@ -92,32 +109,46 @@ def classify_stack_r14(
         selected = int(tied[np.argmin(np.abs(thresholds[tied] - 0.5))])
         return float(losses[selected]), float(thresholds[selected])
 
-    def design(train: F, response: F, test: F, component: int,
-               select_count: int | None = None) -> dict[str, Any]:
+    def design(
+        train: F, response: F, test: F, component: int, select_count: int | None = None
+    ) -> dict[str, Any]:
         encoded = encode(train, test)
         matrix = encoded["x"]
         if component == 1 and stack and select_count is not None and select_count < matrix.shape[1]:
             ind = np.asarray(response[:, None] == values[None, :], dtype=np.float64)
-            strengths = np.asarray([
-                max(0.0, *(_dependence(matrix[:, j], ind[:, c])
-                           for c in range(class_count)))
-                for j in range(matrix.shape[1])
-            ])
+            strengths = np.asarray(
+                [
+                    max(0.0, *(_dependence(matrix[:, j], ind[:, c]) for c in range(class_count)))
+                    for j in range(matrix.shape[1])
+                ]
+            )
             keep = np.argsort(-strengths, kind="stable")[:select_count]
             encoded["x"] = matrix[:, keep]
             encoded["point_est"] = encoded["point_est"][:, keep]
             encoded["encoded_names"] = [encoded["encoded_names"][int(j)] for j in keep]
         return encoded
 
-    def fit(train: F, response: F, test: F, component: int,
-            candidate: Any, select_count: int | None = None) -> dict[str, Any]:
+    def fit(
+        train: F,
+        response: F,
+        test: F,
+        component: int,
+        candidate: Any,
+        select_count: int | None = None,
+    ) -> dict[str, Any]:
         encoded = design(train, response, test, component, select_count)
         return classify_r14(
-            encoded, {"y": response, "class_values": values, "class_levels": labels},
-            order=order, n_best=candidate if component == 1 else None,
-            dist=dist, dim_red_method=dim_red_method if component == 2 else None,
-            tau=tau, threshold=0.0, point_only=True,
-            confidence_interval=None, dim_count=candidate if component == 2 else None,
+            encoded,
+            {"y": response, "class_values": values, "class_levels": labels},
+            order=order,
+            n_best=candidate if component == 1 else None,
+            dist=dist,
+            dim_red_method=dim_red_method if component == 2 else None,
+            tau=tau,
+            threshold=0.0,
+            point_only=True,
+            confidence_interval=None,
+            dim_count=candidate if component == 2 else None,
         )
 
     def as_probabilities(fitted: dict[str, Any]) -> F:
@@ -133,11 +164,17 @@ def classify_stack_r14(
         probability = np.full((n, class_count), np.nan, dtype=np.float64)
         probability[mask] = total[mask] / count[mask, None]
         quality, threshold = evaluate(probability[mask], y[mask])
-        return {"score": quality, "threshold": threshold, "candidate": candidate,
-                "probability": probability, "valid": mask}
+        return {
+            "score": quality,
+            "threshold": threshold,
+            "candidate": candidate,
+            "probability": probability,
+            "valid": mask,
+        }
 
-    def tune(component: int, candidates: list[Any],
-             select_count: int | None = None) -> dict[str, Any]:
+    def tune(
+        component: int, candidates: list[Any], select_count: int | None = None
+    ) -> dict[str, Any]:
         candidates_results = []
         for candidate in candidates:
             total = np.zeros((n, class_count), dtype=np.float64)
@@ -145,8 +182,7 @@ def classify_stack_r14(
             for i, split in enumerate(splits):
                 train = split["train"][balanced[i]]
                 validation = split["validation"]
-                fitted = fit(x[train], y[train], x[validation],
-                             component, candidate, select_count)
+                fitted = fit(x[train], y[train], x[validation], component, candidate, select_count)
                 total[validation] += as_probabilities(fitted)
                 count[validation] += 1
             candidates_results.append(record(total, count, candidate))
@@ -159,12 +195,15 @@ def classify_stack_r14(
     dim_fit = tune(2, list(range(1, p + 1))) if 2 in methods else None
     reg_fit = None
     if 1 in methods:
-        candidates = (["all"] if p == 1 else
-                      list(range(1, max(1, math.floor(math.sqrt(n))) + 1)) + ["all"])
+        candidates = ["all"] if p == 1 else [*range(1, max(1, math.floor(math.sqrt(n))) + 1), "all"]
         reg_fit = tune(1, candidates, None if dim_fit is None else int(dim_fit["candidate"]))
 
     weights = {"reg": float(reg_fit is not None), "dim.red": float(dim_fit is not None)}
-    threshold = float(dim_fit["threshold"] if reg_fit is None else reg_fit["threshold"])
+    if reg_fit is None:
+        assert dim_fit is not None
+        threshold = float(dim_fit["threshold"])
+    else:
+        threshold = float(reg_fit["threshold"])
     if reg_fit is not None and dim_fit is not None:
         scores = np.asarray([reg_fit["score"], dim_fit["score"]], dtype=np.float64)
         scores = np.where(scores == 0.0, 1e-10, scores)
@@ -187,8 +226,7 @@ def classify_stack_r14(
         cutoffs = []
         for label in values:
             coefficients = _dimred_coefficients(
-                full["x"], np.asarray(y == label, dtype=np.float64),
-                dim_red_method, tau, 0.0
+                full["x"], np.asarray(y == label, dtype=np.float64), dim_red_method, tau, 0.0
             )
             if selected_count >= coefficients.size:
                 cutoffs.append(0.0)
@@ -205,15 +243,22 @@ def classify_stack_r14(
     def final(component: int, fitted: dict[str, Any] | None) -> dict[str, Any] | None:
         if fitted is None:
             return None
-        return fit(x[final_rows], y[final_rows], z, component, fitted["candidate"],
-                   None if dim_fit is None else int(dim_fit["candidate"]))
+        return fit(
+            x[final_rows],
+            y[final_rows],
+            z,
+            component,
+            fitted["candidate"],
+            None if dim_fit is None else int(dim_fit["candidate"]),
+        )
 
     reg_final = final(1, reg_fit)
     dim_final = final(2, dim_fit)
     rp = None if reg_final is None else as_probabilities(reg_final)
     dp = None if dim_final is None else as_probabilities(dim_final)
-    probability = (dp if rp is None else rp if dp is None
-                   else weights["reg"] * rp + weights["dim.red"] * dp)
+    probability = (
+        dp if rp is None else rp if dp is None else weights["reg"] * rp + weights["dim.red"] * dp
+    )
     if probability is None:
         raise ValueError("No classification stack component was selected.")
 
@@ -223,8 +268,9 @@ def classify_stack_r14(
         sets: list[list[float]] = []
         for row in prob:
             order_idx = tie_order[np.argsort(-row[tie_order], kind="stable")]
-            take = min(int(np.searchsorted(np.cumsum(row[order_idx]),
-                                           pred_int - 1e-12)) + 1, class_count)
+            take = min(
+                int(np.searchsorted(np.cumsum(row[order_idx]), pred_int - 1e-12)) + 1, class_count
+            )
             sets.append(decode(values[order_idx[:take]]).tolist())
         return sets
 
@@ -256,15 +302,20 @@ def classify_stack_r14(
                 columns = eq.get("Variable", [])
                 coefs = eq.get("Coefficient", [])
                 selected.extend(
-                    str(v) for v, c in zip(columns, coefs)
+                    str(v)
+                    for v, c in zip(columns, coefs, strict=True)
                     if v != "DENOMINATOR" and float(c) != 0.0
                 )
             selected = list(dict.fromkeys(selected))
 
     k = float("nan")
     if reg_fit is not None:
-        k = (float(reg_final["n.best"]) if reg_fit["candidate"] == "all"
-             else float(reg_fit["candidate"]))
+        assert reg_final is not None
+        k = (
+            float(reg_final["n.best"])
+            if reg_fit["candidate"] == "all"
+            else float(reg_fit["candidate"])
+        )
     result = {
         "OBJfn.reg": float("nan") if reg_fit is None else float(reg_fit["score"]),
         "NNS.reg.n.best": k,

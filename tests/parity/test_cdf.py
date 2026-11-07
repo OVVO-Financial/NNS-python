@@ -165,7 +165,7 @@ def test_nns_cdf_multivariate_types_and_target_match_r(type_name: str) -> None:
     if type_name == "hazard":
         # R14 Partial_Moments.R rejects a multivariate hazard; no numerical
         # oracle value exists. Do not silently invent one in the cache.
-        with pytest.raises(ValueError, match="Multivariate type.*hazard.*not implemented"):
+        with pytest.raises(ValueError, match=r"Multivariate type.*hazard.*not implemented"):
             nns_cdf(matrix, degree=0.0, target=np.array([2.0, 2.0]), type=type_name)
         return
 
@@ -216,7 +216,7 @@ def test_nns_cdf_trivariate_types_and_target_match_r(type_name: str, degree: flo
     if type_name == "hazard":
         # A joint hazard is explicitly not implemented in R14; test its
         # rejection instead of requesting a missing R cache value.
-        with pytest.raises(ValueError, match="Multivariate type.*hazard.*not implemented"):
+        with pytest.raises(ValueError, match=r"Multivariate type.*hazard.*not implemented"):
             nns_cdf(matrix, degree=degree, target=np.array(target), type=type_name)
         return
     if degree > 0.0 and type_name == "cumulative hazard":

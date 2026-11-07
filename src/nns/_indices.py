@@ -21,4 +21,4 @@ def ordered_complement(
     mask_size = int(max(np.max(all_index), np.max(excluded))) + 1
     excluded_mask = np.zeros(mask_size, dtype=bool)
     excluded_mask[excluded] = True
-    return all_index[~excluded_mask[all_index]]
+    return np.asarray(all_index[~excluded_mask[all_index]], dtype=np.int64)

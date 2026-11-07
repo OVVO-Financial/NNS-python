@@ -209,8 +209,8 @@ def test_dy_d_is_deterministic() -> None:
 
 
 def test_dy_d_matches_pinned_values() -> None:
-    # Golden values guard the finite-difference design against regressions (the
-    # multivariate nns_reg fit of the patched R; the true slopes are 1, 2, -1).
+    # Verified with pinned R14 7b07a837c130ba7220dbe16c584221508757d5ae.
+    # The fitted derivative is not the exact slope of the generating equation.
     from nns import dy_d
 
     x = np.random.RandomState(0).randn(60, 3)
@@ -220,7 +220,7 @@ def test_dy_d_matches_pinned_values() -> None:
 
     np.testing.assert_allclose(
         np.ravel(result["First"]),
-        np.array([0.486725, 1.178272, -0.374812]),
+        np.array([0.5552936444351168, 1.4747889156529164, -0.6454516118551835]),
         rtol=0.0,
         atol=1e-4,
     )
@@ -318,5 +318,5 @@ def test_dy_dx_averages_over_all_five_bandwidth_positions(n: int) -> None:
 
 def test_dy_dx_small_sample_matches_r_main() -> None:
     first, second = _dy_dx_at(np.linspace(0.0, 3.0, 10), 1.5)
-    assert first == pytest.approx(2.9186064885499259, rel=1e-10)
-    assert second == pytest.approx(0.16054270561702205, rel=1e-10)
+    assert first == pytest.approx(3.0531359393852653, rel=1e-10)
+    assert second == pytest.approx(0.1317797419408123, rel=1e-10)

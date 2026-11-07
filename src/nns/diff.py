@@ -55,7 +55,6 @@ def nns_diff(
     return result
 
 
-
 def _nns_diff(
     f: Callable[[float | complex | NDArray[np.float64]], float | complex | NDArray[np.float64]],
     point: float,
@@ -420,7 +419,7 @@ def _v057_bandwidths(x_size: int, wrt_dependence: float) -> NDArray[np.float64]:
     h_s = np.concatenate([base, 10.0 * base])
     if wrt_dependence < 0.5:
         h_s = 2.0 * h_s
-    return h_s
+    return np.asarray(h_s, dtype=np.float64)
 
 
 def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> float:
@@ -434,9 +433,7 @@ def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> f
     return float(upper - lower)
 
 
-def _r14_fd_weights(
-    nodes: NDArray[np.float64], at: float, degree: int
-) -> NDArray[np.float64]:
+def _r14_fd_weights(nodes: NDArray[np.float64], at: float, degree: int) -> NDArray[np.float64]:
     """R .nns_fd_weights: scaled Vandermonde finite-difference coefficients."""
     n = int(nodes.size)
     if n <= degree or np.unique(nodes).size != n:
@@ -449,7 +446,7 @@ def _r14_fd_weights(
     rhs = np.zeros(n, dtype=np.float64)
     rhs[degree] = float(math.factorial(degree))
     try:
-        return np.linalg.solve(powers, rhs) / (scale**degree)
+        return np.asarray(np.linalg.solve(powers, rhs) / (scale**degree), dtype=np.float64)
     except np.linalg.LinAlgError:
         return np.full(n, np.nan)
 
@@ -534,12 +531,12 @@ def _dy_d_best_plan(
     else:
         locations = np.asarray(eval_values, dtype=np.float64)
         if locations.ndim != 2 or locations.shape[1] != p:
-            raise ValueError(
-                "eval.points must have one column per expanded predictor."
-            )
-        if np.any(~np.isfinite(locations)) or np.any(
-            locations < np.min(x_values, axis=0)
-        ) or np.any(locations > np.max(x_values, axis=0)):
+            raise ValueError("eval.points must have one column per expanded predictor.")
+        if (
+            np.any(~np.isfinite(locations))
+            or np.any(locations < np.min(x_values, axis=0))
+            or np.any(locations > np.max(x_values, axis=0))
+        ):
             raise ValueError(
                 "Derivative evaluation points must lie inside the observed coordinate support."
             )
@@ -555,23 +552,17 @@ def _dy_d_best_plan(
         widths = np.minimum(0.25, 2.0 * widths)
 
     chunks: list[NDArray[np.float64]] = []
-    specifications: list[
-        tuple[int, int, int, int, NDArray[np.float64], NDArray[np.float64]]
-    ] = []
+    specifications: list[tuple[int, int, int, int, NDArray[np.float64], NDArray[np.float64]]] = []
     column = x_values[:, wrt_index]
     for band, width in enumerate(widths):
         for i, context in enumerate(contexts):
-            nodes, w_first, w_second = _r14_dy_stencil(
-                column, float(points[i]), float(width)
-            )
+            nodes, w_first, w_second = _r14_dy_stencil(column, float(points[i]), float(width))
             blocks = []
             for node in nodes:
                 amended = context.copy()
                 amended[:, wrt_index] = node
                 blocks.append(amended)
-            specifications.append(
-                (len(chunks), band, i, context.shape[0], w_first, w_second)
-            )
+            specifications.append((len(chunks), band, i, context.shape[0], w_first, w_second))
             chunks.append(np.vstack(blocks))
 
     mixed_specs: list[tuple[int, int, int, NDArray[np.float64]]] = []
@@ -586,7 +577,7 @@ def _dy_d_best_plan(
                 s1, weight1, _ = _r14_dy_stencil(x_values[:, 0], float(at[0]), float(width))
                 s2, weight2, _ = _r14_dy_stencil(x_values[:, 1], float(at[1]), float(width))
                 grid = np.asarray([[v1, v2] for v2 in s2 for v1 in s1], dtype=np.float64)
-                weights = np.outer(weight1, weight2).ravel(order="F")
+                weights = np.asarray(np.outer(weight1, weight2).ravel(order="F"), dtype=np.float64)
                 mixed_specs.append((len(chunks), band, i, weights))
                 chunks.append(grid)
 
@@ -607,10 +598,14 @@ def _dy_d_best_plan(
             with np.errstate(invalid="ignore"):
                 numerator = np.nansum(a, axis=1)
                 count = np.sum(~np.isnan(a), axis=1)
-                return np.divide(
-                    numerator, count,
-                    out=np.full(a.shape[0], np.nan),
-                    where=count > 0,
+                return np.asarray(
+                    np.divide(
+                        numerator,
+                        count,
+                        out=np.full(a.shape[0], np.nan),
+                        where=count > 0,
+                    ),
+                    dtype=np.float64,
                 )
 
         result = {"First": average(first), "Second": average(second)}
@@ -618,9 +613,7 @@ def _dy_d_best_plan(
             matrix = np.full((points.size, widths.size), np.nan)
             for index, band, point_index, weights in mixed_specs:
                 predicted = np.asarray(parts[index], dtype=np.float64)
-                matrix[point_index, band] = float(
-                    np.sum(weights * (predicted - predicted[0]))
-                )
+                matrix[point_index, band] = float(np.sum(weights * (predicted - predicted[0])))
             result["Mixed"] = average(matrix)
         return result
 
@@ -658,8 +651,7 @@ def _dy_d_expand_predictors(
 
         dummy_columns = factor_2_dummy_fr(column_source, levels=detected_levels)
         expanded.extend(
-            np.asarray(column, dtype=np.float64).reshape(-1)
-            for column in dummy_columns.values()
+            np.asarray(column, dtype=np.float64).reshape(-1) for column in dummy_columns.values()
         )
 
     if not expanded:

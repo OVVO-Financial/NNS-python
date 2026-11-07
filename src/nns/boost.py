@@ -19,7 +19,7 @@ from __future__ import annotations
 import itertools
 import math
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -156,8 +156,13 @@ def nns_boost(
     # learner fits and the final stack get those levels back through
     # factor_levels, so factors stay factors (one-hot) in every NNS.reg fit.
     prepared = _prepare_inputs(
-        ivs_train, dv_train, ivs_test, class_levels, factor_levels,
-        caller="NNS.boost", drop_unused_levels=True,
+        ivs_train,
+        dv_train,
+        ivs_test,
+        class_levels,
+        factor_levels,
+        caller="NNS.boost",
+        drop_unused_levels=True,
     )
     x = prepared["x"]
     z = prepared["z"]
@@ -198,9 +203,7 @@ def nns_boost(
     n_features = x.shape[1]
 
     if ts_test_value is not None and ts_test_value >= n_obs:
-        raise ValueError(
-            "[ts.test] must be smaller than the number of training observations."
-        )
+        raise ValueError("[ts.test] must be smaller than the number of training observations.")
 
     if epochs_value is None:
         epochs_value = 2 * n_obs
@@ -276,7 +279,7 @@ def nns_boost(
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         if not balance:
             return train_x, train_y
-        values = np.unique(train_y)
+        values = train_y[np.sort(np.unique(train_y, return_index=True)[1])]
         groups = [np.flatnonzero(train_y == v) for v in values]
         if len(groups) < 2 or any(g.size == 0 for g in groups):
             raise ValueError(
@@ -310,14 +313,12 @@ def nns_boost(
             point_est=test_x,
             dim_red_method=None,
             order=depth_value,
-            type="CLASS" if is_class else None,
+            type="CLASS" if is_class else "REG",
             point_only=True,
             dist=dist_value,
             factor_levels=[code_levels[j] for j in cols],
         )
-        return sanitize_predictions(
-            np.asarray(fit["Point.est"], dtype=np.float64), by
-        )
+        return sanitize_predictions(np.asarray(fit["Point.est"], dtype=np.float64), by)
 
     # ----------------------------------------------------------------------
     # Learner feature subsets
@@ -387,9 +388,7 @@ def nns_boost(
         threshold_probability = 0.80 if objective_value == "max" else 0.20
     if extreme:
         threshold_probability = 1.0 if objective_value == "max" else 0.0
-    learner_threshold = float(
-        lpm_var(threshold_probability, 1.0, learner_results[finite_results])
-    )
+    learner_threshold = float(lpm_var(threshold_probability, 1.0, learner_results[finite_results]))
 
     if status:
         print(
@@ -426,13 +425,9 @@ def nns_boost(
     keeper_features: list[tuple[int, ...]]
     if epochs_value > 0:
         survivor_count = len(reduced_test_features)
-        epoch_survivor_id = np.resize(
-            np.arange(survivor_count, dtype=np.int64), epochs_value
-        )
+        epoch_survivor_id = np.resize(np.arange(survivor_count, dtype=np.int64), epochs_value)
         if epoch_survivor_id.size > 1:
-            epoch_survivor_id = rng.sample(
-                epoch_survivor_id, epoch_survivor_id.size, replace=False
-            )
+            epoch_survivor_id = rng.sample(epoch_survivor_id, epoch_survivor_id.size, replace=False)
 
         chronological_splits: list[tuple[NDArray[np.int64], NDArray[np.int64]]] = []
         epoch_split_id: NDArray[np.int64] | None = None
@@ -453,9 +448,7 @@ def nns_boost(
                 np.arange(len(chronological_splits), dtype=np.int64), epochs_value
             )
             if epoch_split_id.size > 1:
-                epoch_split_id = rng.sample(
-                    epoch_split_id, epoch_split_id.size, replace=False
-                )
+                epoch_split_id = rng.sample(epoch_split_id, epoch_split_id.size, replace=False)
 
         keeper_features = []
         for j in range(epochs_value):
@@ -537,17 +530,12 @@ def nns_boost(
     replicated_test = z[:, replicated_cols]
     replicated_levels = [code_levels[j] for j in replicated_cols]
 
-    stack_obj_fn = obj_fn
-    two_valued = np.unique(y)
-    if not is_class and two_valued.size == 2:
-        stack_obj_fn = _decoded_objective(cast(Callable[..., Any], obj_fn), two_valued)
-
     final_stack = nns_stack(
         replicated_train,
         y,
         replicated_test,
         type="CLASS" if is_class else None,
-        obj_fn=stack_obj_fn,
+        obj_fn=obj_fn,
         objective=objective_value,
         optimize_threshold=False,
         dist=dist_value,
@@ -567,21 +555,9 @@ def nns_boost(
 
     results_raw = final_stack["reg"]
     pred_int_output = final_stack["reg.pred.int"]
-    stack_levels = final_stack.get("class.levels")
-    if not is_class and stack_levels is not None:
-        # nns_stack auto-classifies a two-valued numeric response even when boost
-        # treats it as a regression; map its class codes back to the response
-        # values (the codes 1/2 used to be returned as estimates).
-        results_raw = _decode_stack_codes(results_raw, stack_levels)
-        if pred_int_output is not None:
-            pred_int_output = {
-                key: _decode_stack_codes(value, stack_levels)
-                for key, value in pred_int_output.items()
-            }
-
-    estimates_code = sanitize_predictions(
-        np.asarray(results_raw, dtype=np.float64), y
-    )
+    # R14 Stack already returns numeric class responses on their original
+    # scale. Applying the historical 1..K decoding again collapses 0/1 to 0.
+    estimates_code = sanitize_predictions(np.asarray(results_raw, dtype=np.float64), y)
     pred_int_out = pred_int_output
 
     if is_class:
@@ -596,9 +572,9 @@ def nns_boost(
         if pred_int_out is not None:
             decoded = {}
             for key, v in pred_int_out.items():
-                code = np.clip(
-                    np.round(np.asarray(v, dtype=np.float64)), 1, n_classes
-                ).astype(np.int64)
+                code = np.clip(np.round(np.asarray(v, dtype=np.float64)), 1, n_classes).astype(
+                    np.int64
+                )
                 if response_was_numeric:
                     decoded[key] = np.asarray(
                         [cast(list[Any], class_values)[c - 1] for c in code.tolist()]
@@ -616,28 +592,3 @@ def nns_boost(
         "feature.frequency": plot_table,
         "class.levels": class_values if is_class else None,
     }
-
-
-def _decode_stack_codes(values: Any, levels: Sequence[Any]) -> NDArray[np.float64]:
-    """R ``stack_values[pmin(pmax(round(v), 1), K)]`` on the finite entries."""
-    level_values = np.asarray(levels, dtype=np.float64)
-    out = np.asarray(values, dtype=np.float64).reshape(-1).copy()
-    ok = np.isfinite(out)
-    codes = np.clip(np.round(out[ok]).astype(np.int64), 1, level_values.size)
-    out[ok] = level_values[codes - 1]
-    return out
-
-
-def _decoded_objective(
-    obj_fn: Callable[..., Any], values: NDArray[np.float64]
-) -> Callable[[NDArray[np.float64], NDArray[np.float64]], Any]:
-    """nns_stack codes a two-valued numeric response as 1/2; let ``obj_fn`` score
-    response values, as it does during learner selection."""
-
-    def decode(v: NDArray[np.float64]) -> NDArray[np.float64]:
-        out = np.array(v, dtype=np.float64)
-        ok = np.isfinite(out)
-        out[ok] = values[np.clip(np.round(out[ok]), 1, 2).astype(np.intp) - 1]
-        return out
-
-    return lambda predicted, actual: obj_fn(decode(predicted), decode(actual))

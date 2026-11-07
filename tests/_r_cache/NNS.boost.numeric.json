@@ -284,6 +284,29 @@
         1.0
       ]
     },
+    "387767418816f73b57caeddb0a93aee0a28c69cbd716029aa1476ce5c0f5012f": {
+      "class.levels": [
+        1.0,
+        2.0,
+        3.0
+      ],
+      "feature.frequency": [
+        9.0,
+        9.0
+      ],
+      "feature.weights": [
+        0.5,
+        0.5
+      ],
+      "pred.int": null,
+      "results": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
     "3d56fb0f9650d1878459489377f100d0d4f3a58d3b33f51c51117c345f499c6b": {
       "class.levels": [
         "A",
