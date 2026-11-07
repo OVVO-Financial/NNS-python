@@ -1064,21 +1064,57 @@ def _assert_stack_matches(
             np.testing.assert_allclose(actual_weights, _numeric(expected[key]), atol=COMPOUND)
         elif key == "class.levels":
             assert [str(v) for v in actual[key]] == [str(v) for v in expected[key]]
-        elif isinstance(actual[key], dict):
-            assert isinstance(expected[key], dict)
-            assert set(actual[key]) == set(expected[key])
-            for column, values in actual[key].items():
-                np.testing.assert_allclose(
-                    np.asarray(values, dtype=np.float64),
-                    _numeric(expected[key][column]),
-                    atol=COMPOUND,
-                )
         else:
-            np.testing.assert_allclose(
-                np.asarray(actual[key], dtype=np.float64),
-                _numeric(expected[key]),
-                atol=COMPOUND,
-            )
+            _assert_nested_stack_values(actual[key], expected[key])
+
+
+def _assert_nested_stack_values(actual: Any, expected: Any) -> None:
+    """Recursively verify R14 class sets without flattening ragged arrays.
+
+    Prediction.set legitimately contains a different number of labels per
+    observation. Converting that structure to a float64 array raises a NumPy
+    ValueError before any of its predictions can be compared. Preserve every
+    entry, its order and its shape; numeric leaves retain the same tolerance.
+    """
+    if isinstance(actual, dict):
+        assert isinstance(expected, dict)
+        assert set(actual) == set(expected)
+        for key, value in actual.items():
+            _assert_nested_stack_values(value, expected[key])
+        return
+    if isinstance(actual, np.ndarray) and actual.dtype == object:
+        _assert_nested_stack_values(actual.tolist(), expected)
+        return
+    if isinstance(actual, (list, tuple)):
+        if isinstance(expected, np.ndarray):
+            assert expected.ndim > 0
+            expected = expected.tolist()
+        assert isinstance(expected, (list, tuple))
+        assert len(actual) == len(expected)
+        for value, reference in zip(actual, expected, strict=True):
+            _assert_nested_stack_values(value, reference)
+        return
+    if actual is None:
+        assert expected is None
+        return
+    if isinstance(actual, str):
+        assert str(expected) == actual
+        return
+    np.testing.assert_allclose(
+        np.asarray(actual, dtype=np.float64),
+        _numeric(expected),
+        atol=COMPOUND,
+    )
+
+
+def test_nested_stack_probability_sets_are_compared_without_shape_coercion() -> None:
+    got = [1.0, [1.0, 2.0], [2.0, 3.0, 4.0], 3.0]
+    expected = [1.0, np.asarray([1.0, 2.0]), [2.0, 3.0, 4.0], 3.0]
+    _assert_nested_stack_values(got, expected)
+    with pytest.raises(AssertionError):
+        _assert_nested_stack_values(got, [1.0, [2.0, 1.0], [2.0, 3.0, 4.0], 3.0])
+    with pytest.raises(AssertionError):
+        _assert_nested_stack_values(got, [1.0, [1.0, 2.0], [2.0, 3.0], 3.0])
 
 
 def _numeric(value: object) -> np.ndarray:
