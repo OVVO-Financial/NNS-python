@@ -30,22 +30,12 @@ jobs:
           path = Path('src/nns/_stack_class_r14.py')
           raw = path.read_bytes()
           assert hashlib.sha256(raw).hexdigest() == '2a562263ab5c53e94b578e267b8d4ba8f7a0d184da86d65ca52c28e7187db1e5'
-          old = '''        if class_count == 2:
-                      return np.where(
-                          probabilities[:, tie_order[1]] > threshold,
-                          values[tie_order[1]],
-                          values[tie_order[0]],
-                      )'''
-          new = '''        if class_count == 2:
-                      selected: F = np.where(
-                          probabilities[:, tie_order[1]] > threshold,
-                          values[tie_order[1]],
-                          values[tie_order[0]],
-                      )
-                      return selected'''
-          # The YAML block indentation leaves the literal Python code intact.
-          old = '\n'.join(line[10:] if i else line for i, line in enumerate(old.splitlines()))
-          new = '\n'.join(line[10:] if i else line for i, line in enumerate(new.splitlines()))
+          old = '\n'.join(['            return np.where(',
+                          '                probabilities[:, tie_order[1]] > threshold,',
+                          '                values[tie_order[1]],',
+                          '                values[tie_order[0]],',
+                          '            )'])
+          new = old.replace('return np.where(', 'selected: F = np.where(') + '\n            return selected'
           text = raw.decode()
           assert text.count(old) == 1
           result = text.replace(old, new).encode()
