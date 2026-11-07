@@ -1,0 +1,157 @@
+name: Verify and prepare R14 integration candidate
+
+on:
+  push:
+    branches: [automation/r14-publish-20261107]
+    paths: [.github/workflows/publish-r14-alignment.yml]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify payload, preserve PR ancestry, and prepare candidate object
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess, urllib.request, zlib
+          REPO = 'OVVO-Financial/NNS-python'
+          BASE = '71ae8e820a099c46f04c14a638610af49f810d62'
+          PAYLOAD = '36888b1fb4bc6398f5cade19f6909b859235db5d2e9497ca086dd4dca533d582'
+          OUT = pathlib.Path('/tmp/r14-candidate-evidence')
+          OUT.mkdir()
+          def api(path, data=None):
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + REPO + path,
+                  data=None if data is None else json.dumps(data).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json',
+                           'X-GitHub-Api-Version': '2022-11-28'},
+                  method='GET' if data is None else 'POST')
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+          expected_chunks = {
+              '01': '2af32be70103868650b0c4c89c799957843ce165d25b48103bc5adb3e6a9aa0c',
+              '02': 'cdeab6985040a802ab27fa81c45a3997c75644e810f675996f058d30198fe875',
+              '03': '4e07319ed520762efdbe48850f474ce739ed2697a1ba096024ad835ca97465e7',
+              '04': '76c871437a80d36535f1d94efc66b317a2771022aa7391200771c42417148a0c',
+              '05': 'cd4b26e42792030269a5ce362c52ade252fea2d3cc54c6ac2f20b7c9728557dc',
+              '06': 'e4725b794d5035ad7db30c121945f73a1c4b6d10097bfa0a13214fea8df09a2f',
+              '07': '6525dd94de40e6276774565051aad9e733c7a556f5559e03c18e7d6a7a4d10a5',
+              '08a': 'b2de480f20dbb3114b9932e6362760e808215195d2818e9abde1b2139d57d304',
+              '08b': '1cf10267d27f71d72c5e22ece2717d0fc31d8a5c494ec1a8181bb9baea7d1084',
+              '08c': 'ecbe767afca30fbed0d46497f34f853e96dd7bcc90ccb9b0555dedf4b1043e42',
+              '09a': '6eee95f9d5222445452bb580c85a488a162abd3c9518c17cec85597f69341738',
+              '09b': '1d04c8859540bcfede04b04444ec173f6f6104b2d0e942d7f784e55bfbb5c3fa',
+              '09c': 'b642d58a869487dffd641d6ecd2fce33dda5a2c768e6baee98f973315035738a',
+          }
+          chunks = []
+          for name, expected in expected_chunks.items():
+              data = pathlib.Path('.r14-transfer/' + name + '.b64').read_bytes().strip()
+              actual = hashlib.sha256(data).hexdigest()
+              print('Transfer chunk', name, len(data), actual, flush=True)
+              assert actual == expected, 'Transfer checksum mismatch: ' + name
+              chunks.append(data)
+          raw = zlib.decompress(base64.b64decode(b''.join(chunks), validate=True))
+          assert hashlib.sha256(raw).hexdigest() == PAYLOAD
+          records = json.loads(raw)
+          assert len(records) == 56
+          assert len({item['path'] for item in records}) == 56
+          current = api('/pulls/192')
+          assert current['head']['sha'] == BASE, 'PR192 moved; reconcile before publishing'
+          assert current['draft'] and current['state'] == 'open'
+          repo = api('')
+          inventory = []
+          page = 1
+          while True:
+              batch = api('/pulls?state=open&per_page=100&page=' + str(page))
+              inventory.extend(batch)
+              if len(batch) < 100:
+                  break
+              page += 1
+          targets = (set(range(148, 190)) - {177}) | {191}
+          audit = []
+          for pr in inventory:
+              sha = pr['head']['sha']
+              if subprocess.run(['git', 'cat-file', '-e', sha], capture_output=True).returncode:
+                  subprocess.run(['git', 'fetch', 'origin', sha], check=True)
+              contained = subprocess.run(['git', 'merge-base', '--is-ancestor', sha, BASE]).returncode == 0
+              if pr['number'] in targets:
+                  assert contained, 'Unincorporated changes in PR ' + str(pr['number'])
+              reviews = api('/pulls/' + str(pr['number']) + '/reviews?per_page=100')
+              audit.append({'number': pr['number'], 'title': pr['title'],
+                            'head': pr['head']['ref'], 'head_sha': sha,
+                            'base': pr['base']['ref'], 'draft': pr['draft'],
+                            'included_in_base': contained,
+                            'reviews': [{'state': r['state'], 'commit_id': r['commit_id'],
+                                         'user': r['user']['login'], 'body': r['body']}
+                                        for r in reviews]})
+          (OUT / 'open-pr-inventory.json').write_text(json.dumps(audit, indent=2))
+          main = api('/git/ref/heads/main')['object']['sha']
+          tree_entries = []
+          verified = []
+          for record in records:
+              path = record['path']
+              assert not path.startswith('/') and '..' not in pathlib.PurePosixPath(path).parts
+              assert not path.startswith(('.github/', '.r14-transfer/'))
+              old = git('show', BASE + ':' + path) if record['before'] else b''
+              if record['before']:
+                  assert hashlib.sha256(old).hexdigest() == record['before'], path
+              else:
+                  assert subprocess.run(['git', 'cat-file', '-e', BASE + ':' + path], capture_output=True).returncode != 0
+              if 'json' in record:
+                  obj = json.loads(old) if old else {}
+                  entries = obj.get('entries', {})
+                  entries.update(record['json']['entries'])
+                  for key in record['deleted']:
+                      del entries[key]
+                  obj.update(record['json'])
+                  obj['entries'] = entries
+                  indent, sort, newline = record['format']
+                  new = (json.dumps(obj, indent=indent, sort_keys=sort) + newline).encode()
+              else:
+                  lines = old.decode().splitlines(keepends=True)
+                  for start, end, text in reversed(record['ops']):
+                      lines[start:end] = [text]
+                  new = ''.join(lines).encode()
+              assert hashlib.sha256(new).hexdigest() == record['after'], path
+              tree_entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'content': new.decode()})
+              verified.append({'path': path, 'sha256': record['after'], 'bytes': len(new)})
+          tree = api('/git/trees', {'base_tree': git('rev-parse', BASE + '^{tree}').decode().strip(),
+                                    'tree': tree_entries})
+          candidate = api('/git/commits', {
+              'message': 'Align complete Python port stack with pinned NNS R 14.0\n\nPublish the 56-file SHA256-verified alignment repair. Preserve all original function-port commits and the accepted NNS-core snapshot. No test tolerance widening or new failure-hiding skips. Final release remains subject to GitHub CI against main.',
+              'tree': tree['sha'], 'parents': [BASE]})
+          receipt = {'parent': BASE, 'candidate_sha': candidate['sha'],
+                     'tree_sha': tree['sha'], 'main_sha': main,
+                     'payload_sha256': PAYLOAD, 'files': verified,
+                     'open_pr_count': len(inventory),
+                     'allow_merge_commit': repo.get('allow_merge_commit'),
+                     'release_branch_updated': False,
+                     'transfer_files_in_candidate': False}
+          (OUT / 'candidate.json').write_text(json.dumps(receipt, indent=2))
+          print(json.dumps({k: v for k, v in receipt.items() if k != 'files'}, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Verified all 56 file postimages. Candidate: `' + candidate['sha'] + '`.\n\nNo branch ref was changed. Original PR heads are recorded in the evidence artifact.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r14-integration-candidate-evidence
+          path: /tmp/r14-candidate-evidence/
+          retention-days: 30
+          if-no-files-found: error
