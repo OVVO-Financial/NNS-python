@@ -82,11 +82,12 @@ def classify_stack_r14(
 
     def choose(probabilities: F, threshold: float = 0.5) -> F:
         if class_count == 2:
-            return np.where(
+            selected: F = np.where(
                 probabilities[:, tie_order[1]] > threshold,
                 values[tie_order[1]],
                 values[tie_order[0]],
             )
+            return selected
         return np.asarray(
             values[tie_order[np.argmax(probabilities[:, tie_order], axis=1)]], dtype=np.float64
         )
