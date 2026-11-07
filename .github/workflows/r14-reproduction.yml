@@ -1,0 +1,38 @@
+name: R14 parity reproduction bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [automation/r14-stack-cache-20261106]
+    paths: [.github/workflows/r14-reproduction.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Archive tracked source and pinned R package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reproduction/wheels
+          git archive --format=tar.gz --output=reproduction/python-source.tar.gz HEAD
+          git rev-parse HEAD > reproduction/python-commit.txt
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/OVVO-Financial/NNS/7b07a837c130ba7220dbe16c584221508757d5ae/NNS_14.0.tar.gz \
+            --output reproduction/NNS_14.0.tar.gz
+          sha256sum reproduction/*.tar.gz > reproduction/SHA256SUMS
+          python -m pip download --only-binary=:all: --dest reproduction/wheels \
+            hypothesis pytest-benchmark pytest-xdist nanobind scikit-build-core ruff mypy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r14-reproduction-source
+          path: reproduction/
+          retention-days: 7
+          if-no-files-found: error
