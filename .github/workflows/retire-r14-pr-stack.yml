@@ -1,0 +1,36 @@
+name: Retire verified R14 integration PR stack
+
+on:
+  push:
+    branches: [automation/r14-publish-20261107]
+    paths: [.github/workflows/retire-r14-pr-stack.yml]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify landed commit and retire exact preserved PR heads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_MERGE_SHA: bd19c3303222af46da79d8c97f258248eb5674d2
+        run: python .r14-transfer/retire.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r14-pr-retirement-evidence
+          path: /tmp/r14-retirement-evidence/
+          retention-days: 90
+          if-no-files-found: error
