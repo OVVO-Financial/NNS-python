@@ -1,0 +1,78 @@
+name: Audit R14 PR ancestry and review state
+
+on:
+  push:
+    branches: [automation/r14-publish-20261107]
+    paths: [.github/workflows/r14-pr-review-audit.yml]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify current heads and inspect review threads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, pathlib, subprocess, urllib.request
+          repo = 'OVVO-Financial/NNS-python'
+          head = 'f2bda92aa006503d5f1ee26c8f9085e2bae0ee7c'
+          numbers = list(range(148, 177)) + list(range(178, 193))
+          out = pathlib.Path('/tmp/r14-review-audit')
+          out.mkdir()
+          def api(path, body=None, graphql=False):
+              req = urllib.request.Request(
+                  'https://api.github.com/graphql' if graphql else 'https://api.github.com/repos/' + repo + path,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'},
+                  method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.load(r)
+          fields = ' '.join('p%d: pullRequest(number:%d) { number state headRefName headRefOid baseRefName reviewDecision reviewThreads(first:100) { pageInfo { hasNextPage } nodes { isResolved isOutdated comments(first:100) { pageInfo { hasNextPage } nodes { url body } } } } }' % (n,n) for n in numbers)
+          data = api('', {'query':'{ repository(owner:"OVVO-Financial", name:"NNS-python") { ' + fields + ' } }'}, True)
+          assert not data.get('errors'), data.get('errors')
+          entries = list(data['data']['repository'].values())
+          assert len(entries) == 44 and all(entries)
+          unresolved = []
+          blockers = []
+          subprocess.run(['git', 'fetch', 'origin', head, 'main'], check=True)
+          main = api('/git/ref/heads/main')['object']['sha']
+          assert subprocess.run(['git','merge-base','--is-ancestor',main,head]).returncode == 0, 'Main advanced; retest integration'
+          for pr in entries:
+              assert not pr['reviewThreads']['pageInfo']['hasNextPage'], 'Review pagination requires inspection'
+              for thread in pr['reviewThreads']['nodes']:
+                  assert not thread['comments']['pageInfo']['hasNextPage'], 'Comment pagination requires inspection'
+                  if not thread['isResolved']:
+                      unresolved.append({'number': pr['number'], 'thread': thread})
+              if pr['reviewDecision'] == 'CHANGES_REQUESTED':
+                  blockers.append(pr['number'])
+              sha = pr['headRefOid']
+              if pr['number'] != 190:
+                  assert subprocess.run(['git','merge-base','--is-ancestor',sha,head]).returncode == 0, 'Unincorporated head: ' + str(pr['number'])
+              if pr['number'] == 192:
+                  assert sha == head and pr['baseRefName'] == 'main'
+          report = {'head_sha': head, 'main_sha': main, 'pr_count': len(entries),
+                    'unresolved': unresolved, 'changes_requested': blockers, 'pull_requests': entries}
+          (out / 'review-audit.json').write_text(json.dumps(report, indent=2))
+          print('Audited', len(entries), 'PRs; unresolved threads:', len(unresolved), '; change requests:', blockers)
+          assert not unresolved and not blockers, 'Review findings require resolution before integration'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r14-premerge-review-audit
+          path: /tmp/r14-review-audit/
+          retention-days: 30
+          if-no-files-found: error
