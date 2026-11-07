@@ -382,3 +382,22 @@ def test_prepared_names_rename_outputs_and_keep_point_columns_aligned() -> None:
         assert design.feature_names == tuple(names)
         np.testing.assert_array_equal(design.x, x.to_numpy())
         np.testing.assert_array_equal(design.point_est, [[2.5, 25.0]])
+
+
+def test_explicit_reg_overrides_binary_numeric_auto_classification_like_r14() -> None:
+    x = np.arange(8.0)
+    y = np.array([0., 0., 0., 1., 1., 1., 0., 1.])
+
+    automatic = nns_reg(x, y)
+    assert "Point.probabilities" in automatic  # automatic 0/1 nominal task
+
+    forced = nns_reg(x, y, type="REG", order="max", point_est=[2.5])
+    assert forced["class.levels"] is None
+    assert "regression.points" in forced
+    assert "Point.probabilities" not in forced
+    assert forced["Prediction.Accuracy"] is None
+    np.testing.assert_array_equal(forced["Fitted.xy"]["y"], y)
+
+    for nonnumeric in (y.astype(bool), y.astype(str)):
+        with pytest.raises(ValueError, match="requires a numeric response"):
+            nns_reg(x, nonnumeric, type="REG")
