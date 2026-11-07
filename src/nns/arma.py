@@ -33,6 +33,7 @@ def nns_arma_optim(
     pred_int: float | None = 0.95,
     print_trace: bool = True,
     plot: bool = False,
+    bias_correction: str = "none",
 ) -> dict[str, Any]:
     """Optimize seasonal factors for :func:`nns_arma` like R's ``NNS.ARMA.optim``."""
     del print_trace  # R console trace flag; NNS Python emits no console output.
@@ -41,6 +42,8 @@ def nns_arma_optim(
     original_values = values.copy()
     n = values.size
     objective_l = objective.lower()
+    if bias_correction not in {"none", "split"}:
+        raise ValueError("bias_correction must be 'none' or 'split'.")
     if objective_l not in {"min", "max"}:
         raise ValueError("objective must be 'min' or 'max'.")
     if obj_fn is None:
@@ -283,29 +286,35 @@ def nns_arma_optim(
     if nns_regress:
         final_predicted = smooth_predicted
 
-    # Decided after shrink and nns.regress so errors, bias and intervals describe the
-    # returned model.
-    errors = final_predicted - actual
-    bias = _finite_gravity(errors)
-    model_score = float(objective_fn(final_predicted, actual))
-    bias_score = float(objective_fn(final_predicted - bias, actual))
-    if not _improves_or_ties_bias(bias_score, model_score, objective_l):
-        bias = 0.0
-    final_predicted = final_predicted - bias
+    # R 14.0 keeps the uncorrected validation errors, and estimates a bias
+    # adjustment only with its explicitly requested chronological split. The
+    # default policy is 'none', which intentionally does not adjust forecasts.
+    raw_validation = np.asarray(final_predicted, dtype=np.float64)
+    errors = raw_validation - actual
+    bias_validation = _arma_bias_choice(
+        raw_validation, actual, objective_fn, objective_l,
+        negative_values, bias_correction,
+    )
+    applied_shift = float(bias_validation["applied.shift"])
+    bias = -applied_shift
+    final_predicted = raw_validation - bias
+    if not negative_values:
+        final_predicted = np.maximum(0.0, final_predicted)
+    final_score = float(objective_fn(final_predicted, actual))
     residuals = actual - final_predicted
 
-    # Apply the nns.regress decision: it was tested on the smoothed
-    # series with shrink=True, so the returned forecast uses the same inputs.
+    # The smoothed candidate was evaluated with shrink=True.
     if nns_regress:
         nns_shrink = True
 
     if h_oos is None:
+        raw_results = raw_validation
         model_results = final_predicted
     else:
         final_values = (
             _smooth_regressed_variable(original_values) if nns_regress else original_values
         )
-        model_results = _arma_optim_prediction(
+        raw_results = _arma_optim_prediction(
             final_values,
             None,
             h_oos,
@@ -314,7 +323,10 @@ def nns_arma_optim(
             results_negative_values,
             nns_weights,
             shrink=nns_shrink,
-        ) - bias
+        )
+        model_results = raw_results - bias
+    if not results_negative_values:
+        model_results = np.maximum(0.0, model_results)
     if pred_int is None:
         # R returns numeric(0) bounds for pred.int = NULL.
         lower_pi = np.array([], dtype=np.float64)
@@ -331,11 +343,14 @@ def nns_arma_optim(
     result = {
         "periods": nns_periods,
         "weights": nns_weights,
-        "obj.fn": nns_score,
+        "obj.fn": final_score,
         "method": nns_method,
         "shrink": bool(nns_shrink),
         "nns.regress": bool(nns_regress),
-        "bias.shift": 0.0 - float(bias),  # never -0.0
+        "bias.shift": 0.0 + applied_shift,  # do not return -0.0
+        "bias.validation": bias_validation,
+        "raw.results": raw_results,
+        "validation.forecast": final_predicted,
         "errors": errors,
         "results": model_results,
         "lower.pred.int": lower_pi,
@@ -657,6 +672,58 @@ def _improves(candidate: float, baseline: float, objective: str) -> bool:
 
 def _improves_or_ties_bias(candidate: float, baseline: float, objective: str) -> bool:
     return candidate < baseline if objective == "min" else candidate > baseline
+
+
+def _arma_bias_choice(
+    raw: NDArray[np.float64],
+    actual: NDArray[np.float64],
+    objective_fn: Any,
+    objective: str,
+    negative_values: bool,
+    policy: str,
+) -> dict[str, Any]:
+    """R 14.0 .nns_arma_bias_choice: estimate on the first half, accept later.
+
+    The default no-correction policy never infers a bias from its own scoring
+    window; doing so previously leaked validation information into the shift.
+    """
+    n = int(actual.size)
+    estimate_rows = np.array([], dtype=np.int64)
+    acceptance_rows = np.array([], dtype=np.int64)
+    candidate = 0.0
+    applied = 0.0
+    before = float("nan")
+    after = float("nan")
+    status = "disabled" if policy == "none" else "insufficient_validation"
+    if policy == "split" and n >= 4:
+        half = n // 2
+        estimate_rows = np.arange(1, half + 1, dtype=np.int64)
+        acceptance_rows = np.arange(half + 1, n + 1, dtype=np.int64)
+        candidate = -_finite_gravity(raw[:half] - actual[:half])
+        if not math.isfinite(candidate):
+            candidate = 0.0
+        before = float(objective_fn(raw[half:], actual[half:]))
+        adjusted = raw[half:] + candidate
+        if not negative_values:
+            adjusted = np.maximum(0.0, adjusted)
+        after = float(objective_fn(adjusted, actual[half:]))
+        accepted = math.isfinite(after) and (
+            after < before if objective == "min" else after > before
+        )
+        if accepted:
+            applied = float(candidate)
+        status = "accepted" if applied != 0.0 else "rejected"
+    return {
+        "policy": policy,
+        "estimated.shift": float(candidate),
+        "applied.shift": float(applied),
+        "estimate.rows": estimate_rows,
+        "acceptance.rows": acceptance_rows,
+        "raw.score": before,
+        "adjusted.score": after,
+        "accepted": applied != 0.0,
+        "status": status,
+    }
 
 
 def _finite_gravity(values: NDArray[np.float64]) -> float:
