@@ -1,0 +1,35 @@
+{
+  "entries": {
+    "08b52fff3d21fa02e860aa41a3866cb921376b10a759d88f2e11a39af725c23b": {
+      "Correlation": 0.06107720506685688,
+      "Correlation 95% CIs": [
+        -0.2680920961911537,
+        0.3175893912308998
+      ],
+      "Correlation p.value": 0.7128712871287128,
+      "Dependence": 0.817949189727433,
+      "Dependence 95% CIs": [
+        0.06164063800479486,
+        0.37266103070526085
+      ],
+      "Dependence p.value": 0.009900990099009901
+    },
+    "1f43da94426161366df7168174e275ff33fa97b1223961a318d5cf2462b3cd25": {
+      "Correlation": 0.06107720506685688,
+      "Correlation 95% CIs": [
+        -0.22875230175986283,
+        0.25788166805041746
+      ],
+      "Correlation p.value": 0.5148514851485149,
+      "Dependence": 0.817949189727433,
+      "Dependence 95% CIs": [
+        0.0,
+        0.34582140974694453
+      ],
+      "Dependence p.value": 0.009900990099009901
+    }
+  },
+  "label": "pval14.dep",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

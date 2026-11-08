@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from typing import SupportsInt, TypedDict, cast
+from typing import NotRequired, SupportsInt, TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +13,7 @@ SeasonalityTable = TypedDict(
         "Period": NDArray[np.int64],
         "Coefficient.of.Variation": NDArray[np.float64],
         "Variable.Coefficient.of.Variation": NDArray[np.float64],
+        "p.value": NotRequired[NDArray[np.float64]],
     },
 )
 """Per-period seasonality diagnostics ordered by strength (R's ``$all.periods``)."""
@@ -40,13 +41,24 @@ def nns_seas(
     *,
     detrend: bool = True,
     max_period: int | None = None,
+    p_value: bool = False,
+    nperm: int = 100,
     dispersion: str = "auto",
+    random_seed: int | None = None,
 ) -> SeasonalityResult:
     """R 14.0 Gini-dispersion seasonal candidates and fundamental period.
 
     The R14 estimator changed its statistics (Gini rather than SD), trend
     adjustment and scan cap; it must not reuse the earlier R13 cached statistic.
+
+    ``p_value=True`` adds R's permutation p-value of each period to
+    ``all.periods`` (``"p.value"``, ``NaN`` for period 1): its dispersion ratio
+    against the best ratio of each of ``nperm`` shuffled copies of the
+    (detrended) series. ``periods`` then holds the periods with p-value at most
+    0.05 (else 1) and ``best.period`` the first of them. With
+    ``random_seed = s`` the shuffles are R's after ``set.seed(s)``.
     """
+    from nns._rrng import r_rng
     from nns._seas_r14 import r14_seasonality
 
     result = cast(
@@ -54,6 +66,7 @@ def nns_seas(
         r14_seasonality(
             variable, modulo, mod_only,
             detrend=detrend, max_period=max_period, dispersion=dispersion,
+            p_value=p_value, nperm=nperm, rng=r_rng(random_seed) if p_value else None,
         ),
     )
     if plot:

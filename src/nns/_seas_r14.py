@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
 from nns._rmean import r_cumsum, r_mean, r_sum
+from nns._rrng import RRNG
 
 F = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -158,12 +159,18 @@ def r14_seasonality(
     detrend: bool = True,
     max_period: int | None = None,
     dispersion: str = "auto",
+    p_value: bool = False,
+    nperm: int = 100,
+    rng: RRNG | None = None,
 ) -> dict[str, object]:
-    """R14 NNS.seas deterministic public result, except permutation p-values."""
+    """R14 NNS.seas public result, with R's permutation p-values on request."""
     x = _as_float_series(values, dispersion, detrend)
     n = int(x.size)
     if max_period is not None and (max_period < 1 or not np.isfinite(max_period)):
         raise ValueError("max.period must be NULL or a single number >= 1.")
+    if p_value and (not np.isfinite(nperm) or nperm < 1):
+        raise ValueError("nperm must be a single number >= 1.")
+    mp = None if max_period is None else int(max_period)
 
     def result(periods: IntArray, scores: F, cov: float) -> dict[str, object]:
         return {
@@ -179,6 +186,66 @@ def r14_seasonality(
     if n < 5:
         return result(np.array([0], dtype=np.int64), np.array([0.0]), 0.0)
 
+    use_cv = bool(np.min(x) > 0.0 or np.max(x) < 0.0)
+    periods, scores, base = _seas_scan(x, modulo, mod_only, mp)
+    periods, scores = _fundamental(x, periods, scores, use_cv)
+    out = result(periods, scores, base)
+    if p_value:
+        if rng is None:
+            raise ValueError("p_value = True needs a random stream.")
+        _add_permutation_p_values(out, x, int(nperm), mp, rng)
+    return out
+
+
+def _add_permutation_p_values(
+    out: dict[str, object], x: F, nperm: int, max_period: int | None, rng: RRNG
+) -> None:
+    """R NNS.seas(p.value = TRUE): each period's dispersion ratio against the best
+    ratio of each of ``nperm`` shuffled copies (``sample(x)``) of the detrended
+    series, scanned by ``NNS_seas_cpp`` with the observed table's out-of-scan
+    periods added."""
+    table = out["all.periods"]
+    assert isinstance(table, dict)
+    periods = np.asarray(table["Period"], dtype=np.int64)
+    n = int(x.size)
+    scan_max = min(n // 2, n // 5)
+    if max_period is not None:
+        scan_max = max(1, min(scan_max, max_period))
+    extra = periods[periods > scan_max]
+    null_best = np.empty(nperm, dtype=np.float64)
+    for b in range(nperm):
+        shuffled = rng.sample(x)
+        if extra.size:
+            p_null, s_null, base = _seas_scan(shuffled, extra, False, max_period)
+        else:
+            p_null, s_null, base = _seas_scan(shuffled, None, True, max_period)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            null_best[b] = 1.0 if p_null[0] <= 1 else float(s_null[0] / base)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        observed = np.asarray(table["Coefficient.of.Variation"], dtype=np.float64) / np.asarray(
+            table["Variable.Coefficient.of.Variation"], dtype=np.float64
+        )
+    p_values = np.array(
+        [(1.0 + float(np.count_nonzero(null_best <= ratio))) / (1.0 + nperm) for ratio in observed]
+    )
+    p_values[periods <= 1] = np.nan
+    table["p.value"] = p_values
+    significant = periods[~np.isnan(p_values) & (p_values <= 0.05)]
+    chosen = significant.astype(np.int64) if significant.size else np.array([1], dtype=np.int64)
+    out["periods"] = chosen
+    out["best.period"] = int(chosen[0])
+
+
+def _seas_scan(
+    x: F,
+    modulo: int | Sequence[int] | IntArray | None,
+    mod_only: bool,
+    max_period: int | None,
+) -> tuple[IntArray, F, float]:
+    """R's C++ ``NNS_seas_cpp``: candidate periods, their scores and the baseline."""
+    n = int(x.size)
+    if n < 5:
+        return np.array([0], dtype=np.int64), np.array([0.0]), 0.0
     use_cv = bool(np.min(x) > 0.0 or np.max(x) < 0.0)
     max_lag = min(n // 2, n // 5)
     if max_period is not None:
@@ -223,5 +290,4 @@ def r14_seasonality(
     pairs = sorted(current.items(), key=lambda z: z[1])  # stable, R's order
     periods = np.asarray([lag for lag, _ in pairs], dtype=np.int64)
     scores = np.asarray([score for _, score in pairs], dtype=np.float64)
-    periods, scores = _fundamental(x, periods, scores, use_cv)
-    return result(periods, scores, base)
+    return periods, scores, base

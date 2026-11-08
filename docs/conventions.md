@@ -193,7 +193,11 @@ is on `x` and the result measures `y` as a function of `x`. `nns_dep(X)` on a 2-
 array or DataFrame returns R's `Correlation` and `Dependence` matrices; with
 `asym=True` entry `[i, j]` is `nns_dep(X[:, i], X[:, j], asym=True)` (row variable
 -> column variable, which is what R returns although its manual states the
-reverse). R's `p.value` option is not implemented. The bivariate path includes `NNS.gravity` handling
+reverse). `p_value=True` runs R's permutation test on the bivariate form: the
+measures of `x` against 100 shuffles of `y` give a two-sided `Correlation p.value`,
+an upper-tail `Dependence p.value` and the shuffled values' 95% partial-moment
+intervals; with `random_seed = s` the shuffles are R's after `set.seed(s)`.
+The bivariate path includes `NNS.gravity` handling
 for zero-range inputs and non-positive or non-finite bin widths. The gravity
 histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
 single outlier that makes R allocate millions of empty bins costs nothing and gives
@@ -217,12 +221,24 @@ input raises `ValueError` (R stops on missing values).
 
 ## Causation
 
-`nns_causation(x, y)` maps to R's `NNS.caus(x, y, tau = 0, p.value = FALSE)`
-numeric-vector path. It returns the two directional components and the named
-signed net log-ratio key selected by R, either `C(x--->y)` or `C(y--->x)`.
-`causal_matrix` maps to R's `NNS.caus` on a matrix (internally `NNS.caus.matrix`):
-an antisymmetric matrix whose entry `[i, j]` is the net causation of column `j` on
-column `i` (positive: `j` causes `i`). A DataFrame input returns a DataFrame labelled with its columns.
+`nns_causation(x, y, tau)` maps to R 14's `NNS.caus(x, y)`: the two directional
+indices `C(x--->y)` and `C(y--->x)` in `[0, 1]`, which sum to one and are 0.5 when
+neither direction dominates. They measure directional lagged association, not
+causal identification. `causal_matrix(X)` (also `nns_causation(X)` with `y=None`,
+as in R) is R's `NNS.caus.matrix`: entry `[i, j]` is `C(column i ---> column j)`,
+so `[i, j] + [j, i] = 1` off the diagonal, which is 0. A DataFrame input returns
+DataFrames labelled with its columns.
+
+`p_value=True` adds R's permutation test, with R's `nperm`, `permute`, `seed` and
+`conf_int` (`conf.int`). For a pair, the signed index `C(x--->y) - C(y--->x)` is
+compared with its null under `permute="auto"` (a circular shift of `y` at least
+`max(tau + 1, n / 10)` steps from alignment for a positive lag, a shuffle of `y`
+otherwise) or an explicit `"y"`, `"x"`, `"both"` or `"shift"`; the result is
+`{"causation": ..., "p.value": {...}}` with R's fields. For a matrix,
+`"auto"` shifts the second column of each pair for time series and shuffles every
+column otherwise, and the result holds R's `causality`, `lower_CI`, `upper_CI`
+and `p.value_matrix`. Every permutation is scored at the lag resolved on the
+observed series, and with `seed = s` the draws are R's after `set.seed(s)`.
 `tau='ts'` uses `nns_seas(... )["periods"]` exactly like installed R: the first
 period not exceeding `sqrt(length(x))` is selected per variable, including
 harmonics when R selects them. Inputs with no eligible selected period follow
@@ -455,15 +471,20 @@ example.
 
 ## Seasonality
 
-`nns_seas` maps to installed R's `NNS.seas`; `plot=True` draws the figure as a
-side effect (see Plotting). Inputs shorter than five observations
-return R's sentinel period `0`. For mean-zero data, R falls back from coefficient
-of variation to `abs(acf1) ** -1`; NNS Python follows the same fallback and
-non-finite handling. Installed R can report harmonics rather than the visually
-obvious period, so NNS Python matches R's candidate-period screening instead of a
-textbook seasonality heuristic. Results are cached by input content and modulo
-arguments with defensive copies on return; this preserves R semantics while
-avoiding repeated reverse-step scans for identical series.
+`nns_seas` maps to R 14's `NNS.seas`; `plot=True` draws the figure as a side
+effect (see Plotting). A period's score is the length-weighted Gini mean
+difference of its component series (relative to the component means when the
+data have one sign), and periods scoring below the whole series are candidates,
+sorted by score. The linear trend is removed first (`detrend=True`), the scan
+covers periods up to `min(n / 2, n / 5)` (or `max_period`), `modulo` adds
+multiples as in R, and the reported period is the fundamental one: the smallest
+plausible divisor of the strongest period within two paired standard errors of
+it. Inputs shorter than five observations return R's sentinel period `0`. The
+scores follow R's arithmetic and agree with R to the last bit. `p_value=True`
+adds R's permutation p-value of each period (`NaN` for period 1): its dispersion
+ratio against the best ratio of each of `nperm` shuffles of the detrended series;
+`periods` then lists the periods with p-value at most 0.05 (else 1). With
+`random_seed = s` the shuffles are R's after `set.seed(s)`.
 
 ## ARMA
 

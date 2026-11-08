@@ -11,9 +11,12 @@ R for ``sample.int``, permutations, and ``runif`` sequences.
 from __future__ import annotations
 
 import math
+from typing import TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
+
+_ScalarT = TypeVar("_ScalarT", bound=np.generic)
 
 _N = 624
 _MATRIX_A = 0x9908B0DF
@@ -203,12 +206,11 @@ class RRNG:
 
     def sample(
         self,
-        values: NDArray[np.int64],
+        values: NDArray[_ScalarT],
         size: int | None = None,
         replace: bool = False,
-    ) -> NDArray[np.int64]:
+    ) -> NDArray[_ScalarT]:
         """R's ``sample(x, size, replace)`` for an explicit vector ``x``."""
-        values = np.asarray(values)
         idx = self.sample_int(values.size, size, replace)
         return values[idx - 1]
 
