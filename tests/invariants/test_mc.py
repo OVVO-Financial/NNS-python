@@ -57,7 +57,7 @@ def test_nns_mc_xmin_xmax_clipping_is_respected() -> None:
 def test_nns_mc_lower_greater_than_upper_errors() -> None:
     x = np.linspace(-2.0, 4.0, 30) + 0.1 * np.sin(np.arange(30, dtype=np.float64))
 
-    with pytest.raises(ValueError, match="rho grid"):
+    with pytest.raises(ValueError, match="lower_rho and upper_rho must satisfy"):
         nns_mc(x, lower_rho=1.0, upper_rho=-1.0, by=0.5)
 
 

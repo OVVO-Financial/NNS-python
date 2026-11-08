@@ -104,9 +104,9 @@ stochastic-dominance tests. It returns `p_gt = P(X > Y)`, `p_tie = P(X = Y)`,
 and `p_star = p_gt + 0.5 * p_tie`. `NaN` values are omitted independently from
 `x` and `y`, matching R's `na.omit` preprocessing. With
 `confidence_interval=True`, intervals are computed through `nns_meboot`,
-`lpm_var`, and `upm_var`; exact bootstrap parity with R is not expected because
-the RNG streams differ. `random_seed` is a NNS Python-only reproducibility
-convenience for that stochastic path.
+`lpm_var`, and `upm_var`: with `random_seed = s` the bounds and `boot_vals` are
+R's after `set.seed(s)`, the replicates of `x` and then of `y` drawn from one
+stream as R draws them.
 
 `nns_sd_cluster` maps to R's `NNS.SD.cluster` default path. It iteratively
 peels `sd_efficient_set` results and returns a dictionary of `Cluster_1`,
@@ -472,10 +472,12 @@ intervals it returns a NumPy forecast vector of length `h`; with `pred_int` it
 returns a dict keyed like R's data.table columns (`Estimates`,
 `Lower <percent>% pred.int`, `Upper <percent>% pred.int`). Forecasts are
 recursive: each estimate is appended before the next horizon step. Plot
-arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`; exact
-stochastic parity with R is not expected because RNG streams differ.
-`random_seed` is a NNS Python-only convenience for reproducible interval tests.
-No-`pred_int` deterministic forecasts are parity-tested against R.
+arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`: with
+`random_seed = s` they are R's after `set.seed(s)`, bit for bit. As in R 14, a
+one-point or constant forecast path has no dispersion to resample, and its band
+is the path widened by the per-lag spread alone. Forecasts, the seasonal lag
+weights and `nns_seas` scores use R's arithmetic (long-double `mean`/`sum`, R's
+`sd`), so they agree with R to the last bit.
 As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
 `seasonal_factor=False`: it weights the `best_periods` best periods from
 `nns_seas` (the default `best_periods=1` selects the best period).
@@ -539,26 +541,34 @@ returns plain Python dictionaries instead of R's vectorized list-matrix wrapper.
 `rho`, `target_drift` and `target_drift_scale` are vectorized like R's
 `Vectorize`/`mapply`: the given arguments are recycled elementwise (not crossed)
 and a list of result dictionaries is returned in that order; when all of them are
-scalars a single result dictionary is returned. `rho=None` follows installed R's empty
-output behavior, and length-one input returns only `{"x": x}`. When the detrended
+scalars a single result dictionary is returned. With none of the three given there
+is nothing to map over and, as in R, the result is empty; length-one input returns
+only `{"x": x}`. When the detrended
 residuals are all exactly zero (a constant or exactly linear series) `rho` has no
 effect, as in R: the replicates are copies of the trend with their means spread by
 `force_clt`, and a constant series gives constant columns.
 
-Exact replicate parity with R is not expected because NNS Python uses NumPy's random
-number generator and SciPy's optimizer while R uses its global RNG and
-`optim()`. Deterministic diagnostics (`xx`, `z`, `dv`, `dvtrim`, `xmin`,
-`xmax`, `desintxb`, `ordxx`, and `kappa`) are parity-tested exactly. Stochastic
-outputs are tested structurally and statistically. `random_seed` is a NNS Python-only
-convenience for reproducible bootstrap draws.
+With `random_seed = s` the replicates are R's after `set.seed(s)`, bit for bit:
+R draws only through `runif` (one per observation per replicate, then one per
+shrunken column in each `expand.sd` pass), which the port reproduces from R's
+Mersenne-Twister stream, and the deterministic steps follow R's arithmetic,
+including `optimize()` (Brent's `fmin`, with non-finite objective values replaced
+by the largest double as R does) for the `rho` target, `qnorm` for the CLT
+spread and R's trimmed `mean`. Without a seed the stream is seeded from fresh
+entropy. `force_clt` spreads the replicate means by `sd / sqrt(n)` with `n` the
+series length, R 14's correction of meboot's division by the number of
+replicates. Given only `target_drift`/`target_drift_scale` (no `rho`), the
+replicates are drawn without a dependence target, as R's `Vectorize` does;
+`expand_residual_sd` is R's `expand.residual.sd`.
 
 ## Monte Carlo
 
 `nns_mc` maps to R's `NNS.MC` wrapper around `NNS.meboot`. The rho grid and
 exponential rho transformation are parity-tested exactly against installed R.
-As with `nns_meboot`, exact stochastic replicate parity is not expected because
-R and NNS Python use different RNG streams and optimizer implementations.
-`random_seed` is a NNS Python-only convenience passed through to `nns_meboot`.
+With `random_seed = s` the replicates and ensemble are R's after
+`set.seed(s)`. Arguments are validated with R's messages, the ensemble is R's
+long-double `rowMeans`, and the replicate names format each rho as R's
+`as.character` does (`"rho = 1e-04"`).
 
 NNS Python returns `{"ensemble": array, "replicates": dict}`. The `replicates`
 mapping preserves R's names, such as `"rho = 1"` and `"rho = -0.5"`, with each

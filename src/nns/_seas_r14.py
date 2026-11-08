@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._rmean import r_cumsum, r_mean, r_sum
 
 F = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -26,7 +27,7 @@ def _as_float_series(values: F, dispersion: str, detrend: bool) -> F:
     if dispersion not in {"auto", "absolute"}:
         raise ValueError("dispersion must be 'auto' or 'absolute'.")
     if dispersion == "absolute":
-        x -= float(np.mean(x))
+        x -= r_mean(x)
     n = int(x.size)
     if detrend and n >= 5:
         t = np.arange(1, n + 1, dtype=np.float64)
@@ -36,26 +37,29 @@ def _as_float_series(values: F, dispersion: str, detrend: bool) -> F:
             x -= slope * center
             _, slope2 = _fast_lm(t, x)
             residual = x - slope2 * center
-            if np.max(np.abs(residual - np.mean(residual))) <= (
+            if np.max(np.abs(residual - r_mean(residual))) <= (
                 8.0 * np.finfo(np.float64).eps * np.max(np.abs(values))
             ):
-                x[:] = np.mean(x)
+                x[:] = r_mean(x)
     return x
 
 
-def _gini_component(values: F) -> float:
-    """Unbiased Gini difference of observations, including tied observations."""
+def _gini_component(values: F) -> tuple[float, float]:
+    """Unbiased Gini difference of observations, including tied observations,
+    and the component's sum, both accumulated over the values in ascending order
+    as R's C++ ``seas_score`` visits them."""
     n = int(values.size)
-    if n < 2:
-        return 0.0
     sorted_values = np.sort(values, kind="stable")
-    if sorted_values[0] == sorted_values[-1]:
-        return 0.0
+    total = 0.0
+    for value in sorted_values:
+        total += float(value)
+    if n < 2 or sorted_values[0] == sorted_values[-1]:
+        return 0.0, total
     first = float(sorted_values[0])
     acc = 0.0
     for i, value in enumerate(sorted_values):
         acc += (2.0 * i + 1.0 - n) * (float(value) - first)
-    return max(0.0, 2.0 * acc / (n * (n - 1.0)))
+    return max(0.0, 2.0 * acc / (n * (n - 1.0))), total
 
 
 def _lag_score(x: F, lag: int, use_cv: bool) -> float:
@@ -64,9 +68,9 @@ def _lag_score(x: F, lag: int, use_cv: bool) -> float:
     acc = 0.0
     for j in range(lag):
         values = x[j::lag]
-        g = _gini_component(values)
+        g, total = _gini_component(values)
         if use_cv and g != 0.0:
-            score = g / abs(float(np.mean(values)))
+            score = g / abs(total / float(values.size))
         else:
             score = g
         acc += values.size * score
@@ -88,11 +92,12 @@ def _delete_one_scores(x: F, lag: int, use_cv: bool) -> F | None:
         k = obs.size
         order = np.argsort(obs, kind="stable")
         sorted_obs = obs[order]
-        cs = np.cumsum(sorted_obs, dtype=np.float64)
+        # R's cumsum() and sum() accumulate in long double.
+        cs = r_cumsum(sorted_obs)
         total = float(cs[-1])
         ranks = np.arange(1, k + 1, dtype=np.float64)
         contributions = sorted_obs * (2.0 * ranks - k) + total - 2.0 * cs
-        sum_contributions = float(np.cumsum(contributions)[-1])
+        sum_contributions = r_sum(contributions)
         g = sum_contributions / (k * (k - 1.0))
         full = g / abs(total / k) if use_cv and g != 0.0 else g
         g_del = (sum_contributions - 2.0 * contributions) / ((k - 1.0) * (k - 2.0))
@@ -107,7 +112,7 @@ def _delete_one_scores(x: F, lag: int, use_cv: bool) -> F | None:
         reordered[order] = del_values
         component_full[j] = full
         component_del.append(reordered)
-    weighted = float(np.sum(sizes * component_full))
+    weighted = r_sum(sizes * component_full)
     for j in range(lag):
         k = sizes[j]
         output[j::lag] = (weighted - k * component_full[j] + (k - 1.0) * component_del[j]) / (
@@ -137,7 +142,8 @@ def _fundamental(x: F, periods: IntArray, scores: F, use_cv: bool) -> tuple[IntA
         if jack is None:
             continue
         diff = jack - denom
-        se = math.sqrt((x.size - 1.0) / x.size * float(np.sum((diff - np.mean(diff)) ** 2)))
+        centred = diff - r_mean(diff)
+        se = math.sqrt((x.size - 1.0) / x.size * r_sum(centred * centred))
         if math.isfinite(se) and scores[idx] <= scores[0] + 2.0 * se:
             order = np.r_[idx, np.arange(periods.size)[np.arange(periods.size) != idx]]
             return periods[order], scores[order]

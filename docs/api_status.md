@@ -76,8 +76,11 @@ invariant, and property coverage.
 - NNS Python uses explicit Python errors for some cases where R silently truncates,
   coerces, warns, or returns unusable values. Important divergences are recorded
   in `docs/conventions.md`.
-- Stochastic exact stream parity is not expected. Stochastic paths use NumPy RNG
-  and are tested structurally/statistically.
+- Seeded stochastic paths reproduce R's random stream: `random_seed = s` gives
+  R's results after `set.seed(s)` for `nns_meboot`, `nns_mc`, the `nns_ss`
+  bootstrap bounds, `nns_arma` prediction intervals, the robust and effect-size
+  `nns_anova` paths, `nns_stack` and `nns_boost`. Without a seed the stream is
+  seeded from fresh entropy.
 - Plotting side effects from R APIs are generally ignored; NNS Python returns data.
 - Stochastic-dominance performance work stays pure NumPy for now. The current
   implementation mirrors R's sorted-column/prefix-sum algorithm and adds

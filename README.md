@@ -131,7 +131,7 @@ rather than R `data.table` objects and uses explicit Python errors for unsafe R
 coercions.
 
 - R is used for parity tests and local cache regeneration, not normal runtime.
-- Exact stochastic stream parity is not expected for every randomized path.
+- Seeded randomized paths reproduce R's stream: `random_seed = s` matches `set.seed(s)`.
 - Factor and class ordering should be supplied explicitly when it matters.
 - Classification codes follow the R contract and start at 1.
 - Compute functions return values; `plot=True` adds Matplotlib rendering as a

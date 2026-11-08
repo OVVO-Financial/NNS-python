@@ -76,6 +76,31 @@ class RRNG:
     def runif(self, low: float = 0.0, high: float = 1.0) -> float:
         return low + (high - low) * self.unif_rand()
 
+    def unif_rand_array(self, size: int) -> NDArray[np.float64]:
+        """``size`` successive ``unif_rand()`` draws, as R's ``runif(size)`` gives.
+
+        Draw-for-draw identical to calling :meth:`unif_rand` ``size`` times and
+        leaves the generator in the same state, but runs the Mersenne-Twister in
+        NumPy's MT19937 (the generator R uses once seeded) instead of pure Python.
+        """
+        size = int(size)
+        if size <= 0:
+            return np.empty(0, dtype=np.float64)
+        bit_generator = np.random.MT19937()
+        bit_generator.state = {
+            "bit_generator": "MT19937",
+            "state": {"key": np.asarray(self._mt, dtype=np.uint32), "pos": self._mti},
+        }
+        raw = bit_generator.random_raw(size)
+        state = bit_generator.state["state"]
+        self._mt = [int(value) for value in state["key"]]
+        self._mti = int(state["pos"])
+        draws = raw.astype(np.float64) * _I2_32M1
+        # R's fixup keeps every draw strictly inside (0, 1).
+        draws[draws <= 0.0] = 0.5 * _I2_32M1
+        draws[1.0 - draws <= 0.0] = 1.0 - 0.5 * _I2_32M1
+        return draws
+
     def _rbits(self, bits: int) -> float:
         v = 0
         n = 0
@@ -186,3 +211,10 @@ class RRNG:
         values = np.asarray(values)
         idx = self.sample_int(values.size, size, replace)
         return values[idx - 1]
+
+
+def r_rng(seed: int | None) -> RRNG:
+    """R's stream after ``set.seed(seed)``; without a seed, one seeded from fresh entropy."""
+    if seed is None:
+        return RRNG(int(np.random.SeedSequence().generate_state(1)[0]))
+    return RRNG(int(seed))

@@ -466,3 +466,98 @@ def r_pow(values: NDArray[np.float64] | float, exponent: float) -> NDArray[np.fl
         return np.ones_like(v, dtype=np.float64)
     flat = [1.0 if x == 1.0 else math.pow(float(x), exponent) for x in v.ravel()]
     return np.asarray(flat, dtype=np.float64).reshape(v.shape)
+
+
+def r_var(values: NDArray[np.float64]) -> float:
+    """R's ``var(x)`` of a double vector (cov.c ``cov_na_1``, one column).
+
+    Long-double deviations from the double-stored two-pass mean, long-double
+    products and sum, divided by ``n - 1`` and rounded to double.
+    """
+    v = np.asarray(values, dtype=np.float64).ravel()
+    n = v.size
+    if n <= 1:
+        return float("nan")
+    ld = v.astype(np.longdouble)
+    dev = ld - _r_cov_mean(ld)
+    return float(np.cumsum(dev * dev)[-1] / np.longdouble(n - 1))
+
+
+def r_sd(values: NDArray[np.float64]) -> float:
+    """R's ``sd(x)``: ``sqrt(var(x))`` in double."""
+    import math
+
+    variance = r_var(values)
+    return math.sqrt(variance) if variance >= 0.0 else float("nan")
+
+
+def _r_psort(x: list[float], indices: list[int]) -> None:
+    """R's ``.Internal(psort(x, partial))`` in place (sort.c ``Psort0``/``rPsort2``).
+
+    ``indices`` are R's sorted 1-based partial positions. The values between
+    them stay in the order this quickselect leaves them, which is the order R's
+    long-double ``mean`` then sums.
+    """
+
+    def psort2(lo: int, hi: int, k: int) -> None:
+        left, right = lo, hi
+        while left < right:
+            v = x[k]
+            i, j = left, right
+            while i <= j:
+                while x[i] < v:
+                    i += 1
+                while v < x[j]:
+                    j -= 1
+                if i <= j:
+                    x[i], x[j] = x[j], x[i]
+                    i += 1
+                    j -= 1
+            if j < k:
+                left = i
+            if k < i:
+                right = j
+
+    def psort0(lo: int, hi: int, ind: list[int]) -> None:
+        if len(ind) < 1 or hi - lo < 1:
+            return
+        if len(ind) <= 1:
+            psort2(lo, hi, ind[0] - 1)
+            return
+        mid = (lo + hi) // 2
+        this = 0
+        for position, index in enumerate(ind):
+            if index - 1 <= mid:
+                this = position
+        z = ind[this] - 1
+        psort2(lo, hi, z)
+        psort0(lo, z - 1, ind[:this])
+        psort0(z + 1, hi, ind[this + 1 :])
+
+    psort0(0, len(x) - 1, indices)
+
+
+def r_trimmed_mean(values: NDArray[np.float64], trim: float) -> float:
+    """R's ``mean(x, trim = trim)`` (``mean.default``).
+
+    The kept order statistics come from R's partial sort, ``x[lo:hi]`` of
+    ``sort.int(x, partial = unique(c(lo, hi)))``, and are averaged in that
+    order by R's long-double two-pass ``mean``; a trim of 0.5 or more is the
+    median.
+    """
+    import math
+
+    v = np.asarray(values, dtype=np.float64).ravel()
+    n = v.size
+    if trim > 0 and n:
+        if np.isnan(v).any():
+            return float("nan")
+        if trim >= 0.5:
+            return r_median(v)
+        lo = math.floor(n * trim) + 1
+        hi = n + 1 - lo
+        partial = sorted({lo, hi})
+        work = [float(value) for value in v]
+        _r_psort(work, partial)
+        v = np.asarray(work[lo - 1 : hi], dtype=np.float64)
+    return r_mean(v)

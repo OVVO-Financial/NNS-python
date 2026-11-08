@@ -1,5 +1,20 @@
+"""NNS.meboot: maximum-entropy bootstrap on detrended residuals.
+
+The port follows R 14.0's ``NNS.meboot`` step for step, including its random
+draws: with ``random_seed = s`` the replicates equal R's after ``set.seed(s)``.
+R draws only through ``runif`` (one per observation per replicate in the C++
+``NNS.meboot.part``, then one per shrunken column in each ``expand.sd`` pass),
+which :class:`nns._rrng.RRNG` reproduces. The deterministic steps use R's own
+arithmetic where the last bit can matter: long-double ``mean``/``sum``/
+``colSums``/``rowMeans``, R's ``sd``, ``rank`` and trimmed ``mean``, the C++
+helpers' sequential double sums, ``optimize`` (Brent's ``fmin``) for the
+dependence target, ``qnorm`` for the CLT spread, and ``round``.
+"""
+
 from __future__ import annotations
 
+import math
+import sys
 import warnings
 from typing import NotRequired, TypedDict
 
@@ -7,8 +22,21 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
-from nns._rmean import r_mean
+from nns._rmean import (
+    r_mean,
+    r_rank_average,
+    r_round_array,
+    r_row_means,
+    r_sd,
+    r_sum,
+    r_trimmed_mean,
+)
+from nns._rnmath import qnorm
+from nns._roptim import r_optimize
+from nns._rrng import RRNG, r_rng
 from nns.dependence import nns_dep
+
+_EPS = sys.float_info.epsilon
 
 
 class MebootResult(TypedDict):
@@ -51,16 +79,21 @@ def nns_meboot(
     elaps: bool = False,
     digits: int = 6,
     random_seed: int | None = None,
+    expand_residual_sd: bool = True,
 ) -> MebootResult | list[MebootResult]:
-    """Maximum-entropy bootstrap matching R's NNS.meboot structure.
+    """Maximum-entropy bootstrap matching R's NNS.meboot.
 
-    Stochastic draws use NumPy's RNG, so exact replicate parity with R is not
-    expected. Deterministic diagnostics follow the installed R algorithm.
+    With ``random_seed = s`` the replicates are R's after ``set.seed(s)``: the
+    draws come from R's Mersenne-Twister stream. Without a seed the stream is
+    seeded from fresh entropy.
 
     ``rho``, ``target_drift`` and ``target_drift_scale`` are vectorised like R's
-    ``Vectorize``/``mapply``: given arguments are recycled elementwise to the longest
-    length (not crossed) and a list with one result per position is returned. If all
-    of them are scalars (or length 1) a single result is returned.
+    ``Vectorize``/``mapply``: the given arguments are recycled elementwise to the
+    longest length (not crossed) and a list with one result per position is
+    returned; if all of them have length 1 a single result is returned, and if
+    none is given there is nothing to map over and, as in R, the result is empty.
+    Given only ``target_drift``/``target_drift_scale``, the replicates are drawn
+    without a dependence target.
 
     When the detrended residuals are all exactly zero (a constant or exactly linear
     series) there is nothing to align and ``rho`` has no effect.
@@ -69,52 +102,88 @@ def nns_meboot(
     values = np.asarray(x, dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be a 1D numeric vector.")
-    if values.size == 0:
-        raise ValueError("x must be non-empty.")
-    if np.any(np.isnan(values)):
-        raise ValueError("You have some missing values, please address.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("x must contain only finite values.")
-    if values.size == 1:
-        return {"x": values.copy()}
-    if rho is None:
-        return {}
-    if reps < 1:
-        raise ValueError("reps must be positive.")
+    return _nns_meboot(
+        values,
+        reps,
+        rho,
+        type,
+        drift,
+        target_drift,
+        target_drift_scale,
+        trim,
+        xmin,
+        xmax,
+        reachbnd,
+        expand_sd,
+        force_clt,
+        scl_adjustment,
+        sym,
+        digits,
+        expand_residual_sd,
+        r_rng(random_seed),
+    )
 
-    rng = np.random.default_rng(random_seed)
-    rho_values = np.asarray(rho, dtype=np.float64).reshape(-1)
+
+def _nns_meboot(
+    values: NDArray[np.float64],
+    reps: int,
+    rho: float | list[float] | np.ndarray | None,
+    type_: str,
+    drift: bool,
+    target_drift: float | list[float] | np.ndarray | None,
+    target_drift_scale: float | list[float] | np.ndarray | None,
+    trim: float | None,
+    xmin: float | None,
+    xmax: float | None,
+    reachbnd: bool,
+    expand_sd: bool,
+    force_clt: bool,
+    scl_adjustment: bool,
+    sym: bool,
+    digits: int,
+    expand_residual_sd: bool,
+    rng: RRNG,
+) -> MebootResult | list[MebootResult]:
+    """R's ``Vectorize``d ``NNS.meboot`` on one shared random stream."""
+    rho_values = _optional_vector(rho)
     drift_values = _optional_vector(target_drift)
     scale_values = _optional_vector(target_drift_scale)
     vectorised = [v for v in (rho_values, drift_values, scale_values) if v is not None]
+    if not vectorised:
+        # mapply() over no vectorised argument: R returns list().
+        return {}
     count = 0 if any(v.size == 0 for v in vectorised) else max(v.size for v in vectorised)
     if any(count % v.size for v in vectorised if v.size):
         warnings.warn(
-            "longer argument not a multiple of length of shorter", RuntimeWarning, stacklevel=2
+            "longer argument not a multiple of length of shorter", RuntimeWarning, stacklevel=3
         )
 
-    results = [
-        _nns_meboot_one(
-            values,
-            reps,
-            float(rho_values[i % rho_values.size]),
-            type,
-            drift,
-            None if drift_values is None else float(drift_values[i % drift_values.size]),
-            None if scale_values is None else float(scale_values[i % scale_values.size]),
-            trim,
-            xmin,
-            xmax,
-            reachbnd,
-            expand_sd,
-            force_clt,
-            scl_adjustment,
-            sym,
-            digits,
-            rng,
-        )
-        for i in range(count)
-    ]
+    # R lets NaN/Inf arise silently (a degenerate replicate's sd ratios, say); so
+    # does the port, rather than emitting NumPy floating-point warnings.
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        results = [
+            _meboot_call(
+                values,
+                reps,
+                None if rho_values is None else float(rho_values[i % rho_values.size]),
+                type_.lower(),
+                drift,
+                None if drift_values is None else float(drift_values[i % drift_values.size]),
+                None if scale_values is None else float(scale_values[i % scale_values.size]),
+                trim,
+                xmin,
+                xmax,
+                reachbnd,
+                expand_sd,
+                force_clt,
+                scl_adjustment,
+                sym,
+                digits,
+                expand_residual_sd,
+                rng,
+            )
+            for i in range(count)
+        ]
     if count == 1:
         return results[0]
     return results
@@ -126,15 +195,15 @@ def _optional_vector(value: float | list[float] | np.ndarray | None) -> NDArray[
     return np.asarray(value, dtype=np.float64).reshape(-1)
 
 
-def _nns_meboot_one(
+def _meboot_call(
     x: NDArray[np.float64],
     reps: int,
-    rho: float,
+    rho: float | None,
     type_: str,
     drift: bool,
     target_drift: float | None,
     target_drift_scale: float | None,
-    trim: float,
+    trim: float | None,
     xmin_arg: float | None,
     xmax_arg: float | None,
     reachbnd: bool,
@@ -143,9 +212,24 @@ def _nns_meboot_one(
     scl_adjustment: bool,
     sym: bool,
     digits: int,
-    rng: np.random.Generator,
+    expand_residual_sd: bool,
+    rng: RRNG,
 ) -> MebootResult:
+    """One ``NNS.meboot`` call (one ``rho`` / drift target)."""
     n = x.size
+    if n == 1:
+        return {"x": x.copy()}
+    if n == 0:
+        raise ValueError("x must be non-empty.")
+    if np.any(np.isnan(x)):
+        raise ValueError("You have some missing values, please address.")
+    if not np.all(np.isfinite(x)):
+        raise ValueError("x must contain only finite values.")
+    if reps < 1:
+        raise ValueError("reps must be positive.")
+    trimval = 0.1 if trim is None else float(trim)
+
+    # --- Fit the linear trend once (time order) and take its residuals.
     time = np.arange(1, n + 1, dtype=np.float64)
     intercept, orig_drift = _fast_lm(time, x)
     orig_res = x - (intercept + orig_drift * time)
@@ -156,96 +240,104 @@ def _nns_meboot_one(
         drift = True
     if drift:
         if target_drift_scale is not None:
-            target = orig_drift * target_drift_scale
+            target_drift = orig_drift * target_drift_scale
         elif target_drift is None:
-            target = orig_drift
-        else:
-            target = target_drift
-        recon_slope = target
+            target_drift = orig_drift
+        recon_slope = float(target_drift)
     else:
         recon_slope = 0.0
-    keeps_drift = recon_slope == orig_drift
+    # R keeps the original reconstruction whenever the slope is unchanged up to
+    # rounding: relative to sd(x) / n (the slope of a trend spanning one sd over
+    # the sample) plus the slope fit's own rounding at the level of x.
+    slope_rounding = 8.0 * _EPS * float(np.max(np.abs(x))) / r_sd(time)
+    same_slope = abs(recon_slope - orig_drift) <= math.sqrt(_EPS) * max(
+        abs(orig_drift), r_sd(x) / n
+    ) + slope_rounding
+    if same_slope:
+        recon_slope = orig_drift
     # A changed slope pivots about mean(x), so the replicates keep the level.
     baseline = (
         intercept + recon_slope * time
-        if keeps_drift
+        if same_slope
         else r_mean(x) + recon_slope * (time - (n + 1) / 2.0)
     )
 
-    xx = np.sort(orig_res)
-    ordxx_zero = np.argsort(orig_res, kind="stable")
-    ordxx = ordxx_zero.astype(np.float64) + 1.0
+    # --- Meboot core on the residuals: order statistics, midpoints and tails.
+    ordxx = np.argsort(orig_res, kind="stable")  # R's order() is stable
+    xx = orig_res[ordxx]
     if sym:
-        xx = float(np.mean(xx)) + 0.5 * (xx - xx[::-1])
-
+        xx = r_mean(xx) + 0.5 * (xx - xx[::-1])
     z = (xx[1:] + xx[:-1]) / 2.0
-    dv = np.abs(np.diff(orig_res.astype(np.float64)))
-    dvtrim = _trimmed_mean(dv, trim)
-    xmin = float(xx[0] - dvtrim) if xmin_arg is None else float(xmin_arg)
-    xmax = float(xx[-1] + dvtrim) if xmax_arg is None else float(xmax_arg)
+    dv = np.abs(np.diff(orig_res))
+    dvtrim = r_trimmed_mean(dv, trimval)
+    xmin = xx[0] - dvtrim if xmin_arg is None else float(xmin_arg)
+    xmax = xx[-1] + dvtrim if xmax_arg is None else float(xmax_arg)
     if (xmin_arg is not None or xmax_arg is not None) and force_clt:
         # R: if (isTRUE(force.clt)) { expand.sd <- FALSE; force.clt <- FALSE }
         force_clt = False
         expand_sd = False
 
-    aux = 0.25 * xx[:-2] + 0.5 * xx[1:-1] + 0.25 * xx[2:]
+    # Theil-Laitinen interval means: colSums of the weighted neighbours, which R
+    # accumulates in long double.
+    if n > 2:
+        aux_ld = (xx[2:] * 0.25).astype(np.longdouble) + xx[1:-1] * 0.5 + xx[:-2] * 0.25
+        aux = np.asarray(aux_ld, dtype=np.float64)
+    else:
+        aux = np.empty(0, dtype=np.float64)
     desintxb = np.concatenate(
-        (
-            np.array([0.75 * xx[0] + 0.25 * xx[1]], dtype=np.float64),
-            aux,
-            np.array([0.25 * xx[-2] + 0.75 * xx[-1]], dtype=np.float64),
-        )
+        ([0.75 * xx[0] + 0.25 * xx[1]], aux, [0.25 * xx[-2] + 0.75 * xx[-1]])
     )
 
-    res_mat = np.column_stack(
-        [_meboot_part(xx, n, z, xmin, xmax, desintxb, reachbnd, rng) for _ in range(reps)]
-    )
-    qseq = np.sort(res_mat, axis=0)
-    res_mat[ordxx_zero, :] = qseq
+    # replicate(reps, NNS.meboot.part(...)): each call draws runif(n).
+    draws = rng.unif_rand_array(n * reps).reshape(reps, n).T
+    res_mat = _meboot_part(xx, n, z, xmin, xmax, desintxb, reachbnd, draws)
+    res_mat[ordxx, :] = np.sort(res_mat, axis=0)
 
-    if not zero_res:
-        res_mat = _target_rho(res_mat, orig_res, rho, type_.lower())
-    res_mat = _meboot_expand_sd(orig_res, res_mat, rng)
+    if rho is not None and not zero_res:
+        res_mat = _target_rho(res_mat, orig_res, rho, type_)
+
+    # Variance expansion on the residuals (match the sd of the original residuals).
+    if expand_residual_sd:
+        res_mat = _meboot_expand_sd(orig_res, res_mat, rng)
 
     # The ME density lives on the residuals, so scale them against their own mean and sd.
     if scl_adjustment and not zero_res:
         zz = np.concatenate(([xmin], z, [xmax]))
-        v = np.diff(zz**2) / 12.0
+        v = np.diff(zz * zz) / 12.0
         xb = r_mean(orig_res)
-        s1 = float(np.sum((desintxb - xb) ** 2))
-        uv = (s1 + float(np.sum(v))) / n
-        desired_sd = _sample_sd(orig_res)
-        actual_me_sd = float(np.sqrt(uv))
+        s1 = r_sum((desintxb - xb) * (desintxb - xb))
+        uv = (s1 + r_sum(v)) / n
+        desired_sd = r_sd(orig_res)
+        actual_me_sd = math.sqrt(uv)
         if actual_me_sd <= 0.0:
             raise ValueError("actualME.sd<=0 Error")
-        kappa = (desired_sd / actual_me_sd) - 1.0
-        res_mat = res_mat + kappa * (res_mat - xb)
+        kappa_value = (desired_sd / actual_me_sd) - 1.0
+        res_mat = res_mat + kappa_value * (res_mat - xb)
+        kappa: float | None = kappa_value
     else:
         kappa = None
 
+    # Reconstruct the levels. (R's legacy reshuffle when ordxx equals its own
+    # reverse can only fire for n = 1, which returned above.)
     ensemble = res_mat + baseline[:, np.newaxis]
 
-    if np.array_equal(ordxx_zero[::-1], ordxx_zero) and reps > 1:
-        for i in range(ensemble.shape[0]):
-            ensemble[i, :] = rng.choice(ensemble[i, :], size=reps, replace=True)
-
     # sd(x) includes the original drift, so expand toward it only when it is kept.
-    if expand_sd and keeps_drift:
+    if expand_sd and same_slope:
         ensemble = _meboot_expand_sd(x, ensemble, rng)
     if force_clt and reps > 1:
-        clt_ref = x if keeps_drift else baseline + orig_res
-        if _sample_sd(clt_ref) > 0.0:
+        clt_ref = x if same_slope else baseline + orig_res
+        if r_sd(clt_ref) > 0.0:
             ensemble = _force_clt(clt_ref, ensemble)
 
     if xmin_arg is not None:
-        ensemble = np.maximum(float(xmin_arg), ensemble)
+        ensemble = np.maximum(ensemble, float(xmin_arg))
     if xmax_arg is not None:
-        ensemble = np.minimum(float(xmax_arg), ensemble)
+        ensemble = np.minimum(ensemble, float(xmax_arg))
 
     return {
         "x": x.copy(),
-        "replicates": np.round(ensemble, digits),
-        "ensemble": np.mean(ensemble, axis=1),
+        "replicates": r_round_array(ensemble, digits),
+        "ensemble": r_row_means(ensemble),
         "xx": xx,
         "z": z,
         "dv": dv,
@@ -253,7 +345,7 @@ def _nns_meboot_one(
         "xmin": float(xmin),
         "xmax": float(xmax),
         "desintxb": desintxb,
-        "ordxx": ordxx,
+        "ordxx": ordxx.astype(np.float64) + 1.0,
         "kappa": kappa,
     }
 
@@ -266,40 +358,34 @@ def _meboot_part(
     xmax: float,
     desintxb: NDArray[np.float64],
     reachbnd: bool,
-    rng: np.random.Generator,
+    p: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    p = rng.random(n)
+    """R's C++ ``NNS_meboot_part`` for every replicate column of the draws ``p``."""
     m = xx.size
     if m == 0:
-        q = np.full(n, np.nan, dtype=np.float64)
+        q = np.full(p.shape, np.nan, dtype=np.float64)
     elif m == 1:
-        q = np.full(n, xx[0], dtype=np.float64)
+        q = np.full(p.shape, xx[0], dtype=np.float64)
     else:
         h = 1.0 + (m - 1.0) * p
-        j = np.floor(h).astype(np.int64)
+        j = np.clip(np.floor(h), 1.0, m - 1.0)
         g = h - j
-        j = np.clip(j, 1, m - 1)
-        q = (1.0 - g) * xx[j - 1] + g * xx[j]
-        q[p <= 0.0] = xx[0]
-        q[p >= 1.0] = xx[-1]
+        index = j.astype(np.intp)
+        q = (1.0 - g) * xx[index - 1] + g * xx[index]
+        q = np.where(p <= 0.0, xx[0], q)
+        q = np.where(p >= 1.0, xx[m - 1], q)
 
     invn = 1.0 / n
-    lower = p <= invn
-    if np.any(lower):
-        vals = _linear_interp(p[lower], 0.0, invn, xmin, float(z[0]))
-        if not reachbnd:
-            vals = vals + desintxb[0] - 0.5 * (z[0] + xmin)
-        q[lower] = vals
+    lower = xmin + (p - 0.0) * (z[0] - xmin) / (invn - 0.0)
+    if not reachbnd:
+        lower = lower + desintxb[0] - 0.5 * (z[0] + xmin)
+    q = np.where(p <= invn, lower, q)
 
     edge = (n - 1.0) / n
-    upper = p >= edge
-    if np.any(upper):
-        vals = _linear_interp(p[upper], edge, 1.0, float(z[n - 2]), xmax)
-        if not reachbnd:
-            vals = vals + desintxb[n - 1] - 0.5 * (z[n - 2] + xmax)
-        q[upper] = vals
-
-    return q
+    upper = z[n - 2] + (p - edge) * (xmax - z[n - 2]) / (1.0 - edge)
+    if not reachbnd:
+        upper = upper + desintxb[n - 1] - 0.5 * (z[n - 2] + xmax)
+    return np.asarray(np.where(p >= edge, upper, q), dtype=np.float64)
 
 
 def _target_rho(
@@ -308,23 +394,32 @@ def _target_rho(
     rho: float,
     type_: str,
 ) -> NDArray[np.float64]:
-    from scipy.optimize import minimize_scalar  # type: ignore[import-untyped]
+    """Blend each replicate's aligned and anti-aligned orderings to hit ``rho``.
 
-    r_o = _rank_average(orig_res)
+    R mixes ``comb = t * m + (1 - t) * e`` with the single weight ``t`` from
+    ``optimize(obj, c(0, 1), tol = 0.01)``; the correlation is a closed form
+    against the target centred and normed once.
+    """
+    n = orig_res.size
+    r_o = r_rank_average(orig_res)
     r_anti = float(np.max(r_o)) + 1.0 - r_o
-    r_o_idx = np.clip(np.floor(r_o).astype(np.int64) - 1, 0, orig_res.size - 1)
-    r_anti_idx = np.clip(np.floor(r_anti).astype(np.int64) - 1, 0, orig_res.size - 1)
-    out = res_mat.copy()
-    target_values = _rank_average(orig_res) if type_ == "spearman" else orig_res
-    target_centered = target_values - float(np.mean(target_values))
-    target_norm = float(np.sqrt(np.sum(target_centered * target_centered)))
-    if target_norm == 0.0 or not np.isfinite(target_norm):
+    # Average ranks can be fractional under ties: floor and clamp to 1..n, as R's
+    # integer indexing does.
+    r_o_idx = np.clip(np.floor(r_o).astype(np.int64), 1, n) - 1
+    r_anti_idx = np.clip(np.floor(r_anti).astype(np.int64), 1, n) - 1
+    use_spearman = type_ == "spearman"
+    use_corr_path = type_ in {"spearman", "pearson"}
+    target_values = r_o if use_spearman else orig_res
+    target_centered = target_values - r_mean(target_values)
+    target_norm = math.sqrt(r_sum(target_centered * target_centered))
+    if target_norm == 0.0 or not math.isfinite(target_norm):
         raise ValueError("function cannot be evaluated at initial parameters")
 
-    for j in range(out.shape[1]):
-        res_sorted = np.sort(out[:, j])
-        e_values = res_sorted[r_o_idx]
-        m_values = res_sorted[r_anti_idx]
+    out = res_mat.copy()
+    for i in range(out.shape[1]):
+        res_sorted = np.sort(out[:, i])
+        e_values = res_sorted[r_o_idx]  # aligned with the ranks of orig_res
+        m_values = res_sorted[r_anti_idx]  # anti-aligned
 
         def objective(
             t: float,
@@ -332,63 +427,58 @@ def _target_rho(
             m_: NDArray[np.float64] = m_values,
         ) -> float:
             comb = t * m_ + (1.0 - t) * e_
-            if type_ in {"spearman", "pearson"}:
-                corr = _fast_corr(comb, target_centered, target_norm, type_)
+            if use_corr_path:
+                corr = _fast_corr(comb, target_centered, target_norm, use_spearman)
             elif type_ == "nnsdep":
-                corr = nns_dep(comb, orig_res)["Dependence"]
+                corr = float(nns_dep(comb, orig_res)["Dependence"])
             else:
-                corr = nns_dep(comb, orig_res)["Correlation"]
-            if not np.isfinite(corr):
-                return np.inf
-            return abs(float(corr) - rho)
+                corr = float(nns_dep(comb, orig_res)["Correlation"])
+            if not math.isfinite(corr):
+                return math.inf
+            return abs(corr - rho)
 
-        opt = minimize_scalar(
-            objective,
-            bounds=(0.0, 1.0),
-            method="bounded",
-            options={"xatol": 0.01, "maxiter": 20},
-        )
-        if np.isfinite(opt.fun):
-            t = float(opt.x)
-        else:
-            candidates = [
-                (float(candidate_value), candidate_t)
-                for candidate_t in (0.0, 0.5, 1.0)
-                if np.isfinite(candidate_value := objective(candidate_t))
-            ]
-            if candidates:
-                _, t = min(candidates, key=lambda candidate: candidate[0])
-            else:
-                # A constant bootstrap column has no defined correlation for any
-                # blend. Keep the rank-aligned endpoint rather than aborting the
-                # entire Monte Carlo ensemble; the replicate remains finite and
-                # is handled by the later variance/CLT adjustments.
-                t = 0.0
-        out[:, j] = t * m_values + (1.0 - t) * e_values
-
+        t_hat = r_optimize(objective, 0.0, 1.0, tol=0.01)
+        out[:, i] = t_hat * m_values + (1.0 - t_hat) * e_values
     return out
+
+
+def _fast_corr(
+    values: NDArray[np.float64],
+    target_centered: NDArray[np.float64],
+    target_norm: float,
+    use_spearman: bool,
+) -> float:
+    """R's closed-form Pearson/Spearman correlation against the fixed target."""
+    xv = r_rank_average(values) if use_spearman else values
+    xc = xv - r_mean(xv)
+    xn = math.sqrt(r_sum(xc * xc))
+    if xn == 0.0:
+        return math.nan
+    return r_sum(xc * target_centered) / (xn * target_norm)
 
 
 def _meboot_expand_sd(
     x: NDArray[np.float64],
     ensemble: NDArray[np.float64],
-    rng: np.random.Generator,
+    rng: RRNG,
     fiv: float = 5.0,
 ) -> NDArray[np.float64]:
+    """R's C++ ``NNS_meboot_expand_sd`` for a vector ``x``.
+
+    A column whose sd falls short of ``sd(x)`` is scaled up to it times a factor
+    drawn by ``R::runif(1, 1 + fiv / 100)``, in column order.
+    """
     out = ensemble.copy()
-    sdx = np.array([_sample_sd(np.asarray(x, dtype=np.float64))], dtype=np.float64)
-    ens_sd = _col_sd(out)
-    sdf = np.concatenate((sdx, ens_sd))
+    sdf = np.concatenate(([_vec_sd(np.asarray(x, dtype=np.float64))], _col_sd(out)))
     with np.errstate(divide="ignore", invalid="ignore"):
         sdfa = sdf / sdf[0]
         sdfd = sdf[0] / sdf
-
     mx = 1.0 + (fiv / 100.0)
-    low = sdfa < 1.0
-    if np.any(low):
-        sdfa[low] = rng.uniform(1.0, mx, size=int(np.sum(low)))
-
-    factors = sdfd[1:] * sdfa[1:]
+    for i in range(sdfa.size):
+        if sdfa[i] < 1.0:
+            sdfa[i] = rng.runif(1.0, mx)
+    with np.errstate(invalid="ignore"):
+        factors = sdfd[1:] * sdfa[1:]
     for j, factor in enumerate(factors):
         if np.floor(factor) > 0.0:
             out[:, j] *= factor
@@ -396,83 +486,47 @@ def _meboot_expand_sd(
 
 
 def _force_clt(x: NDArray[np.float64], ensemble: NDArray[np.float64]) -> NDArray[np.float64]:
-    from scipy.stats import norm  # type: ignore[import-untyped]
+    """R's C++ ``force_clt`` for a vector ``x``.
 
-    out = ensemble.copy()
-    n_reps = out.shape[1]
-    gm = float(np.mean(x))
-    smean = _sample_sd(x) / np.sqrt(n_reps)
-    xbar = np.mean(out, axis=0)
+    The replicate means are respread like means of ``n`` observations,
+    ``sd(x) / sqrt(n)`` with ``n`` the series length (R 14 fixed meboot's division
+    by the number of replicates, which shrank the spread as ``reps`` grew), at the
+    ``qnorm(j / (reps + 1))`` quantiles, keeping their order.
+    """
+    n, bigj = ensemble.shape
+    gm = float(np.cumsum(x)[-1]) / x.size
+    smean = _vec_sd(x) / math.sqrt(n)
+    xbar = np.cumsum(ensemble, axis=0)[-1] / n
     order = np.argsort(xbar, kind="stable")
     sortxbar = np.sort(xbar)
-    probs = np.arange(1, n_reps + 1, dtype=np.float64) / (n_reps + 1.0)
-    newbar = gm + norm.ppf(probs) * smean
-    sd_newbar = _sample_sd(newbar)
-    if sd_newbar == 0.0 or not np.isfinite(sd_newbar):
-        return out
-    scn = (newbar - np.mean(newbar)) / sd_newbar
-    newm = scn * smean + gm
-    meanfix = newm - sortxbar
+    newbar = np.array([gm + qnorm((j + 1) / (bigj + 1)) * smean for j in range(bigj)])
+    mu_nb = float(np.cumsum(newbar)[-1]) / bigj
+    deviations = newbar - mu_nb
+    sd_nb = math.sqrt(float(np.cumsum(deviations * deviations)[-1]) / (bigj - 1))
+    out = ensemble.copy()
     for i, col in enumerate(order):
-        out[:, col] = ensemble[:, col] + meanfix[i]
+        add = (((newbar[i] - mu_nb) / sd_nb) * smean + gm) - sortxbar[i]
+        out[:, col] = ensemble[:, col] + add
     return out
 
 
-def _trimmed_mean(values: NDArray[np.float64], trim: float) -> float:
-    if values.size == 0:
-        return float("nan")
-    ordered = np.sort(values)
-    cut = int(np.floor(values.size * trim))
-    if cut > 0 and 2 * cut < values.size:
-        ordered = ordered[cut:-cut]
-    return float(np.mean(ordered))
-
-
-def _sample_sd(values: NDArray[np.float64]) -> float:
-    if values.size < 2:
-        return float("nan")
-    return float(np.std(values, ddof=1))
+def _vec_sd(values: NDArray[np.float64]) -> float:
+    """R's C++ ``vecSd``: sequential double mean and sum of squares."""
+    n = values.size
+    if n <= 1:
+        return math.nan
+    mu = float(np.cumsum(values)[-1]) / n
+    deviations = values - mu
+    return math.sqrt(float(np.cumsum(deviations * deviations)[-1]) / (n - 1))
 
 
 def _col_sd(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    if values.shape[0] < 2:
+    """R's C++ ``colSd``: :func:`_vec_sd` of each column."""
+    n = values.shape[0]
+    if n <= 1:
         return np.full(values.shape[1], np.nan, dtype=np.float64)
-    return np.asarray(np.std(values, axis=0, ddof=1), dtype=np.float64)
-
-
-def _linear_interp(
-    x: NDArray[np.float64],
-    x0: float,
-    x1: float,
-    y0: float,
-    y1: float,
-) -> NDArray[np.float64]:
-    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
-
-
-def _fast_corr(
-    x: NDArray[np.float64],
-    target_centered: NDArray[np.float64],
-    target_norm: float,
-    method: str,
-) -> float:
-    x_values = _rank_average(x) if method == "spearman" else x
-    x_centered = x_values - float(np.mean(x_values))
-    x_norm = float(np.sqrt(np.sum(x_centered * x_centered)))
-    if x_norm == 0.0 or target_norm == 0.0:
-        return float("nan")
-    return float(np.sum(x_centered * target_centered) / (x_norm * target_norm))
-
-
-def _rank_average(x: NDArray[np.float64]) -> NDArray[np.float64]:
-    order = np.argsort(x, kind="mergesort")
-    sorted_x = x[order]
-    ranks = np.empty(x.size, dtype=np.float64)
-    if x.size == 0:
-        return ranks
-    group_start = np.concatenate(([0], np.flatnonzero(sorted_x[1:] != sorted_x[:-1]) + 1))
-    group_end = np.concatenate((group_start[1:], [x.size]))
-    group_size = group_end - group_start
-    group_rank = 0.5 * (group_start + 1 + group_end)
-    ranks[order] = np.repeat(group_rank, group_size)
-    return ranks
+    mu = np.cumsum(values, axis=0)[-1] / n
+    deviations = values - mu
+    return np.asarray(
+        np.sqrt(np.cumsum(deviations * deviations, axis=0)[-1] / (n - 1)), dtype=np.float64
+    )

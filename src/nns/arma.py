@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
 from nns._native import honours_ncores, native_fn
-from nns._rmean import r_mean
+from nns._rmean import r_mean, r_sd, r_sum
 from nns.co_moments import co_lpm, co_upm
 from nns.dependence import _gravity
 from nns.mc import nns_mc
@@ -526,7 +526,8 @@ def nns_arma(
             if not negative_values:
                 # Honour negative_values like the linear branch.
                 regression_estimates = np.maximum(0.0, regression_estimates)
-            nonlin_estimate = float(np.sum(regression_estimates * lag_weights))
+            # R: sum(Regression.Estimates * Weights), accumulated in long double.
+            nonlin_estimate = r_sum(regression_estimates * lag_weights)
 
         lin_estimate = math.nan
         # R also runs the linear fits for method="nonlin" when pred.int is set: the
@@ -543,7 +544,7 @@ def nns_arma(
                 else:
                     linear_estimates = means
 
-            lin_estimate = float(np.sum(linear_estimates * lag_weights))
+            lin_estimate = r_sum(linear_estimates * lag_weights)
             if not negative_values:
                 lin_estimate = float(np.maximum(0.0, lin_estimate))
             lin_regression_estimates = linear_estimates
@@ -553,7 +554,7 @@ def nns_arma(
         if method_l == "lin":
             estimate = lin_estimate
         elif method_l == "both":
-            estimate = float(np.mean(np.array([lin_estimate, nonlin_estimate], dtype=np.float64)))
+            estimate = r_mean(np.array([lin_estimate, nonlin_estimate], dtype=np.float64))
         elif method_l == "nonlin":
             estimate = nonlin_estimate
         else:
@@ -781,9 +782,10 @@ def _as_variable(variable: NDArray[np.float64]) -> NDArray[np.float64]:
 
 def _lin_residual(lin_regression_estimates: NDArray[np.float64]) -> float:
     # R: lin.resid <- mean(abs(Lin.Regression.Estimates - mean(Lin.Regression.Estimates)))
-    lin_mean = float(np.mean(lin_regression_estimates))
-    lin_resid = float(np.mean(np.abs(lin_regression_estimates - lin_mean)))
-    return lin_resid if np.isfinite(lin_resid) else 0.0
+    # with R's mean(); then lin.resid[is.na(lin.resid)] <- 0.
+    lin_mean = r_mean(lin_regression_estimates)
+    lin_resid = r_mean(np.abs(lin_regression_estimates - lin_mean))
+    return 0.0 if math.isnan(lin_resid) else lin_resid
 
 
 def _with_prediction_intervals(
@@ -795,10 +797,11 @@ def _with_prediction_intervals(
 ) -> NDArray[np.float64] | dict[str, NDArray[np.float64]]:
     if pred_int is None:
         return estimates
-    if estimates.size == 1:
-        # R fails here ("incorrect number of dimensions"). NNS.meboot of a single value
-        # returns the value itself, so the band reduces to estimate +/- lin.resid.
-        intervals = estimates.reshape(1, 1)
+    finite_estimates = estimates[~np.isnan(estimates)]
+    if estimates.size < 2 or np.unique(finite_estimates).size < 2:
+        # R 14: a one-point (h = 1) or constant path has no dispersion to resample,
+        # so the band is the path widened by the per-lag spread alone.
+        intervals = estimates.reshape(-1, 1)
     else:
         mc_result = nns_mc(
             estimates,
@@ -928,7 +931,7 @@ def _user_lag_weights(
             f"weights has {lag_weights.size} element(s) but there are {lags.size} seasonal "
             f"lag(s) {lags.tolist()}; supply one weight per lag."
         )
-    total = float(np.sum(lag_weights))
+    total = r_sum(lag_weights)
     if not np.all(np.isfinite(lag_weights)) or total == 0.0:
         raise ValueError("weights must be finite and must not sum to 0.")
     return lag_weights / total
@@ -942,12 +945,13 @@ def _numeric_seasonal_weights(
 
     for index, lag in enumerate(lags):
         # Numeric seasonal_factor entries are actual lag values.
+        # R: variable[seq(length(variable), 1, -lag)], with R's sd() and mean().
         rev_var = variable[:: -int(lag)]
         with np.errstate(invalid="ignore", divide="ignore"):
-            output[index] = abs(np.float64(np.std(rev_var, ddof=1)) / np.float64(np.mean(rev_var)))
+            output[index] = abs(np.float64(r_sd(rev_var)) / np.float64(r_mean(rev_var)))
 
     with np.errstate(invalid="ignore", divide="ignore"):
-        baseline_cv = abs(np.float64(np.std(variable, ddof=1)) / np.float64(np.mean(variable)))
+        baseline_cv = abs(np.float64(r_sd(variable)) / np.float64(r_mean(variable)))
         relative = output / baseline_cv
         # A perfectly stable lag-subsample in an otherwise-varying series has CV 0, so
         # relative 0 -> 1/relative = Inf -> Inf/Inf = NaN in the normalisation below,
@@ -958,7 +962,7 @@ def _numeric_seasonal_weights(
         seasonal_weighting = 1.0 / np.maximum(relative, floor)
 
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
-    denom = float(np.sum(observation_weighting * seasonal_weighting))
+    denom = r_sum(observation_weighting * seasonal_weighting)
     with np.errstate(invalid="ignore", divide="ignore"):
         weights = (seasonal_weighting * observation_weighting) / denom
     if not np.all(np.isfinite(weights)):
@@ -981,10 +985,16 @@ def _arma_seas_weighting(
 
     lags = periods.astype(np.int64, copy=True)
     observation_weighting = 1.0 / np.sqrt(lags.astype(np.float64))
-    m = min(coefficient.size, variable_coefficient.size, observation_weighting.size)
-    lag_weighting = variable_coefficient[:m] - coefficient[:m]
+    if coefficient.size == 1 and np.isnan(coefficient[0]):
+        # R's C++: a single NA coefficient of variation weights every lag by 1.
+        m = min(variable_coefficient.size, observation_weighting.size)
+        lag_weighting = np.ones(m, dtype=np.float64)
+    else:
+        m = min(coefficient.size, variable_coefficient.size, observation_weighting.size)
+        lag_weighting = variable_coefficient[:m] - coefficient[:m]
     weights_product = lag_weighting * observation_weighting[:m]
-    denom = float(np.sum(weights_product))
+    # R's C++ ARMA_seas_weighting sums the products sequentially in double.
+    denom = float(np.cumsum(weights_product)[-1]) if weights_product.size else 0.0
     with np.errstate(invalid="ignore", divide="ignore"):
         lag_weights = weights_product / denom
     if lag_weights.size and (np.all(lag_weights == 0.0) or not np.all(np.isfinite(lag_weights))):
@@ -1136,7 +1146,8 @@ def _linear_forecast_for_lag(
 
 
 def _means_forecast_for_lag(component_series: NDArray[np.float64]) -> float:
-    return float(np.mean(component_series))
+    # R: sapply(Component.series, mean), with R's long-double mean().
+    return r_mean(component_series)
 
 
 def _nonlinear_forecast_for_lag(
@@ -1154,16 +1165,18 @@ def _nonlinear_forecast_for_lag(
     )
     x = np.asarray(reg_points_raw["x"], dtype=np.float64)
     y = np.asarray(reg_points_raw["y"], dtype=np.float64)
-    keep = np.isfinite(x) & np.isfinite(y)
+    keep = ~(np.isnan(x) | np.isnan(y))
     x = x[keep]
     y = y[keep]
-    xs = x[-1] - x
-    ys = y[-1] - y
-    xs = xs[:-1]
-    ys = ys[:-1]
-    if xs.size == 0:
-        return last_y
-    weights = np.arange(1, xs.size + 1, dtype=np.int64) ** 2
-    run = float(np.mean(np.repeat(xs, weights)))
-    rise = float(np.mean(np.repeat(ys, weights)))
-    return last_y + (rise / run)
+    xs = (x[-1] - x)[:-1]
+    ys = (y[-1] - y)[:-1]
+    # R 14: squared-index weighted means of the run and rise, sum(w * xs) / sum(w)
+    # with w = (1:length(xs))^2 and R's long-double sum(). With no run left, R's
+    # 1:0 makes w = c(1, 0) and the step 0 / 0.
+    weights = np.arange(1, xs.size + 1, dtype=np.float64) if xs.size else np.array([1.0, 0.0])
+    weights = weights * weights
+    total = r_sum(weights)
+    run = r_sum(weights[: xs.size] * xs) / total
+    rise = r_sum(weights[: ys.size] * ys) / total
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return float(last_y + np.float64(rise) / np.float64(run))

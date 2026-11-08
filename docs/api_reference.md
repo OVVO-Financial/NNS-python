@@ -287,7 +287,7 @@ Detects seasonality and supported modulo structures in a univariate series.
 
 Closest R API: `NNS.ARMA`.
 
-Univariate ARMA-style forecasting surface. Stochastic interval streams use NumPy RNG and are structural or statistical parity targets rather than exact stream parity.
+Univariate ARMA-style forecasting surface. Prediction intervals resample the forecast path with `nns_mc`; with `random_seed = s` they are R's after `set.seed(s)`, bit for bit.
 
 #### `nns_arma_optim`
 

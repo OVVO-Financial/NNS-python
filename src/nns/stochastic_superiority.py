@@ -4,7 +4,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
-from nns.meboot import MebootResult, nns_meboot
+from nns._rrng import RRNG, r_rng
+from nns.meboot import _nns_meboot
 from nns.var import lpm_var, upm_var
 
 
@@ -17,7 +18,13 @@ def nns_ss(
     rho: float = 1.0,
     random_seed: int | None = None,
 ) -> dict[str, object]:
-    """Stochastic superiority matching R's NNS.SS."""
+    """Stochastic superiority matching R's NNS.SS.
+
+    With ``confidence_interval=True`` the bounds come from ``reps`` maximum-entropy
+    bootstrap replicates of each group; with ``random_seed = s`` they are R's
+    after ``set.seed(s)``, the replicates of ``x`` and then of ``y`` drawn from
+    one stream as R draws them.
+    """
     x_values = _omit_nan_numeric(x)
     y_values = _omit_nan_numeric(y)
     if x_values.size == 0 or y_values.size == 0:
@@ -34,14 +41,9 @@ def nns_ss(
     if ci <= 0.0 or ci >= 1.0:
         raise ValueError("ci must be a single number in (0, 1).")
 
-    x_seed: int | None = None
-    y_seed: int | None = None
-    if random_seed is not None:
-        rng = np.random.default_rng(random_seed)
-        x_seed, y_seed = [int(seed) for seed in rng.integers(0, np.iinfo(np.int32).max, size=2)]
-
-    x_reps = _bootstrap(x_values, int(reps), rho, x_seed)
-    y_reps = _bootstrap(y_values, int(reps), rho, y_seed)
+    rng = r_rng(random_seed)
+    x_reps = _bootstrap(x_values, int(reps), rho, rng)
+    y_reps = _bootstrap(y_values, int(reps), rho, rng)
     boot_vals = np.empty(int(reps), dtype=np.float64)
     for index in range(int(reps)):
         boot_vals[index] = _stoch_superiority(x_reps[:, index], y_reps[:, index])["p_star"]
@@ -77,9 +79,10 @@ def _stoch_superiority(
     less_count = int(np.sum(left))
     tie_count = int(np.sum(right - left))
 
-    denominator = float(xs.size * ys.size)
-    p_gt = float(less_count / denominator)
-    p_tie = float(tie_count / denominator)
+    # R divides the counts in long double before rounding to double.
+    denominator = np.longdouble(xs.size) * np.longdouble(ys.size)
+    p_gt = float(np.longdouble(less_count) / denominator)
+    p_tie = float(np.longdouble(tie_count) / denominator)
     return {
         "p_gt": p_gt,
         "p_tie": p_tie,
@@ -93,18 +96,18 @@ def _omit_nan_numeric(x: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _bootstrap(
-    values: NDArray[np.float64], reps: int, rho: float, seed: int | None
+    values: NDArray[np.float64], reps: int, rho: float | NDArray[np.float64], rng: RRNG
 ) -> NDArray[np.float64]:
+    """R: ``NNS.meboot(x = g, reps = reps, rho = rho)["replicates", ]$replicates``."""
     # A constant group's bootstrap is the constant itself.
     if np.all(values == values[0]):
         return np.tile(values[:, np.newaxis], (1, reps))
-    boot = nns_meboot(values, reps=reps, rho=rho, random_seed=seed)
-    if not isinstance(boot, dict):
-        raise ValueError("NNS.meboot returned an unexpected vectorized result.")
-    return _replicate_matrix(boot)
-
-
-def _replicate_matrix(result: MebootResult) -> NDArray[np.float64]:
+    boot = _nns_meboot(
+        values, reps, rho, "spearman", True, None, None, 0.10, None, None,
+        True, True, True, False, False, 6, True, rng,
+    )
+    # With several rho values every call draws, and $replicates takes the first.
+    result = boot[0] if isinstance(boot, list) else boot
     replicates = np.asarray(result.get("replicates"), dtype=np.float64)
     if replicates.ndim != 2:
         raise ValueError("NNS.meboot result does not contain a replicate matrix.")
