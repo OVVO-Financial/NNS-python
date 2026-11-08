@@ -48,7 +48,16 @@ from nns._labels import (
     split_columns,
 )
 from nns._native import native_fn
-from nns._rmean import r_mean
+from nns._rblas import r_matvec
+from nns._rmean import (
+    r_approx,
+    r_cor,
+    r_mean,
+    r_quantile,
+    r_rank_average,
+    r_row_means,
+    r_sum,
+)
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -87,7 +96,10 @@ def _validate_order(order: Any) -> Order:
 
 
 def _validate_nbest(n_best: Any) -> NBest:
-    if n_best is None:
+    # NA (as NNS.stack reports for a single predictor) selects the default.
+    if n_best is None or (
+        isinstance(n_best, (float, np.floating)) and math.isnan(float(n_best))
+    ):
         return None
     if isinstance(n_best, str):
         if n_best.lower() == "all":
@@ -99,6 +111,46 @@ def _validate_nbest(n_best: Any) -> NBest:
     if not math.isfinite(value) or value < 1 or value != math.floor(value):
         raise ValueError("[n.best] must be NULL, 'all', or a positive integer.")
     return int(value)
+
+
+def _validate_threshold(threshold: Any) -> float | NDArray[np.float64] | dict[str, float]:
+    """R ``.nns_reg_validate_threshold``: NULL or NA means no screening (0).
+
+    A scalar stays a float. A vector (one cutoff per class, as ``NNS.stack``
+    reports for classification) becomes an array with NA entries set to 0; a
+    mapping keyed by class label is R's named vector. Every cutoff must be
+    finite and nonnegative.
+    """
+    message = "[threshold] must be NULL, NA, or finite nonnegative numbers."
+
+    def one(value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError(message)
+        out = float(value)
+        if math.isnan(out):
+            return 0.0
+        if not math.isfinite(out) or out < 0:
+            raise ValueError(message)
+        return out
+
+    if threshold is None:
+        return 0.0
+    if isinstance(threshold, dict):
+        if not threshold:
+            return 0.0
+        return {str(key): one(value) for key, value in threshold.items()}
+    if isinstance(threshold, (list, tuple, np.ndarray)):
+        values = list(np.asarray(threshold, dtype=object).reshape(-1))
+        if not values:
+            return 0.0
+        if len(values) == 1:
+            return one(values[0])
+        return np.array([one(value) for value in values], dtype=np.float64)
+    return one(threshold)
 
 
 def _validate_dist(dist: Any) -> str:
@@ -663,13 +715,14 @@ def _smooth_spline_predictor(rx: NDArray[np.float64], ry: NDArray[np.float64], s
 
     x_all = np.asarray(rx, dtype=np.float64)
     y_all = np.asarray(ry, dtype=np.float64)
-    q25, q75 = np.quantile(x_all, [0.25, 0.75])
+    # R smooth.spline: tol = 1e-6 * IQR(x) (type-7 quartiles).
+    q25, q75 = r_quantile(x_all, [0.25, 0.75], 7)
     tol = 1e-6 * float(q75 - q25)
     if not math.isfinite(tol) or tol <= 0.0:
         return None
     # R: xx <- round((x - mean(x)) / tol); one group per distinct rounded value,
     # represented by its smallest x, with the group mean of y and weight = size.
-    rounded = np.round((x_all - float(np.mean(x_all))) / tol)
+    rounded = np.rint((x_all - r_mean(x_all)) / tol)
     order = np.argsort(x_all, kind="mergesort")
     xs = x_all[order]
     ys = y_all[order]
@@ -762,9 +815,10 @@ def _predict_univariate(
         pred = np.asarray(smooth_fit(xout), dtype=np.float64)
     elif smooth and rx.size >= 4 and not is_class:
         # Degenerate fit (e.g. < 4 unique points): fall back to interpolation.
-        pred = np.interp(xout, rx, ry)
+        pred = r_approx(rx, ry, xout, ry[0], ry[-1])
     else:
-        pred = np.interp(xout, rx, ry)
+        # R: approx(rp$x, rp$y, xout, method = "linear", rule = 2, ties = "ordered").
+        pred = r_approx(rx, ry, xout, ry[0], ry[-1])
         left = xout < rx[0]
         right = xout > rx[-1]
         if np.any(left):
@@ -785,12 +839,13 @@ def _predict_univariate(
 
 def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
     """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
-    actual_centered = actual - float(np.mean(actual))
-    predicted_centered = predicted - float(np.mean(predicted))
-    denominator = float(np.sum(actual_centered**2) * np.sum(predicted_centered**2))
+    # R's mean() and sum() (long-double accumulation), as .nns_reg_r2 uses.
+    actual_centered = actual - r_mean(actual)
+    predicted_centered = predicted - r_mean(predicted)
+    denominator = r_sum(actual_centered**2) * r_sum(predicted_centered**2)
     if denominator == 0.0:
         return 1.0 if _r_all_equal(actual, predicted) else 0.0
-    numerator = float(np.sum(actual_centered * predicted_centered) ** 2)
+    numerator = r_sum(actual_centered * predicted_centered) ** 2
     return float(np.clip(numerator / denominator, 0.0, 1.0))
 
 
@@ -832,7 +887,8 @@ def _intervals(
         return {"conf_lower": None, "conf_upper": None, "pred_int": None}
     alpha = 1.0 - confidence_interval
     errors = actual - fitted
-    q_lo, q_hi = np.quantile(errors, [alpha / 2.0, 1.0 - alpha / 2.0], method="median_unbiased")
+    # R: quantile(errors, c(alpha / 2, 1 - alpha / 2), na.rm = TRUE, type = 8).
+    q_lo, q_hi = r_quantile(errors, [alpha / 2.0, 1.0 - alpha / 2.0], 8, na_rm=True)
     conf_lower = fitted + q_lo
     conf_upper = fitted + q_hi
 
@@ -882,12 +938,12 @@ def _dimred_coefficients(
         raise ValueError("[threshold] must be a single finite nonnegative number.")
 
     def cor_coef() -> NDArray[np.float64]:
-        from scipy import stats  # type: ignore[import-untyped]
-
+        # stats::cor(x[, j], y, method = "spearman"): Pearson on average
+        # ranks with R's cov.c arithmetic.
+        y_rank = r_rank_average(y)
         out = np.zeros(p, dtype=np.float64)
         for j in range(p):
-            with np.errstate(all="ignore"):
-                rho = stats.spearmanr(x[:, j], y).statistic
+            rho = r_cor(r_rank_average(x[:, j]), y_rank)
             out[j] = rho if math.isfinite(rho) else 0.0
         return out
 
@@ -930,7 +986,8 @@ def _dimred_coefficients(
     elif method == "nns.caus":
         coef = caus_coef()
     elif method == "all":
-        coef = np.mean(np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1)
+        # rowMeans(cbind(caus, dep, cor, 1)): long-double row sums / 4.
+        coef = r_row_means(np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))))
     elif method == "equal":
         coef = np.ones(p, dtype=np.float64)
     else:
@@ -973,10 +1030,9 @@ def _dimreduce(
     if denominator < 1:
         raise ValueError("Dimension reduction retained no predictors.")
 
-    x_star = np.asarray(nx @ coef / denominator, dtype=np.float64)
-    point_star = (
-        None if np_points is None else np.asarray(np_points @ coef / denominator, dtype=np.float64)
-    )
+    # R: (nx %*% coef) / denominator, in reference-BLAS order (see nns._rblas).
+    x_star = r_matvec(nx, coef) / denominator
+    point_star = None if np_points is None else r_matvec(np_points, coef) / denominator
     names = (
         list(variable_names)
         if variable_names is not None and len(variable_names) == x.shape[1]
@@ -1511,8 +1567,14 @@ def _mreg_default_nbest(x: NDArray[np.float64], y: NDArray[np.float64], rpm_rows
         from nns.copula import nns_copula
 
         # R14's smoothing heuristic is unsigned: reflect only the response.
-        dep = 0.5 * (
-            float(nns_copula(np.column_stack((x, y)))) + float(nns_copula(np.column_stack((x, -y))))
+        # R: mean(c(NNS.copula(cbind(X, y)), NNS.copula(cbind(X, -y)))).
+        dep = r_mean(
+            np.array(
+                [
+                    float(nns_copula(np.column_stack((x, y)))),
+                    float(nns_copula(np.column_stack((x, -y)))),
+                ]
+            )
         )
     except Exception:
         dep = float("nan")
@@ -1698,6 +1760,7 @@ def nns_reg_engine(
     dist = _validate_dist(dist)
     noise_reduction = _validate_noise(noise_reduction)
     confidence_interval = _validate_ci(confidence_interval)
+    threshold = _validate_threshold(threshold)
 
     y_raw, y_categories = _response_vector(y)
     if y_raw.size < 2:
@@ -1720,8 +1783,10 @@ def nns_reg_engine(
     # R14 nominal classes are probability-valued indicators, never numeric
     # regression on arbitrary class codes. This branch precedes NNS.M.reg and
     # the former univariate class interpolation. NNS.M.reg's standalone
-    # `multivariate_only` mode retains its own separate public contract.
-    if task["is_class"] and not multivariate_only and not multivariate_call:
+    # `multivariate_only` mode retains its own separate public contract. As in
+    # R, it also precedes `multivariate.call`: a class task returns the
+    # classification result even then (internal callers request type = "REG").
+    if task["is_class"] and not multivariate_only:
         from nns._class_r14 import classify
 
         return classify(
@@ -1759,6 +1824,11 @@ def nns_reg_engine(
     synthetic_equation = None
     x_star = None
     if ex.shape[1] > 1:
+        if not isinstance(threshold, float):
+            raise ValueError(
+                "[threshold] must be a single number for regression; one cutoff "
+                "per class applies to classification."
+            )
         dr = _dimreduce(
             ex,
             ep,
@@ -1809,7 +1879,7 @@ def nns_reg_engine(
         if task["is_class"]
         else _r2(y_numeric, fitted_pred)
     )
-    se = float(np.sqrt(np.mean((fitted_pred - y_numeric) ** 2)))
+    se = math.sqrt(r_mean((fitted_pred - y_numeric) ** 2))  # R: sqrt(mean(...))
     intervals = _intervals(
         y_numeric,
         fitted_pred,

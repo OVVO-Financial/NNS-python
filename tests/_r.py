@@ -919,7 +919,9 @@ def nns_cdf_custom(
         return result
 
 
-def nns_frame_call(label: str, expr: str, data: dict[str, Any]) -> RValue:
+def nns_frame_call(
+    label: str, expr: str, data: dict[str, Any], *, exact: bool = False
+) -> RValue:
     """Evaluate one R expression over typed data frames / vectors.
 
     ``data`` maps an R variable name to a column spec (see :func:`r_column`)
@@ -928,8 +930,15 @@ def nns_frame_call(label: str, expr: str, data: dict[str, Any]) -> RValue:
     tests can exercise R's name matching and factor/character handling.
     Console output of ``expr`` is discarded; named atomic vectors come back as
     ``{"names": [...], "values": [...]}``.
+
+    ``exact=True`` stores numbers with 17 significant digits, which round-trip
+    every double, so a test can require bit-for-bit agreement with R; the
+    default 15 digits suit tolerance comparisons. Inputs are sent with full
+    precision either way.
     """
-    args = {"expr": expr, "data": data}
+    args: dict[str, Any] = {"expr": expr, "data": data}
+    if exact:
+        args["exact"] = True
     key = _cache_key(label, (args,))
     cache, refresh = _cache_state()
     if key in cache:
@@ -2132,7 +2141,8 @@ def _call_r_frame(args: dict[str, Any]) -> RValue:
         "  }\n"
         "  as.numeric(x)\n"
         "}\n"
-        "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = NA, "
+        "digits <- if (isTRUE(spec$exact)) I(17) else NA\n"
+        "cat(jsonlite::toJSON(encode(result), auto_unbox = TRUE, digits = digits, "
         "null = 'null', na = 'string'))\n"
     )
     completed = subprocess.run(

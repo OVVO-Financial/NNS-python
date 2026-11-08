@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 
 from nns._class_r14 import classify as classify_r14
 from nns._reg_engine import _dependence, _dimred_coefficients
+from nns._rmean import r_seq_by
 
 F = NDArray[np.float64]
 Index = NDArray[np.int64]
@@ -94,7 +95,7 @@ def classify_stack_r14(
 
     def evaluate(probabilities: F, actual: F) -> tuple[float, float]:
         thresholds = (
-            np.arange(1, 100, dtype=np.float64) / 100.0
+            r_seq_by(0.01, 0.99, 0.01)  # R: seq(.01, .99, .01)
             if class_count == 2 and optimize_threshold
             else np.asarray([0.5])
         )

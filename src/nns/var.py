@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
 from nns._native import honours_ncores
+from nns._rmean import r_cor_matrix, r_quantile, r_rank_average, r_round_array
 from nns.core import lpm_ratio, upm_ratio
 
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
@@ -752,7 +753,6 @@ def _var_relevant(
     """
     from nns.central_tendencies import nns_gravity
     from nns.regression import nns_reg
-    from nns.stack import _spearman_signed
 
     x = np.asarray(ivs_train, dtype=np.float64)
     y = np.asarray(dv_train, dtype=np.float64)
@@ -769,13 +769,18 @@ def _var_relevant(
 
     def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
         if dim_red_method == "cor":
-            return _spearman_signed(xs, ys)
+            # R: cor(data.matrix(cbind(y, x)), method = "spearman")[-1, 1], whose
+            # zero-spread columns are NA (kept and then zeroed with the cutoffs).
+            columns = [r_rank_average(ys)]
+            columns += [r_rank_average(xs[:, j]) for j in range(xs.shape[1])]
+            ranks = np.column_stack(columns)
+            return r_cor_matrix(ranks)[1:, 0]
         fit = nns_reg(xs, ys, dim_red_method=dim_red_method, point_only=True, **reg_args)
         return np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
 
     def rounded(values: NDArray[np.float64]) -> NDArray[np.float64]:
-        # R abs(round(x, 2)): Python's round() also rounds the exact binary value.
-        return np.array([np.nan if np.isnan(v) else abs(round(float(v), 2)) for v in values])
+        # R abs(round(x, digits = 2)), with R's own rounding rule (nmath fround).
+        return np.abs(r_round_array(np.asarray(values, dtype=np.float64), 2))
 
     split = n_rows - ts_test
     cv_x, cv_x_test = x[:split], x[split:]
@@ -992,7 +997,8 @@ def _partial_moment_var(
     # for the quantile and the integer-degree inversion.
     lpm_pcts = pcts if lower else 1.0 - pcts
     if degree == 0:
-        out = np.asarray(np.quantile(values, lpm_pcts, method="linear"), dtype=np.float64)
+        # R: stats::quantile(x, percentile) (type 7).
+        out = r_quantile(values, lpm_pcts, 7)
     elif _is_supported_integer_degree(degree):
         solve = _lpm_var_integer_solver(int(degree), values)
         out = np.array([solve(float(p)) for p in lpm_pcts], dtype=np.float64)

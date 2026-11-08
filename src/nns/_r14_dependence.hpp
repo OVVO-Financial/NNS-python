@@ -1,11 +1,12 @@
-// R14 multilevel dependence with explicit non-R numerical adapters.
+// R14 multilevel dependence.
 // Source: OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae
 // src/NNS_dep.cpp: null corrections, constant-cell rules and level selection.
-// Rcpp marshalling uses vectors, normal probabilities use erfc, and the
-// initial hypergeometric mass uses long-double binomial products. The
-// remaining selection/null-correction arithmetic follows the pinned source.
+// Rcpp marshalling uses vectors. R::dhyper and R::pnorm are the ports of R's
+// own nmath routines in _rnmath.hpp, so the null expectations match R's to
+// the last bit; the remaining arithmetic follows the pinned source.
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
+#include "_rnmath.hpp"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -72,18 +73,11 @@ static double null_T0(int m, int a, int b) {
     if (sd <= 0.0) return std::abs(mu);
     const double z = mu / sd;
     return sd * std::sqrt(2.0 / 3.14159265358979323846264338327950288) * std::exp(-0.5 * z * z) +
-      mu * (1.0 - 2.0 * (0.5 * std::erfc(z / std::sqrt(2.0))));
+      mu * (1.0 - 2.0 * nns_rmath::pnorm(-z));
   }
   // Hypergeometric probabilities by the ratio recurrence from the lowest count.
-  // The first hypergeometric mass, evaluated as long-double binomial
-  // products; the following double recurrence is the pinned R14 one.
-  const auto choose = [](int n, int k) {
-    k = std::min(k, n - k);
-    long double out = 1.0L;
-    for (int j = 1; j <= k; ++j) out = out * (n - k + j) / j;
-    return out;
-  };
-  double pk = static_cast<double>(choose(a, k_lo) * choose(m - a, b - k_lo) / choose(m, b));
+  double pk = nns_rmath::dhyper(static_cast<double>(k_lo), static_cast<double>(a),
+                                static_cast<double>(m - a), static_cast<double>(b));
   double e = 0.0;
   for (int k = k_lo; k <= k_hi; ++k) {
     const double conc = static_cast<double>(m - a - b + 2 * k);

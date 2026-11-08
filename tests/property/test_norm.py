@@ -25,7 +25,11 @@ def test_nns_norm_shape_and_finiteness_hold_for_random_matrices(
     x: np.ndarray,
     linear: bool,
 ) -> None:
-    assume(np.all(np.std(x, axis=0) > 0.0))
+    # Every column must actually vary. np.std is not a test of that: its
+    # pairwise mean of a repeated 0.1 is one ulp off, so a constant column has a
+    # tiny nonzero std, while R's cor() (two-pass long-double mean) sees zero
+    # spread and NNS.norm returns NA for the whole matrix, as the port does.
+    assume(bool(np.all(np.ptp(x, axis=0) > 0.0)))
 
     result = nns_norm(x, linear=linear)
 

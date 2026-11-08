@@ -15,6 +15,8 @@ from typing import TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rnmath import clgamma, dhyper, pnorm
+
 FloatArray: TypeAlias = NDArray[np.float64]
 _EPS = sys.float_info.epsilon
 _SQRT_2_PI = math.sqrt(2.0 / math.pi)
@@ -44,11 +46,11 @@ def _null_t0(m: int, a: int, b: int) -> float:
         if sd <= 0.0:
             return abs(mu)
         z = mu / sd
-        return sd * _SQRT_2_PI * math.exp(-0.5 * z * z) + mu * math.erf(z / math.sqrt(2.0))
+        return sd * _SQRT_2_PI * math.exp(-0.5 * z * z) + mu * (1.0 - 2.0 * pnorm(-z))
 
-    # Exact integer combinatorics to establish the first probability, followed
-    # by the same floating-point ratio recurrence as the R/C++ oracle.
-    pk = math.comb(a, k_lo) * math.comb(m - a, b - k_lo) / math.comb(m, b)
+    # R::dhyper for the first probability (Loader's saddle point, as R
+    # evaluates it), followed by the R/C++ oracle's ratio recurrence.
+    pk = dhyper(float(k_lo), float(a), float(m - a), float(b))
     e = 0.0
     for k in range(k_lo, k_hi + 1):
         conc = float(m - a - b + 2 * k)
@@ -60,9 +62,9 @@ def _null_t0(m: int, a: int, b: int) -> float:
 
 def _log_arrangements(values: FloatArray) -> float:
     _, multiplicity = np.unique(values, return_counts=True)
-    out = math.lgamma(float(values.size) + 1.0)
+    out = clgamma(float(values.size) + 1.0)
     for count in multiplicity:
-        out -= math.lgamma(float(count) + 1.0)
+        out -= clgamma(float(count) + 1.0)
     return out
 
 
@@ -183,9 +185,16 @@ def _between_sign(x: FloatArray, y: FloatArray) -> float:
 
 
 def _p_constant(m: int, counts: list[int], n: int, cache: dict[int, float]) -> float:
+    """R p_constant: chance that a cell of m draws from v is constant (lgamma form)."""
     if m not in cache:
-        denom = math.comb(n, m)
-        p = sum(math.comb(c, m) / denom for c in counts if c >= m)
+        lchoose_n = clgamma(n + 1.0) - clgamma(m + 1.0) - clgamma(n - m + 1.0)
+        p = 0.0
+        for c in counts:  # largest multiplicity first, as in R
+            if c < m:
+                break
+            p += math.exp(
+                clgamma(c + 1.0) - clgamma(m + 1.0) - clgamma(c - m + 1.0) - lchoose_n
+            )
         cache[m] = min(1.0, p)
     return cache[m]
 
@@ -343,7 +352,7 @@ def _local_dir(
             return 1.0
         if kind == 1:
             return 0.0
-        return math.copysign(math.sqrt(abs(magnitude)), magnitude)
+        return (1.0 if magnitude >= 0.0 else -1.0) * math.sqrt(abs(magnitude))
 
     global_score = score(u, v)
     if not math.isfinite(global_score):
@@ -359,7 +368,7 @@ def _local_dir(
         value = score(u[cell_ids], v[cell_ids])
         if not math.isfinite(value):
             value = global_score
-        dep += value * (float(hi - lo) / float(n))
+        dep += value * float(hi - lo) / float(n)  # R: val * m / n, left to right
         lo = hi
     return max(0.0, dep)
 

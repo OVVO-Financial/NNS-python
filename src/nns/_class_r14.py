@@ -13,6 +13,9 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rblas import r_crossprod_vec
+from nns._rmean import r_approx, r_tie_means
+
 F = NDArray[np.float64]
 
 
@@ -128,15 +131,16 @@ def _class_base(
             if xx.size == 1:
                 out = np.tile(shares[sorted_idx[0]], (q.shape[0], 1))
             else:
-                # R stats::approx computes the fractional position before
-                # multiplying the ordinate difference. np.interp precomputes
-                # a slope instead, which can turn an exact probability tie
-                # into a one-ULP preference and change the selected class.
-                at = np.clip(q[:, 0], xx[0], xx[-1])
-                lo = np.clip(np.searchsorted(xx, at, side="right") - 1, 0, xx.size - 2)
-                fraction = (at - xx[lo]) / (xx[lo + 1] - xx[lo])
+                # R: approx(centres[o, 1], shares[o, j], xout, rule = 2,
+                # ties = mean)$y per class, with R's approx1 arithmetic (the
+                # fraction first, exact knot ordinates), so an exact
+                # probability tie is not turned into a one-ULP preference.
                 yy = shares[sorted_idx]
-                out = yy[lo] + fraction[:, None] * (yy[lo + 1] - yy[lo])
+                columns = []
+                for col in range(yy.shape[1]):
+                    kx, ky = r_tie_means(xx, yy[:, col])
+                    columns.append(r_approx(kx, ky, q[:, 0], ky[0], ky[-1]))
+                out = np.column_stack(columns)
             return _normalize(out, prior)
         ds = _mreg_distances(centres, q, dist, mins, maxs)
         out = np.empty((q.shape[0], shares.shape[1]), dtype=np.float64)
@@ -158,7 +162,8 @@ def _class_base(
                 same = chosen_d == value
                 if np.count_nonzero(same) > 1:
                     w[same] = np.mean(w[same])
-            out[i] = np.dot(w, shares[chosen])
+            # R: as.numeric(crossprod(weights, shares[o[seq_len(m)], ])).
+            out[i] = r_crossprod_vec(w, shares[chosen])
         return _normalize(out, prior)
 
     return {
@@ -188,7 +193,7 @@ def classify(
     dim_count: int | None = None,
 ) -> dict[str, Any]:
     """R .nns_reg_classify: return nominal posterior probabilities and sets."""
-    from nns._reg_engine import _dimred_coefficients, _dimreduce
+    from nns._reg_engine import _dimred_coefficients, _dimreduce, _validate_threshold
 
     design_x = np.asarray(encoded["x"], dtype=np.float64)
     query_x = encoded["point_est"]
@@ -212,14 +217,25 @@ def classify(
 
     equations = None
     if dim_red_method is not None and design_x.shape[1] > 1:
-        if isinstance(threshold, (int, float)):
-            threshold_values = np.full(values.size, float(threshold))
+        # R: one cutoff for every class index, or one per class (named by
+        # class, or in class order), as NNS.stack reports for classification.
+        cutoffs = _validate_threshold(threshold)
+        per_class = "[threshold] must be one number, or one cutoff per class."
+        if isinstance(cutoffs, dict):
+            if len(cutoffs) <= 1:
+                threshold_values = np.full(values.size, next(iter(cutoffs.values()), 0.0))
+            elif all(str(label) in cutoffs for label in labels):
+                threshold_values = np.array([cutoffs[str(label)] for label in labels])
+            elif len(cutoffs) == values.size:
+                threshold_values = np.array(list(cutoffs.values()), dtype=np.float64)
+            else:
+                raise ValueError(per_class)
+        elif isinstance(cutoffs, float):
+            threshold_values = np.full(values.size, cutoffs)
         else:
-            threshold_values = np.asarray(threshold, dtype=np.float64)
-            if threshold_values.size not in (1, values.size):
-                raise ValueError("[threshold] must be one number, or one cutoff per class.")
-            if threshold_values.size == 1:
-                threshold_values = np.full(values.size, float(threshold_values[0]))
+            threshold_values = np.asarray(cutoffs, dtype=np.float64)
+            if threshold_values.size != values.size:
+                raise ValueError(per_class)
         fitted_cols, point_cols, equations = [], [], {}
         for c in range(values.size):
             coefficients = _dimred_coefficients(
@@ -272,8 +288,8 @@ def classify(
             None,
             None,
             None,
-            [str(i + 1) for i in range(design_x.shape[0])],
-            None,
+            np.arange(1, design_x.shape[0] + 1, dtype=np.int64),  # R: seq_len(nrow(X))
+            float("nan"),  # R: k <- NA_integer_
         )
     else:
         fit = _class_base(

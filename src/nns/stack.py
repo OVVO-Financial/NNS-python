@@ -48,6 +48,7 @@ from nns._labels import (
     split_columns,
 )
 from nns._native import external_stacklevel, honours_ncores
+from nns._rblas import r_matvec
 from nns._reg_engine import (
     _mreg_predict,
     _mreg_predict_path,
@@ -56,6 +57,7 @@ from nns._reg_engine import (
     _validate_order,
     nns_reg_engine,
 )
+from nns._rmean import r_cor, r_rank_average, r_round, r_row_means, r_seq_by
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.dependence import nns_dep
@@ -85,85 +87,22 @@ single predictor, whose univariate ``nns_reg`` fit has no ``n_best`` to tune."""
 
 
 def _rank_average(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Average ranks of tied values (R's rank(ties.method = "average")).
-
-    Runs of equal sorted values [start, end) get (start + 1 + end) / 2, which is
-    exact in float64; NaNs compare unequal, so each forms its own run.
-    """
-    order = np.argsort(values, kind="mergesort")
-    sorted_values = values[order]
-    ranks = np.empty(values.size, dtype=np.float64)
-    if values.size == 0:
-        return ranks
-    breaks = np.flatnonzero(sorted_values[1:] != sorted_values[:-1]) + 1
-    starts = np.concatenate(([0], breaks))
-    ends = np.concatenate((breaks, [values.size]))
-    ranks[order] = np.repeat((starts + 1 + ends) / 2.0, ends - starts)
-    return ranks
-
-
-def _pearson(a: NDArray[np.float64], b: NDArray[np.float64]) -> float:
-    a = a - a.mean()
-    b = b - b.mean()
-    denom = math.sqrt(float(a @ a) * float(b @ b))
-    if denom == 0.0:
-        return float("nan")
-    return float(a @ b) / denom
-
-
-def _spearman_signed(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Signed Spearman correlations, R cor(method='spearman') semantics."""
-    y_rank = _rank_average(y)
-    out = np.empty(x.shape[1], dtype=np.float64)
-    for col in range(x.shape[1]):
-        out[col] = _pearson(_rank_average(x[:, col]), y_rank)
-    out[~np.isfinite(out)] = 0.0
-    return out
-
-
-def _r_column_means(m: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Column means as R's cov.c MEAN macro: long-double sum, then refinement."""
-    ld = m.astype(np.longdouble)
-    n = np.longdouble(m.shape[0])
-    mean = np.cumsum(ld, axis=0)[-1] / n
-    refined = mean + np.cumsum(ld - mean, axis=0)[-1] / n
-    return np.asarray(np.where(np.isfinite(mean), refined, mean), dtype=np.float64)
-
+    """R ``rank(x)`` with average ties."""
+    return r_rank_average(values)
 
 def _r_spearman_cor(x: NDArray[np.float64], y: NDArray[np.float64]) -> NDArray[np.float64]:
     """``stats::cor(x[, j], y, method = "spearman")`` for every column of ``x``.
 
-    Reproduces R's C_cor rounding (cov.c, two-argument complete-case path):
-    double deviations from long-double means, products summed sequentially in
-    long double, long-double square roots. Columns with zero spread give NaN.
+    Pearson correlation of average ranks with R's cov.c arithmetic (see
+    :func:`nns._rmean.r_cor`). Columns with zero spread give NaN.
     """
-    n = x.shape[0]
-    if n < 2:
-        return np.full(x.shape[1], np.nan)
-    rx = np.column_stack([_rank_average(x[:, col]) for col in range(x.shape[1])])
-    ry = _rank_average(y)
-    dx = rx - _r_column_means(rx)
-    dy = ry - _r_column_means(ry[:, None])[0]
-    n1 = np.longdouble(n - 1)
-
-    def ld_sum(values: NDArray[np.float64]) -> NDArray[np.longdouble]:
-        return cast(NDArray[np.longdouble], np.cumsum(values.astype(np.longdouble), axis=0)[-1])
-
-    cov = (ld_sum(dx * dy[:, None]) / n1).astype(np.float64)
-    sd_x = np.sqrt(ld_sum(dx * dx) / n1).astype(np.float64)
-    sd_y = float(np.sqrt(ld_sum(dy * dy) / n1))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        out = np.clip(cov / (sd_x * sd_y), -1.0, 1.0)
-    out[(sd_x == 0.0) | (sd_y == 0.0)] = np.nan
-    return np.asarray(out, dtype=np.float64)
+    y_rank = r_rank_average(y)
+    return np.array([r_cor(r_rank_average(x[:, col]), y_rank) for col in range(x.shape[1])])
 
 
 def _r_matvec(design: NDArray[np.float64], coef: NDArray[np.float64]) -> NDArray[np.float64]:
     """``design %*% coef`` in R's reference-BLAS dgemv order (column by column)."""
-    out = np.zeros(design.shape[0], dtype=np.float64)
-    for j in np.flatnonzero(coef != 0.0):
-        out = out + coef[j] * design[:, j]
-    return out
+    return r_matvec(design, coef)
 
 
 def _r_xstar_path(design: NDArray[np.float64], coef: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -429,7 +368,7 @@ def nns_stack(
     def best_threshold(raw: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
         if not is_class or not optimize_threshold:
             return 0.5
-        grid = np.round(np.arange(0.01, 1.0, 0.01), 2)
+        grid = r_seq_by(0.01, 0.99, 0.01)  # R: seq(0.01, 0.99, by = 0.01)
         scores = np.asarray([score(round_codes(raw, th), actual) for th in grid])
         valid = np.flatnonzero(np.isfinite(scores))
         if valid.size == 0:
@@ -614,7 +553,8 @@ def nns_stack(
 
         holdout_size = cv_size
         if holdout_size is None and folds_value == 1:
-            holdout_size = round(float(rng.runif(0.20, 1.0 / 3.0)), 3)
+            # R: round(stats::runif(1L, 0.20, 1 / 3), 3L), with R's rounding rule.
+            holdout_size = r_round(float(rng.runif(0.20, 1.0 / 3.0)), 3)
 
         if holdout_size is not None:
             out = []
@@ -732,8 +672,8 @@ def nns_stack(
         elif dim_red_value == "all":
             # R: rowMeans(cbind(caus, dep, cor, rep(1, p))) - the equal-weight
             # term is part of the average.
-            coef = np.mean(
-                np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1
+            coef = r_row_means(
+                np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p)))
             )
         else:
             raise ValueError("Unsupported [dim.red.method].")
@@ -1175,7 +1115,7 @@ def nns_stack(
         valid = np.isfinite(reg_oof_raw) & np.isfinite(dim_oof_raw)
         if not np.any(valid):
             raise ValueError("The two component models have no common finite OOF predictions.")
-        weight_grid = np.round(np.arange(0.0, 1.0 + 1e-9, 0.01), 2)
+        weight_grid = r_seq_by(0.0, 1.0, 0.01)  # R: seq(0, 1, by = 0.01)
         blend_scores = np.full(weight_grid.size, np.nan)
         blend_thresholds = np.full(weight_grid.size, 0.5)
         for i, w in enumerate(weight_grid.tolist()):
