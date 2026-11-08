@@ -417,3 +417,52 @@ def r_sse(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
 def r_accuracy(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
     """NNS.stack / NNS.boost default classification objective ``mean(predicted == actual)``."""
     return r_mean_logical(np.asarray(predicted) == np.asarray(actual))
+
+
+def r_row_means_na_rm(x: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R ``rowMeans(x, na.rm = TRUE)``: non-NaN entries of each row accumulated
+    column by column in long double, divided by their count (0/0 is NaN)."""
+    m = np.asarray(x, dtype=np.float64)
+    sums = np.zeros(m.shape[0], dtype=np.longdouble)
+    counts = np.zeros(m.shape[0], dtype=np.int64)
+    for j in range(m.shape[1]):
+        column = m[:, j]
+        keep = ~np.isnan(column)
+        sums[keep] = sums[keep] + column[keep].astype(np.longdouble)
+        counts += keep
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.asarray(sums / counts, dtype=np.float64)
+
+
+def r_median(values: NDArray[np.float64]) -> float:
+    """R ``median()`` of a double vector: the middle order statistic, or R's
+    ``mean()`` of the two middle ones for an even count."""
+    v = np.sort(np.asarray(values, dtype=np.float64).ravel())
+    n = v.size
+    if n == 0:
+        return float("nan")
+    half = (n + 1) // 2
+    if n % 2 == 1:
+        return float(v[half - 1])
+    return r_mean(v[half - 1 : half + 1])
+
+
+def r_cumsum(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R ``cumsum()`` of a double vector: a running long-double sum, each
+    partial sum rounded to double."""
+    v = np.asarray(values, dtype=np.float64).ravel()
+    return np.asarray(np.cumsum(v.astype(np.longdouble)), dtype=np.float64)
+
+
+def r_pow(values: NDArray[np.float64] | float, exponent: float) -> NDArray[np.float64]:
+    """R's ``x ^ y`` for a scalar exponent (arithmetic.c ``R_POW``/``R_pow``):
+    ``x * x`` for 2, 1 for 0 or for a base of 1, else the C library ``pow``."""
+    import math
+
+    v = np.asarray(values, dtype=np.float64)
+    if exponent == 2.0:
+        return np.asarray(v * v, dtype=np.float64)
+    if exponent == 0.0:
+        return np.ones_like(v, dtype=np.float64)
+    flat = [1.0 if x == 1.0 else math.pow(float(x), exponent) for x in v.ravel()]
+    return np.asarray(flat, dtype=np.float64).reshape(v.shape)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -71,10 +73,13 @@ def _excess_moment(
             "When excess_ret=True, target must be length 1 or same length as x."
         )
     diff = targets - values if lower else values - targets
+    # R's C++ excess path: one term per element (degree 0 counts ties as
+    # lower), then Rcpp's mean(), which is R's two-pass long-double mean.
     if degree == 0:
         hits = diff >= 0.0 if lower else diff > 0.0
-        return float(np.mean(hits))
-    return float(np.mean(np.maximum(diff, 0.0) ** degree))
+        return r_mean(hits.astype(np.float64))
+    keep = diff > 0.0
+    return r_mean(np.where(keep, _c_components(diff, degree, True), 0.0))
 
 
 def lpm_ratio(
@@ -121,14 +126,38 @@ def _moment(
     moments = np.empty(targets.size, dtype=np.float64)
     for start in range(0, targets.size, _TARGET_BLOCK):
         grid = targets[start : start + _TARGET_BLOCK, np.newaxis]
-        if degree == 0:
-            # R convention: equality with the target counts toward the lower moment.
-            block = np.mean(values <= grid if lower else values > grid, axis=1)
-        else:
-            deviations = grid - values if lower else values - grid
-            block = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
-        moments[start : start + _TARGET_BLOCK] = block
+        deviations = grid - values if lower else values - grid
+        # R's LPM_C / UPM_C: one component per observation, summed in order
+        # in double, then divided by n.
+        components = _c_components(deviations, degree, lower)
+        moments[start : start + _TARGET_BLOCK] = np.cumsum(components, axis=1)[:, -1] / values.size
     return _result_for_target(moments, target)
+
+
+def _c_components(
+    deviations: NDArray[np.float64], degree: float, lower: bool
+) -> NDArray[np.float64]:
+    """Per-observation partial-moment terms exactly as R's C++ forms them.
+
+    Degree 0 counts ``deviation >= 0`` (lower; ties count as lower) or ``> 0``
+    (upper). An integer degree is repeated multiplication starting from 1.0
+    (``repeatMultiplication``); any other degree is the C library ``pow``,
+    which NumPy's vectorised ``power`` does not reproduce bit for bit.
+    """
+    keep = deviations >= 0.0 if lower else deviations > 0.0
+    if degree == 0:
+        return keep.astype(np.float64)
+    positive = np.where(keep, deviations, 0.0)
+    if degree == int(degree):
+        out = np.ones_like(positive)
+        for _ in range(int(degree)):
+            out = out * positive
+    else:
+        out = np.asarray(_libm_pow(positive, degree), dtype=np.float64)
+    return np.where(keep, out, 0.0)
+
+
+_libm_pow = np.frompyfunc(math.pow, 2, 1)
 
 
 def _ratio(

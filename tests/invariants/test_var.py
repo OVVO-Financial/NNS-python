@@ -173,7 +173,7 @@ def test_nns_var_multivariate_is_nns_stack_on_exactly_the_relevant_variables(
     )
 
     h = 3
-    result = nns_var(variables, h, tau=tau, validation="conditional")
+    result = nns_var(variables, h, tau=tau, validation="observed")
     names = result["names"]
     relevant = result["relevant_variables"]
 

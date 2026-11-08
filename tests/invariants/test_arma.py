@@ -386,6 +386,7 @@ def test_nns_var_public_supported_paths_return_output_contract(dim_red_method: s
         "multivariate",
         "ensemble",
         "names",
+        "validation",
     }
     assert result["interpolated_and_extrapolated"].shape == variables.shape
     assert result["univariate"].shape == (3, 2)
