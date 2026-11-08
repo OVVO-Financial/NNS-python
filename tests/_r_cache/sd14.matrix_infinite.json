@@ -1,0 +1,66 @@
+{
+  "entries": {
+    "0a2798877c8efe28b92d79ccc1326014a340a4eeee78af54034f9f5b14b01969": {
+      "clu": {
+        "Cluster_1": [
+          "X_2",
+          "X_3",
+          "X_4"
+        ],
+        "Cluster_2": [
+          "X_1",
+          "X_6"
+        ],
+        "Cluster_3": "X_5"
+      },
+      "eff": [
+        "X_2",
+        "X_3",
+        "X_4"
+      ]
+    },
+    "663342d8ecaac9220f4be8aa03004719513e3d8b43bbb657c6d6ebe96915538a": {
+      "clu": {
+        "Cluster_1": [
+          "X_2",
+          "X_3",
+          "X_4",
+          "X_5"
+        ],
+        "Cluster_2": [
+          "X_1",
+          "X_6"
+        ]
+      },
+      "eff": [
+        "X_2",
+        "X_3",
+        "X_4",
+        "X_5"
+      ]
+    },
+    "ac5b7841c9e5575bc7baacf64274b4645a25286269dfae574514843473079b39": {
+      "clu": {
+        "Cluster_1": [
+          "X_2",
+          "X_3",
+          "X_4",
+          "X_5"
+        ],
+        "Cluster_2": [
+          "X_1",
+          "X_6"
+        ]
+      },
+      "eff": [
+        "X_2",
+        "X_3",
+        "X_4",
+        "X_5"
+      ]
+    }
+  },
+  "label": "sd14.matrix_infinite",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

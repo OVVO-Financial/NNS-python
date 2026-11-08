@@ -1,0 +1,23 @@
+{
+  "entries": {
+    "3711ee6b9a48a905f4e2d77ba1beb5819aa8004044a3d2f5d2ac6f42c6173b24": [
+      "X_1",
+      "X_5",
+      "X_3",
+      "X_7",
+      "X_6",
+      "X_2"
+    ],
+    "47e0dfad64d182a314f7a10b36c7f7e93a719352fd015c0f2355a8ac7dced19a": [
+      "X_1",
+      "X_5"
+    ],
+    "67774372c5bc21573826c8f64d6a1fb02db569c83087b50127ee9e0b25cc94a9": [
+      "X_1",
+      "X_5"
+    ]
+  },
+  "label": "sd14.efficient_order",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

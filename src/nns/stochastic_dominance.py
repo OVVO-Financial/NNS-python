@@ -24,9 +24,12 @@ walkers do.
 
 from __future__ import annotations
 
+import functools
+import math
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import ParamSpec, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -34,12 +37,27 @@ from scipy.cluster.hierarchy import linkage  # type: ignore[import-untyped]
 from scipy.sparse.csgraph import connected_components  # type: ignore[import-untyped]
 from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
-from nns.core import _as_1d_values
-
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
 # R's native SD test ignores excesses up to 64 * DBL_EPSILON (relative to the data scale).
 _SD_EPS = float(np.finfo(np.float64).eps)
 _SD_EPS64 = 64.0 * _SD_EPS
+# R's own messages: the NA check in every R wrapper and the C++ empty-sample check.
+_MISSING_VALUES = "You have some missing values, please address."
+_EMPTY_SAMPLE = "Each sample needs at least one observation."
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _cpp_float_semantics(function: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Evaluate like R's C++: infinite inputs give inf/NaN intermediates silently."""
+
+    @functools.wraps(function)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            return function(*args, **kwargs)
+
+    return wrapper
 
 
 @dataclass(frozen=True)
@@ -58,6 +76,7 @@ class _SDOrderStatPrecomputed:
     identical: NDArray[np.bool_]
 
 
+@_cpp_float_semantics
 def fsd(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
@@ -73,10 +92,12 @@ def fsd(
     partial moments vanish the ratio is the degree-0 ratio (the CDF value), as
     in ``lpm_ratio`` and the patched R. ``plot=True`` also draws R's FSD figure
     (``nns.plotting.plot_fsd``); R's default is ``plot = TRUE``.
+
+    As in R, missing values raise, and so do infinite ones (R evaluates the
+    plotted ``LPM.ratio`` curves, which reject them, before the verdict).
     """
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
     discrete = _checked_fsd_type(type) == "discrete"
+    x_values, y_values = _sd_pair(x, y, finite=True)
     result = _sd_result(x_values, y_values, 1, discrete=discrete)
     if plot:
         from nns.plotting.dominance import plot_fsd
@@ -85,25 +106,26 @@ def fsd(
     return result
 
 
+@_cpp_float_semantics
 def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discrete") -> int:
     """Unidirectional first-order stochastic dominance: 1 if x dominates y, else 0.
 
-    Like R's ``NNS.FSD.uni``, an unrecognised ``type`` warns and runs the discrete test.
+    Like R's ``NNS.FSD.uni``, an unrecognised ``type`` warns and runs the discrete
+    test, and infinite values are compared as R's C++ test compares them.
     """
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
+    x_values, y_values = _sd_pair(x, y, finite=False)
     discrete = _checked_fsd_type(type) != "continuous"
     return int(_dominates_uni(x_values, y_values, 1, discrete=discrete))
 
 
+@_cpp_float_semantics
 def ssd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -> int:
     """Second-order stochastic dominance; ``x`` and ``y`` may differ in length.
 
     ``plot=True`` also draws R's SSD figure (``nns.plotting.plot_ssd``); R's
     default is ``plot = TRUE``.
     """
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
+    x_values, y_values = _sd_pair(x, y, finite=True)
     result = _sd_result(x_values, y_values, 2)
     if plot:
         from nns.plotting.dominance import plot_ssd
@@ -112,21 +134,21 @@ def ssd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -
     return result
 
 
+@_cpp_float_semantics
 def ssd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
     """Unidirectional second-order stochastic dominance: 1 if x dominates y, else 0."""
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
+    x_values, y_values = _sd_pair(x, y, finite=False)
     return int(_dominates_uni(x_values, y_values, 2, discrete=True))
 
 
+@_cpp_float_semantics
 def tsd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -> int:
     """Third-order stochastic dominance; ``x`` and ``y`` may differ in length.
 
     ``plot=True`` also draws R's TSD figure (``nns.plotting.plot_tsd``); R's
     default is ``plot = TRUE``.
     """
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
+    x_values, y_values = _sd_pair(x, y, finite=True)
     result = _sd_result(x_values, y_values, 3)
     if plot:
         from nns.plotting.dominance import plot_tsd
@@ -135,10 +157,10 @@ def tsd(x: NDArray[np.float64], y: NDArray[np.float64], *, plot: bool = False) -
     return result
 
 
+@_cpp_float_semantics
 def tsd_uni(x: NDArray[np.float64], y: NDArray[np.float64]) -> int:
     """Unidirectional third-order stochastic dominance: 1 if x dominates y, else 0."""
-    x_values = _as_sd_values(x, "x")
-    y_values = _as_sd_values(y, "y")
+    x_values, y_values = _sd_pair(x, y, finite=False)
     return int(_dominates_uni(x_values, y_values, 3, discrete=True))
 
 
@@ -146,7 +168,7 @@ def nns_sd_cluster(
     data: NDArray[np.float64],
     degree: int = 1,
     type: str = "discrete",
-    min_cluster: int = 1,
+    min_cluster: float = 1,
     dendrogram: bool = False,
     names: Sequence[str] | None = None,
 ) -> dict[str, object]:
@@ -157,21 +179,28 @@ def nns_sd_cluster(
     ``dendrogram=True`` returns R's ``hclust`` fields under ``"Dendrogram"`` and, as
     R does, draws the dendrogram; with fewer than two clustered variables it warns
     and returns the clusters only.
+
+    As in R, the data are validated by the first efficient-set search, so a
+    matrix with no more than ``min_cluster`` columns is returned as one cluster
+    unchecked, and ``min_cluster`` is compared as the real number it is.
     """
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        return _nns_sd_cluster(data, degree, type, min_cluster, dendrogram, names)
+
+
+def _nns_sd_cluster(
+    data: NDArray[np.float64],
+    degree: int,
+    type: str,
+    min_cluster: float,
+    dendrogram: bool,
+    names: Sequence[str] | None,
+) -> dict[str, object]:
     column_labels = getattr(data, "columns", None)
     values = np.asarray(data, dtype=np.float64)
     if values.ndim != 2:
         raise ValueError("data must be a 2D array.")
-    if values.shape[0] == 0:
-        raise ValueError("data must have at least one row.")
-    degree_int = _sd_degree(degree)
-    if not np.all(np.isfinite(values)):
-        raise ValueError("data must contain only finite values.")
-    type_value = _sd_type_value(degree_int, type)
-    discrete = degree_int != 1 or type_value != "continuous"
-    min_cluster = int(min_cluster)
-    if min_cluster < 0:
-        raise ValueError("min_cluster must be non-negative.")
+    min_cluster = float(min_cluster)
 
     column_count = values.shape[1]
     if names is None and column_labels is not None and len(column_labels) == column_count:
@@ -185,17 +214,25 @@ def nns_sd_cluster(
 
     order_stat_dominance_matrix = None
     prefix_precomputed = None
-    if degree_int == 1 and discrete:
-        order_stat_precomputed = _order_stat_sd_precompute(values)
-        order_stat_dominance_matrix = _dominance_matrix_from_order_stats(order_stat_precomputed)
-    else:
-        prefix_precomputed = _prefix_sd_precompute(values, degree_int, discrete=discrete)
+    degree_int = 1
+    discrete = True
     verdicts: dict[tuple[int, int], bool] = {}
     active = list(range(column_count))
     clusters: dict[str, list[str]] = {}
     iteration = 1
 
     while len(active) > min_cluster:
+        if not active:
+            break  # R's efficient set of no columns is empty
+        if order_stat_dominance_matrix is None and prefix_precomputed is None:
+            # R validates in the first NNS.SD.efficient.set call, on every column.
+            degree_int, discrete = _validated_sd_matrix(values, degree, type)
+            if degree_int == 1 and discrete:
+                order_stat_dominance_matrix = _dominance_matrix_from_order_stats(
+                    _order_stat_sd_precompute(values)
+                )
+            else:
+                prefix_precomputed = _prefix_sd_precompute(values, degree_int, discrete=discrete)
         if order_stat_dominance_matrix is not None:
             sd_set_indices = _sd_efficient_active_indices_from_matrix(
                 values,
@@ -248,7 +285,7 @@ def nns_sd_cluster(
             return {"Clusters": clusters, "Order": None}
         return {
             "Clusters": clusters,
-            "Dendrogram": _sd_cluster_hclust(clusters, all_names, draw_degree=degree_int),
+            "Dendrogram": _sd_cluster_hclust(clusters, all_names, draw_degree=degree),
         }
 
     return {"Clusters": clusters}
@@ -258,7 +295,7 @@ def _sd_cluster_hclust(
     clusters: dict[str, list[str]],
     original_names: Sequence[str],
     *,
-    draw_degree: int | None = None,
+    draw_degree: object = None,
 ) -> dict[str, object]:
     all_vars = [name for cluster in clusters.values() for name in cluster]
     cluster_labels = np.asarray(
@@ -292,7 +329,7 @@ def _sd_cluster_hclust(
     }
 
 
-def _draw_sd_dendrogram(linked: NDArray[np.float64], labels: list[str], degree: int) -> None:
+def _draw_sd_dendrogram(linked: NDArray[np.float64], labels: list[str], degree: object) -> None:
     """Draw the cluster dendrogram, as R's ``NNS.SD.cluster(dendrogram = TRUE)`` does."""
     from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
@@ -302,6 +339,9 @@ def _draw_sd_dendrogram(linked: NDArray[np.float64], labels: list[str], degree: 
     scipy_dendrogram(
         linked, labels=labels, ax=ax, link_color_func=lambda _: "black", leaf_rotation=90
     )
+    # R pastes the degree as given; a whole double prints without decimals.
+    if isinstance(degree, float) and degree.is_integer():
+        degree = int(degree)
     ax.set_title(f"Hierarchical Clustering of Stochastic Dominance Sets\nSD Degree: {degree}")
     ax.set_xlabel("Variables")
     ax.set_ylabel("SD Distance")
@@ -334,30 +374,25 @@ def _r_hclust_merge(linked: NDArray[np.float64], n_obs: int) -> NDArray[np.int64
     return out
 
 
+@_cpp_float_semantics
 def sd_efficient_set(
     returns: NDArray[np.float64],
     degree: int,
     type: str = "discrete",
 ) -> list[int]:
-    """Return indices of non-dominated columns at the requested SD degree.
+    """Return 0-based indices of the non-dominated columns, in R's output order.
 
-    ``degree`` is coerced like R's ``as.integer``: 1.5 runs first-order (FSD) and
-    ``"2"`` runs second-order; anything that does not truncate to 1, 2 or 3 raises.
+    R's ``NNS.SD.efficient.set`` returns the corresponding column names. A vector
+    is one column (R's ``as.matrix``). ``degree`` is coerced like R's
+    ``as.integer``: 1.5 runs first-order (FSD) and ``"2"`` runs second-order;
+    anything that does not truncate to 1, 2 or 3 raises. Validation follows R's
+    C++ order (no columns, empty columns, degree, missing values), and infinite
+    values are compared as R's C++ test compares them.
     """
-    values = np.asarray(returns, dtype=np.float64)
-    if values.ndim != 2:
-        raise ValueError("returns must be a 2D array.")
-    if values.shape[0] == 0:
-        raise ValueError("returns must have at least one row.")
-    degree = _sd_degree(degree)
-    if not np.all(np.isfinite(values)):
-        raise ValueError("returns must contain only finite values.")
-
-    type_value = _sd_type_value(degree, type)
-    discrete = degree != 1 or type_value != "continuous"
-
+    values = _sd_matrix(returns, "returns")
     if values.shape[1] == 0:
         return []
+    degree, discrete = _validated_sd_matrix(values, degree, type)
 
     # Every pair is evaluated on its own merged threshold grid (as R does), so
     # the verdict for a pair never depends on which other columns are present.
@@ -378,6 +413,28 @@ def sd_efficient_set(
         degree,
         discrete=discrete,
     )
+
+
+def _sd_matrix(data: object, name: str) -> NDArray[np.float64]:
+    values = np.asarray(data, dtype=np.float64)
+    if values.ndim < 2:
+        values = values.reshape(-1, 1)
+    if values.ndim != 2:
+        raise ValueError(f"{name} must be a 2D array.")
+    return values
+
+
+def _validated_sd_matrix(
+    values: NDArray[np.float64], degree: object, type: str
+) -> tuple[int, bool]:
+    """R's C++ checks for a non-empty set of columns, in its order."""
+    if values.shape[0] == 0:
+        raise ValueError(_EMPTY_SAMPLE)
+    degree_int = _sd_degree(degree)
+    if np.isnan(values).any():
+        raise ValueError(_MISSING_VALUES)
+    type_value = _sd_type_value(degree_int, type)
+    return degree_int, degree_int != 1 or type_value != "continuous"
 
 
 def _sd_degree(degree: object) -> int:
@@ -667,12 +724,15 @@ def _dominates_sorted(
         gap = y_prefix1[-1] / y_count - x_prefix1[-1] / x_count
         if degree > 1 and gap > 2.0 * _SD_EPS64 * max(abs(lo), abs(hi)):
             return False
-        level = 0.5 * lo + 0.5 * hi
-        x_sorted, y_sorted = x_sorted - level, y_sorted - level
-        x_prefix1, y_prefix1 = _prefix_sum_1d(x_sorted), _prefix_sum_1d(y_sorted)
-        if degree == 3:
-            x_prefix2, y_prefix2 = _prefix_sum_1d(x_sorted**2), _prefix_sum_1d(y_sorted**2)
-        level = abs(level)
+        centre = 0.5 * lo + 0.5 * hi
+        # R compares a pair with an infinite value unshifted: it cannot be centred.
+        if math.isfinite(centre):
+            x_sorted, y_sorted = x_sorted - centre, y_sorted - centre
+            x_prefix1, y_prefix1 = _prefix_sum_1d(x_sorted), _prefix_sum_1d(y_sorted)
+            if degree == 3:
+                x_prefix2 = _prefix_sum_1d(x_sorted * x_sorted)
+                y_prefix2 = _prefix_sum_1d(y_sorted * y_sorted)
+            level = abs(centre)
     scale = float(max(abs(x_sorted[0]), abs(x_sorted[-1]), abs(y_sorted[0]), abs(y_sorted[-1])))
     # Summation rounding plus the inputs' own rounding at their level |c|.
     din = 4.0 * _SD_EPS * level
@@ -692,9 +752,9 @@ def _dominates_sorted(
     elif degree == 1:
         x_curve, x_total = _ratio_deg1(x_prefix1, x_counts, thresholds, x_count)
         y_curve, y_total = _ratio_deg1(y_prefix1, y_counts, thresholds, y_count)
-        total_min = np.minimum(x_total, y_total)
-        with np.errstate(divide="ignore"):
-            tol = np.where(total_min > 0.0, np.maximum(_SD_EPS64, e1 / total_min), _SD_EPS64)
+        total_min = _cpp_min(x_total, y_total)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tol = np.where(total_min > 0.0, _cpp_max(_SD_EPS64, e1 / total_min), _SD_EPS64)
         if not np.any(x_curve - y_curve > tol):
             interior_excess = _ratio_deg1_interior_excess(
                 x_prefix1, x_counts, x_count, y_prefix1, y_counts, y_count, thresholds, e1
@@ -741,6 +801,20 @@ def _dominates_sorted(
     return bool(np.any(np.abs(excess) > tol))
 
 
+def _cpp_min(
+    a: float | NDArray[np.float64], b: float | NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """``std::min(a, b)``, i.e. ``b < a ? b : a``: a NaN in ``b`` yields ``a``."""
+    return np.asarray(np.where(b < a, b, a), dtype=np.float64)
+
+
+def _cpp_max(
+    a: float | NDArray[np.float64], b: float | NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """``std::max(a, b)``, i.e. ``a < b ? b : a``: a NaN in ``b`` yields ``a``."""
+    return np.asarray(np.where(a < b, b, a), dtype=np.float64)
+
+
 def _merged_thresholds(
     x_sorted: NDArray[np.float64], y_sorted: NDArray[np.float64]
 ) -> tuple[NDArray[np.float64], NDArray[np.intp], NDArray[np.intp]]:
@@ -761,6 +835,19 @@ def _merged_thresholds(
     return values[ends], x_counts, y_counts
 
 
+def _lpm1_and_total(
+    prefix1: NDArray[np.float64],
+    counts: NDArray[np.intp],
+    thresholds: NDArray[np.float64],
+    observations: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """LPM1 and LPM1 + UPM1 at the thresholds, from prefix sums (R's ``lpm_upm_deg1``)."""
+    sums1 = prefix1[counts]
+    lower = (counts * thresholds - sums1) / observations
+    upper = ((prefix1[-1] - sums1) - (observations - counts) * thresholds) / observations
+    return lower, lower + upper
+
+
 def _ratio_deg1(
     prefix1: NDArray[np.float64],
     counts: NDArray[np.intp],
@@ -768,10 +855,7 @@ def _ratio_deg1(
     observations: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Continuous FSD ratio LPM1 / (LPM1 + UPM1) at the thresholds, and LPM1 + UPM1."""
-    sums1 = prefix1[counts]
-    lower = (counts * thresholds - sums1) / observations
-    upper = ((prefix1[-1] - sums1) - (observations - counts) * thresholds) / observations
-    total = lower + upper
+    lower, total = _lpm1_and_total(prefix1, counts, thresholds, observations)
     # 0/0 (every observation equals the threshold): the degree-0 ratio, i.e. the
     # right-continuous CDF value, as LPM.ratio does (it was 0).
     ratio: NDArray[np.float64] = np.divide(
@@ -813,7 +897,7 @@ def _ratio_deg1_interior_excess(
         den = gy - r * gx
         valid &= den != 0.0
         ts = (r * dx - dy) / np.where(valid, den, 1.0)
-        valid &= (ts > lower_knots) & (ts < upper_knots)
+        valid &= (ts > lower_knots) & (ts < upper_knots) & np.isfinite(upper_knots)
         denom_x = gx * ts + dx
         denom_y = gy * ts + dy
         valid &= (denom_x > 0.0) & (denom_y > 0.0)
@@ -821,7 +905,7 @@ def _ratio_deg1_interior_excess(
             return False
         ratio_x = (ax * ts + bx) / denom_x
         ratio_y = (ay * ts + by) / denom_y
-        tol = np.maximum(_SD_EPS64, e1 / np.minimum(denom_x, denom_y))
+        tol = _cpp_max(_SD_EPS64, e1 / _cpp_min(denom_x, denom_y))
         return bool(np.any(valid & (ratio_x - ratio_y > tol)))
 
 
@@ -847,11 +931,13 @@ def _ratio_deg1_midpoint_verdict(
     s = 0.5 * (thresholds[:-1] + thresholds[1:])
     kx = x_counts[:-1]
     ky = y_counts[:-1]
-    x_ratio, x_total = _ratio_deg1(x_prefix1, kx, s, x_count)
-    y_ratio, y_total = _ratio_deg1(y_prefix1, ky, s, y_count)
-    d = x_ratio - y_ratio
-    tol = np.maximum(_SD_EPS64, e1 / np.minimum(x_total, y_total))
-    differs = np.abs(d) > tol
+    x_lower, x_total = _lpm1_and_total(x_prefix1, kx, s, x_count)
+    y_lower, y_total = _lpm1_and_total(y_prefix1, ky, s, y_count)
+    # R divides directly here: strictly between knots a finite sample's total
+    # deviation is positive.
+    d = x_lower / x_total - y_lower / y_total
+    tol = _cpp_max(_SD_EPS64, e1 / _cpp_min(x_total, y_total))
+    differs = (np.abs(d) > tol) & np.isfinite(thresholds[1:])
     first_knot = np.flatnonzero(knot_differs)
     if first_knot.size:
         differs[first_knot[0] :] = False
@@ -919,7 +1005,8 @@ def _lpm_deg2_interior_excess(
     ky = ky[concave]
     b = x_prefix1[kx] / x_count - y_prefix1[ky] / y_count
     ts = b / a[concave]
-    inside = (ts > thresholds[:-1][concave]) & (ts < thresholds[1:][concave])
+    upper_knots = thresholds[1:][concave]
+    inside = (ts > thresholds[:-1][concave]) & (ts < upper_knots) & np.isfinite(upper_knots)
     if not np.any(inside):
         return False
     kx = kx[inside]
@@ -989,20 +1076,52 @@ def _lpm_at_target(
     target: float,
     degree: int,
 ) -> NDArray[np.float64]:
-    deviations = np.maximum(0.0, target - values)
-    if degree > 1:
-        deviations = deviations**degree
-    return np.asarray(np.mean(deviations, axis=0), dtype=np.float64)
+    """Each column's LPM(degree, target) with the arithmetic of R's efficient-set key.
+
+    R's C++ raises each positive deviation to the power by repeated multiplication
+    and sums the rows in their original order, so columns whose keys tie in exact
+    arithmetic (permutations, duplicates) keep their tie and the index tie break.
+    """
+    deviations = target - values
+    powered = deviations
+    for _ in range(degree - 1):
+        powered = powered * deviations
+    terms = np.where(deviations > 0.0, powered, 0.0)
+    if terms.shape[0] == 0:
+        return np.zeros(terms.shape[1], dtype=np.float64)
+    return np.asarray(np.cumsum(terms, axis=0)[-1] / terms.shape[0], dtype=np.float64)
 
 
 def _as_sd_values(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
+    """R's ``to_numeric_vector``: single-column objects and any vector shape flatten."""
     values = np.asarray(x, dtype=np.float64)
     if values.ndim == 2:
         # R accepts single-column matrices and data frames.
         if values.shape[1] != 1:
             raise ValueError(f"{name} must be a single-column object or numeric vector.")
         values = values[:, 0]
-    values = _as_1d_values(values)
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
+    return values.reshape(-1)
+
+
+def _sd_pair(
+    x: NDArray[np.float64], y: NDArray[np.float64], *, finite: bool
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Both samples, checked in R's order: shape, missing values, finiteness, size.
+
+    ``finite`` is for ``NNS.FSD``/``NNS.SSD``/``NNS.TSD``, which evaluate
+    ``LPM(.ratio)(degree, sort(c(x, y)), x)`` first: that checks the variable ``x``
+    and then the target grid. The ``.uni`` tests go straight to R's C++ test,
+    which accepts infinite values.
+    """
+    x_values = _as_sd_values(x, "x")
+    y_values = _as_sd_values(y, "y")
+    if np.isnan(x_values).any() or np.isnan(y_values).any():
+        raise ValueError(_MISSING_VALUES)
+    if finite:
+        if not np.all(np.isfinite(x_values)):
+            raise ValueError("`variable` must be finite.")
+        if not np.all(np.isfinite(y_values)):
+            raise ValueError("`target` must be finite.")
+    if x_values.size == 0 or y_values.size == 0:
+        raise ValueError(_EMPTY_SAMPLE)
+    return x_values, y_values

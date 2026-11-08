@@ -129,7 +129,7 @@ def test_nns_sd_cluster_missing_values_raise() -> None:
     data = _known_matrix()
     data[0, 0] = np.nan
 
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(ValueError, match="You have some missing values, please address"):
         nns_sd_cluster(data)
 
 

@@ -116,6 +116,18 @@ names, or the column names of a DataFrame input. `type="continuous"` is
 supported for first-degree efficient sets, `fsd`, and `fsd_uni`; as in R, an
 unrecognised `type` warns (and `fsd` then runs its continuous branch, while
 `fsd_uni` and the efficient-set routines run the discrete one).
+`sd_efficient_set` returns 0-based column indices in R's output order (R
+returns the column names), and a vector is one column, as with R's `as.matrix`.
+Inputs are checked in R's order and with R's messages: missing values raise
+"You have some missing values, please address.", empty samples "Each sample
+needs at least one observation.". Like R, the `.uni` tests, `sd_efficient_set`
+and `nns_sd_cluster` accept infinite values and compare them as R's C++ test
+does, while `fsd`, `ssd` and `tsd` reject them (R first evaluates the plotted
+partial-moment curves, which check `x` and then the threshold grid).
+`nns_sd_cluster` validates its data in the first efficient-set search, as R
+does, so a matrix with no more than `min_cluster` columns comes back as one
+cluster unchecked, and `min_cluster` is compared as a real number (`1.5` merges
+a trailing single-member cluster into the previous one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
 With fewer than two clustered variables it warns, as R does, and returns the
