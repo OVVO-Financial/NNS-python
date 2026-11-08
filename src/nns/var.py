@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
 from nns._native import honours_ncores
-from nns._rmean import r_cor_matrix, r_quantile, r_rank_average, r_round_array
+from nns._rmean import r_cor_matrix, r_mean, r_quantile, r_rank_average, r_round_array
 from nns.core import lpm_ratio, upm_ratio
 
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
@@ -459,7 +459,7 @@ def _var_index_fit(
     matrix = np.column_stack(
         (nns_rescale(index, 0, 1), nns_rescale(index, 0, 1), nns_rescale(values, 0, 1))
     )
-    dep = (dep + float(nns_copula(matrix))) / 2.0
+    dep = r_mean(np.array([dep, float(nns_copula(matrix))]))  # R: mean(c(dep, copula))
     if not np.isfinite(dep):
         dep = 0.1
     depth = math.floor(dep * 10)

@@ -28,6 +28,7 @@ from numpy.typing import NDArray
 from nns._indices import ordered_complement
 from nns._native import external_stacklevel, honours_ncores
 from nns._reg_engine import _validate_dist, nns_reg_engine
+from nns._rmean import r_accuracy, r_sse
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.stack import (
@@ -190,14 +191,14 @@ def nns_boost(
         if np.unique(y).size < 2:
             raise ValueError("Classification requires at least two response classes.")
         if obj_fn is None:
-            obj_fn = lambda predicted, actual: float(np.mean(predicted == actual))  # noqa: E731
+            obj_fn = r_accuracy  # R: mean(predicted == actual)
             objective_value = "max"
     else:
         if not response_was_numeric:
             raise ValueError("A nonnumeric response requires type = 'CLASS'.")
         y = np.asarray(dv, dtype=np.float64)
         if obj_fn is None:
-            obj_fn = lambda predicted, actual: float(np.sum((predicted - actual) ** 2))  # noqa: E731
+            obj_fn = r_sse  # R: sum((predicted - actual)^2), with R's sum()
 
     n_obs = x.shape[0]
     n_features = x.shape[1]
@@ -313,7 +314,9 @@ def nns_boost(
             point_est=test_x,
             dim_red_method=None,
             order=depth_value,
-            type="CLASS" if is_class else "REG",
+            # R passes type = type: NULL unless classification, so a numeric
+            # 0/1 response is classified by the base learner as in NNS.reg.
+            type="CLASS" if is_class else None,
             point_only=True,
             dist=dist_value,
             factor_levels=[code_levels[j] for j in cols],

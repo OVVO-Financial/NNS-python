@@ -556,11 +556,12 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
         # sign convention for the response.
         d2_forward = float(_copula(m, _r_col_means(m), continuous=True))
         d2_reverse = float(_copula(reflected, _r_col_means(reflected), continuous=True))
-        d2 = 0.5 * (d2_forward + d2_reverse)
+        d2 = r_mean(np.array([d2_forward, d2_reverse]))  # R: mean(c(...))
     except Exception:
         d2 = float("nan")
-    parts = [v for v in (d1, d2) if math.isfinite(v)]
-    d = sum(parts) / len(parts) if parts else float("nan")
+    # R: mean(c(d1, d2), na.rm = TRUE).
+    parts = [v for v in (d1, d2) if not math.isnan(v)]
+    d = r_mean(np.array(parts)) if parts else float("nan")
     if not math.isfinite(d):
         d = 0.1
     return min(1.0, max(0.0, d))

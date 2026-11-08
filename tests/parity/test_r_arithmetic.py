@@ -127,7 +127,10 @@ def test_quantile_matches_r_bitwise(type_: int) -> None:
     for n in (1, 2, 3, 7, 50, 401):
         x = rng.normal(size=n) * 10 ** rng.uniform(-3, 3)
         expected = _exact(
-            f"rarith.quantile{type_}", f"quantile(x, p, type = {type_}, names = FALSE)", x=x, p=probs
+            f"rarith.quantile{type_}",
+            f"quantile(x, p, type = {type_}, names = FALSE)",
+            x=x,
+            p=probs,
         )
         _bits(r_quantile(x, probs, type_), expected)
 

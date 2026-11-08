@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._rblas import r_crossprod_vec
-from nns._rmean import r_approx, r_tie_means
+from nns._rmean import r_approx, r_col_means, r_tie_means
 
 F = NDArray[np.float64]
 
@@ -54,6 +54,7 @@ def _class_base(
     from nns._reg_engine import (
         _build_points,
         _dependence,
+        _find_interval,
         _mreg_distances,
         _mreg_ensemble_weights,
     )
@@ -95,10 +96,10 @@ def _class_base(
         if coord_exact:
             memberships.append(np.searchsorted(b, coord, side="left").astype(np.int64) + 1)
         else:
-            positions = np.searchsorted(b, coord, side="right").astype(np.int64)
-            # R findInterval(..., rightmost.closed=TRUE) maps the last
-            # breakpoint to the final interval, not to one past it.
-            memberships.append(np.minimum(positions, b.size - 1))
+            # R findInterval(..., rightmost.closed = TRUE): only a value equal
+            # to the last breakpoint joins the final interval; larger values
+            # (the boundaries are cell means, inside the range) get their own.
+            memberships.append(_find_interval(coord, b))
 
     row_ids = [".".join(str(int(membership[i])) for membership in memberships) for i in range(n)]
     groups: dict[str, list[int]] = {}
@@ -107,9 +108,10 @@ def _class_base(
 
         # split(seq_len(n), ids) groups names in lexicographic order in R.
     keys = sorted(groups)
-    centres = np.array([np.mean(design_x[groups[key]], axis=0) for key in keys], dtype=np.float64)
-    shares = np.array([np.mean(indicators[groups[key]], axis=0) for key in keys], dtype=np.float64)
-    prior = np.mean(indicators, axis=0)
+    # R: colMeans(X[g, ]) and colMeans(probabilities[g, ]) per cell, colMeans(probabilities).
+    centres = np.array([r_col_means(design_x[groups[key]]) for key in keys], dtype=np.float64)
+    shares = np.array([r_col_means(indicators[groups[key]]) for key in keys], dtype=np.float64)
+    prior = r_col_means(indicators)
 
     if n_best == "all":
         k = centres.shape[0]

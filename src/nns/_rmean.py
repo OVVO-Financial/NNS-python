@@ -397,3 +397,23 @@ def r_tie_means(
     groups = np.searchsorted(ux, xs)
     means = np.array([r_mean(ys[groups == g]) for g in range(ux.size)])
     return ux, means
+
+
+def r_mean_logical(values: NDArray[np.bool_]) -> float:
+    """R ``mean()`` of a logical vector: a long-double count / n (summary.c
+    integer path, no refinement pass)."""
+    v = np.asarray(values, dtype=bool).ravel()
+    if v.size == 0:
+        return float("nan")
+    return float(np.longdouble(int(np.count_nonzero(v))) / np.longdouble(v.size))
+
+
+def r_sse(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
+    """NNS.stack / NNS.boost default objective ``sum((predicted - actual)^2)``."""
+    diff = np.asarray(predicted, dtype=np.float64) - np.asarray(actual, dtype=np.float64)
+    return r_sum(diff * diff)
+
+
+def r_accuracy(predicted: NDArray[np.float64], actual: NDArray[np.float64]) -> float:
+    """NNS.stack / NNS.boost default classification objective ``mean(predicted == actual)``."""
+    return r_mean_logical(np.asarray(predicted) == np.asarray(actual))

@@ -57,7 +57,7 @@ from nns._reg_engine import (
     _validate_order,
     nns_reg_engine,
 )
-from nns._rmean import r_cor, r_rank_average, r_round, r_row_means, r_seq_by
+from nns._rmean import r_accuracy, r_cor, r_rank_average, r_round, r_row_means, r_seq_by, r_sse
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.dependence import nns_dep
@@ -285,14 +285,14 @@ def nns_stack(
         if np.unique(y).size < 2:
             raise ValueError("Classification requires at least two response classes.")
         if obj_fn is None:
-            obj_fn = lambda predicted, actual: float(np.mean(predicted == actual))  # noqa: E731
+            obj_fn = r_accuracy  # R: mean(predicted == actual)
             objective_value = "max"
     else:
         if response_categorical:
             raise ValueError("A nonnumeric response requires type = 'CLASS'.")
         y = np.asarray(dv, dtype=np.float64)
         if obj_fn is None:
-            obj_fn = lambda predicted, actual: float(np.sum((predicted - actual) ** 2))  # noqa: E731
+            obj_fn = r_sse  # R: sum((predicted - actual)^2), with R's sum()
 
     if balance and not is_class:
         raise ValueError("[balance = TRUE] requires classification.")
