@@ -59,7 +59,9 @@ def test_smooth_spline_needs_four_unique_x_like_r() -> None:
 def test_nns_reg_smooth_matches_r_bitwise(monkeypatch: pytest.MonkeyPatch, native: bool) -> None:
     rng = np.random.default_rng(702)
     x = rng.normal(size=150)
-    y = x**3 - x + rng.normal(size=150) * 0.4
+    # x * x * x, not x**3: NumPy's power differs between AVX-512 and AVX2 builds,
+    # which would change the inputs (and the R cache key) from one runner to another.
+    y = x * x * x - x + rng.normal(size=150) * 0.4
     point = np.array([-3.5, -0.2, 0.9, 3.2])
     expected = nns_frame_call(
         "smspl14.reg",
