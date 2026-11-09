@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rmean import r_mean
+from nns._rnmath import libm_pow, r_pow_scalar
 from nns.core import _as_1d_values, lpm, upm
 
 
@@ -58,31 +60,34 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
     estimators need n > 2 (skewness) and n > 3 (kurtosis).
     """
     values = _as_1d_values(x)
-    # float64 scalars give R's IEEE results (0/0 = NaN, x/0 = +-Inf) where plain
-    # Python floats and ints would raise ZeroDivisionError.
+    # R 14 NNS.moments: central moments with R's mean() (long double), z^2 as
+    # z * z and z^3, z^4 through R's ^ (libm pow). float64 scalars give R's IEEE
+    # results (0/0 = NaN, x/0 = +-Inf) where Python floats would raise.
     n = np.float64(values.size)
-    center = float(np.mean(values))
-    mean = float(upm(1, 0.0, values) - lpm(1, 0.0, values))
-    variance = np.float64(upm(2, center, values) + lpm(2, center, values))
-    skew_base = np.float64(upm(3, center, values) - lpm(3, center, values))
-    kurt_base = np.float64(upm(4, center, values) + lpm(4, center, values))
+    mean = r_mean(values)
+    z = values - mean
+    variance = np.float64(r_mean(z * z))
+    skew_base = np.float64(r_mean(libm_pow(z, 3.0)))
+    kurt_base = np.float64(r_mean(libm_pow(z, 4.0)))
 
     with np.errstate(divide="ignore", invalid="ignore"):
         if population:
-            skewness = float(skew_base / variance**1.5)
-            kurtosis = float(kurt_base / variance**2 - 3.0)
+            skewness = float(skew_base / np.float64(r_pow_scalar(float(variance), 1.5)))
+            kurtosis = float((kurt_base / (variance * variance)) - 3.0)
         else:
             # Adjusted Fisher-Pearson G1: n/((n-1)(n-2)) * sum(z^3) / s^3 with s the
             # sample (n-1) standard deviation, as in the kurtosis branch below.
+            scaled = variance * (n / (n - 1))
             skewness = float(
-                (n / ((n - 1) * (n - 2))) * ((n * skew_base) / (variance * (n / (n - 1))) ** 1.5)
+                (n / ((n - 1) * (n - 2)))
+                * ((n * skew_base) / np.float64(r_pow_scalar(float(scaled), 1.5)))
             )
             kurtosis = float(
                 ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3)))
-                * ((n * kurt_base) / (variance * (n / (n - 1))) ** 2)
-                - ((3 * ((n - 1) ** 2)) / ((n - 2) * (n - 3)))
+                * ((n * kurt_base) / (scaled * scaled))
+                - ((3 * ((n - 1) * (n - 1))) / ((n - 2) * (n - 3)))
             )
-            variance = variance * (n / (n - 1))
+            variance = scaled
 
     return {
         "mean": mean,

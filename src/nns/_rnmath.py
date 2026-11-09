@@ -610,3 +610,36 @@ def libm_exp(values: Any) -> NDArray[np.float64]:
     wherever R's result is compared exactly or feeds a discrete choice.
     """
     return np.asarray(_libm_exp_ufunc(np.asarray(values, dtype=np.float64)), dtype=np.float64)
+
+
+def r_pow_scalar(x: float, y: float) -> float:
+    """R's ``x ^ y`` (arithmetic.c ``R_POW``/``R_pow``) for doubles: ``x * x``
+    for 2, 1 for a base of 1 or an exponent of 0, R's zero-base rules, else
+    libm ``pow``."""
+    if y == 2.0:
+        return x * x
+    if x == 1.0 or y == 0.0:
+        return 1.0
+    if x == 0.0:
+        if y > 0.0:
+            return 0.0
+        return math.inf if y < 0.0 else y
+    if math.isfinite(x) and math.isfinite(y):
+        try:
+            return math.pow(x, y)
+        except ValueError:  # negative base with a fractional exponent
+            return math.nan
+        except OverflowError:
+            return math.copysign(math.inf, x) if float(y).is_integer() and y % 2 else math.inf
+    return float(np.power(np.float64(x), np.float64(y)))
+
+
+_libm_pow_ufunc = np.frompyfunc(r_pow_scalar, 2, 1)
+
+
+def libm_pow(values: Any, exponent: Any) -> NDArray[np.float64]:
+    """Elementwise R ``^``: ``x * x`` for 2, else libm ``pow``. NumPy's
+    vectorised power is not libm's and can differ from it in the last bit."""
+    base = np.asarray(values, dtype=np.float64)
+    power = np.asarray(exponent, dtype=np.float64)
+    return np.asarray(_libm_pow_ufunc(base, power), dtype=np.float64)

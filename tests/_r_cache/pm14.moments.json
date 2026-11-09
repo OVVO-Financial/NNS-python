@@ -1,0 +1,19 @@
+{
+  "entries": {
+    "06d3604569b3ff892fff89a0e73a2832f6944564aaa91c17db5975351421b5d6": {
+      "kurtosis": 45.39392295952675,
+      "mean": 2.0236216246521983,
+      "skewness": 6.194889769455117,
+      "variance": 21.625328492258852
+    },
+    "188d826a5c066044beb1a6c0de8e1823ffeba086d4f8840d13ff003e9a84d6a8": {
+      "kurtosis": 42.344676222488026,
+      "mean": 2.0236216246521983,
+      "skewness": 6.070297159023693,
+      "variance": 21.33699077902873
+    }
+  },
+  "label": "pm14.moments",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

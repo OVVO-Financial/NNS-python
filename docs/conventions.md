@@ -69,7 +69,8 @@ check the same rules.
 ## PM Matrix Target Defaults
 
 R `PM.matrix` uses column means when `target` is `NULL` or any non-numeric value.
-NNS Python accepts `None` and `"mean"` for this behavior. NNS Python also broadcasts a
+NNS Python accepts `None` and `"mean"` for this behavior, with Rcpp's `colMeans`
+arithmetic (a row-by-row double sum divided by the row count). NNS Python also broadcasts a
 scalar numeric target across all variables; R requires callers to pass an
 explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
 does not match the number of variables raise `ValueError`.
@@ -82,6 +83,18 @@ values for a bimodal sample). Pass `multi=True` for R's default output; explicit
 `multi` values match R. The Python default is kept because the multi-mode peak
 finder also reports spurious secondary modes on unimodal data (in R as well),
 and the internal callers all ask for a single mode.
+
+## Partial-Moment Arithmetic
+
+The partial moments, co-moments (`co_lpm`, `co_upm`, `d_lpm`, `d_upm`, the
+`_nd` variants) and `pm_matrix` reproduce R's C++ to the last bit, with the
+native kernels and with the NumPy fallback: integer degrees by repeated
+multiplication, fractional degrees by libm `pow`, double sums accumulated
+observation by observation and scaled by `1 / n`. `pm_matrix` fills the upper
+triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
+crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
+`nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
+`mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
 
 ## Classical Moment Normalization
 

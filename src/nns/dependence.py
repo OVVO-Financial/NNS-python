@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
 from nns._native import native_fn as native_fn
+from nns._rnmath import libm_pow
 
 
 @overload
@@ -392,9 +393,8 @@ def _dpm_nd(
 
     if degree == 0.0:
         return float(np.mean(discordant))
-    else:
-        values = np.prod(np.abs(diff) ** degree, axis=1)
-        dpm = float(np.mean(np.where(discordant, values, 0.0)))
+    values = _r_row_products(_r_pm_terms(np.abs(diff), degree))
+    dpm = _rcpp_mean(np.where(discordant, values, 0.0))
 
     if not norm:
         return dpm
@@ -410,10 +410,10 @@ def _clpm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     if degree == 0.0:
         return float(np.mean(np.all(diff >= 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    # Clamp before the power: rows with a negative deviation are masked out anyway,
-    # and a fractional power of a negative number only produced RuntimeWarnings.
-    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
-    return float(np.mean(np.where(valid, powered, 0.0)))
+    # Clamp before the power: rows with a negative deviation are masked out anyway
+    # (R stops at the first one), and a fractional power of a negative number is NaN.
+    powered = _r_row_products(_r_pm_terms(np.maximum(diff, 0.0), degree))
+    return _rcpp_mean(np.where(valid, powered, 0.0))
 
 
 def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: float) -> float:
@@ -423,8 +423,35 @@ def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
         # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0.
         return float(np.mean(np.all(diff > 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
-    return float(np.mean(np.where(valid, powered, 0.0)))
+    powered = _r_row_products(_r_pm_terms(np.maximum(diff, 0.0), degree))
+    return _rcpp_mean(np.where(valid, powered, 0.0))
+
+
+def _r_pm_terms(deviations: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
+    """R's C++ ``isInteger(degree) ? repeatMultiplication(dev, degree) : pow(dev,
+    degree)``: integer degrees by repeated multiplication from 1.0, others by libm
+    ``pow`` (NumPy's vectorised power is not libm's)."""
+    if degree == float(int(degree)):
+        terms = np.ones_like(deviations)
+        for _ in range(int(degree)):
+            terms = terms * deviations
+        return terms
+    return libm_pow(deviations, degree)
+
+
+def _r_row_products(terms: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Each row's product, accumulated from 1.0 column by column as R's kernel does."""
+    product = np.ones(terms.shape[0], dtype=np.float64)
+    for column in range(terms.shape[1]):
+        product = product * terms[:, column]
+    return product
+
+
+def _rcpp_mean(values: NDArray[np.float64]) -> float:
+    """Rcpp's ``sum(vals) / n``: a plain sequential double sum."""
+    if values.size == 0:
+        return math.nan
+    return float(np.cumsum(values)[-1]) / values.size
 
 
 def co_lpm_nd(
