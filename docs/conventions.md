@@ -339,12 +339,18 @@ and one neighbour; `nns_reg` sets it when every predictor is categorical, as R's
 `NNS.reg` does.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R
-does not call `smooth.spline` there. Spline-eligible inputs use a private
-fixed-`spar` cubic smoothing-spline adapter matching the `stats::smooth.spline`
-subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R's
-`1e-6 * IQR(x)` tie grouping, `.nknots.smspl` knot thinning above 49 unique x,
-the Fortran `sgram` penalty (with its `.3330` constant), R's interior-band
-trace ratio for lambda, and a banded Cholesky solve.
+does not call `smooth.spline` there. Spline-eligible inputs fit
+`stats::smooth.spline(x, y, spar = (dependence + 0.5) / 2)` through a line-by-line
+port of R 4.5.0's smoothing spline (`nns._rsmspline`): R's `1e-6 * IQR(x)` tie
+grouping with long-double group sums, `.nknots.smspl` knot thinning, the Fortran
+`sgram` penalty (with its `.3330` constant), `stxwx`, `bsplvd`, the trace ratio
+and `lambda = ratio * 16^(6 spar - 2)`, LINPACK `dpbfa`/`dpbsl` with the reference
+BLAS, and `bvalue` with `predict`'s linear extrapolation. Fits and predictions
+match R to the last bit (so do `dy_dx` and the smoothed `nns_arma_optim` paths
+that use them), and where R's `smooth.spline` stops (fewer than four unique x
+after grouping, or a zero IQR) `nns_reg` raises the same error. As in R,
+`nns_reg` drops `class.levels` from a numeric multivariate fit, while
+`nns_m_reg` keeps it as `None`.
 With dimension reduction, factor predictors are encoded first (one dummy column
 per level with `factor_2_dummy=True`) and the synthetic `x.star` coefficients
 are computed on the encoded columns, as in R. For callers that want an explicit

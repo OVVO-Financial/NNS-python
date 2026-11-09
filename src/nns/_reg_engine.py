@@ -63,6 +63,7 @@ from nns._rnmath import dlnorm_log as _rnmath_dlnorm_log
 from nns._rnmath import dnorm as _rnmath_dnorm
 from nns._rnmath import dt as _rnmath_dt
 from nns._rnmath import libm_exp
+from nns._rsmspline import SmoothSplineFit, smooth_spline
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -685,132 +686,13 @@ def _derivative(rp: dict[str, NDArray[np.float64]]) -> dict[str, NDArray[np.floa
     }
 
 
-def _nknots_smspl(n: int) -> int:
-    """R's ``stats:::.nknots.smspl``: number of inner knots for ``n`` unique x."""
-    if n < 50:
-        return n
-    a1, a2, a3, a4 = (math.log2(v) for v in (50.0, 100.0, 140.0, 200.0))
-    if n < 200:
-        value = 2.0 ** (a1 + (a2 - a1) * (n - 50) / 150)
-    elif n < 800:
-        value = 2.0 ** (a2 + (a3 - a2) * (n - 200) / 600)
-    elif n < 3200:
-        value = 2.0 ** (a3 + (a4 - a3) * (n - 800) / 2400)
-    else:
-        value = 200.0 + (n - 3200) ** 0.2
-    return math.trunc(value)
-
-
-def _smooth_spline_predictor(rx: NDArray[np.float64], ry: NDArray[np.float64], spar: float) -> Any:
-    """Port of R's ``stats::smooth.spline(x, y, spar)`` with default arguments.
-
-    R ties the smoothing parameter to dependence via an explicit ``spar`` rather
-    than delegating to GCV. This reproduces R's penalized cubic B-spline fit:
-    group x values closer than ``tol = 1e-6 * IQR(x)``, scale x to [0, 1], place
-    clamped cubic knots at ``.nknots.smspl(nx)`` of the unique abscissas (all of
-    them when ``nx < 50``), form the weighted design cross-product and the
-    second-derivative penalty Sigma exactly as Fortran ``sgram`` does (linear
-    interpolation of B'' on each knot interval, with its ``.3330`` constant),
-    then solve ``(X'WX + lambda * Sigma) c = X'W y`` with
-    ``lambda = ratio * 256^(3*spar - 1)`` and ``ratio`` from R's partial
-    diagonal trace. Returns a callable evaluating the fit (with R's linear
-    extrapolation beyond the data range), or ``None`` when R would refuse to fit.
-    """
-    from scipy.interpolate import BSpline  # type: ignore[import-untyped]
-    from scipy.linalg import solveh_banded  # type: ignore[import-untyped]
-
-    x_all = np.asarray(rx, dtype=np.float64)
-    y_all = np.asarray(ry, dtype=np.float64)
-    # R smooth.spline: tol = 1e-6 * IQR(x) (type-7 quartiles).
-    q25, q75 = r_quantile(x_all, [0.25, 0.75], 7)
-    tol = 1e-6 * float(q75 - q25)
-    if not math.isfinite(tol) or tol <= 0.0:
-        return None
-    # R: xx <- round((x - mean(x)) / tol); one group per distinct rounded value,
-    # represented by its smallest x, with the group mean of y and weight = size.
-    rounded = np.rint((x_all - r_mean(x_all)) / tol)
-    order = np.argsort(x_all, kind="mergesort")
-    xs = x_all[order]
-    ys = y_all[order]
-    rs = rounded[order]
-    is_start = np.concatenate(([True], rs[:-1] < rs[1:]))
-    nx = int(np.count_nonzero(is_start))
-    if nx < 4:
-        return None
-    ux = xs[is_start]
-    group = np.cumsum(is_start) - 1
-    wbar = np.bincount(group).astype(np.float64)
-    ybar = np.bincount(group, weights=ys) / wbar
-
-    x0 = ux[0]
-    r_ux = ux[-1] - ux[0]
-    if r_ux <= 0.0:
-        return None
-    xbar = (ux - x0) / r_ux
-    nknots = _nknots_smspl(nx)
-    # R: xbar[seq.int(1, nx, length.out = nknots)] (fractional indices truncate).
-    inner = xbar[np.trunc(np.linspace(1.0, float(nx), nknots)).astype(np.intp) - 1]
-    knot = np.concatenate(([xbar[0]] * 3, inner, [xbar[-1]] * 3))
-    nk = nknots + 2
-    k = 3
-
-    design = BSpline.design_matrix(xbar, knot, k).toarray()
-    xtwx = design.T @ (wbar[:, None] * design)
-
-    # Fortran sgram: on each knot interval B'' is linear; with y1 = B''(left)
-    # and y2 = B''(right) - y1, Sigma += w * (y1 y1' + (y2 y1' + y1 y2')/2
-    # + .3330 y2 y2'), where .3330 (not 1/3) is R's constant.
-    d2 = np.asarray(BSpline(knot, np.eye(nk), k)(inner, nu=2), dtype=np.float64)
-    y1 = d2[:-1]
-    y2 = d2[1:] - y1
-    width = np.diff(inner)[:, None]
-    cross = (width * y2).T @ y1
-    sigma = (width * y1).T @ y1 + 0.5 * (cross + cross.T) + 0.333 * ((width * y2).T @ y2)
-
-    diag_h = np.diag(xtwx)
-    diag_s = np.diag(sigma)
-    denom = float(diag_s[2 : nk - 3].sum())
-    if denom <= 0.0:
-        return None
-    ratio = float(diag_h[2 : nk - 3].sum()) / denom
-    lam = ratio * 256.0 ** (3.0 * spar - 1.0)
-
-    # R (sslvrg) solves the 4-band system with a banded Cholesky (LINPACK dpbfa).
-    system = xtwx + lam * sigma
-    banded = np.zeros((k + 1, nk), dtype=np.float64)
-    for offset in range(k + 1):
-        banded[k - offset, offset:] = np.diagonal(system, offset)
-    try:
-        coef = solveh_banded(banded, design.T @ (wbar * ybar))
-    except np.linalg.LinAlgError:
-        return None
-    spline = BSpline(knot, coef, k, extrapolate=False)
-    edge_lo = float(spline(0.0))
-    slope_lo = float(spline(0.0, nu=1))
-    edge_hi = float(spline(1.0))
-    slope_hi = float(spline(1.0, nu=1))
-
-    def predict(xout: NDArray[np.float64]) -> NDArray[np.float64]:
-        scaled = (np.asarray(xout, dtype=np.float64) - x0) / r_ux
-        out = np.asarray(spline(np.clip(scaled, 0.0, 1.0)), dtype=np.float64)
-        lo = scaled < 0.0
-        hi = scaled > 1.0
-        if np.any(lo):
-            out[lo] = edge_lo + scaled[lo] * slope_lo
-        if np.any(hi):
-            out[hi] = edge_hi + (scaled[hi] - 1.0) * slope_hi
-        return out
-
-    return predict
-
-
 def _predict_univariate(
     xout: NDArray[np.float64],
     rp: dict[str, NDArray[np.float64]],
     smooth: bool,
     is_class: bool,
     class_values: NDArray[np.float64] | None,
-    smooth_fit: Any = None,
+    smooth_fit: SmoothSplineFit | None = None,
 ) -> NDArray[np.float64]:
     if xout.size == 0:
         return np.asarray([], dtype=np.float64)
@@ -818,10 +700,8 @@ def _predict_univariate(
     if rx.size == 1:
         pred = np.full(xout.size, ry[0], dtype=np.float64)
     elif smooth and smooth_fit is not None and not is_class:
-        pred = np.asarray(smooth_fit(xout), dtype=np.float64)
-    elif smooth and rx.size >= 4 and not is_class:
-        # Degenerate fit (e.g. < 4 unique points): fall back to interpolation.
-        pred = r_approx(rx, ry, xout, ry[0], ry[-1])
+        # R: predict(smooth.fit, xout)$y, with R's linear extrapolation.
+        pred = smooth_fit.predict(xout)
     else:
         # R: approx(rp$x, rp$y, xout, method = "linear", rule = 2, ties = "ordered").
         pred = r_approx(rx, ry, xout, ry[0], ry[-1])
@@ -1824,7 +1704,7 @@ def nns_reg_engine(
 
     # Full multivariate regression.
     if ex.shape[1] > 1 and dim_red_method is None:
-        return _m_reg(
+        ans = _m_reg(
             ex,
             y_numeric,
             order=order,
@@ -1846,6 +1726,12 @@ def nns_reg_engine(
                 else categorical
             ),
         )
+        # NNS.reg then sets ans$class.levels <- task$class.levels, which deletes
+        # the element when it is NULL (a numeric response); NNS.M.reg itself
+        # keeps the NULL entry.
+        if not multivariate_only and task["class_levels"] is None:
+            ans.pop("class.levels", None)
+        return ans
 
     synthetic_equation = None
     x_star = None
@@ -1879,11 +1765,11 @@ def nns_reg_engine(
 
     # R ties the smoothing spline's spar to dependence and fits it once, reusing
     # the fit for both the training and point predictions.
-    smooth_fit = None
+    smooth_fit: SmoothSplineFit | None = None
     if smooth and rp["x"].size >= 4 and not task["is_class"]:
         dependence = _dependence(ux, y_numeric)
         spar = (dependence + 0.5) / 2.0
-        smooth_fit = _smooth_spline_predictor(rp["x"], rp["y"], spar)
+        smooth_fit = smooth_spline(rp["x"], rp["y"], spar)
 
     fitted_pred = _predict_univariate(
         ux, rp, smooth, task["is_class"], task["class_values"], smooth_fit

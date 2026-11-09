@@ -1,0 +1,30 @@
+{
+  "entries": {
+    "c327ffc052ad601602c14cc0a4bf24f3d869d000f1b44e4acf92270e52a29708": {
+      "mreg": [
+        "R2",
+        "rhs.partitions",
+        "RPM",
+        "Point.est",
+        "pred.int",
+        "Fitted.xy",
+        "n.best",
+        "dist",
+        "class.levels"
+      ],
+      "reg": [
+        "R2",
+        "rhs.partitions",
+        "RPM",
+        "Point.est",
+        "pred.int",
+        "Fitted.xy",
+        "n.best",
+        "dist"
+      ]
+    }
+  },
+  "label": "smspl14.mreg_names",
+  "nns_version": "14.0",
+  "schema_version": 2
+}
