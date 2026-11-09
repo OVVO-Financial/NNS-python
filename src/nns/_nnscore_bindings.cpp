@@ -18,6 +18,7 @@
 
 #include "nns/nns.hpp"
 #include "_r14_dependence.hpp"
+#include "_r14_seas.hpp"
 
 namespace nb = nanobind;
 
@@ -709,6 +710,20 @@ NB_MODULE(_nnscore, m) {
         nb::arg("p"), nb::arg("yhat"), nb::arg("xtest"), nb::arg("m"), nb::arg("kmax"),
         nb::arg("dist_code"), nb::arg("mins"), nb::arg("maxs"), nb::arg("is_class"));
   m.def("nns_dep_pair", &nns_dep_pair, nb::arg("x"), nb::arg("y"), nb::arg("asym"));
+  m.def(
+      "seas_scores_r14",
+      [](const Vector& x, const IntVector& lags, bool use_cv) {
+        const std::size_t n = x.shape(0);
+        if (n == 0) throw std::invalid_argument("x must be non-empty.");
+        if (n > static_cast<std::size_t>(INT_MAX)) throw std::invalid_argument("x is too long.");
+        for (std::size_t i = 0; i < lags.shape(0); ++i) {
+          if (lags.data()[i] < 1) throw std::invalid_argument("lags must be >= 1.");
+        }
+        nb::gil_scoped_release release;
+        return nns_r14::seas_scores(x.data(), static_cast<int>(n), lags.data(), lags.shape(0),
+                                    use_cv, call_threads());
+      },
+      nb::arg("x"), nb::arg("lags"), nb::arg("use_cv"));
   // Versioned aliases prevent new Python code from loading the old R13
   // statistic when an installation accidentally retains a stale extension.
   m.attr("gravity_r14") = m.attr("gravity");

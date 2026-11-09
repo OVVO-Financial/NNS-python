@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._native import native_fn
 from nns._rmean import r_cumsum, r_mean, r_sum
 from nns._rrng import RRNG
 
@@ -45,37 +46,69 @@ def _as_float_series(values: F, dispersion: str, detrend: bool) -> F:
     return x
 
 
-def _gini_component(values: F) -> tuple[float, float]:
-    """Unbiased Gini difference of observations, including tied observations,
-    and the component's sum, both accumulated over the values in ascending order
-    as R's C++ ``seas_score`` visits them."""
-    n = int(values.size)
-    sorted_values = np.sort(values, kind="stable")
-    total = 0.0
-    for value in sorted_values:
-        total += float(value)
-    if n < 2 or sorted_values[0] == sorted_values[-1]:
-        return 0.0, total
-    first = float(sorted_values[0])
-    acc = 0.0
-    for i, value in enumerate(sorted_values):
-        acc += (2.0 * i + 1.0 - n) * (float(value) - first)
-    return max(0.0, 2.0 * acc / (n * (n - 1.0))), total
+def _lag_scores(x: F, lags: Sequence[int] | IntArray, use_cv: bool) -> F:
+    """R's ``seas_score`` for each lag (``NNS_seas_cpp``): the length-weighted
+    mean over the lag's component series of the unbiased Gini mean difference,
+    divided by the component mean when ``use_cv``.
+
+    The native kernel is R's C++ loop itself, scored across threads. The NumPy
+    fallback performs the same walk: one stable sort of the series, then per lag
+    every component's terms in ascending order, summed sequentially from 0.0 as
+    R's running ``acc`` and ``sum`` are.
+    """
+    lag_array = np.asarray(lags, dtype=np.int64)
+    if lag_array.size == 0:
+        return np.empty(0, dtype=np.float64)
+    native = native_fn("seas_scores_r14")
+    if native is not None:
+        scores = native(
+            np.ascontiguousarray(x, dtype=np.float64),
+            np.ascontiguousarray(lag_array, dtype=np.int32),
+            bool(use_cv),
+        )
+        return np.asarray(scores, dtype=np.float64)
+    positions = np.argsort(x, kind="stable")
+    ordered = np.asarray(x, dtype=np.float64)[positions]
+    return np.array(
+        [_lag_score_sorted(ordered, positions, int(lag), use_cv) for lag in lag_array],
+        dtype=np.float64,
+    )
 
 
-def _lag_score(x: F, lag: int, use_cv: bool) -> float:
-    """Length-weighted component Gini dispersion / mean (when one-sided)."""
-    n = x.size
-    acc = 0.0
-    for j in range(lag):
-        values = x[j::lag]
-        g, total = _gini_component(values)
-        if use_cv and g != 0.0:
-            score = g / abs(total / float(values.size))
+def _lag_score_sorted(ordered: F, positions: IntArray, lag: int, use_cv: bool) -> float:
+    """One lag of R's ``seas_score`` from the sorted series and its positions."""
+    n = int(ordered.size)
+    component = positions % lag
+    lengths = (n - 1 - np.arange(lag)) // lag + 1
+    # Group by component, keeping the ascending (stable) order within each one.
+    key = component.astype(np.uint16) if lag <= np.iinfo(np.uint16).max else component
+    grouped = np.argsort(key, kind="stable")
+    owner = component[grouped]
+    values = ordered[grouped]
+    offsets = np.concatenate(([0], np.cumsum(lengths)[:-1]))
+    rank = np.arange(n) - offsets[owner]
+    first = values[offsets]
+    last = values[offsets + lengths - 1]
+    terms = (2.0 * rank + 1.0 - lengths[owner].astype(np.float64)) * (values - first[owner])
+    # Column 0 is R's 0.0 starting value; shorter rows end in zeros, which
+    # leave a running sum that started from +0.0 unchanged.
+    width = int(lengths[0]) + 1
+    grid = np.zeros((lag, width), dtype=np.float64)
+    grid[owner, rank + 1] = terms
+    acc = np.cumsum(grid, axis=1)[:, -1]
+    grid[:] = 0.0
+    grid[owner, rank + 1] = values
+    total = np.cumsum(grid, axis=1)[:, -1]
+    k = lengths.astype(np.float64)
+    varies = (lengths >= 2) & (first != last)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g = np.where(varies, np.maximum(0.0, 2.0 * acc / (k * (k - 1.0))), 0.0)
+        if use_cv:
+            score = np.where(g == 0.0, 0.0, g / np.abs(total / k))
         else:
             score = g
-        acc += values.size * score
-    return acc / n
+    weighted = np.cumsum(np.concatenate(([0.0], k * score)))[-1]
+    return float(weighted / n)
 
 
 def _delete_one_scores(x: F, lag: int, use_cv: bool) -> F | None:
@@ -250,8 +283,9 @@ def _seas_scan(
     max_lag = min(n // 2, n // 5)
     if max_period is not None:
         max_lag = max(1, min(max_lag, int(max_period)))
-    base = _lag_score(x, 1, use_cv)
-    scored = {lag: _lag_score(x, lag, use_cv) for lag in range(1, max_lag + 1)}
+    scan = _lag_scores(x, np.arange(1, max_lag + 1), use_cv)
+    base = float(scan[0])
+    scored = {lag: float(score) for lag, score in zip(range(1, max_lag + 1), scan, strict=True)}
     current = {lag: score for lag, score in scored.items() if score < base}
     if not current:
         current = {1: base}
@@ -276,12 +310,13 @@ def _seas_scan(
             added.add(1)
         # R std::set iterates in ascending integer order. In a stable sort
         # over equal-VarCV injected rows, insertion order is user-visible.
-        for lag in sorted(added):
-            if lag not in current and lag <= n // 2:
-                # The scan already rejected in-range lags not in current;
-                # R's added_cv gives them the baseline, not their worse score.
-                score = min(_lag_score(x, lag, use_cv), base) if lag > max_lag else base
-                current[lag] = score
+        pending = [lag for lag in sorted(added) if lag not in current and lag <= n // 2]
+        beyond = [lag for lag in pending if lag > max_lag]
+        beyond_scores = dict(zip(beyond, _lag_scores(x, beyond, use_cv), strict=True))
+        for lag in pending:
+            # The scan already rejected in-range lags not in current;
+            # R's added_cv gives them the baseline, not their worse score.
+            current[lag] = min(float(beyond_scores[lag]), base) if lag > max_lag else base
         if not current:
             current = {1: base}
     current = {lag: score for lag, score in current.items() if lag < n // 2}

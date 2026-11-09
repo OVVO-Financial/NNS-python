@@ -4,6 +4,7 @@ import math
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
 from nns import nns_seas
 from nns.seasonality import _SD_TOL, _component_score
@@ -93,3 +94,63 @@ def test_constant_series_and_components_compare_raw_values() -> None:
     # 0.1 repeated does not centre to exactly 0, so the sd was rounding noise.
     assert nns_seas(np.full(20, 0.1))["best.period"] == 1
     assert nns_seas(np.tile([0.1, 1.0], 10))["best.period"] == 2
+
+
+def _r_seas_score(lag: int, ordered: np.ndarray, positions: np.ndarray, use_cv: bool) -> float:
+    """R's seas_score (src/NNS_seas.cpp) transcribed line by line."""
+    n = ordered.size
+    rank = [0] * lag
+    length = [(n - 1 - j) // lag + 1 for j in range(lag)]
+    first = [0.0] * lag
+    last = [0.0] * lag
+    total = [0.0] * lag
+    acc = [0.0] * lag
+    for t in range(n):
+        j = int(positions[t]) % lag
+        v = float(ordered[t])
+        if rank[j] == 0:
+            first[j] = v
+        last[j] = v
+        acc[j] += (2.0 * rank[j] + 1.0 - length[j]) * (v - first[j])
+        total[j] += v
+        rank[j] += 1
+    wsum = 0.0
+    for j in range(lag):
+        k = float(length[j])
+        varies = length[j] >= 2 and first[j] != last[j]
+        g = max(0.0, 2.0 * acc[j] / (k * (k - 1.0))) if varies else 0.0
+        wsum += k * ((0.0 if g == 0.0 else g / abs(total[j] / k)) if use_cv else g)
+    return wsum / n
+
+
+@pytest.mark.parametrize("kind", ["continuous", "ties", "positive", "mixed"])
+@pytest.mark.parametrize("n", [5, 37, 400])
+def test_seasonality_lag_scores_match_r_loop_bitwise(kind: str, n: int) -> None:
+    # The native scan (R's C++ itself) and the vectorised NumPy fallback both
+    # reproduce R's per-lag walk to the last bit, at any thread count.
+    import nns
+    from nns._native import native_fn
+    from nns._seas_r14 import _lag_score_sorted, _lag_scores
+
+    rng = np.random.default_rng(n)
+    x = rng.normal(size=n)
+    if kind == "ties":
+        x = np.round(x * 2.0)
+    elif kind == "positive":
+        x = np.abs(x) + 0.5
+    elif kind == "mixed":
+        x = np.round(rng.uniform(-3.0, 3.0, n), 1)
+    use_cv = bool(x.min() > 0.0 or x.max() < 0.0)
+    lags = np.arange(1, max(1, n // 5) + 1)
+    positions = np.argsort(x, kind="stable")
+    ordered = x[positions]
+    expected = np.array([_r_seas_score(int(m), ordered, positions, use_cv) for m in lags])
+    fallback = np.array([_lag_score_sorted(ordered, positions, int(m), use_cv) for m in lags])
+    np.testing.assert_array_equal(fallback, expected)
+    if native_fn("seas_scores_r14") is not None:
+        for threads in (1, 3):
+            nns.set_num_threads(threads)
+            try:
+                np.testing.assert_array_equal(_lag_scores(x, lags, use_cv), expected)
+            finally:
+                nns.set_num_threads(None)

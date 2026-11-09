@@ -41,6 +41,14 @@
       "r_source_sha256": "e0fac52e99f33cd29fbb07b51711ded56c016d9e1a4b4a8eac8a9b4b9ed98571",
       "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
       "adaptation": "The vendored NNS-core multivariate prediction kernel (src/mreg_predict.cpp, sha256 c98d3fbb93c3165109870cb3d2cc1a55c8cb0fa35770b3ff0204441fd20e1e04) with its Student-t and normal ensemble weights evaluated by R's own nmath dt and dnorm4 (src/nns/_rnmath.hpp) instead of the vendor's lgamma-based closed form, so the weights and predictions match R's NNS_mreg_predict_v2_cpp bit for bit. CMake replaces only the vendor translation unit."
+    },
+    {
+      "path": "src/nns/_r14_seas.cpp",
+      "sha256": "2b956af7f064a575d1acd1283ec5a6f4ced8e91b227e294634ce3ab7fd83420e",
+      "r_source_path": "src/NNS_seas.cpp",
+      "r_source_sha256": "cf950b8e1b92bc942c132135dfb6a4909ca9f77c60da186e23eac0d30b2ed23e",
+      "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
+      "adaptation": "R14 NNS.seas lag scan: SeasComponent and seas_score copied verbatim, scored across lags with nns::parallel_for in place of RcppParallel (each lag writes its own slot, so results never depend on the thread count). Built into the NNS-core library target for its Release optimisation; bound as seas_scores_r14."
     }
   ],
   "r_cache_summary": {
