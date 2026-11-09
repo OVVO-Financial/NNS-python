@@ -7,6 +7,15 @@ from _tolerances import EXACT
 
 from nns import nns_copula
 
+
+def _disable_native(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run NNS.copula on the NumPy fallbacks of the kernels it calls."""
+    import importlib
+
+    for module in ("nns.core", "nns.pm_matrix"):
+        monkeypatch.setattr(importlib.import_module(module), "native_fn", lambda name: None)
+
+
 SIZES = [50, 200, 1000]
 RELATIONSHIPS = ["correlated_normal", "independent", "anti_monotonic"]
 
@@ -105,9 +114,7 @@ def test_nns_copula_perfect_dependence_shortcut_is_dimension_generic(
     m = _integer_matrices()[case]
     expected = _scalar(nns("NNS.copula", m.tolist(), None, continuous, False, False))
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     actual = nns_copula(m, continuous=continuous)
     np.testing.assert_allclose(actual, expected, atol=EXACT)
     if case < 3:
@@ -129,9 +136,7 @@ def test_nns_copula_degree0_ties_partition_the_sample(
         _scalar(nns("NNS.copula", c.tolist(), None, True, False, False)) for c in cases
     ]
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     for c, want in zip(cases, expected, strict=True):
         np.testing.assert_allclose(nns_copula(c), want, atol=EXACT)
 
@@ -155,9 +160,7 @@ def test_nns_copula_mixed_sign_perfect_dependence_is_one(
         _scalar(nns("NNS.copula", c.tolist(), None, continuous, False, False)) for c in cases
     ]
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     for c, want in zip(cases, expected, strict=True):
         assert want == 1.0
         assert nns_copula(c, continuous=continuous) == 1.0
@@ -184,9 +187,7 @@ def test_nns_copula_margin_anchors_match_r(
         _scalar(nns("NNS.copula", m.tolist(), t, continuous, False, False)) for m, t in cases
     ]
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     for (m, t), want in zip(cases, expected, strict=True):
         target = None if t is None else np.asarray(t)
         actual = nns_copula(m, continuous=continuous, target=target)

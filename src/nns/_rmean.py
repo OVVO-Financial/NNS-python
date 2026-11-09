@@ -36,6 +36,16 @@ def r_sum(values: NDArray[np.float64]) -> float:
     return float(np.cumsum(v.astype(np.longdouble))[-1] + 0.0)
 
 
+def r_prod(values: NDArray[np.float64]) -> float:
+    """R's ``prod()`` of a double vector (summary.c ``rprod``): one sequential
+    long-double product from 1.0, rounded to double (overflow to +-Inf)."""
+    v = np.asarray(values, dtype=np.float64).ravel()
+    product = np.longdouble(1.0)
+    for value in v:
+        product = product * np.longdouble(value)
+    return float(product)
+
+
 def r_mean_no_na(values: NDArray[np.float64]) -> float:
     """NNS.part's C++ ``mean_no_na``: long-double sum of the non-NaN values
     divided by their count (single pass)."""
@@ -153,6 +163,16 @@ def r_row_means(x: NDArray[np.float64]) -> NDArray[np.float64]:
     for j in range(m.shape[1]):
         sums = sums + m[:, j].astype(np.longdouble)
     return np.asarray(sums / m.shape[1], dtype=np.float64)
+
+
+def r_row_sums(x: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R ``rowSums(x)`` (array.c ``do_colsum``): each row accumulated column by
+    column in long double, rounded to double."""
+    m = np.asarray(x, dtype=np.float64)
+    sums = np.zeros(m.shape[0], dtype=np.longdouble)
+    for j in range(m.shape[1]):
+        sums = sums + m[:, j].astype(np.longdouble)
+    return np.asarray(sums, dtype=np.float64)
 
 
 def r_seq_by(start: float, stop: float, by: float) -> NDArray[np.float64]:

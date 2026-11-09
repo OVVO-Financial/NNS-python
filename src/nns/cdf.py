@@ -9,8 +9,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._native import native_fn
+from nns._rmean import r_row_sums
+from nns._rnmath import libm_log
 from nns.core import lpm_ratio
-from nns.dependence import co_lpm_nd
+from nns.dependence import _r_pm_terms, co_lpm_nd
 from nns.regression import RegResult, nns_reg
 
 if TYPE_CHECKING:
@@ -107,7 +109,7 @@ def _univariate_cdf(
             1e6,
         )
     elif type_value == "cumulative hazard":
-        y = np.maximum(-np.log(np.maximum(1.0 - pval, 1e-10)), 0.0)
+        y = np.maximum(-libm_log(np.maximum(1.0 - pval, 1e-10)), 0.0)
 
     if target_value is None:
         pv = np.array([], dtype=np.float64)
@@ -122,7 +124,7 @@ def _univariate_cdf(
             point = np.asarray(fit["Point.est"], dtype=np.float64).reshape(-1)
             pv = np.minimum(np.maximum(point / np.maximum(1.0 - pv, 1e-10), 0.0), 1e6)
         elif type_value == "cumulative hazard":
-            pv = np.maximum(-np.log(np.maximum(1.0 - pv, 1e-10)), 0.0)
+            pv = np.maximum(-libm_log(np.maximum(1.0 - pv, 1e-10)), 0.0)
 
     return {"Function": {"x": x, column_name: y}, "target.value": np.asarray(pv, dtype=np.float64)}
 
@@ -168,7 +170,7 @@ def _multivariate_cdf(
         fitted = cast(dict[str, NDArray[np.float64]], fit["Fitted.xy"])
         cdf = np.maximum(fitted["y.hat"] / np.maximum(survival, 1e-10), 0.0)
     elif type_value == "cumulative hazard":
-        cdf = np.maximum(-np.log(np.maximum(survival, 1e-10)), 0.0)
+        cdf = np.maximum(-libm_log(np.maximum(survival, 1e-10)), 0.0)
 
     # The target value is the same function as the rows, evaluated at target.
     pv = np.array([], dtype=np.float64)
@@ -296,26 +298,42 @@ def _co_lpm_nd_batch(
         return np.asarray(
             native(flat, n, d, flat_points, m, float(degree), True), dtype=np.float64
         )
+    # NumPy fallback reproducing R's CoLPMnDBatchWorker: per-row products of
+    # R's lower/upper components (repeated multiplication or libm pow), double
+    # sums accumulated row by row, scaled by 1 / n, then normalised.
     out = np.empty(m, dtype=np.float64)
-    # Pure-NumPy fallback, chunked so memory stays O(chunk * n * d).
     chunk = max(1, 2_000_000 // max(1, n * d))
+    inv_n = 1.0 / float(n)
     for start in range(0, m, chunk):
         rows = points[start : start + chunk]
         diff = values[np.newaxis, :, :] - rows[:, np.newaxis, :]
-        lower_mask = np.all(diff <= 0.0, axis=2)
         if degree == 0.0:
-            out[start : start + chunk] = np.mean(lower_mask, axis=1)
+            below = np.all(diff <= 0.0, axis=2)
+            out[start : start + chunk] = np.count_nonzero(below, axis=1) / float(n)
             continue
-        upper_mask = np.all(diff >= 0.0, axis=2)
-        abs_pow = np.prod(np.abs(diff) ** degree, axis=2)
-        clpm = np.mean(np.where(lower_mask, abs_pow, 0.0), axis=1)
-        cupm = np.mean(np.where(upper_mask, abs_pow, 0.0), axis=1)
-        dpm = np.mean(np.where(~(lower_mask | upper_mask), abs_pow, 0.0), axis=1)
+        lower_terms = _r_pm_terms(np.maximum(-diff, 0.0), degree)
+        upper_terms = _r_pm_terms(np.maximum(diff, 0.0), degree)
+        lower_prod = _r_axis2_products(np.where(-diff < 0.0, 0.0, lower_terms))
+        upper_prod = _r_axis2_products(np.where(diff < 0.0, 0.0, upper_terms))
+        dpm_prod = _r_axis2_products(_r_pm_terms(np.abs(diff), degree))
+        strict = np.all(diff < 0.0, axis=2) | np.all(diff > 0.0, axis=2)
+        clpm = np.cumsum(lower_prod, axis=1)[:, -1] * inv_n
+        cupm = np.cumsum(upper_prod, axis=1)[:, -1] * inv_n
+        dpm = np.cumsum(np.where(strict, 0.0, dpm_prod), axis=1)[:, -1] * inv_n
         total = clpm + cupm + dpm
-        out[start : start + chunk] = np.divide(
-            clpm, total, out=np.zeros_like(clpm), where=total > 0.0
+        positive = total > 0.0
+        out[start : start + chunk] = np.where(
+            positive, clpm / np.where(positive, total, 1.0), 0.0
         )
     return out
+
+
+def _r_axis2_products(terms: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Products over the last axis, multiplied in order from 1.0 as R's loop does."""
+    product = np.ones(terms.shape[:2], dtype=np.float64)
+    for column in range(terms.shape[2]):
+        product = product * terms[:, :, column]
+    return product
 
 
 def _joint_survival(
@@ -344,7 +362,8 @@ def _joint_survival(
     marginals = np.column_stack(
         [_r_lpm_ratio(degree, points[:, col], values[:, col]) for col in range(d)]
     )
-    survival = 1.0 - np.sum(marginals, axis=1)
+    # R: 1 - rowSums(marginals), a long-double row sum.
+    survival = 1.0 - r_row_sums(marginals)
     for k in range(2, d):
         sign = -1.0 if k % 2 else 1.0
         for subset in itertools.combinations(range(d), k):

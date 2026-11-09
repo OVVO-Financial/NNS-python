@@ -123,6 +123,14 @@ def _moment(
         native_result = native(degree, native_target, np.ascontiguousarray(values))
         return _result_for_target(np.asarray(native_result, dtype=np.float64).reshape(-1), target)
 
+    if targets.size > _DIRECT_PATH_MAX_TARGETS:
+        # R's LPM_CPv/UPM_CPv switch to the sorted-anchor prefix backend beyond
+        # 32 targets for (near-)integer degrees up to 32.
+        degree_int = _prefix_degree(degree)
+        if degree_int is not None:
+            prefix = _prefix_moments(values, targets, degree_int, lower)
+            return _result_for_target(prefix, target)
+
     moments = np.empty(targets.size, dtype=np.float64)
     for start in range(0, targets.size, _TARGET_BLOCK):
         grid = targets[start : start + _TARGET_BLOCK, np.newaxis]
@@ -158,6 +166,91 @@ def _c_components(
 
 
 _libm_pow = np.frompyfunc(math.pow, 2, 1)
+
+# R's LPM_CPv/UPM_CPv scan each target directly up to this many targets.
+_DIRECT_PATH_MAX_TARGETS = 32
+_PREFIX_MAX_DEGREE = 32
+
+
+def _prefix_degree(degree: float) -> int | None:
+    """R's ``prefix_supported_degree``: a degree within 1e-12 of an integer <= 32."""
+    if not math.isfinite(degree) or degree < 0.0:
+        return None
+    rounded = math.floor(degree + 0.5)  # std::round on a non-negative value
+    if abs(degree - rounded) > 1e-12 or rounded > _PREFIX_MAX_DEGREE:
+        return None
+    return int(rounded)
+
+
+def _prefix_binomials(degree: int) -> list[list[float]]:
+    width = degree + 1
+    binom = [[0.0] * width for _ in range(width)]
+    for j in range(width):
+        binom[j][0] = 1.0
+        for k in range(1, j + 1):
+            binom[j][k] = binom[j - 1][k - 1] + (binom[j - 1][k] if k < j else 0.0)
+    return binom
+
+
+def _prefix_table(
+    ordered: list[float], degree: int, binom: list[list[float]], lower: bool
+) -> NDArray[np.float64]:
+    """R's ``PrefixPartialMomentBackend`` lower or upper table, ``(n + 1) x (degree + 1)``.
+
+    Row ``k`` holds the power sums anchored at the adjacent order statistic,
+    built with R's recurrence ``next_j = [j == 0] + sum_l C(j, l) delta^(j - l)
+    prev_l`` in R's operation order (zero terms skipped, as R does).
+    """
+    n = len(ordered)
+    width = degree + 1
+    table = [[0.0] * width for _ in range(n + 1)]
+    steps = range(1, n) if lower else range(n - 1, 0, -1)
+    start = 1 if lower else n - 1
+    table[start][0] = 1.0
+    for k in steps:
+        delta = ordered[k] - ordered[k - 1]
+        powers = [1.0] * width
+        for p in range(1, width):
+            powers[p] = powers[p - 1] * delta
+        prev = table[k]
+        nxt = table[k + 1] if lower else table[k - 1]
+        for j in range(width):
+            acc = 1.0 if j == 0 else 0.0
+            row = binom[j]
+            for m in range(j + 1):
+                if prev[m] != 0.0:
+                    acc += row[m] * powers[j - m] * prev[m]
+            nxt[j] = acc
+    return np.asarray(table, dtype=np.float64)
+
+
+def _prefix_moments(
+    values: NDArray[np.float64], targets: NDArray[np.float64], degree: int, lower: bool
+) -> NDArray[np.float64]:
+    """R's prefix-backend ``lpm(t)`` / ``upm(t)`` for every target."""
+    ordered = np.sort(values)
+    n = ordered.size
+    count = np.searchsorted(ordered, targets, side="right")
+    if degree == 0:
+        hits = count if lower else n - count
+        return np.asarray(hits / float(n), dtype=np.float64)
+    binom = _prefix_binomials(degree)
+    table = _prefix_table(ordered.tolist(), degree, binom, lower)
+    if lower:
+        empty = count == 0
+        gap = targets - ordered[np.maximum(count - 1, 0)]
+    else:
+        empty = count == n
+        gap = ordered[np.minimum(count, n - 1)] - targets
+    sums = table[count]
+    out = np.zeros(targets.size, dtype=np.float64)
+    gap_power = np.ones(targets.size, dtype=np.float64)
+    with np.errstate(over="ignore", invalid="ignore"):
+        for j in range(degree, -1, -1):
+            column = sums[:, j]
+            out = np.where(column != 0.0, out + binom[degree][j] * gap_power * column, out)
+            gap_power = gap_power * gap
+    return np.asarray(np.where(empty, 0.0, out / float(n)), dtype=np.float64)
 
 
 def _ratio(

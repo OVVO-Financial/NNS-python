@@ -612,6 +612,27 @@ def libm_exp(values: Any) -> NDArray[np.float64]:
     return np.asarray(_libm_exp_ufunc(np.asarray(values, dtype=np.float64)), dtype=np.float64)
 
 
+def _c_log(x: float) -> float:
+    """C ``log`` (R's ``R_log``): ``-inf`` at 0 and NaN below, where ``math.log`` raises."""
+    if x > 0.0:
+        return math.log(x)
+    if x == 0.0:
+        return -math.inf
+    return math.nan
+
+
+_libm_log_ufunc = np.frompyfunc(_c_log, 1, 1)
+
+
+def libm_log(values: Any) -> NDArray[np.float64]:
+    """Elementwise libm ``log``, as R evaluates ``log()`` on a vector.
+
+    NumPy's vectorised ``log`` is not libm's on SIMD builds and can differ from
+    it in the last bit.
+    """
+    return np.asarray(_libm_log_ufunc(np.asarray(values, dtype=np.float64)), dtype=np.float64)
+
+
 def r_pow_scalar(x: float, y: float) -> float:
     """R's ``x ^ y`` (arithmetic.c ``R_POW``/``R_pow``) for doubles: ``x * x``
     for 2, 1 for a base of 1 or an exponent of 0, R's zero-base rules, else

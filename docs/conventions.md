@@ -14,8 +14,9 @@ cached parity tests that way too.
 
 ## Threads
 
-The native kernels (vectorised partial moments, the PM matrix, the n-dimensional
-co-moments and the copula) can use several threads. Inputs below a fixed amount of
+The native kernels (vectorised partial moments, the PM matrix and the
+n-dimensional co-moments, which the copula and the CDF build on) can use several
+threads. Inputs below a fixed amount of
 work always run serially, and results never depend on the thread count.
 `nns.set_num_threads(n)` sets the default; `n=None` restores the automatic choice,
 which is the `NNS_NUM_THREADS` environment variable when it is a positive integer
@@ -95,6 +96,11 @@ triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
 crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
 `nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
 `mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
+
+Beyond 32 targets R's `LPM`/`UPM` (and so `LPM.ratio`, `UPM.ratio` and
+`NNS.CDF`) switch to a sorted-anchor prefix backend for degrees within `1e-12`
+of an integer up to 32; the NumPy fallback reproduces its recurrence and
+evaluation order, so the many-target results are R's bit for bit too.
 
 ## Classical Moment Normalization
 
@@ -197,7 +203,10 @@ names R returns. Plotting is ignored. As in the patched R (see [parity](parity.m
 values are dropped first (complete rows for a matrix), so the CDF reaches 1, and
 infinite values raise `ValueError`. For `d >= 3` columns the survival, hazard and
 cumulative hazard use the joint survival `P(X_1 > t_1, ..., X_d > t_d)` by
-inclusion-exclusion over all column subsets.
+inclusion-exclusion over all column subsets. The values match R to the last
+bit: `-log` is libm's, the survival's marginal sum is R's long-double
+`rowSums`, and the joint CDF follows R's batch kernel (row-by-row sums scaled
+by `1 / n`).
 
 ## Dependence
 
@@ -230,7 +239,11 @@ does; `target` gives the per-column targets of the matrix form. When targets are
 omitted NNS Python uses the column means computed like R's `colMeans` (long-double
 sequential sum), matching R's `target = NULL` to the last bit. The `target_x` and
 `target_y` arguments map to R's two-element target vector. Empty or non-finite
-input raises `ValueError` (R stops on missing values).
+input raises `ValueError` (R stops on missing values). The value is R's to the
+last bit: the upper triangles are summed with R's long-double `sum()` in
+column-major order, the independence anchors use R's long-double `prod()`, and
+the result is `mean(c(...))^(1/2)`, which R evaluates with `pow` rather than
+`sqrt`.
 
 ## Causation
 
