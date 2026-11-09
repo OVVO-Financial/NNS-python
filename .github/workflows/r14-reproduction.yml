@@ -1,0 +1,72 @@
+name: R14 parity reproduction bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [automation/r14-stack-cache-20261106]
+    paths: [.github/workflows/r14-reproduction.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Archive tracked source and pinned R package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reproduction/wheels
+          git archive --format=tar.gz --output=reproduction/python-source.tar.gz HEAD
+          git rev-parse HEAD > reproduction/python-commit.txt
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/OVVO-Financial/NNS/7b07a837c130ba7220dbe16c584221508757d5ae/NNS_14.0.tar.gz \
+            --output reproduction/NNS_14.0.tar.gz
+          sha256sum reproduction/*.tar.gz > reproduction/SHA256SUMS
+          python -m pip download --only-binary=:all: --dest reproduction/wheels \
+            hypothesis pytest-benchmark pytest-xdist nanobind scikit-build-core ruff mypy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r14-reproduction-source
+          path: reproduction/
+          retention-days: 7
+          if-no-files-found: error
+
+  oracle-runtime:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Build exact R source oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl r-base-core r-base-dev r-cran-rcpp \
+            r-cran-rcppparallel r-cran-jsonlite r-cran-mass r-cran-mlbench
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/OVVO-Financial/NNS/7b07a837c130ba7220dbe16c584221508757d5ae/NNS_14.0.tar.gz \
+            --output /tmp/NNS_14.0.tar.gz
+          echo '5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b  /tmp/NNS_14.0.tar.gz' | sha256sum -c -
+          MAKEFLAGS=-j2 R CMD INSTALL /tmp/NNS_14.0.tar.gz
+          mkdir -p oracle-runtime/dependent-libraries
+          Rscript -e 'library(NNS); stopifnot(packageVersion("NNS") == "14.0"); sessionInfo()' > oracle-runtime/session-info.txt
+          find /usr/lib/R /usr/local/lib/R -name '*.so' -print0 | \
+            xargs -0 -r ldd 2>/dev/null | awk '/=> \/.* \(/{print $3}' | sort -u > oracle-runtime/library-paths.txt
+          while IFS= read -r lib; do
+            cp -L "${lib}" oracle-runtime/dependent-libraries/
+          done < oracle-runtime/library-paths.txt
+          tar -h -C / -czf oracle-runtime/r14-runtime.tar.gz \
+            usr/bin/R usr/bin/Rscript usr/lib/R usr/share/R etc/R usr/local/lib/R
+          sha256sum oracle-runtime/r14-runtime.tar.gz > oracle-runtime/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r14-executable-oracle-debian13
+          path: oracle-runtime/
+          retention-days: 7
+          if-no-files-found: error
