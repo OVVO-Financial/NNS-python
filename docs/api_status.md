@@ -46,7 +46,7 @@ invariant, and property coverage.
 | Copula: `nns_copula` | implemented | high | Bivariate scalar public form is implemented. |
 | Causation: `nns_causation`, `causal_matrix` | implemented | medium | Numeric lag paths and `tau="ts"` behavior are covered; some internal asymmetry granularity can differ in regression dimension reduction. |
 | Distribution functions: `nns_cdf` | implemented | high | Deterministic non-plotting paths are implemented; plotting is ignored. |
-| Distance helpers: `nns_distance`, `nns_distance_bulk` | implemented | high | Numeric and classification conventions follow installed R behavior. |
+| Distance helpers: `nns_distance`, `nns_distance_bulk` | implemented | high | R 14's C++ kernels to the last bit, including where tied distances fall and the classification vote. |
 | Partitioning: `nns_part` | implemented | high | Returns plain dictionaries/arrays instead of R `data.table` objects. |
 | Regression: `nns_reg` | implemented | high | Numeric, class-code, confidence interval, smoothing, dimension-reduction, and factor paths are covered; `point_est` columns are matched by name, categorical/declared levels are honoured. |
 | Multivariate regression: `nns_m_reg` | implemented | high | Numeric, class, and raw factor/character predictor paths (`factor_2_dummy=True` by default, as R 13.3) are covered; column names are kept. |

@@ -424,15 +424,6 @@ def _r_seq(start: float, stop: float, by: float) -> NDArray[np.float64]:
     return start + by * np.arange(0, count + 1, dtype=np.float64)
 
 
-def _v057_bandwidths(x_size: int, wrt_dependence: float) -> NDArray[np.float64]:
-    """h_s = 1/log(length(x), c(2, 10)); c(h_s, 10*h_s); doubled if dependence < .5."""
-    base = np.log(np.asarray([2.0, 10.0])) / np.log(float(x_size))
-    h_s = np.concatenate([base, 10.0 * base])
-    if wrt_dependence < 0.5:
-        h_s = 2.0 * h_s
-    return np.asarray(h_s, dtype=np.float64)
-
-
 def _r14_fd_weights(nodes: NDArray[np.float64], at: float, degree: int) -> NDArray[np.float64]:
     """R .nns_fd_weights: scaled Vandermonde finite-difference coefficients."""
     n = int(nodes.size)
@@ -564,7 +555,9 @@ def _dy_d_best_plan(
     if points.size == 0:
         raise ValueError("eval.points must contain at least one point.")
     # R: 1/log(max(nrow(x),3), c(2,10)), half and full windows capped at .25.
-    base = np.log(np.asarray([2.0, 10.0])) / np.log(float(max(n, 3)))
+    # R's log(x, 2) and log(x, 10) are the C log2 and log10, not log(x)/log(base).
+    rows_used = float(max(n, 3))
+    base = np.array([1.0 / math.log2(rows_used), 1.0 / math.log10(rows_used)])
     widths = np.minimum(0.25, np.r_[base / 2.0, base])
     if dep_local_r14(x_values[:, wrt_index], y_values, asym=False) < 0.5:
         widths = np.minimum(0.25, 2.0 * widths)

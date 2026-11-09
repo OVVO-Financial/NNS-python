@@ -640,25 +640,30 @@ more columns.
 
 ## Distance
 
-`nns_distance` and `nns_distance_bulk` map to R's regression-point-matrix
-helpers. NNS Python accepts `rpm` as a finite 2D numeric array with R's `y.hat`
-column in the final position. `nns_distance` applies R's per-target min-max
-rescaling before computing weighted nearest-neighbor predictions. `nns_distance_bulk`
-matches R's compiled bulk helper, including its raw-feature distance convention.
-For `nns_distance` with `k > 1`, NNS Python matches the installed R 13.0 binary:
-the exponential rank-weight family uses the R C API's `Rf_dexp` scale argument
-as `1 / k`. This differs from the nearby source-code comment that describes it
-as a rate.
+`nns_distance` and `nns_distance_bulk` map to R 14's `NNS.distance` and
+`NNS.distance.bulk`. NNS Python accepts `rpm` as a finite 2D numeric array with
+R's `y.hat` column in the final position. Both reproduce R's C++ kernels to the
+last bit: each column is scaled by `1 / range` (the range including the
+target), the distance accumulates `diff^2 + |diff|` column by column, and the
+weights are R's nmath densities summed in R's order.
 
-Classification distance mode returns numeric class codes, not original labels.
-For single-target `nns_distance(..., class_=...)`, installed R uses weighted
-mode with integer replication counts `ceil(100 * weight)`. NNS Python follows that
-behavior. For equal-distance nearest-neighbor ties, NNS Python preserves RPM row order
-to match installed R's first-row tie behavior. Installed R's
-`NNS.distance.bulk(..., class=...)` currently ignores
-the class flag in its compiled bulk helper and returns the same inverse-distance
-numeric weighted average as non-class bulk distance; NNS Python matches the installed
-binary rather than the higher-level classification intent.
+* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows in the order
+  libstdc++'s `std::partial_sort` (or `std::sort` when every row is used)
+  leaves them, which decides where tied distances fall, then the eight weights
+  (uniform, `dt`, inverse distance, `dexp` with scale `k`, reversed
+  `|dlnorm(rank, 0, sd(1:k), log = TRUE)|`, `rank^-2`, `dnorm` and an RBF),
+  normalised and combined.
+* `nns_distance_bulk` is `NNS_distance_path_single_parallel_cpp`, which R's
+  `NNS.distance.bulk` calls: the `k` nearest rows ordered by distance and then
+  row, with unnormalised Student-t and Gaussian kernels, and the weighted sum
+  scaled by `1 / total`.
+
+`k` follows R: `"all"` or an infinite value uses every row; otherwise it is
+truncated to an integer and clamped to `1..nrow(rpm)`, so `k = 0` uses the single
+nearest row. Classification mode (`class_` not `None`) returns numeric class
+codes, not original labels: the weighted mode with `ceil(100 * weight)` votes,
+where equal vote totals go to the smallest class value, as R scans the classes
+in ascending order.
 
 ## Classification
 
