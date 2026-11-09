@@ -2,12 +2,15 @@
 
 ## Target and status
 
-R NNS 13.0 is the release parity target. It is the tensorized architecture
-target; the earlier R NNS 12.1 cache has been superseded. NNS-core is v13.0.0
-and remains the native C++ foundation for accelerated partial-moment routines.
+R NNS 14.0 is the parity target: the source at
+`OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae`
+(`NNS_14.0.tar.gz`, SHA256
+`5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b`). Every shard
+in `tests/_r_cache/` is stamped `nns_version` `14.0`. NNS-core remains the
+native C++ foundation; R 14 kernels it does not carry enter as hashed overlays
+recorded in `sync/nns_source.json`.
 
-Full package parity is **not** claimed. Parity is bounded by the committed tests
-and cache:
+Parity is bounded by the committed tests and cache:
 
 - `tests/_r_cache/` — cache-only R result fixtures, sharded into one JSON
   file per R function label (keys are `<label>|<sha256>`, schema version
@@ -18,21 +21,59 @@ and cache:
   (`tests/parity/test_original_*`).
 
 Any cache miss under `PYNNS_R_CACHE_ONLY=1` is a parity-data gap until the cache
-is regenerated with Rscript and installed R NNS 13.0.
+is regenerated with Rscript and the installed R NNS 14.0 oracle.
 
 Plot artifact policy is unchanged: plots and `Rplots.pdf` artifacts are not
 parity outputs in pytest; returned values are. See
 [`plot_parity_policy.md`](plot_parity_policy.md).
 
+### Bit-level parity
+
+The port aims at R's own doubles rather than values within a tolerance. It
+reproduces R's arithmetic: long-double `sum`, `mean`, `var`, `prod` and
+`rowSums`; Rcpp's double accumulations and R's C++ operation order; R's `^`;
+libm `exp`, `log` and `pow` in place of NumPy's vectorised versions; R's nmath
+densities and quantiles; `optimize`; the partial sort behind
+`mean(trim = )`; the order libstdc++'s `std::sort` and `std::partial_sort`
+give tied keys; and R's smoothing spline. It does so with the native extension
+and with the NumPy fallback (`NNS_DISABLE_NATIVE=1`). Where R draws random
+numbers, `random_seed = s` (`seed` for `nns_causation`) reproduces R's stream
+after `set.seed(s)`.
+
+Live differential sweeps compare the port with installed R at exact equality
+(`rtol = atol = 0`). At the time of writing every case below matches, with and
+without the native extension:
+
+| Area | Cases |
+| --- | ---: |
+| Partial moments, VaR, co-moments, `PM.matrix`, `NNS.moments` | 2,932 |
+| Central tendencies, `NNS.CDF`, `NNS.dep`, `NNS.copula`, `NNS.caus`, `NNS.norm`, `NNS.rescale` | 793 |
+| `NNS.distance`, `NNS.distance.bulk` | 928 |
+| `NNS.part` | 920 |
+| `NNS.reg` (univariate, multivariate, classification, dimension reduction, smoothing) | 480 |
+| `NNS.seas`, `NNS.ARMA`, `NNS.ARMA.optim`, `NNS.diff`, `dy.dx`, `dy.d_` | 345 |
+| `NNS.VAR` | 40 |
+| `NNS.stack`, `NNS.boost` | 56 |
+| `NNS.ANOVA` | 224 |
+| Stochastic dominance (`NNS.FSD`/`SSD`/`TSD`, `.uni`, `NNS.SD.cluster`, `NNS.SD.efficient.set`) | 2,583 |
+| `NNS.meboot`, `NNS.MC`, `NNS.SS` and ARMA intervals under `set.seed` | 502 |
+| Permutation p-values (`NNS.seas`, `NNS.dep`, `NNS.caus`) | 198 |
+
+The `*_r14.py` parity tests pin these results with exact cache entries.
+
+Scope: the oracle is R 4.5.0 on x86-64 Linux (glibc libm, the reference BLAS,
+no FMA contraction), which is where the port was verified. Another platform's
+libm, BLAS or compiler can move a result by an ulp on either side (R on 64-bit
+Windows, for instance, evaluates `^` with `powl`). The documented API
+conventions (NumPy arrays and dicts, finite-input validation, labels) are listed
+in [conventions](conventions.md).
+
 ### Known retarget fix
 
 The univariate `NNS.reg(..., multivariate.call = TRUE)` regression-point path
-used internally by nonlinear ARMA now follows R NNS 13.0's central-point
-weighting: R appends the central regression point again during endpoint
-consolidation, and Python preserves that contribution. The airline nonseasonal
-nonlinear ARMA smoke forecast changed from the old Python value
-`[125.25, 107.75, 158.75, 213.6667]` to the R NNS 13.0 value
-`[128.5, 113.5, 155.5, 213.6667]`.
+used internally by nonlinear ARMA follows R's central-point weighting: R appends
+the central regression point again during endpoint consolidation, and Python
+preserves that contribution.
 
 ## Verifying parity
 
@@ -45,36 +86,30 @@ mypy
 python -m build   # packaging check
 ```
 
-## Installing R NNS 13.0 from local source
+## Installing the R NNS 14.0 oracle
 
-The R package source is vendored in this repository, so NNS is installed from
-local source, **never from CRAN**:
-
-- Extracted package directory: `tools/NNS` (`tools/NNS/DESCRIPTION` reports
-  `Version: 13.0`).
-- Vendored tarball: `tools/NNS_13.0.tar.gz`.
-
-Install with the helper script (prefers `tools/NNS`, falls back to the tarball,
-and verifies the loaded version):
+Install the pinned R 14.0 source package, never the CRAN release, as the
+`r14-reproduction` workflow does:
 
 ```bash
-python scripts/install_local_r_nns.py
+curl --fail --location -o NNS_14.0.tar.gz \
+  https://raw.githubusercontent.com/OVVO-Financial/NNS/7b07a837c130ba7220dbe16c584221508757d5ae/NNS_14.0.tar.gz
 ```
-
-Or run the commands directly:
 
 ```bash
-R CMD INSTALL tools/NNS
-Rscript -e "suppressPackageStartupMessages(library(NNS)); cat(as.character(packageVersion('NNS')))"
-# expected output: 13.0
+echo '5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b  NNS_14.0.tar.gz' | sha256sum -c -
 ```
 
-Do not run `install.packages("NNS")`; the parity target is the local `tools/NNS`
-source, not the CRAN release.
+```bash
+python scripts/install_local_r_nns.py --source NNS_14.0.tar.gz --expected-version 14.0
+```
+
+`tools/NNS` and `tools/NNS_13.0.tar.gz` hold the earlier R 13.0 source for
+reference; they are not the parity target.
 
 ## Regenerating the parity cache
 
-After confirming `packageVersion("NNS") == "13.0"`, regenerate the committed
+After confirming `packageVersion("NNS") == "14.0"`, regenerate the committed
 cache with cache-only/offline toggles unset:
 
 ```bash
@@ -99,7 +134,7 @@ PYNNS_R_CACHE_ONLY=1 python -m pytest -q -n 0 tests/parity
 
 A `RuntimeError: R cache miss ...` means the cache is incomplete (regenerate the
 missing live R entries); an `AssertionError`/numeric mismatch means Python
-behavior differs from R NNS 13.0 and the Python implementation must be fixed
+behavior differs from R NNS 14.0 and the Python implementation must be fixed
 without loosening tolerances.
 
 Where an R toolchain is unavailable (for example sandboxed CI or
@@ -107,27 +142,13 @@ proxy-restricted runners that cannot install R), the cache cannot be regenerated
 live; rerun the local-source install and `scripts/regenerate_r_cache.py` on a
 host with R.
 
-## Cache provenance: R 13.3 + patches
+## Cache provenance: R 14.0
 
-The committed shards in `tests/_r_cache/` were generated from R NNS 13.3 plus
-the fixes in OVVO-Financial/NNS pull requests #73-#92, not from the unpatched
-13.3 release. Every shard
-was rebuilt from that R build with the full test suite; shards for functions the
-patches do not touch came out unchanged. Where Python has not mirrored one of
-those fixes yet, the parity tests that depend on it are marked xfail until it is.
-The entries that tied discrete modes reach (NNS.mode, NNS.part, NNS.reg and
-NNS.boost) also carry the discrete NNS.mode tie rule of pull request #111,
-refilled from the same build plus that change. The two NNS.copula entries
-where every margin lies on one side of its target carry pull request #143 the same way,
-the two univariate hazard and cumulative hazard NNS.CDF target values
-carry #123, and the NNS.SD.cluster entries where nothing is peeled and the
-dendrogram's leaf order carry #126. The NNS.MC.grid helper builds the grid as
-R main does after #146, and the three dy.dx entries with repeated bandwidths
-carry #147.
-
-To reproduce, install the patched package and point `R_LIBS` at it when
-regenerating (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`); the
-`nns_version` stamp stays `13.3`.
+The committed shards in `tests/_r_cache/` were generated from the pinned R NNS
+14.0 source above and carry `nns_version` `14.0`. To reproduce, install that
+package and point `R_LIBS` at its library when regenerating
+(`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`). The earlier shards,
+generated from a patched R 13.3, have all been regenerated from R 14.0.
 
 ## Automated parity check (with deferred autofix agent)
 
