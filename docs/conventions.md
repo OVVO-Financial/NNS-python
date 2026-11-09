@@ -520,7 +520,11 @@ covers periods up to `min(n / 2, n / 5)` (or `max_period`), `modulo` adds
 multiples as in R, and the reported period is the fundamental one: the smallest
 plausible divisor of the strongest period within two paired standard errors of
 it. Inputs shorter than five observations return R's sentinel period `0`. The
-scores follow R's arithmetic and agree with R to the last bit. `p_value=True`
+scores follow R's arithmetic and agree with R to the last bit. The scan is
+R's own C++ loop (one sort, then one pass per lag, split across threads), so
+like R it costs O(n^2): about 25 seconds for 220,000 observations on four
+threads, as in R. Without the native extension a vectorised NumPy port of the
+same loop runs instead, more slowly. `p_value=True`
 adds R's permutation p-value of each period (`NaN` for period 1): its dispersion
 ratio against the best ratio of each of `nperm` shuffles of the detrended series;
 `periods` then lists the periods with p-value at most 0.05 (else 1). With
