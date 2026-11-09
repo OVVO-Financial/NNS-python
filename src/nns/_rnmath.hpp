@@ -1,13 +1,14 @@
 // Bit-faithful ports of the R nmath routines called by the NNS C++ kernels.
 //
-// R's src/NNS_dep.cpp calls R::dhyper and R::pnorm. They use Loader's
+// R's src/NNS_dep.cpp calls R::dhyper and R::pnorm; src/NNS_mreg_predict.cpp
+// calls Rf_dt and Rf_dnorm4. They use Loader's
 // saddle-point binomial (dbinom_raw with stirlerr and bd0) and Cody's
 // rational approximation; closed forms from binomial products or erfc agree
 // with them only to a few units in the last place, which NNS later feeds into
 // exact comparisons. These are the R routines themselves, evaluated with the
 // same libm calls.
 //
-// Source: R 4.5.0 src/nmath/{dhyper,dbinom,stirlerr,bd0,pnorm}.c
+// Source: R 4.5.0 src/nmath/{dhyper,dbinom,stirlerr,bd0,pnorm,dnorm,dt}.c
 // Copyright (C) 2000-2024 The R Core Team; Catherine Loader; W. J. Cody.
 // GPL-2 or later. stirlerr follows the R >= 4.4.0 series cutoffs.
 // Mirrored in src/nns/_rnmath.py for the pure-Python fallback.
@@ -229,6 +230,51 @@ inline double pnorm(double x) {
     return x > 0. ? ccum : cum;
   }
   return x > 0 ? 1. : 0.;
+}
+
+// R::dnorm(x, mu, sigma, 0) (dnorm4, with the split evaluation beyond |x| = 5).
+inline double dnorm(double x, double mu, double sigma) {
+  if (std::isnan(x) || std::isnan(mu) || std::isnan(sigma)) return x + mu + sigma;
+  if (sigma < 0) return NAN;
+  if (!std::isfinite(sigma)) return 0.;
+  if (!std::isfinite(x) && mu == x) return NAN;
+  if (sigma == 0) return (x == mu) ? INFINITY : 0.;
+  x = (x - mu) / sigma;
+  if (!std::isfinite(x)) return 0.;
+  x = std::fabs(x);
+  if (x >= 2 * std::sqrt(DBL_MAX)) return 0.;
+  if (x < 5) return k1SqrtTwoPi * std::exp(-0.5 * x * x) / sigma;
+  static const double kLn2 = 0.693147180559945309417232121458;
+  if (x > std::sqrt(-2 * kLn2 * (DBL_MIN_EXP + 1 - DBL_MANT_DIG))) return 0.;
+  const double x1 = std::ldexp(std::nearbyint(std::ldexp(x, 16)), -16);
+  const double x2 = x - x1;
+  return k1SqrtTwoPi / sigma * (std::exp(-0.5 * x1 * x1) * std::exp((-0.5 * x2 - x1) * x2));
+}
+
+// R::dt(x, n, 0): Loader's factorisation through bd0 and stirlerr.
+inline double dt(double x, double n) {
+  if (std::isnan(x) || std::isnan(n)) return x + n;
+  if (n <= 0) return NAN;
+  if (!std::isfinite(x)) return 0.;
+  if (!std::isfinite(n)) return dnorm(x, 0., 1.);
+  double u;
+  const double t = -bd0(n / 2., (n + 1) / 2.) + stirlerr((n + 1) / 2.) - stirlerr(n / 2.);
+  const double x2n = x * x / n;
+  double ax = 0., l_x2n;
+  const bool lrg_x2n = (x2n > 1. / DBL_EPSILON);
+  if (lrg_x2n) {
+    ax = std::fabs(x);
+    l_x2n = std::log(ax) - std::log(n) / 2.;
+    u = n * l_x2n;
+  } else if (x2n > 0.2) {
+    l_x2n = std::log(1 + x2n) / 2.;
+    u = n * l_x2n;
+  } else {
+    l_x2n = std::log1p(x2n) / 2.;
+    u = -bd0(n / 2., (n + x * x) / 2.) + x * x / 2.;
+  }
+  const double I_sqrt_ = (lrg_x2n ? std::sqrt(n) / ax : std::exp(-l_x2n));
+  return std::exp(t - u) * k1SqrtTwoPi * I_sqrt_;
 }
 
 }  // namespace nns_rmath

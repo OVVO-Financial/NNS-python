@@ -242,8 +242,8 @@ def test_stable_topk_matches_full_stable_sort() -> None:
 
 
 def test_mreg_predict_path_chunking_is_exact(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The chunked/partial-selection NumPy path must equal a full-sort reference;
-    # the native kernel (R's NNS_mreg_predict_path_v2_cpp) agrees to rounding.
+    # The chunked/partial-selection NumPy path must equal a full-sort reference,
+    # as does the native kernel (R's NNS_mreg_predict_path_v2_cpp).
     import nns._reg_engine as engine
     from nns._reg_engine import _mreg_distances, _mreg_ensemble_weights, _mreg_predict_path
     from nns.central_tendencies import nns_gravity
@@ -263,7 +263,8 @@ def test_mreg_predict_path_chunking_is_exact(monkeypatch: pytest.MonkeyPatch) ->
             out[i, 0] = float(nns_gravity(t[np.isfinite(t)]))
         for k in range(2, kmax + 1):
             w = _mreg_ensemble_weights(ds[:, :k])
-            out[:, k - 1] = np.sum(ys[:, :k] * w, axis=1)
+            # R's kernel accumulates the weighted average sequentially.
+            out[:, k - 1] = np.cumsum(ys[:, :k] * w, axis=1)[:, -1]
         return out
 
     rng = np.random.RandomState(1)
@@ -278,7 +279,7 @@ def test_mreg_predict_path_chunking_is_exact(monkeypatch: pytest.MonkeyPatch) ->
             patch.setattr(engine, "native_fn", lambda name: None)
             b = _mreg_predict_path(xt, rpm_x, rpm_y, kmax, "NNS", mins, maxs)
         np.testing.assert_allclose(a, b, rtol=0, atol=0)
-        np.testing.assert_allclose(native, b, rtol=1e-12, atol=1e-14)
+        np.testing.assert_array_equal(native, b)
 
 
 def _band_means(x: np.ndarray, y: np.ndarray, p: float) -> list[float]:

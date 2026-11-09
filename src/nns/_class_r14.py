@@ -7,6 +7,7 @@ interpolation is never performed on ordinalized class labels.
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import Any
 
@@ -14,22 +15,115 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._rblas import r_crossprod_vec
-from nns._rmean import r_approx, r_col_means, r_tie_means
+from nns._rmean import (
+    r_approx,
+    r_col_means,
+    r_mean,
+    r_mean_logical,
+    r_sd,
+    r_sum,
+    r_tie_means,
+    r_var,
+)
+from nns._rnmath import dexp, dlnorm_log, dnorm, dt, libm_exp
 
 F = NDArray[np.float64]
 
 
 def _normalize(probabilities: F, priors: F) -> F:
+    """R ``.nns_class_normalize``: clamp to [0, 1] and divide each row by its
+    ``rowSums`` (long-double), else use the priors."""
     p = np.asarray(probabilities, dtype=np.float64).copy()
     p[~np.isfinite(p) | (p < 0.0)] = 0.0
     p[p > 1.0] = 1.0
-    totals = np.sum(p, axis=1)
+    totals = np.asarray(np.cumsum(p.astype(np.longdouble), axis=1)[:, -1], dtype=np.float64)
     valid = totals > 0.0
     if np.any(valid):
         p[valid] /= totals[valid, None]
     if np.any(~valid):
         p[~valid] = priors
     return p
+
+
+def _r_normalize_weights(w: F) -> F:
+    """R ``.nns_mreg_normalize_weights``: R's ``sum()`` is long double."""
+    w = np.where(np.isfinite(w) & (w >= 0.0), w, 0.0)
+    total = r_sum(w)
+    if total <= 0.0:
+        return np.full(w.size, 1.0 / w.size, dtype=np.float64)
+    return np.asarray(w / total, dtype=np.float64)
+
+
+@functools.lru_cache(maxsize=256)
+def _r_rank_weights(k: int) -> tuple[F, F, F, F]:
+    """R ``.nns_mreg_rank_weights(k)``, the rank terms of the classifier's weights."""
+    ranks = np.arange(1, k + 1, dtype=np.float64)
+    rank_sd = r_sd(ranks)
+    uniform = np.full(k, 1.0 / k, dtype=np.float64)
+    scale = 1.0 / (1.0 / k)  # dexp(ranks, rate = 1 / k) passes scale = 1 / rate
+    exponential = _r_normalize_weights(np.array([dexp(r, scale) for r in ranks]))
+    if math.isfinite(rank_sd) and rank_sd > 0:
+        lognormal = _r_normalize_weights(
+            np.abs(np.array([dlnorm_log(r, 0.0, rank_sd) for r in ranks]))
+        )[::-1].copy()
+    else:
+        lognormal = np.zeros(k, dtype=np.float64)
+    power = _r_normalize_weights(np.array([math.pow(r, -2.0) for r in ranks]))
+    for term in (uniform, exponential, lognormal, power):
+        term.flags.writeable = False
+    return uniform, exponential, lognormal, power
+
+
+def _r_ensemble_weights(distances: F) -> F:
+    """R ``.nns_mreg_ensemble_weights`` (the R-level helper the classifier calls,
+    not the C++ regression kernel): R's densities, ``var()`` and ``sum()``."""
+    k = distances.size
+    if k == 1:
+        return np.ones(1, dtype=np.float64)
+    uniform, exponential, lognormal, power = _r_rank_weights(k)
+    student = _r_normalize_weights(np.array([dt(d, float(k)) for d in distances]))
+    inverse = _r_normalize_weights(1.0 / np.maximum(distances, 1e-12))
+    variance = r_var(distances)
+    sd = math.sqrt(variance) if variance >= 0.0 else math.nan
+    if math.isfinite(sd) and sd > 0:
+        normal = _r_normalize_weights(np.array([dnorm(d, 0.0, sd) for d in distances]))
+    else:
+        normal = np.zeros(k, dtype=np.float64)
+    if math.isfinite(variance) and variance > 0:
+        rbf = _r_normalize_weights(libm_exp(-distances / (2.0 * variance)))
+    else:
+        rbf = np.zeros(k, dtype=np.float64)
+    return _r_normalize_weights(
+        uniform + student + inverse + exponential + lognormal + power + normal + rbf
+    )
+
+
+def _r_distances(centres: F, query: F, dist: str, mins: F, maxs: F) -> F:
+    """R ``.nns_mreg_distance_vector`` for every query row: the per-column terms
+    in double, summed across columns by ``rowSums`` (long double). The C++
+    regression kernel adds them in double, which differs from three columns on."""
+    m, n = query.shape[0], centres.shape[0]
+    if dist == "FACTOR":
+        mismatches = np.zeros((m, n), dtype=np.float64)
+        for j in range(centres.shape[1]):
+            mismatches += query[:, j, None] != centres[None, :, j]
+        return np.asarray(mismatches / centres.shape[1], dtype=np.float64)
+    ranges = maxs - mins
+    active = np.flatnonzero(np.isfinite(ranges) & (ranges > 0))
+    if active.size == 0:
+        return np.zeros((m, n), dtype=np.float64)
+    total = np.zeros((m, n), dtype=np.longdouble)
+    for column in active.tolist():
+        z = (centres[None, :, column] - query[:, column, None]) / ranges[column]
+        if dist == "NNS":
+            term = np.abs(z) + z * z
+        elif dist == "L1":
+            term = np.abs(z)
+        else:
+            term = z * z
+        total += term
+    out = np.asarray(total, dtype=np.float64)
+    return np.sqrt(out) if dist == "L2" else out
 
 
 def _select(probabilities: F | None, values: F, order: NDArray[np.intp]) -> F | None:
@@ -55,8 +149,6 @@ def _class_base(
         _build_points,
         _dependence,
         _find_interval,
-        _mreg_distances,
-        _mreg_ensemble_weights,
     )
 
     n, p = design_x.shape
@@ -120,7 +212,7 @@ def _class_base(
     elif order == "max" or categorical:
         k = 1
     else:
-        k = max(1, math.floor((1.0 - float(np.mean(strength))) * math.sqrt(n)))
+        k = max(1, math.floor((1.0 - r_mean(strength)) * math.sqrt(n)))
     k = max(1, min(k, centres.shape[0]))
 
     def predict(query: F | None) -> F | None:
@@ -144,12 +236,12 @@ def _class_base(
                     columns.append(r_approx(kx, ky, q[:, 0], ky[0], ky[-1]))
                 out = np.column_stack(columns)
             return _normalize(out, prior)
-        ds = _mreg_distances(centres, q, dist, mins, maxs)
+        ds = _r_distances(centres, q, dist, mins, maxs)
         out = np.empty((q.shape[0], shares.shape[1]), dtype=np.float64)
         for i, row in enumerate(ds):
             matches = np.flatnonzero(row == 0.0)
             if matches.size:
-                out[i] = np.mean(shares[matches], axis=0)
+                out[i] = r_col_means(shares[matches])
                 continue
             ordered = np.argsort(row, kind="stable")
             distance_sorted = row[ordered]
@@ -159,11 +251,11 @@ def _class_base(
             if chosen.size == 1:
                 out[i] = shares[chosen[0]]
                 continue
-            w = _mreg_ensemble_weights(chosen_d[None, :])[0]
+            w = _r_ensemble_weights(chosen_d)
             for value in np.unique(chosen_d):
                 same = chosen_d == value
                 if np.count_nonzero(same) > 1:
-                    w[same] = np.mean(w[same])
+                    w[same] = r_mean(w[same])
             # R: as.numeric(crossprod(weights, shares[o[seq_len(m)], ])).
             out[i] = r_crossprod_vec(w, shares[chosen])
         return _normalize(out, prior)
@@ -208,7 +300,7 @@ def classify(
         else [f"{v:.15g}" for v in values]
     )
     indicators = np.asarray(y[:, None] == values[None, :], dtype=np.float64)
-    priors = np.mean(indicators, axis=0)
+    priors = r_col_means(indicators)
     _, first = np.unique(y, return_index=True)
     first_values = y[np.sort(first)]
     tie_order = np.array([np.flatnonzero(values == z)[0] for z in first_values], dtype=np.intp)
@@ -312,7 +404,9 @@ def classify(
 
     point_pred = _select(point_prob, values, tie_order)
     fitted_pred = _select(fit_prob, values, tie_order)
-    accuracy = None if point_only else float(np.mean(fitted_pred == y))
+    accuracy = (
+        None if point_only else r_mean_logical(np.asarray(fitted_pred == y, dtype=np.bool_))
+    )
     fitted: dict[str, Any] | None = None
     if not point_only and fitted_pred is not None:
         names = encoded.get("encoded_names") or [f"X{i + 1}" for i in range(design_x.shape[1])]

@@ -303,6 +303,14 @@ Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
   map.
 
 `dist=None` is the default for `nns_reg`, `nns_m_reg`, `nns_stack`, and `nns_boost` and selects the native blended NNS distance, with `dist="NNS"` as the explicit alias. Continuous predictors use range-normalized coordinate differences and sum `abs(z) + z**2` across non-zero-range columns; explicit `dist="L1"`, `dist="L2"`, and `dist="FACTOR"` keep their legacy behavior.
+Multivariate predictions follow R's C++ kernel to the last bit, in the native
+extension and the NumPy fallback alike: the ensemble weights use R's own nmath
+`dt` and `dnorm` densities and libm `exp`, summed in R's order. Classification
+probabilities follow the R-level weights R's classifier uses instead (long-double
+`sum`/`var`, `rowSums` distances). `nns_m_reg(categorical=...)` is the argument
+of R's internal `NNS.M.reg` (default `False`): exact joint cells, maximum order
+and one neighbour; `nns_reg` sets it when every predictor is categorical, as R's
+`NNS.reg` does.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R
 does not call `smooth.spline` there. Spline-eligible inputs use a private

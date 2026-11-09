@@ -21,6 +21,10 @@ import functools
 import math
 import sys
 from collections.abc import Callable
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 _DBL_EPSILON = sys.float_info.epsilon
 _DBL_MIN = sys.float_info.min
@@ -494,3 +498,115 @@ def qnorm(p: float, mu: float = 0.0, sigma: float = 1.0) -> float:
     if q < 0.0:
         val = -val
     return mu + sigma * val
+
+
+def dt(x: float, n: float) -> float:
+    """R's ``dt(x, n)`` (density, not log): Loader's factorisation through
+    ``bd0`` and ``stirlerr``, as in R 4.5.0 ``src/nmath/dt.c``."""
+    if math.isnan(x) or math.isnan(n):
+        return x + n
+    if n <= 0:
+        return math.nan
+    if not math.isfinite(x):
+        return 0.0
+    if not math.isfinite(n):
+        return dnorm(x, 0.0, 1.0)
+    t = -bd0(n / 2.0, (n + 1) / 2.0) + stirlerr((n + 1) / 2.0) - stirlerr(n / 2.0)
+    x2n = x * x / n
+    large = x2n > 1.0 / _DBL_EPSILON
+    if large:
+        ax = abs(x)
+        l_x2n = math.log(ax) - math.log(n) / 2.0
+        u = n * l_x2n
+    elif x2n > 0.2:
+        ax = 0.0
+        l_x2n = math.log(1 + x2n) / 2.0
+        u = n * l_x2n
+    else:
+        ax = 0.0
+        l_x2n = math.log1p(x2n) / 2.0
+        u = -bd0(n / 2.0, (n + x * x) / 2.0) + x * x / 2.0
+    i_sqrt = math.sqrt(n) / ax if large else math.exp(-l_x2n)
+    return math.exp(t - u) * _M_1_SQRT_2PI * i_sqrt
+
+
+def dnorm(x: float, mu: float = 0.0, sigma: float = 1.0) -> float:
+    """R's ``dnorm(x, mu, sigma)`` (``dnorm4``, density), as in R 4.5.0
+    ``src/nmath/dnorm.c`` with its split evaluation beyond ``|x| = 5``."""
+    if math.isnan(x) or math.isnan(mu) or math.isnan(sigma):
+        return x + mu + sigma
+    if sigma < 0:
+        return math.nan
+    if not math.isfinite(sigma):
+        return 0.0
+    if not math.isfinite(x) and mu == x:
+        return math.nan
+    if sigma == 0:
+        return math.inf if x == mu else 0.0
+    z = (x - mu) / sigma
+    if not math.isfinite(z):
+        return 0.0
+    z = abs(z)
+    if z >= 2 * math.sqrt(sys.float_info.max):
+        return 0.0
+    if z < 5:
+        return _M_1_SQRT_2PI * math.exp(-0.5 * z * z) / sigma
+    if z > math.sqrt(-2 * _M_LN2 * (sys.float_info.min_exp + 1 - sys.float_info.mant_dig)):
+        return 0.0
+    x1 = math.ldexp(_r_forceint(math.ldexp(z, 16)), -16)
+    x2 = z - x1
+    return _M_1_SQRT_2PI / sigma * (math.exp(-0.5 * x1 * x1) * math.exp((-0.5 * x2 - x1) * x2))
+
+
+def dlnorm_log(x: float, meanlog: float, sdlog: float) -> float:
+    """R's ``dlnorm(x, meanlog, sdlog, log = TRUE)`` (R 4.5.0 ``dlnorm.c``)."""
+    if math.isnan(x) or math.isnan(meanlog) or math.isnan(sdlog):
+        return x + meanlog + sdlog
+    if sdlog < 0:
+        return math.nan
+    if sdlog == 0:
+        return math.inf if x > 0 and math.log(x) == meanlog else -math.inf
+    if x <= 0:
+        return -math.inf
+    y = (math.log(x) - meanlog) / sdlog
+    return -(_M_LN_SQRT_2PI + 0.5 * y * y + math.log(x * sdlog))
+
+
+def dexp(x: float, scale: float) -> float:
+    """R's ``dexp(x, rate = 1 / scale)`` as C ``dexp(x, scale)`` (density)."""
+    if math.isnan(x) or math.isnan(scale):
+        return x + scale
+    if scale <= 0.0:
+        return math.nan
+    if x < 0.0:
+        return 0.0
+    return math.exp(-x / scale) / scale
+
+
+_M_LN2 = 0.693147180559945309417232121458  # log(2)
+
+
+def _r_forceint(x: float) -> float:
+    """R_forceint: C ``nearbyint`` in the default round-half-even mode."""
+    return float(round(x))
+
+
+def _c_exp(x: float) -> float:
+    """C ``exp``: ``math.exp`` is libm's, but raises where C returns ``inf``."""
+    try:
+        return math.exp(x)
+    except OverflowError:
+        return math.inf
+
+
+_libm_exp_ufunc = np.frompyfunc(_c_exp, 1, 1)
+
+
+def libm_exp(values: Any) -> NDArray[np.float64]:
+    """Elementwise libm ``exp``, as R evaluates ``exp()`` on a vector.
+
+    NumPy's vectorised ``exp`` (SIMD on AVX2/AVX-512 builds) is not libm's and
+    differs from it in the last bit for a few percent of inputs, which matters
+    wherever R's result is compared exactly or feeds a discrete choice.
+    """
+    return np.asarray(_libm_exp_ufunc(np.asarray(values, dtype=np.float64)), dtype=np.float64)

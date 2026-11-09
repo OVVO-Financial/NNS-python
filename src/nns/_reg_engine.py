@@ -58,6 +58,11 @@ from nns._rmean import (
     r_row_means,
     r_sum,
 )
+from nns._rnmath import dexp as _rnmath_dexp
+from nns._rnmath import dlnorm_log as _rnmath_dlnorm_log
+from nns._rnmath import dnorm as _rnmath_dnorm
+from nns._rnmath import dt as _rnmath_dt
+from nns._rnmath import libm_exp
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -1064,68 +1069,80 @@ def _mreg_weighted_mode(values: NDArray[np.float64], weights: NDArray[np.float64
 
 
 def _normalize_weights_rows(w: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R's C++ ``normalize_prefix`` on every row: non-finite or negative weights
+    become 0, the row is summed sequentially and divided by that sum, and a row
+    without positive weight becomes uniform."""
     w = np.where(np.isfinite(w) & (w >= 0), w, 0.0)
-    sums = w.sum(axis=1, keepdims=True)
     k = w.shape[1]
+    sums = np.cumsum(w, axis=1)[:, -1:] if k else np.zeros((w.shape[0], 1))
     uniform = np.full_like(w, 1.0 / k)
     with np.errstate(invalid="ignore", divide="ignore"):
         scaled = w / sums
     return np.where(sums > 0, scaled, uniform)
 
 
-def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""
-    from scipy import stats  # type: ignore[import-untyped]
+_vdt = np.frompyfunc(_rnmath_dt, 2, 1)
+_vdnorm = np.frompyfunc(_rnmath_dnorm, 3, 1)
 
+
+def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The eight-component ensemble weights of R's C++ ``predict_sorted_k`` for
+    (m, k) sorted distances, term for term: R's ``dt``/``dnorm`` densities,
+    sequential sums, and the components added in R's order."""
     m, k = dk.shape
     if k == 1:
         return np.ones((m, 1), dtype=np.float64)
+    kk = float(k)
+    student = _normalize_weights_rows(np.asarray(_vdt(dk, kk), dtype=np.float64))
+    inverse = _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
 
-    total = np.full((m, k), 1.0 / k, dtype=np.float64)  # uniform
-    total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
-    total += _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
-    for row in _rank_weight_rows(k):
-        total += row
-
-    dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
-    valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
+    mu = np.cumsum(dk, axis=1)[:, -1:] / kk
+    centred = dk - mu
+    with np.errstate(invalid="ignore"):
+        sd = np.sqrt(np.cumsum(centred * centred, axis=1)[:, -1:] / (k - 1))
+    valid_sd = np.isfinite(sd) & (sd > 0)
+    normal = np.zeros((m, k), dtype=np.float64)
     if np.any(valid_sd):
-        with np.errstate(all="ignore"):
-            normal = stats.norm.pdf(dk, loc=0.0, scale=np.where(valid_sd, dist_sd, 1.0))
-        normal = np.where(valid_sd, normal, 0.0)
-        total += np.where(valid_sd, _normalize_weights_rows(normal), 0.0)
-
-    dist_var = dist_sd**2
-    valid_var = np.isfinite(dist_var) & (dist_var > 0)
+        rows = np.flatnonzero(valid_sd[:, 0])
+        dens = np.asarray(_vdnorm(dk[rows], 0.0, sd[rows]), dtype=np.float64)
+        normal[rows] = _normalize_weights_rows(dens)
+    var = np.where(np.isfinite(sd), sd * sd, np.nan)
+    valid_var = np.isfinite(var) & (var > 0)
+    rbf = np.zeros((m, k), dtype=np.float64)
     if np.any(valid_var):
-        with np.errstate(all="ignore"):
-            rbf = np.exp(-dk / (2.0 * np.where(valid_var, dist_var, 1.0)))
-        rbf = np.where(valid_var, rbf, 0.0)
-        total += np.where(valid_var, _normalize_weights_rows(rbf), 0.0)
+        rows = np.flatnonzero(valid_var[:, 0])
+        with np.errstate(over="ignore", under="ignore"):
+            rbf[rows] = _normalize_weights_rows(libm_exp(-dk[rows] / (2.0 * var[rows])))
 
+    uniform, exponential, lognormal, power = _rank_weight_rows(k)
+    total = uniform + student + inverse + exponential + lognormal + power + normal + rbf
     return _normalize_weights_rows(total)
 
 
 @functools.lru_cache(maxsize=512)
 def _rank_weight_rows(k: int) -> tuple[NDArray[np.float64], ...]:
-    """Normalised rank-only ensemble components for k neighbours, in the order
-    they are added: exponential, reversed lognormal (when the rank sd is
-    positive) and inverse-square rank. They do not depend on the distances, so
-    they are computed once per k rather than per query chunk and per k of a
-    path; each row is normalised exactly as a row of the broadcast matrix was.
-    """
-    from scipy import stats
-
+    """R's ``rank_components`` for k neighbours: the uniform, exponential,
+    reversed lognormal (zero unless the rank sd is positive) and inverse-square
+    rank components. They do not depend on the distances, so they are computed
+    once per k."""
     ranks = np.arange(1, k + 1, dtype=np.float64)
-    rows = [_normalize_weights_rows(stats.expon.pdf(ranks, scale=k)[None, :])[0]]
-    rank_sd = float(np.std(ranks, ddof=1))
+    uniform = np.full(k, 1.0 / k, dtype=np.float64)
+    exponential = _normalize_weights_rows(
+        np.array([[_rnmath_dexp(r, float(k)) for r in ranks]], dtype=np.float64)
+    )[0]
+    mu = float(np.cumsum(ranks)[-1]) / k
+    rank_sd = math.sqrt(float(np.cumsum((ranks - mu) * (ranks - mu))[-1]) / (k - 1))
     if math.isfinite(rank_sd) and rank_sd > 0:
-        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
-        rows.append(_normalize_weights_rows(lognormal_row[None, :])[0, ::-1].copy())
-    rows.append(_normalize_weights_rows((ranks**-2.0)[None, :])[0])
+        lognormal = _normalize_weights_rows(
+            np.array([[abs(_rnmath_dlnorm_log(r, 0.0, rank_sd)) for r in ranks]])
+        )[0, ::-1].copy()
+    else:
+        lognormal = np.zeros(k, dtype=np.float64)
+    power = _normalize_weights_rows((1.0 / (ranks * ranks))[None, :])[0]
+    rows = (uniform, exponential, lognormal, power)
     for row in rows:
         row.flags.writeable = False
-    return tuple(rows)
+    return rows
 
 
 def _mreg_distances(
@@ -1341,7 +1358,8 @@ def _mreg_predict(
         if is_class:
             out[rows] = _mreg_weighted_mode_rows(yk, w)
         else:
-            out[rows] = np.sum(yk * w, axis=1)
+            # R accumulates the weighted sum sequentially.
+            out[rows] = np.cumsum(yk * w, axis=1)[:, -1]
 
     return out
 
@@ -1395,7 +1413,7 @@ def _mreg_predict_path(
 
         for k in range(2, kmax + 1):
             w = _mreg_ensemble_weights(d_sorted[:, :k])
-            out[rows, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
+            out[rows, k - 1] = np.cumsum(y_sorted[:, :k] * w, axis=1)[:, -1]
     return out
 
 
@@ -1745,6 +1763,7 @@ def nns_reg_engine(
     class_levels: Any = None,
     factor_levels: Any = None,
     multivariate_only: bool = False,
+    categorical: bool | None = None,
 ) -> dict[str, Any]:
     """Port of R ``NNS.reg`` (and, with ``multivariate_only``, ``NNS.M.reg``).
 
@@ -1819,7 +1838,13 @@ def nns_reg_engine(
             class_values=task["class_values"],
             class_levels=task["class_levels"],
             variable_names=encoded.get("encoded_names"),
-            categorical=all(meta["categorical"] for meta in encoded["metadata"]),
+            # NNS.reg tells NNS.M.reg whether every predictor is categorical;
+            # a direct NNS.M.reg call uses its own [categorical] argument.
+            categorical=(
+                all(meta["categorical"] for meta in encoded["metadata"])
+                if categorical is None
+                else categorical
+            ),
         )
 
     synthetic_equation = None
