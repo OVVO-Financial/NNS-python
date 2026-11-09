@@ -66,7 +66,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest]
+        # macos-14 was retired on 2026-11-02; jobs asking for it are dropped
+        # before they get a runner. macos-15 is Apple Silicon like macos-14
+        # was, and the wheels' targets (x86_64 + arm64, macOS 10.14) are set
+        # in pyproject.toml, independent of the runner's macOS version.
+        os: [ubuntu-latest, macos-15, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Build wheels
