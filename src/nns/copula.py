@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import warnings
 from collections.abc import Sequence
 
@@ -8,7 +7,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
-from nns._native import native_fn
+from nns._rmean import r_mean, r_prod, r_sum
+from nns._rnmath import r_pow_scalar
 from nns.core import lpm, lpm_ratio
 from nns.dependence import _dpm_nd
 from nns.pm_matrix import pm_matrix
@@ -70,8 +70,14 @@ def _copula(
     target: NDArray[np.float64],
     continuous: bool,
 ) -> float:
+    """R 14's ``NNS.copula`` in R's own arithmetic.
+
+    R sums the upper triangles with ``sum()`` (long double, in column-major
+    order), takes the independence products with ``prod()`` (long double), and
+    returns ``mean(c(...))^(1/2)``: R's two-pass mean raised by ``pow``, not
+    ``sqrt``. The partial-moment matrices and nD moments are the exact kernels.
+    """
     if values.ndim != 2 or values.shape[0] == 0:
-        # The native kernel assumes at least one observation.
         raise ValueError("copula input must be non-empty.")
     # A constant margin is independent of the rest and has no degree-1 lower share.
     vary = np.any(values != values[0], axis=0)
@@ -80,30 +86,20 @@ def _copula(
             return 0.0
         values = np.ascontiguousarray(values[:, vary])
         target = target[vary]
-    native_copula = native_fn("copula_nd")
-    if native_copula is not None:
-        return float(
-            native_copula(
-                np.ascontiguousarray(np.ravel(values, order="F")),
-                values.shape[0],
-                values.shape[1],
-                np.ascontiguousarray(target),
-                bool(continuous),
-            )
-        )
 
     n = values.shape[1]
-    upper = np.triu_indices(n, k=1)
+    # R's m[upper.tri(m)] lists the strict upper triangle column by column.
+    rows = np.array([i for j in range(n) for i in range(j)], dtype=np.intp)
+    cols = np.array([j for j in range(n) for _ in range(j)], dtype=np.intp)
+    upper = (rows, cols)
 
     discrete_pm_cov = pm_matrix(0.0, 0.0, target, values, pop_adj=False)
-    discrete_co_pm = float(
-        discrete_pm_cov["cupm"][upper].sum() + discrete_pm_cov["clpm"][upper].sum()
-    )
+    discrete_co_pm = r_sum(discrete_pm_cov["cupm"][upper]) + r_sum(discrete_pm_cov["clpm"][upper])
     # Perfect dependence: every pair fully concordant (1) or fully discordant (0).
     # A margin with every observation on one side of its target makes that trivially true.
-    p0 = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
-    # Every co-partial moment then equals its independence product.
-    one_sided = (p0 == 0.0) | (p0 == 1.0)
+    lower_share = np.array([float(lpm(0.0, target[j], values[:, j])) for j in range(n)])
+    # Normalized region shares have no informative contrast at this target.
+    one_sided = (lower_share == 0.0) | (lower_share == 1.0)
     if np.all(one_sided):
         return 0.0
     pair_co_pm = discrete_pm_cov["cupm"][upper] + discrete_pm_cov["clpm"][upper]
@@ -112,51 +108,50 @@ def _copula(
     ):
         return 1.0
 
-    discrete_d_pm = _dpm_nd(values, target, 0.0, norm=True)
-
     if continuous:
         continuous_pm_cov = pm_matrix(1.0, 1.0, target, values, pop_adj=True, norm=True)
-        continuous_co_pm = float(
-            continuous_pm_cov["cupm"][upper].sum() + continuous_pm_cov["clpm"][upper].sum()
+        continuous_co_pm = r_sum(continuous_pm_cov["cupm"][upper]) + r_sum(
+            continuous_pm_cov["clpm"][upper]
         )
-        continuous_d_pm = _dpm_nd(values, target, 1.0, norm=True)
     else:
         continuous_co_pm = discrete_co_pm
-        continuous_d_pm = discrete_d_pm
 
     # Independence anchors from each margin's own lower-tail share at its target.
-    p1 = (
-        np.array([float(lpm_ratio(1.0, target[j], values[:, j])) for j in range(n)])
-        if continuous
-        else p0
-    )
-    discrete_co_anchor, discrete_d_anchor = _independence_anchors(p0, upper)
-    continuous_co_anchor, continuous_d_anchor = _independence_anchors(p1, upper)
+    discrete_co_anchor, discrete_d_anchor = _independence_anchors(lower_share, upper)
+    if continuous:
+        ratios = np.array([float(lpm_ratio(1.0, target[j], values[:, j])) for j in range(n)])
+        continuous_co_anchor, continuous_d_anchor = _independence_anchors(ratios, upper)
+    else:
+        continuous_co_anchor, continuous_d_anchor = discrete_co_anchor, discrete_d_anchor
+
     discrete_dep = min(max(_relative_deviation(discrete_co_pm, discrete_co_anchor), 0.0), 1.0)
     continuous_dep = min(
         max(_relative_deviation(continuous_co_pm, continuous_co_anchor), 0.0), 1.0
     )
+
+    discrete_d_pm = _dpm_nd(values, target, 0.0, norm=True)
+    continuous_d_pm = _dpm_nd(values, target, 1.0, norm=True) if continuous else discrete_d_pm
     n_dim_discrete_dep = min(_relative_deviation(discrete_d_pm, discrete_d_anchor), 1.0)
     n_dim_continuous_dep = min(_relative_deviation(continuous_d_pm, continuous_d_anchor), 1.0)
 
-    return math.sqrt(
-        (discrete_dep + continuous_dep + n_dim_discrete_dep + n_dim_continuous_dep) / 4.0
-    )
+    parts = np.array([discrete_dep, continuous_dep, n_dim_discrete_dep, n_dim_continuous_dep])
+    return r_pow_scalar(r_mean(parts), 0.5)
 
 
 def _independence_anchors(
     p: NDArray[np.float64], upper: tuple[NDArray[np.intp], NDArray[np.intp]]
 ) -> tuple[float, float]:
-    """Pairwise co-moment sum and nD divergent share under independence (R NNS.copula)."""
-    co = float(np.sum((np.outer(p, p) + np.outer(1.0 - p, 1.0 - p))[upper]))
-    return co, 1.0 - float(np.prod(p)) - float(np.prod(1.0 - p))
+    """R's ``indep_anchors``: ``sum((outer(p, p) + outer(1 - p, 1 - p))[utr])`` and
+    ``1 - prod(p) - prod(1 - p)``, with R's long-double ``sum``/``prod``."""
+    co = r_sum((np.outer(p, p) + np.outer(1.0 - p, 1.0 - p))[upper])
+    return co, 1.0 - r_prod(p) - r_prod(1.0 - p)
 
 
 def _relative_deviation(observed: float, anchor: float) -> float:
     # A boundary target can zero an anchor; an observed 0 then matches it exactly.
     if observed == anchor:
         return 0.0
-    with np.errstate(divide="ignore"):
+    with np.errstate(divide="ignore", invalid="ignore"):
         return float(np.divide(abs(observed - anchor), anchor))
 
 

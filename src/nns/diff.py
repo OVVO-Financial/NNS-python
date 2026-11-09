@@ -8,6 +8,16 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._rblas import RSingularError, r_solve
+from nns._rmean import (
+    r_col_means,
+    r_mean,
+    r_median,
+    r_round_array,
+    r_row_means_na_rm,
+    r_sum,
+)
+
 DiffResult = dict[str, float]
 DyDxResult = float | dict[str, NDArray[np.float64]]
 _DyDReducer = Callable[[list[NDArray[np.float64]]], dict[str, NDArray[np.float64]]]
@@ -88,7 +98,7 @@ def _nns_diff(
     upper_b = max(b1, b2)
 
     if _r_all_equal(lower_b, upper_b, tolerance=math.sqrt(_DBL_EPS)):
-        slope = float(np.mean([left_slope, right_slope]))
+        slope = r_mean(np.array([left_slope, right_slope]))
         return _rounded_result(
             [
                 f_x,
@@ -110,7 +120,7 @@ def _nns_diff(
         )
 
     high_b = max(b1, b2)
-    new_b = float(np.mean([lower_b, upper_b]))
+    new_b = r_mean(np.array([lower_b, upper_b]))  # R: mean(c(lower.B, upper.B))
     iteration = 1
     converged = False
     termination_code = 2
@@ -149,7 +159,7 @@ def _nns_diff(
                 upper_b = new_b
             else:
                 lower_b = new_b
-        new_b = float(np.mean([lower_b, upper_b]))
+        new_b = r_mean(np.array([lower_b, upper_b]))
         # Converged once the bisection bracket on B is tight: inferred_h cannot reach
         # |h| < tol in double precision once it is accurate. The derivative is
         # (f(x) - B) / point, so the bracket is scaled to the derivative, not to |B|.
@@ -159,12 +169,12 @@ def _nns_diff(
             break
         iteration += 1
 
-    final_b = float(np.mean([upper_b, lower_b]))
+    final_b = r_mean(np.array([upper_b, lower_b]))
     if np.isfinite(inferred_h):
         inferred_h = abs(float(inferred_h))
 
     if abs(point) < np.sqrt(np.finfo(float).eps):
-        slope = float(np.mean(_finite_step(f, point, h_value)[:2]))
+        slope = r_mean(np.array(_finite_step(f, point, h_value)[:2]))
     else:
         slope = (f_x - final_b) / point
 
@@ -221,20 +231,21 @@ def dy_dx(
     if np.any(np.isnan(np.column_stack((x_values, y_values)))):
         raise ValueError("You have some missing values, please address.")
     if isinstance(eval_point, str):
-        if eval_point.lower() != "overall":
-            raise ValueError("eval_point must be 'overall', numeric, or None.")
+        # R: any character eval.point requests the overall mean gradient,
+        # mean(NNS.reg(x, y, type = "REG", ...)$Fitted.xy$gradient).
         from nns.regression import nns_reg
 
         result = nns_reg(
             x_values,
             y_values,
+            type="REG",
             plot=False,
             dist=None,
         )
         fitted = result["Fitted.xy"]
         if not isinstance(fitted, dict):
             raise TypeError("nns_reg returned an unexpected fitted table.")
-        return float(np.mean(np.asarray(fitted["gradient"], dtype=np.float64)))
+        return r_mean(np.asarray(fitted["gradient"], dtype=np.float64))
     return _dy_dx_numeric(x_values, y_values, np.asarray(eval_point, dtype=np.float64).reshape(-1))
 
 
@@ -413,26 +424,6 @@ def _r_seq(start: float, stop: float, by: float) -> NDArray[np.float64]:
     return start + by * np.arange(0, count + 1, dtype=np.float64)
 
 
-def _v057_bandwidths(x_size: int, wrt_dependence: float) -> NDArray[np.float64]:
-    """h_s = 1/log(length(x), c(2, 10)); c(h_s, 10*h_s); doubled if dependence < .5."""
-    base = np.log(np.asarray([2.0, 10.0])) / np.log(float(x_size))
-    h_s = np.concatenate([base, 10.0 * base])
-    if wrt_dependence < 0.5:
-        h_s = 2.0 * h_s
-    return np.asarray(h_s, dtype=np.float64)
-
-
-def _dydx_step(column: NDArray[np.float64], eval_value: float, band: float) -> float:
-    """Locally-adaptive dy.dx step: VaR(p + H, 1, x) - VaR(p - H, 1, x), p = CDF(eval)."""
-    from nns.core import lpm_ratio
-    from nns.var import lpm_var
-
-    p = float(lpm_ratio(1.0, float(eval_value), column))
-    upper = lpm_var(min(1.0, p + band), 1.0, column)
-    lower = lpm_var(max(0.0, p - band), 1.0, column)
-    return float(upper - lower)
-
-
 def _r14_fd_weights(nodes: NDArray[np.float64], at: float, degree: int) -> NDArray[np.float64]:
     """R .nns_fd_weights: scaled Vandermonde finite-difference coefficients."""
     n = int(nodes.size)
@@ -442,13 +433,31 @@ def _r14_fd_weights(nodes: NDArray[np.float64], at: float, degree: int) -> NDArr
     if not np.isfinite(scale) or scale == 0.0:
         return np.full(n, np.nan)
     z = (nodes - at) / scale
-    powers = z[None, :] ** np.arange(n)[:, None]
+    # R: outer(0:(n-1), z, function(k, value) value^k), where R's ^ is x * x
+    # for an exponent of 2 and the C pow() otherwise; then solve() (LAPACK
+    # dgesv) and division by scale^degree with the same power rule.
+    powers = np.empty((n, n), dtype=np.float64)
+    for k in range(n):
+        powers[k] = _r_pow(z, float(k))
     rhs = np.zeros(n, dtype=np.float64)
     rhs[degree] = float(math.factorial(degree))
     try:
-        return np.asarray(np.linalg.solve(powers, rhs) / (scale**degree), dtype=np.float64)
-    except np.linalg.LinAlgError:
+        weights = r_solve(powers, rhs)
+    except RSingularError:
         return np.full(n, np.nan)
+    return np.asarray(weights / _r_pow(np.array([scale]), float(degree))[0], dtype=np.float64)
+
+
+
+def _r_pow(values: NDArray[np.float64], exponent: float) -> NDArray[np.float64]:
+    """R's ``x ^ y`` (arithmetic.c R_POW / R_pow) for a scalar exponent."""
+    v = np.asarray(values, dtype=np.float64)
+    if exponent == 2.0:
+        return v * v
+    if exponent == 0.0:
+        return np.ones_like(v)
+    out = [1.0 if x == 1.0 else math.pow(float(x), exponent) for x in v.ravel()]
+    return np.array(out, dtype=np.float64).reshape(v.shape)
 
 
 def _r14_dy_stencil(
@@ -546,7 +555,9 @@ def _dy_d_best_plan(
     if points.size == 0:
         raise ValueError("eval.points must contain at least one point.")
     # R: 1/log(max(nrow(x),3), c(2,10)), half and full windows capped at .25.
-    base = np.log(np.asarray([2.0, 10.0])) / np.log(float(max(n, 3)))
+    # R's log(x, 2) and log(x, 10) are the C log2 and log10, not log(x)/log(base).
+    rows_used = float(max(n, 3))
+    base = np.array([1.0 / math.log2(rows_used), 1.0 / math.log10(rows_used)])
     widths = np.minimum(0.25, np.r_[base / 2.0, base])
     if dep_local_r14(x_values[:, wrt_index], y_values, asym=False) < 0.5:
         widths = np.minimum(0.25, 2.0 * widths)
@@ -589,31 +600,23 @@ def _dy_d_best_plan(
         second = np.full((points.size, widths.size), np.nan)
         for index, band, point_index, context_rows, w_first, w_second in specifications:
             predicted = np.asarray(parts[index], dtype=np.float64)
-            means = np.mean(predicted.reshape(-1, context_rows), axis=1)
+            # R: colMeans(matrix(part(index), nrow = spec$n)), then
+            # sum(spec$stencil$first * values) with R's long-double sum().
+            means = r_col_means(predicted.reshape(-1, context_rows).T)
             centered = means - means[0]
-            first[point_index, band] = float(np.sum(w_first * centered))
-            second[point_index, band] = float(np.sum(w_second * centered))
+            first[point_index, band] = r_sum(w_first * centered)
+            second[point_index, band] = r_sum(w_second * centered)
 
         def average(a: NDArray[np.float64]) -> NDArray[np.float64]:
-            with np.errstate(invalid="ignore"):
-                numerator = np.nansum(a, axis=1)
-                count = np.sum(~np.isnan(a), axis=1)
-                return np.asarray(
-                    np.divide(
-                        numerator,
-                        count,
-                        out=np.full(a.shape[0], np.nan),
-                        where=count > 0,
-                    ),
-                    dtype=np.float64,
-                )
+            # R: rowMeans(z, na.rm = TRUE), NaN (0/0) for an all-NA row.
+            return r_row_means_na_rm(a)
 
         result = {"First": average(first), "Second": average(second)}
         if mixed:
             matrix = np.full((points.size, widths.size), np.nan)
             for index, band, point_index, weights in mixed_specs:
                 predicted = np.asarray(parts[index], dtype=np.float64)
-                matrix[point_index, band] = float(np.sum(weights * (predicted - predicted[0])))
+                matrix[point_index, band] = r_sum(weights * (predicted - predicted[0]))
             result["Mixed"] = average(matrix)
         return result
 
@@ -700,7 +703,9 @@ def _dy_dx_numeric(
         raise ValueError("eval_point must be finite.")
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
-    h_s = np.rint(np.exp(np.linspace(np.log(2.0), np.log(float(root_n)), 5)))
+    # R: round(exp(seq(log(2), log(root_n), length.out = 5))), with C exp/log.
+    grid = np.linspace(math.log(2.0), math.log(float(root_n)), 5)
+    h_s = np.rint(np.array([math.exp(float(v)) for v in grid]))
     # Typical spacing between neighbouring x values: diff() of x
     # in row order measured the gap between consecutive rows, so unsorted input
     # gave steps spanning the whole range and depended on row order.
@@ -721,6 +726,7 @@ def _dy_dx_numeric(
         x,
         y,
         point_est=point_est,
+        type="REG",
         point_only=True,
         smooth=True,
         plot=False,
@@ -744,8 +750,8 @@ def _dy_dx_numeric(
     second_out = np.empty(unique_eval.size, dtype=np.float64)
     for index, point in enumerate(unique_eval):
         mask = eval_col == point
-        first_out[index] = float(np.mean(first[mask]))
-        second_out[index] = float(np.mean(second[mask]))
+        first_out[index] = r_mean(first[mask])  # R: mean(first.deriv.vec[...])
+        second_out[index] = r_mean(second[mask])
     return {
         "eval.point": unique_eval,
         "first.derivative": first_out,
@@ -761,11 +767,12 @@ def _dy_d_eval_points(
     if isinstance(eval_points, str):
         option = eval_points.lower()
         if option == "median":
-            return np.median(x, axis=0).reshape(1, -1), False
+            # R: matrix(apply(x, 2, median), nrow = 1)
+            return np.array([[r_median(x[:, j]) for j in range(x.shape[1])]]), False
         if option == "last":
             return x[-1:, :].copy(), False
         if option == "mean":
-            return np.mean(x, axis=0).reshape(1, -1), False
+            return r_col_means(x).reshape(1, -1), False  # R: matrix(colMeans(x), nrow = 1)
         if option == "apd":
             return x[:, wrt_index].copy(), True
         if option == "obs":
@@ -827,7 +834,7 @@ def _finite_step(
     f_x = _eval_real(f, point, "f(point)")
     neg_step = (f_x - _eval_real(f, point - h, "f(point - h)")) / h
     pos_step = (_eval_real(f, point + h, "f(point + h)") - f_x) / h
-    return neg_step, pos_step, float(np.mean([neg_step, pos_step]))
+    return neg_step, pos_step, r_mean(np.array([neg_step, pos_step]))  # R: mean(c(...))
 
 
 _DBL_EPS = float(np.finfo(float).eps)
@@ -982,5 +989,6 @@ def _finite_scalar(value: float, name: str) -> float:
 
 
 def _rounded_result(values: list[float], digits: int) -> DiffResult:
-    rounded = np.round(np.asarray(values, dtype=np.float64), decimals=digits)
+    # R: round(as.matrix(...), digits), with R's rounding rule (nmath fround).
+    rounded = r_round_array(np.asarray(values, dtype=np.float64), digits)
     return {key: float(value) for key, value in zip(_RESULT_KEYS, rounded, strict=True)}

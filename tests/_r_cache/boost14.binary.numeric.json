@@ -1,0 +1,47 @@
+{
+  "entries": {
+    "47b7e7475d35bba1eb7df0ea28772bc695dc13ad1a95d6adf204db757311ca1f": {
+      "frequency": [
+        91.0,
+        72.0,
+        37.0
+      ],
+      "results": [
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0
+      ],
+      "weights": [
+        0.455,
+        0.36,
+        0.185
+      ]
+    },
+    "dbdd377c4dd9486636afe041a0636dedbe651c4384a2378ecbf68ed1f45c3bef": {
+      "frequency": [
+        117.0,
+        117.0,
+        61.0
+      ],
+      "results": [
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "weights": [
+        0.396610169491525,
+        0.396610169491525,
+        0.206779661016949
+      ]
+    }
+  },
+  "label": "boost14.binary.numeric",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

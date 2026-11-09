@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 from numpy.typing import NDArray
@@ -29,12 +30,11 @@ def nns_rescale(
 
     if method_l == "minmax":
         finite = values[np.isfinite(values)]
-        if finite.size == 0:
+        if finite.size == 0 or float(np.min(finite)) == float(np.max(finite)):
+            warnings.warn("All x identical: returning midpoint values", UserWarning, stacklevel=2)
             return np.full(values.shape, (a + b) / 2.0, dtype=np.float64)
         xmin = float(np.min(finite))
         xmax = float(np.max(finite))
-        if xmax == xmin:
-            return np.full(values.shape, (a + b) / 2.0, dtype=np.float64)
         return a + (b - a) * ((values - xmin) / (xmax - xmin))
 
     if method_l == "riskneutral":
@@ -43,7 +43,12 @@ def nns_rescale(
         if not a > 0.0:
             raise ValueError("S_0 (a) must be positive for riskneutral method.")
         finite = values[np.isfinite(values)]
-        mean_x = float(np.mean(finite)) if finite.size else float("nan")
+        # R's C++: one long-double pass over the finite values, divided by the count.
+        mean_x = (
+            float(np.cumsum(finite.astype(np.longdouble))[-1] / finite.size)
+            if finite.size
+            else float("nan")
+        )
         if not np.isfinite(mean_x) or mean_x <= 0.0:
             raise ValueError("Mean(x) must be positive/finite for riskneutral scaling.")
         target = a if type_l == "discounted" else a * math.exp(b * time_to_maturity)

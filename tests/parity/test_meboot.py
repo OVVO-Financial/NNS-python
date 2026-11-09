@@ -186,7 +186,8 @@ def test_nns_meboot_changed_drift_keeps_residual_scale_like_r(
     np.testing.assert_allclose(actual, expected, rtol=0.35, atol=0.35)
     assert actual[3] < 0.5 * float(np.std(x, ddof=1))
     # force_clt spreads the replicate means as the new baseline plus the original
-    # residuals, not as x (whose sd includes the replaced drift).
+    # residuals, not as x (whose sd includes the replaced drift), and like means of
+    # n = 30 observations: R 14 divides by sqrt(n), not by sqrt(reps) as meboot did.
     time = np.arange(1.0, 31.0)
     slope, intercept = np.polyfit(time, x, 1)
     residuals = np.asarray(x) - (intercept + slope * time)
@@ -194,6 +195,6 @@ def test_nns_meboot_changed_drift_keeps_residual_scale_like_r(
     reference = float(np.mean(x)) + new_slope * (time - 15.5) + residuals
     np.testing.assert_allclose(
         np.std(np.mean(replicates, axis=0), ddof=1),
-        np.std(reference, ddof=1) / np.sqrt(100.0),
+        np.std(reference, ddof=1) / np.sqrt(30.0),
         rtol=1e-4,
     )

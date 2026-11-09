@@ -17,7 +17,6 @@ from nns._reg_engine import (
     _mreg_weighted_mode,
     _mreg_weighted_mode_rows,
     _nearest_tie_values,
-    _normalize_weights_rows,
     _reduce_value,
     _stable_topk,
 )
@@ -224,34 +223,57 @@ def test_multivariate_point_only_matches_full_fit(kwargs: dict[str, object]) -> 
 
 
 def _reference_ensemble_weights(dk: np.ndarray) -> np.ndarray:
-    """The former implementation (rank-only components rebuilt per call)."""
-    from scipy import stats
+    """A per-row scalar transcription of R's C++ ``predict_sorted_k_noalloc``
+    weights (src/NNS_mreg_predict.cpp), the oracle for the vectorised, cached
+    implementation."""
+    import math
+
+    from nns._rnmath import dexp, dlnorm_log, dnorm, dt
+
+    def normalize(values: list[float]) -> list[float]:
+        cleaned = [v if math.isfinite(v) and v >= 0.0 else 0.0 for v in values]
+        total = 0.0
+        for v in cleaned:
+            total += v
+        if total <= 0.0:
+            return [1.0 / len(cleaned)] * len(cleaned)
+        return [v / total for v in cleaned]
+
+    def sample_sd(values: list[float]) -> float:
+        mu = 0.0
+        for v in values:
+            mu += v
+        mu /= len(values)
+        acc = 0.0
+        for v in values:
+            acc += (v - mu) * (v - mu)
+        return math.sqrt(acc / (len(values) - 1))
 
     m, k = dk.shape
     if k == 1:
         return np.ones((m, 1))
-    ranks = np.arange(1, k + 1, dtype=np.float64)
-    total = np.full((m, k), 1.0 / k)
-    total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
-    total += _normalize_weights_rows(1.0 / np.maximum(dk, 1e-12))
-    total += _normalize_weights_rows(
-        np.broadcast_to(stats.expon.pdf(ranks, scale=k), (m, k)).copy()
-    )
-    rank_sd = float(np.std(ranks, ddof=1))
-    lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
-    total += _normalize_weights_rows(np.broadcast_to(lognormal_row, (m, k)).copy())[:, ::-1]
-    total += _normalize_weights_rows(np.broadcast_to(ranks**-2.0, (m, k)).copy())
-    dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
-    valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
-    with np.errstate(all="ignore"):
-        normal = stats.norm.pdf(dk, loc=0.0, scale=np.where(valid_sd, dist_sd, 1.0))
-    total += np.where(valid_sd, _normalize_weights_rows(np.where(valid_sd, normal, 0.0)), 0.0)
-    dist_var = dist_sd**2
-    valid_var = np.isfinite(dist_var) & (dist_var > 0)
-    with np.errstate(all="ignore"):
-        rbf = np.exp(-dk / (2.0 * np.where(valid_var, dist_var, 1.0)))
-    total += np.where(valid_var, _normalize_weights_rows(np.where(valid_var, rbf, 0.0)), 0.0)
-    return _normalize_weights_rows(total)
+    ranks = [float(i + 1) for i in range(k)]
+    uniform = [1.0 / k] * k
+    exponential = normalize([dexp(r, float(k)) for r in ranks])
+    rank_sd = sample_sd(ranks)
+    lognormal = normalize([abs(dlnorm_log(r, 0.0, rank_sd)) for r in ranks])[::-1]
+    power = normalize([1.0 / (r * r) for r in ranks])
+    out = np.empty((m, k))
+    for row in range(m):
+        d = [float(v) for v in dk[row]]
+        student = normalize([dt(v, float(k)) for v in d])
+        inverse = normalize([1.0 / max(v, 1e-12) for v in d])
+        sd = sample_sd(d)
+        var = sd * sd
+        normal = normalize([dnorm(v, 0.0, sd) for v in d]) if sd > 0 else [0.0] * k
+        rbf = normalize([math.exp(-v / (2.0 * var)) for v in d]) if var > 0 else [0.0] * k
+        total = [
+            uniform[i] + student[i] + inverse[i] + exponential[i] + lognormal[i] + power[i]
+            + normal[i] + rbf[i]
+            for i in range(k)
+        ]
+        out[row] = normalize(total)
+    return out
 
 
 @pytest.mark.parametrize("k", [2, 3, 7, 40, 129])

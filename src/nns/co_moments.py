@@ -136,7 +136,8 @@ def _co_moment(
         y_target = y_targets[index % y_targets.size]
         x_deviation = _deviation(x_side, degree_x, x_target, x_values)
         y_deviation = _deviation(y_side, degree_y, y_target, y_values)
-        moments[index] = np.mean(x_deviation * y_deviation)
+        # R's C++ accumulates x1 * y1 sequentially in double and divides by n.
+        moments[index] = float(np.cumsum(x_deviation * y_deviation)[-1]) / x_values.size
 
     if _is_scalar(target_x) and _is_scalar(target_y):
         return float(moments[0])
@@ -177,14 +178,19 @@ def _deviation(
     target: float,
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
+    """R's C++ per-observation term: an indicator at degree 0, otherwise the
+    clamped deviation raised by repeated multiplication (integer degrees) or
+    libm ``pow``."""
+    from nns.dependence import _r_pm_terms
+
     if side is _lower:
         if degree == 0:
             return (values <= target).astype(np.float64)
-        return np.maximum(0.0, target - values) ** degree
+        return _r_pm_terms(np.maximum(0.0, target - values), degree)
 
     if degree == 0:
         return (values > target).astype(np.float64)
-    return np.maximum(0.0, values - target) ** degree
+    return _r_pm_terms(np.maximum(0.0, values - target), degree)
 
 
 _lower = object()

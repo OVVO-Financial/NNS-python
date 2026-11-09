@@ -43,19 +43,19 @@ invariant, and property coverage.
 | VaR helpers: `lpm_var`, `upm_var` | implemented | high | Used by deterministic confidence and prediction interval paths. |
 | Central tendencies: `nns_gravity`, `nns_mode`, `nns_rescale` | implemented | high | Public helper behavior is covered through direct and dependent tests. |
 | Dependence and correlation: `nns_dep`, `nns_cor` | implemented | high | Follows installed R bivariate public path; dependence can be below signed correlation magnitude in known R-compatible cases. |
-| Copula: `nns_copula` | implemented | high | Bivariate scalar public form is implemented. |
-| Causation: `nns_causation`, `causal_matrix` | implemented | medium | Numeric lag paths and `tau="ts"` behavior are covered; some internal asymmetry granularity can differ in regression dimension reduction. |
-| Distribution functions: `nns_cdf` | implemented | high | Deterministic non-plotting paths are implemented; plotting is ignored. |
-| Distance helpers: `nns_distance`, `nns_distance_bulk` | implemented | high | Numeric and classification conventions follow installed R behavior. |
+| Copula: `nns_copula` | implemented | high | Bivariate and any-column matrix forms; R 14's arithmetic to the last bit (long-double `sum`/`prod`/`mean`, `^(1/2)` as `pow`). |
+| Causation: `nns_causation`, `causal_matrix` | implemented | high | Pairs, matrices, numeric lags, `tau="ts"`/`"cs"` and the permutation p-values (R's `set.seed` stream via `seed`) match R to the last bit on the live sweeps. |
+| Distribution functions: `nns_cdf` | implemented | high | Univariate and multivariate types match R to the last bit (libm `log`, long-double `rowSums`, R's batch kernel, the prefix LPM backend beyond 32 targets); plotting is ignored. |
+| Distance helpers: `nns_distance`, `nns_distance_bulk` | implemented | high | R 14's C++ kernels to the last bit, including where tied distances fall and the classification vote. |
 | Partitioning: `nns_part` | implemented | high | Returns plain dictionaries/arrays instead of R `data.table` objects. |
-| Regression: `nns_reg` | implemented | high | Numeric, class-code, confidence interval, smoothing, dimension-reduction, and factor paths are covered; `point_est` columns are matched by name, categorical/declared levels are honoured. |
-| Multivariate regression: `nns_m_reg` | implemented | high | Numeric, class, and raw factor/character predictor paths (`factor_2_dummy=True` by default, as R 13.3) are covered; column names are kept. |
+| Regression: `nns_reg` | implemented | high | Numeric, class-code, confidence interval, smoothing (an exact port of R's `smooth.spline`), dimension-reduction, and factor paths match R to the last bit on the live sweeps; `point_est` columns are matched by name, categorical/declared levels are honoured. |
+| Multivariate regression: `nns_m_reg` | implemented | high | Numeric, class, and raw factor/character predictor paths (`factor_2_dummy=True` by default, as in R) match R to the last bit; column names are kept. |
 | Stack: `nns_stack` | implemented | medium-high | Numeric/class paths, intervals, factor predictors, `ts_test`, and R's seeded CV/balance draws (bit-for-bit) are covered; test columns are matched by name and selection outputs carry predictor names. |
 | Boost: `nns_boost` | implemented | medium | Learner trials, epochs, and the final stack match R's seeded stream; feature weights/frequencies are named by column. |
 | Seasonality: `nns_seas` | implemented | high | Non-plotting installed-R path is implemented and cached defensively. |
-| ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | partial | medium | Numeric forecasting and every VAR dimension-reduction path (`cor`, `NNS.dep`, `NNS.caus`, `all`) match R NNS 13.3 exactly on driven multi-variable fixtures, including own-lag weights, `objective="max"`, vector and list `tau`, and interior/trailing missing values. VAR's `relevant_variables` are the regressors the cross-validated dimension reduction threshold keeps, and `multivariate` is `nns_stack(method=1)` (`nns_reg`) on exactly those regressors. Stochastic interval streams are structural/statistical parity only. |
-| Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | medium | Deterministic diagnostics are parity-tested; exact stochastic replicate parity with R is not expected. |
-| Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | medium | Public structures and deterministic paths are covered. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. Stochastic intervals use NNS Python RNG. |
+| ARMA and VAR: `nns_arma`, `nns_arma_optim`, `nns_var` | implemented | high | Forecasts, `nns_arma_optim` (including its smoothed `nns_reg` paths) and every VAR dimension-reduction path (`cor`, `NNS.dep`, `NNS.caus`, `all`) match R NNS 14.0 to the last bit on the live sweeps, including own-lag weights, `objective="max"`, vector and list `tau`, and interior/trailing missing values. ARMA prediction intervals reproduce R's `set.seed` stream through `random_seed`. VAR's `relevant_variables` are the regressors the cross-validated dimension reduction threshold keeps, and `multivariate` is `nns_stack(method=1)` (`nns_reg`) on exactly those regressors. |
+| Bootstrap/Monte Carlo: `nns_meboot`, `nns_mc` | implemented | high | With `random_seed = s` the replicates and summaries are R's after `set.seed(s)`, to the last bit. |
+| Stochastic dominance/superiority: `fsd`, `ssd`, `tsd`, `.uni` wrappers, `nns_ss`, `nns_sd_cluster`, `sd_efficient_set` | implemented | high | Contracts, the efficient-set order and the clustering match R 14 to the last bit; `nns_ss` intervals reproduce R's `set.seed` stream through `random_seed`. SD uses exact pure-NumPy prefix-pair kernels plus a degree-1 discrete order-statistic matrix path; R's C++ core remains faster on full finance fixtures. |
 | ANOVA: `nns_anova` | implemented | high | Binary, multi-group, pairwise, and degenerate `NaN` conventions are covered. |
 | Normalization: `nns_norm` | implemented | high | Numeric matrix path and R's list-of-vectors path are implemented; unequal-length vectors force linear scaling as in R. |
 | Categorical helpers: `encode_factor_codes`, `factor_2_dummy`, `factor_2_dummy_fr`, `prepare_factor_predictors` | implemented | high | Explicit `levels=` reproduces R factor ordering. `prepare_factor_predictors(...)` builds a full-rank dummy design; the regression functions encode raw factors themselves and do not need it. |
@@ -76,8 +76,11 @@ invariant, and property coverage.
 - NNS Python uses explicit Python errors for some cases where R silently truncates,
   coerces, warns, or returns unusable values. Important divergences are recorded
   in `docs/conventions.md`.
-- Stochastic exact stream parity is not expected. Stochastic paths use NumPy RNG
-  and are tested structurally/statistically.
+- Seeded stochastic paths reproduce R's random stream: `random_seed = s` gives
+  R's results after `set.seed(s)` for `nns_meboot`, `nns_mc`, the `nns_ss`
+  bootstrap bounds, `nns_arma` prediction intervals, the robust and effect-size
+  `nns_anova` paths, `nns_stack` and `nns_boost`. Without a seed the stream is
+  seeded from fresh entropy.
 - Plotting side effects from R APIs are generally ignored; NNS Python returns data.
 - Stochastic-dominance performance work stays pure NumPy for now. The current
   implementation mirrors R's sorted-column/prefix-sum algorithm and adds

@@ -117,23 +117,35 @@ def test_numpy_fallback_moments_are_blocked_over_targets_bit_identically(
     monkeypatch: pytest.MonkeyPatch, degree: float
 ) -> None:
     monkeypatch.setattr(core_module, "native_fn", lambda name: None)
-    monkeypatch.setattr(core_module, "_TARGET_BLOCK", 64)
     rng = np.random.default_rng(7)
     x = rng.normal(size=301)
     targets = np.concatenate([x, rng.normal(size=50)])
+
+    def moments() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return (
+            np.asarray(lpm(degree, targets, x)),
+            np.asarray(upm(degree, targets, x)),
+            np.asarray(lpm_ratio(degree, targets, x)),
+        )
+
+    # Blocking over targets must not change a single bit: the fallback forms
+    # each target's moment with R's C++ arithmetic whatever the block size.
+    monkeypatch.setattr(core_module, "_TARGET_BLOCK", 64)
+    blocked = moments()
+    monkeypatch.setattr(core_module, "_TARGET_BLOCK", 10_000)
+    dense = moments()
+    for a, b in zip(blocked, dense, strict=True):
+        np.testing.assert_array_equal(a, b)
+
     deviations = targets[:, np.newaxis] - x
     if degree == 0.0:
-        dense_lower = np.mean(deviations >= 0.0, axis=1)
-        dense_upper = np.mean(deviations < 0.0, axis=1)
+        textbook_lower = np.mean(deviations >= 0.0, axis=1)
+        textbook_upper = np.mean(deviations < 0.0, axis=1)
     else:
-        dense_lower = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
-        dense_upper = np.mean(np.maximum(0.0, -deviations) ** degree, axis=1)
-
-    np.testing.assert_array_equal(lpm(degree, targets, x), dense_lower)
-    np.testing.assert_array_equal(upm(degree, targets, x), dense_upper)
-    if degree > 0.0:
-        dense_ratio = dense_lower / (dense_lower + dense_upper)
-        np.testing.assert_array_equal(lpm_ratio(degree, targets, x), dense_ratio)
+        textbook_lower = np.mean(np.maximum(0.0, deviations) ** degree, axis=1)
+        textbook_upper = np.mean(np.maximum(0.0, -deviations) ** degree, axis=1)
+    np.testing.assert_allclose(dense[0], textbook_lower, rtol=1e-13, atol=0)
+    np.testing.assert_allclose(dense[1], textbook_upper, rtol=1e-13, atol=0)
 
 
 def test_numpy_fallback_cdf_does_not_allocate_an_n_by_n_matrix(

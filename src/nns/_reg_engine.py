@@ -48,7 +48,22 @@ from nns._labels import (
     split_columns,
 )
 from nns._native import native_fn
-from nns._rmean import r_mean
+from nns._rblas import r_matvec
+from nns._rmean import (
+    r_approx,
+    r_cor,
+    r_mean,
+    r_quantile,
+    r_rank_average,
+    r_row_means,
+    r_sum,
+)
+from nns._rnmath import dexp as _rnmath_dexp
+from nns._rnmath import dlnorm_log as _rnmath_dlnorm_log
+from nns._rnmath import dnorm as _rnmath_dnorm
+from nns._rnmath import dt as _rnmath_dt
+from nns._rnmath import libm_exp
+from nns._rsmspline import SmoothSplineFit, smooth_spline
 from nns.central_tendencies import nns_gravity, nns_mode
 from nns.dependence import nns_dep
 
@@ -87,7 +102,10 @@ def _validate_order(order: Any) -> Order:
 
 
 def _validate_nbest(n_best: Any) -> NBest:
-    if n_best is None:
+    # NA (as NNS.stack reports for a single predictor) selects the default.
+    if n_best is None or (
+        isinstance(n_best, (float, np.floating)) and math.isnan(float(n_best))
+    ):
         return None
     if isinstance(n_best, str):
         if n_best.lower() == "all":
@@ -99,6 +117,46 @@ def _validate_nbest(n_best: Any) -> NBest:
     if not math.isfinite(value) or value < 1 or value != math.floor(value):
         raise ValueError("[n.best] must be NULL, 'all', or a positive integer.")
     return int(value)
+
+
+def _validate_threshold(threshold: Any) -> float | NDArray[np.float64] | dict[str, float]:
+    """R ``.nns_reg_validate_threshold``: NULL or NA means no screening (0).
+
+    A scalar stays a float. A vector (one cutoff per class, as ``NNS.stack``
+    reports for classification) becomes an array with NA entries set to 0; a
+    mapping keyed by class label is R's named vector. Every cutoff must be
+    finite and nonnegative.
+    """
+    message = "[threshold] must be NULL, NA, or finite nonnegative numbers."
+
+    def one(value: Any) -> float:
+        if value is None:
+            return 0.0
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError(message)
+        out = float(value)
+        if math.isnan(out):
+            return 0.0
+        if not math.isfinite(out) or out < 0:
+            raise ValueError(message)
+        return out
+
+    if threshold is None:
+        return 0.0
+    if isinstance(threshold, dict):
+        if not threshold:
+            return 0.0
+        return {str(key): one(value) for key, value in threshold.items()}
+    if isinstance(threshold, (list, tuple, np.ndarray)):
+        values = list(np.asarray(threshold, dtype=object).reshape(-1))
+        if not values:
+            return 0.0
+        if len(values) == 1:
+            return one(values[0])
+        return np.array([one(value) for value in values], dtype=np.float64)
+    return one(threshold)
 
 
 def _validate_dist(dist: Any) -> str:
@@ -504,11 +562,12 @@ def _dependence(x: NDArray[np.float64], y: NDArray[np.float64]) -> float:
         # sign convention for the response.
         d2_forward = float(_copula(m, _r_col_means(m), continuous=True))
         d2_reverse = float(_copula(reflected, _r_col_means(reflected), continuous=True))
-        d2 = 0.5 * (d2_forward + d2_reverse)
+        d2 = r_mean(np.array([d2_forward, d2_reverse]))  # R: mean(c(...))
     except Exception:
         d2 = float("nan")
-    parts = [v for v in (d1, d2) if math.isfinite(v)]
-    d = sum(parts) / len(parts) if parts else float("nan")
+    # R: mean(c(d1, d2), na.rm = TRUE).
+    parts = [v for v in (d1, d2) if not math.isnan(v)]
+    d = r_mean(np.array(parts)) if parts else float("nan")
     if not math.isfinite(d):
         d = 0.1
     return min(1.0, max(0.0, d))
@@ -627,131 +686,13 @@ def _derivative(rp: dict[str, NDArray[np.float64]]) -> dict[str, NDArray[np.floa
     }
 
 
-def _nknots_smspl(n: int) -> int:
-    """R's ``stats:::.nknots.smspl``: number of inner knots for ``n`` unique x."""
-    if n < 50:
-        return n
-    a1, a2, a3, a4 = (math.log2(v) for v in (50.0, 100.0, 140.0, 200.0))
-    if n < 200:
-        value = 2.0 ** (a1 + (a2 - a1) * (n - 50) / 150)
-    elif n < 800:
-        value = 2.0 ** (a2 + (a3 - a2) * (n - 200) / 600)
-    elif n < 3200:
-        value = 2.0 ** (a3 + (a4 - a3) * (n - 800) / 2400)
-    else:
-        value = 200.0 + (n - 3200) ** 0.2
-    return math.trunc(value)
-
-
-def _smooth_spline_predictor(rx: NDArray[np.float64], ry: NDArray[np.float64], spar: float) -> Any:
-    """Port of R's ``stats::smooth.spline(x, y, spar)`` with default arguments.
-
-    R ties the smoothing parameter to dependence via an explicit ``spar`` rather
-    than delegating to GCV. This reproduces R's penalized cubic B-spline fit:
-    group x values closer than ``tol = 1e-6 * IQR(x)``, scale x to [0, 1], place
-    clamped cubic knots at ``.nknots.smspl(nx)`` of the unique abscissas (all of
-    them when ``nx < 50``), form the weighted design cross-product and the
-    second-derivative penalty Sigma exactly as Fortran ``sgram`` does (linear
-    interpolation of B'' on each knot interval, with its ``.3330`` constant),
-    then solve ``(X'WX + lambda * Sigma) c = X'W y`` with
-    ``lambda = ratio * 256^(3*spar - 1)`` and ``ratio`` from R's partial
-    diagonal trace. Returns a callable evaluating the fit (with R's linear
-    extrapolation beyond the data range), or ``None`` when R would refuse to fit.
-    """
-    from scipy.interpolate import BSpline  # type: ignore[import-untyped]
-    from scipy.linalg import solveh_banded  # type: ignore[import-untyped]
-
-    x_all = np.asarray(rx, dtype=np.float64)
-    y_all = np.asarray(ry, dtype=np.float64)
-    q25, q75 = np.quantile(x_all, [0.25, 0.75])
-    tol = 1e-6 * float(q75 - q25)
-    if not math.isfinite(tol) or tol <= 0.0:
-        return None
-    # R: xx <- round((x - mean(x)) / tol); one group per distinct rounded value,
-    # represented by its smallest x, with the group mean of y and weight = size.
-    rounded = np.round((x_all - float(np.mean(x_all))) / tol)
-    order = np.argsort(x_all, kind="mergesort")
-    xs = x_all[order]
-    ys = y_all[order]
-    rs = rounded[order]
-    is_start = np.concatenate(([True], rs[:-1] < rs[1:]))
-    nx = int(np.count_nonzero(is_start))
-    if nx < 4:
-        return None
-    ux = xs[is_start]
-    group = np.cumsum(is_start) - 1
-    wbar = np.bincount(group).astype(np.float64)
-    ybar = np.bincount(group, weights=ys) / wbar
-
-    x0 = ux[0]
-    r_ux = ux[-1] - ux[0]
-    if r_ux <= 0.0:
-        return None
-    xbar = (ux - x0) / r_ux
-    nknots = _nknots_smspl(nx)
-    # R: xbar[seq.int(1, nx, length.out = nknots)] (fractional indices truncate).
-    inner = xbar[np.trunc(np.linspace(1.0, float(nx), nknots)).astype(np.intp) - 1]
-    knot = np.concatenate(([xbar[0]] * 3, inner, [xbar[-1]] * 3))
-    nk = nknots + 2
-    k = 3
-
-    design = BSpline.design_matrix(xbar, knot, k).toarray()
-    xtwx = design.T @ (wbar[:, None] * design)
-
-    # Fortran sgram: on each knot interval B'' is linear; with y1 = B''(left)
-    # and y2 = B''(right) - y1, Sigma += w * (y1 y1' + (y2 y1' + y1 y2')/2
-    # + .3330 y2 y2'), where .3330 (not 1/3) is R's constant.
-    d2 = np.asarray(BSpline(knot, np.eye(nk), k)(inner, nu=2), dtype=np.float64)
-    y1 = d2[:-1]
-    y2 = d2[1:] - y1
-    width = np.diff(inner)[:, None]
-    cross = (width * y2).T @ y1
-    sigma = (width * y1).T @ y1 + 0.5 * (cross + cross.T) + 0.333 * ((width * y2).T @ y2)
-
-    diag_h = np.diag(xtwx)
-    diag_s = np.diag(sigma)
-    denom = float(diag_s[2 : nk - 3].sum())
-    if denom <= 0.0:
-        return None
-    ratio = float(diag_h[2 : nk - 3].sum()) / denom
-    lam = ratio * 256.0 ** (3.0 * spar - 1.0)
-
-    # R (sslvrg) solves the 4-band system with a banded Cholesky (LINPACK dpbfa).
-    system = xtwx + lam * sigma
-    banded = np.zeros((k + 1, nk), dtype=np.float64)
-    for offset in range(k + 1):
-        banded[k - offset, offset:] = np.diagonal(system, offset)
-    try:
-        coef = solveh_banded(banded, design.T @ (wbar * ybar))
-    except np.linalg.LinAlgError:
-        return None
-    spline = BSpline(knot, coef, k, extrapolate=False)
-    edge_lo = float(spline(0.0))
-    slope_lo = float(spline(0.0, nu=1))
-    edge_hi = float(spline(1.0))
-    slope_hi = float(spline(1.0, nu=1))
-
-    def predict(xout: NDArray[np.float64]) -> NDArray[np.float64]:
-        scaled = (np.asarray(xout, dtype=np.float64) - x0) / r_ux
-        out = np.asarray(spline(np.clip(scaled, 0.0, 1.0)), dtype=np.float64)
-        lo = scaled < 0.0
-        hi = scaled > 1.0
-        if np.any(lo):
-            out[lo] = edge_lo + scaled[lo] * slope_lo
-        if np.any(hi):
-            out[hi] = edge_hi + (scaled[hi] - 1.0) * slope_hi
-        return out
-
-    return predict
-
-
 def _predict_univariate(
     xout: NDArray[np.float64],
     rp: dict[str, NDArray[np.float64]],
     smooth: bool,
     is_class: bool,
     class_values: NDArray[np.float64] | None,
-    smooth_fit: Any = None,
+    smooth_fit: SmoothSplineFit | None = None,
 ) -> NDArray[np.float64]:
     if xout.size == 0:
         return np.asarray([], dtype=np.float64)
@@ -759,12 +700,11 @@ def _predict_univariate(
     if rx.size == 1:
         pred = np.full(xout.size, ry[0], dtype=np.float64)
     elif smooth and smooth_fit is not None and not is_class:
-        pred = np.asarray(smooth_fit(xout), dtype=np.float64)
-    elif smooth and rx.size >= 4 and not is_class:
-        # Degenerate fit (e.g. < 4 unique points): fall back to interpolation.
-        pred = np.interp(xout, rx, ry)
+        # R: predict(smooth.fit, xout)$y, with R's linear extrapolation.
+        pred = smooth_fit.predict(xout)
     else:
-        pred = np.interp(xout, rx, ry)
+        # R: approx(rp$x, rp$y, xout, method = "linear", rule = 2, ties = "ordered").
+        pred = r_approx(rx, ry, xout, ry[0], ry[-1])
         left = xout < rx[0]
         right = xout > rx[-1]
         if np.any(left):
@@ -785,12 +725,13 @@ def _predict_univariate(
 
 def _r2(actual: NDArray[np.float64], predicted: NDArray[np.float64]) -> float:
     """Racine-Hastie within-sample goodness-of-fit, bounded in [0, 1]."""
-    actual_centered = actual - float(np.mean(actual))
-    predicted_centered = predicted - float(np.mean(predicted))
-    denominator = float(np.sum(actual_centered**2) * np.sum(predicted_centered**2))
+    # R's mean() and sum() (long-double accumulation), as .nns_reg_r2 uses.
+    actual_centered = actual - r_mean(actual)
+    predicted_centered = predicted - r_mean(predicted)
+    denominator = r_sum(actual_centered**2) * r_sum(predicted_centered**2)
     if denominator == 0.0:
         return 1.0 if _r_all_equal(actual, predicted) else 0.0
-    numerator = float(np.sum(actual_centered * predicted_centered) ** 2)
+    numerator = r_sum(actual_centered * predicted_centered) ** 2
     return float(np.clip(numerator / denominator, 0.0, 1.0))
 
 
@@ -832,7 +773,8 @@ def _intervals(
         return {"conf_lower": None, "conf_upper": None, "pred_int": None}
     alpha = 1.0 - confidence_interval
     errors = actual - fitted
-    q_lo, q_hi = np.quantile(errors, [alpha / 2.0, 1.0 - alpha / 2.0], method="median_unbiased")
+    # R: quantile(errors, c(alpha / 2, 1 - alpha / 2), na.rm = TRUE, type = 8).
+    q_lo, q_hi = r_quantile(errors, [alpha / 2.0, 1.0 - alpha / 2.0], 8, na_rm=True)
     conf_lower = fitted + q_lo
     conf_upper = fitted + q_hi
 
@@ -882,12 +824,12 @@ def _dimred_coefficients(
         raise ValueError("[threshold] must be a single finite nonnegative number.")
 
     def cor_coef() -> NDArray[np.float64]:
-        from scipy import stats  # type: ignore[import-untyped]
-
+        # stats::cor(x[, j], y, method = "spearman"): Pearson on average
+        # ranks with R's cov.c arithmetic.
+        y_rank = r_rank_average(y)
         out = np.zeros(p, dtype=np.float64)
         for j in range(p):
-            with np.errstate(all="ignore"):
-                rho = stats.spearmanr(x[:, j], y).statistic
+            rho = r_cor(r_rank_average(x[:, j]), y_rank)
             out[j] = rho if math.isfinite(rho) else 0.0
         return out
 
@@ -930,7 +872,8 @@ def _dimred_coefficients(
     elif method == "nns.caus":
         coef = caus_coef()
     elif method == "all":
-        coef = np.mean(np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))), axis=1)
+        # rowMeans(cbind(caus, dep, cor, 1)): long-double row sums / 4.
+        coef = r_row_means(np.column_stack((caus_coef(), dep_coef(), cor_coef(), np.ones(p))))
     elif method == "equal":
         coef = np.ones(p, dtype=np.float64)
     else:
@@ -973,10 +916,9 @@ def _dimreduce(
     if denominator < 1:
         raise ValueError("Dimension reduction retained no predictors.")
 
-    x_star = np.asarray(nx @ coef / denominator, dtype=np.float64)
-    point_star = (
-        None if np_points is None else np.asarray(np_points @ coef / denominator, dtype=np.float64)
-    )
+    # R: (nx %*% coef) / denominator, in reference-BLAS order (see nns._rblas).
+    x_star = r_matvec(nx, coef) / denominator
+    point_star = None if np_points is None else r_matvec(np_points, coef) / denominator
     names = (
         list(variable_names)
         if variable_names is not None and len(variable_names) == x.shape[1]
@@ -1007,68 +949,80 @@ def _mreg_weighted_mode(values: NDArray[np.float64], weights: NDArray[np.float64
 
 
 def _normalize_weights_rows(w: NDArray[np.float64]) -> NDArray[np.float64]:
+    """R's C++ ``normalize_prefix`` on every row: non-finite or negative weights
+    become 0, the row is summed sequentially and divided by that sum, and a row
+    without positive weight becomes uniform."""
     w = np.where(np.isfinite(w) & (w >= 0), w, 0.0)
-    sums = w.sum(axis=1, keepdims=True)
     k = w.shape[1]
+    sums = np.cumsum(w, axis=1)[:, -1:] if k else np.zeros((w.shape[0], 1))
     uniform = np.full_like(w, 1.0 / k)
     with np.errstate(invalid="ignore", divide="ignore"):
         scaled = w / sums
     return np.where(sums > 0, scaled, uniform)
 
 
-def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Vectorized eight-component ensemble weights for (m, k) sorted distances."""
-    from scipy import stats  # type: ignore[import-untyped]
+_vdt = np.frompyfunc(_rnmath_dt, 2, 1)
+_vdnorm = np.frompyfunc(_rnmath_dnorm, 3, 1)
 
+
+def _mreg_ensemble_weights(dk: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The eight-component ensemble weights of R's C++ ``predict_sorted_k`` for
+    (m, k) sorted distances, term for term: R's ``dt``/``dnorm`` densities,
+    sequential sums, and the components added in R's order."""
     m, k = dk.shape
     if k == 1:
         return np.ones((m, 1), dtype=np.float64)
+    kk = float(k)
+    student = _normalize_weights_rows(np.asarray(_vdt(dk, kk), dtype=np.float64))
+    inverse = _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
 
-    total = np.full((m, k), 1.0 / k, dtype=np.float64)  # uniform
-    total += _normalize_weights_rows(stats.t.pdf(dk, df=k))
-    total += _normalize_weights_rows(1.0 / np.maximum(dk, _EPS_INV))
-    for row in _rank_weight_rows(k):
-        total += row
-
-    dist_sd = np.std(dk, axis=1, ddof=1, keepdims=True)
-    valid_sd = np.isfinite(dist_sd) & (dist_sd > 0)
+    mu = np.cumsum(dk, axis=1)[:, -1:] / kk
+    centred = dk - mu
+    with np.errstate(invalid="ignore"):
+        sd = np.sqrt(np.cumsum(centred * centred, axis=1)[:, -1:] / (k - 1))
+    valid_sd = np.isfinite(sd) & (sd > 0)
+    normal = np.zeros((m, k), dtype=np.float64)
     if np.any(valid_sd):
-        with np.errstate(all="ignore"):
-            normal = stats.norm.pdf(dk, loc=0.0, scale=np.where(valid_sd, dist_sd, 1.0))
-        normal = np.where(valid_sd, normal, 0.0)
-        total += np.where(valid_sd, _normalize_weights_rows(normal), 0.0)
-
-    dist_var = dist_sd**2
-    valid_var = np.isfinite(dist_var) & (dist_var > 0)
+        rows = np.flatnonzero(valid_sd[:, 0])
+        dens = np.asarray(_vdnorm(dk[rows], 0.0, sd[rows]), dtype=np.float64)
+        normal[rows] = _normalize_weights_rows(dens)
+    var = np.where(np.isfinite(sd), sd * sd, np.nan)
+    valid_var = np.isfinite(var) & (var > 0)
+    rbf = np.zeros((m, k), dtype=np.float64)
     if np.any(valid_var):
-        with np.errstate(all="ignore"):
-            rbf = np.exp(-dk / (2.0 * np.where(valid_var, dist_var, 1.0)))
-        rbf = np.where(valid_var, rbf, 0.0)
-        total += np.where(valid_var, _normalize_weights_rows(rbf), 0.0)
+        rows = np.flatnonzero(valid_var[:, 0])
+        with np.errstate(over="ignore", under="ignore"):
+            rbf[rows] = _normalize_weights_rows(libm_exp(-dk[rows] / (2.0 * var[rows])))
 
+    uniform, exponential, lognormal, power = _rank_weight_rows(k)
+    total = uniform + student + inverse + exponential + lognormal + power + normal + rbf
     return _normalize_weights_rows(total)
 
 
 @functools.lru_cache(maxsize=512)
 def _rank_weight_rows(k: int) -> tuple[NDArray[np.float64], ...]:
-    """Normalised rank-only ensemble components for k neighbours, in the order
-    they are added: exponential, reversed lognormal (when the rank sd is
-    positive) and inverse-square rank. They do not depend on the distances, so
-    they are computed once per k rather than per query chunk and per k of a
-    path; each row is normalised exactly as a row of the broadcast matrix was.
-    """
-    from scipy import stats
-
+    """R's ``rank_components`` for k neighbours: the uniform, exponential,
+    reversed lognormal (zero unless the rank sd is positive) and inverse-square
+    rank components. They do not depend on the distances, so they are computed
+    once per k."""
     ranks = np.arange(1, k + 1, dtype=np.float64)
-    rows = [_normalize_weights_rows(stats.expon.pdf(ranks, scale=k)[None, :])[0]]
-    rank_sd = float(np.std(ranks, ddof=1))
+    uniform = np.full(k, 1.0 / k, dtype=np.float64)
+    exponential = _normalize_weights_rows(
+        np.array([[_rnmath_dexp(r, float(k)) for r in ranks]], dtype=np.float64)
+    )[0]
+    mu = float(np.cumsum(ranks)[-1]) / k
+    rank_sd = math.sqrt(float(np.cumsum((ranks - mu) * (ranks - mu))[-1]) / (k - 1))
     if math.isfinite(rank_sd) and rank_sd > 0:
-        lognormal_row = np.abs(stats.lognorm.logpdf(ranks, s=rank_sd, scale=1.0))
-        rows.append(_normalize_weights_rows(lognormal_row[None, :])[0, ::-1].copy())
-    rows.append(_normalize_weights_rows((ranks**-2.0)[None, :])[0])
+        lognormal = _normalize_weights_rows(
+            np.array([[abs(_rnmath_dlnorm_log(r, 0.0, rank_sd)) for r in ranks]])
+        )[0, ::-1].copy()
+    else:
+        lognormal = np.zeros(k, dtype=np.float64)
+    power = _normalize_weights_rows((1.0 / (ranks * ranks))[None, :])[0]
+    rows = (uniform, exponential, lognormal, power)
     for row in rows:
         row.flags.writeable = False
-    return tuple(rows)
+    return rows
 
 
 def _mreg_distances(
@@ -1284,7 +1238,8 @@ def _mreg_predict(
         if is_class:
             out[rows] = _mreg_weighted_mode_rows(yk, w)
         else:
-            out[rows] = np.sum(yk * w, axis=1)
+            # R accumulates the weighted sum sequentially.
+            out[rows] = np.cumsum(yk * w, axis=1)[:, -1]
 
     return out
 
@@ -1338,7 +1293,7 @@ def _mreg_predict_path(
 
         for k in range(2, kmax + 1):
             w = _mreg_ensemble_weights(d_sorted[:, :k])
-            out[rows, k - 1] = np.sum(y_sorted[:, :k] * w, axis=1)
+            out[rows, k - 1] = np.cumsum(y_sorted[:, :k] * w, axis=1)[:, -1]
     return out
 
 
@@ -1511,8 +1466,14 @@ def _mreg_default_nbest(x: NDArray[np.float64], y: NDArray[np.float64], rpm_rows
         from nns.copula import nns_copula
 
         # R14's smoothing heuristic is unsigned: reflect only the response.
-        dep = 0.5 * (
-            float(nns_copula(np.column_stack((x, y)))) + float(nns_copula(np.column_stack((x, -y))))
+        # R: mean(c(NNS.copula(cbind(X, y)), NNS.copula(cbind(X, -y)))).
+        dep = r_mean(
+            np.array(
+                [
+                    float(nns_copula(np.column_stack((x, y)))),
+                    float(nns_copula(np.column_stack((x, -y)))),
+                ]
+            )
         )
     except Exception:
         dep = float("nan")
@@ -1682,6 +1643,7 @@ def nns_reg_engine(
     class_levels: Any = None,
     factor_levels: Any = None,
     multivariate_only: bool = False,
+    categorical: bool | None = None,
 ) -> dict[str, Any]:
     """Port of R ``NNS.reg`` (and, with ``multivariate_only``, ``NNS.M.reg``).
 
@@ -1698,6 +1660,7 @@ def nns_reg_engine(
     dist = _validate_dist(dist)
     noise_reduction = _validate_noise(noise_reduction)
     confidence_interval = _validate_ci(confidence_interval)
+    threshold = _validate_threshold(threshold)
 
     y_raw, y_categories = _response_vector(y)
     if y_raw.size < 2:
@@ -1720,8 +1683,10 @@ def nns_reg_engine(
     # R14 nominal classes are probability-valued indicators, never numeric
     # regression on arbitrary class codes. This branch precedes NNS.M.reg and
     # the former univariate class interpolation. NNS.M.reg's standalone
-    # `multivariate_only` mode retains its own separate public contract.
-    if task["is_class"] and not multivariate_only and not multivariate_call:
+    # `multivariate_only` mode retains its own separate public contract. As in
+    # R, it also precedes `multivariate.call`: a class task returns the
+    # classification result even then (internal callers request type = "REG").
+    if task["is_class"] and not multivariate_only:
         from nns._class_r14 import classify
 
         return classify(
@@ -1739,7 +1704,7 @@ def nns_reg_engine(
 
     # Full multivariate regression.
     if ex.shape[1] > 1 and dim_red_method is None:
-        return _m_reg(
+        ans = _m_reg(
             ex,
             y_numeric,
             order=order,
@@ -1753,12 +1718,29 @@ def nns_reg_engine(
             class_values=task["class_values"],
             class_levels=task["class_levels"],
             variable_names=encoded.get("encoded_names"),
-            categorical=all(meta["categorical"] for meta in encoded["metadata"]),
+            # NNS.reg tells NNS.M.reg whether every predictor is categorical;
+            # a direct NNS.M.reg call uses its own [categorical] argument.
+            categorical=(
+                all(meta["categorical"] for meta in encoded["metadata"])
+                if categorical is None
+                else categorical
+            ),
         )
+        # NNS.reg then sets ans$class.levels <- task$class.levels, which deletes
+        # the element when it is NULL (a numeric response); NNS.M.reg itself
+        # keeps the NULL entry.
+        if not multivariate_only and task["class_levels"] is None:
+            ans.pop("class.levels", None)
+        return ans
 
     synthetic_equation = None
     x_star = None
     if ex.shape[1] > 1:
+        if not isinstance(threshold, float):
+            raise ValueError(
+                "[threshold] must be a single number for regression; one cutoff "
+                "per class applies to classification."
+            )
         dr = _dimreduce(
             ex,
             ep,
@@ -1783,11 +1765,11 @@ def nns_reg_engine(
 
     # R ties the smoothing spline's spar to dependence and fits it once, reusing
     # the fit for both the training and point predictions.
-    smooth_fit = None
+    smooth_fit: SmoothSplineFit | None = None
     if smooth and rp["x"].size >= 4 and not task["is_class"]:
         dependence = _dependence(ux, y_numeric)
         spar = (dependence + 0.5) / 2.0
-        smooth_fit = _smooth_spline_predictor(rp["x"], rp["y"], spar)
+        smooth_fit = smooth_spline(rp["x"], rp["y"], spar)
 
     fitted_pred = _predict_univariate(
         ux, rp, smooth, task["is_class"], task["class_values"], smooth_fit
@@ -1809,7 +1791,7 @@ def nns_reg_engine(
         if task["is_class"]
         else _r2(y_numeric, fitted_pred)
     )
-    se = float(np.sqrt(np.mean((fitted_pred - y_numeric) ** 2)))
+    se = math.sqrt(r_mean((fitted_pred - y_numeric) ** 2))  # R: sqrt(mean(...))
     intervals = _intervals(
         y_numeric,
         fitted_pred,

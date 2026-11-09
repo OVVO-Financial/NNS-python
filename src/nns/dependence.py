@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Any, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
 from nns._native import native_fn as native_fn
+from nns._rnmath import libm_pow
 
 
 @overload
@@ -16,7 +17,21 @@ def nns_dep(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
     asym: bool = False,
+    p_value: Literal[False] = False,
+    *,
+    random_seed: int | None = None,
 ) -> dict[str, float]: ...
+
+
+@overload
+def nns_dep(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    asym: bool,
+    p_value: Literal[True],
+    *,
+    random_seed: int | None = None,
+) -> dict[str, Any]: ...
 
 
 @overload
@@ -24,6 +39,9 @@ def nns_dep(
     x: Any,
     y: None = None,
     asym: bool = False,
+    p_value: bool = False,
+    *,
+    random_seed: int | None = None,
 ) -> dict[str, Any]: ...
 
 
@@ -31,6 +49,9 @@ def nns_dep(
     x: Any,
     y: NDArray[np.float64] | None = None,
     asym: bool = False,
+    p_value: bool = False,
+    *,
+    random_seed: int | None = None,
 ) -> dict[str, float] | dict[str, Any]:
     """Return NNS nonlinear correlation and dependence (R ``NNS.dep``).
 
@@ -48,8 +69,20 @@ def nns_dep(
     ``[i, j]`` is ``nns_dep(X[:, i], X[:, j], asym=True)``, i.e. row variable ->
     column variable. A DataFrame input returns labelled DataFrames.
 
-    Inputs must be finite. R's ``p.value`` option is not implemented.
+    Inputs must be finite.
+
+    ``p_value=True`` (bivariate form only) adds R's permutation test: the
+    measures of ``x`` against 100 shuffles of ``y`` give ``"Correlation p.value"``
+    (two-sided), ``"Dependence p.value"`` (upper tail, dependence being a
+    magnitude) and the 95% partial-moment intervals of the shuffled values
+    (``"Correlation 95% CIs"``, ``"Dependence 95% CIs"``). With
+    ``random_seed = s`` the shuffles are R's after ``set.seed(s)``.
     """
+    if p_value:
+        if y is None:
+            raise ValueError("p.value = TRUE requires both x and y.")
+        x_values, y_values = _as_pair(x, y)
+        return _dep_p_value(x_values, y_values, asym, random_seed)
     if y is None:
         return _dep_matrix(x, asym)
     x_values, y_values = _as_pair(x, y)
@@ -68,6 +101,41 @@ def nns_dep(
 
     correlation, dependence = dep_pair_r14(x_values, y_values, asym)
     return {"Correlation": correlation, "Dependence": dependence}
+
+
+def _dep_p_value(
+    x: NDArray[np.float64], y: NDArray[np.float64], asym: bool, random_seed: int | None
+) -> dict[str, Any]:
+    """R ``NNS.dep(x, y, p.value = TRUE)``: 100 permutations of ``y``.
+
+    R draws ``replicate(100, sample.int(length(y)))`` and measures ``x`` against
+    ``y`` and every shuffle (and against ``x`` itself, which only its plot uses).
+    """
+    from nns._rrng import r_rng
+    from nns.var import lpm_var, upm_var
+
+    rng = r_rng(random_seed)
+    permutations = [rng.sample_int(y.size) - 1 for _ in range(100)]
+    observed = nns_dep(x, y, asym=asym)
+    null = [nns_dep(x, y[index], asym=asym) for index in permutations]
+    cors = np.array([result["Correlation"] for result in null], dtype=np.float64)
+    deps = np.array([result["Dependence"] for result in null], dtype=np.float64)
+    cor = float(observed["Correlation"])
+    dep = float(observed["Dependence"])
+    tails = min(1 + int(np.count_nonzero(cors <= cor)), 1 + int(np.count_nonzero(cors >= cor)))
+    return {
+        "Correlation": cor,
+        "Correlation p.value": min(1.0, 2 * tails / (1 + cors.size)),
+        "Correlation 95% CIs": np.array(
+            [float(lpm_var(0.025, 0.0, cors)), float(upm_var(0.025, 0.0, cors))]
+        ),
+        "Dependence": dep,
+        # Dependence is a magnitude: only the upper tail is evidence against independence.
+        "Dependence p.value": (1 + int(np.count_nonzero(deps >= dep))) / (1 + deps.size),
+        "Dependence 95% CIs": np.array(
+            [float(lpm_var(0.025, 0.0, deps)), float(upm_var(0.025, 0.0, deps))]
+        ),
+    }
 
 
 def _dep_matrix(x: Any, asym: bool) -> dict[str, Any]:
@@ -325,9 +393,8 @@ def _dpm_nd(
 
     if degree == 0.0:
         return float(np.mean(discordant))
-    else:
-        values = np.prod(np.abs(diff) ** degree, axis=1)
-        dpm = float(np.mean(np.where(discordant, values, 0.0)))
+    values = _r_row_products(_r_pm_terms(np.abs(diff), degree))
+    dpm = _rcpp_mean(np.where(discordant, values, 0.0))
 
     if not norm:
         return dpm
@@ -343,10 +410,10 @@ def _clpm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
     if degree == 0.0:
         return float(np.mean(np.all(diff >= 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    # Clamp before the power: rows with a negative deviation are masked out anyway,
-    # and a fractional power of a negative number only produced RuntimeWarnings.
-    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
-    return float(np.mean(np.where(valid, powered, 0.0)))
+    # Clamp before the power: rows with a negative deviation are masked out anyway
+    # (R stops at the first one), and a fractional power of a negative number is NaN.
+    powered = _r_row_products(_r_pm_terms(np.maximum(diff, 0.0), degree))
+    return _rcpp_mean(np.where(valid, powered, 0.0))
 
 
 def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: float) -> float:
@@ -356,8 +423,35 @@ def _cupm_nd(data: NDArray[np.float64], target: NDArray[np.float64], degree: flo
         # to the lower side, so CLPM + CUPM + DPM = 1 at degree 0.
         return float(np.mean(np.all(diff > 0.0, axis=1)))
     valid = np.all(diff >= 0.0, axis=1)
-    powered = np.prod(np.maximum(diff, 0.0) ** degree, axis=1)
-    return float(np.mean(np.where(valid, powered, 0.0)))
+    powered = _r_row_products(_r_pm_terms(np.maximum(diff, 0.0), degree))
+    return _rcpp_mean(np.where(valid, powered, 0.0))
+
+
+def _r_pm_terms(deviations: NDArray[np.float64], degree: float) -> NDArray[np.float64]:
+    """R's C++ ``isInteger(degree) ? repeatMultiplication(dev, degree) : pow(dev,
+    degree)``: integer degrees by repeated multiplication from 1.0, others by libm
+    ``pow`` (NumPy's vectorised power is not libm's)."""
+    if degree == float(int(degree)):
+        terms = np.ones_like(deviations)
+        for _ in range(int(degree)):
+            terms = terms * deviations
+        return terms
+    return libm_pow(deviations, degree)
+
+
+def _r_row_products(terms: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Each row's product, accumulated from 1.0 column by column as R's kernel does."""
+    product = np.ones(terms.shape[0], dtype=np.float64)
+    for column in range(terms.shape[1]):
+        product = product * terms[:, column]
+    return product
+
+
+def _rcpp_mean(values: NDArray[np.float64]) -> float:
+    """Rcpp's ``sum(vals) / n``: a plain sequential double sum."""
+    if values.size == 0:
+        return math.nan
+    return float(np.cumsum(values)[-1]) / values.size
 
 
 def co_lpm_nd(

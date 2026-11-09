@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import Any, cast, overload
+from typing import Any, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_matrix
+from nns._rmean import r_col_means, r_cor_matrix, r_mean
 from nns.dependence import nns_dep
 
 
@@ -83,6 +84,10 @@ def nns_norm(
                 )
             return _norm_unequal_series(series)
         values = _as_matrix(np.column_stack(series), "x")
+        normalized = _norm_matrix(values, linear, list_input=True)
+        if plot:
+            _plot_norm(values, normalized)
+        return normalized
     normalized = _norm_matrix(values, linear)
     if plot:
         _plot_norm(values, normalized)
@@ -99,17 +104,23 @@ def _plot_norm(values: NDArray[np.float64], normalized: NDArray[np.float64]) -> 
     plot_nns_norm(normalized, ax=bottom)
 
 
-def _norm_matrix(values: NDArray[np.float64], linear: bool) -> NDArray[np.float64]:
-    means = np.mean(values.astype(np.longdouble), axis=0).astype(np.float64)
-    means = means.copy()
+def _norm_matrix(
+    values: NDArray[np.float64], linear: bool, list_input: bool = False
+) -> NDArray[np.float64]:
+    # R: m <- colMeans(X) (list input: sapply(X, mean)); RG <- m %o% (1 / m);
+    # scales <- colMeans(RG [* scale.factor]).
+    if list_input:
+        means = np.array([r_mean(values[:, j]) for j in range(values.shape[1])])
+    else:
+        means = r_col_means(values)
     means[means == 0.0] = 1e-10
     ratio_grid = means[:, np.newaxis] * (1.0 / means[np.newaxis, :])
 
     if linear:
-        scales = np.mean(ratio_grid, axis=0)
+        scales = r_col_means(ratio_grid)
     else:
         scale_factor = _scale_factor(values)
-        scales = np.mean(ratio_grid * scale_factor, axis=0)
+        scales = r_col_means(ratio_grid * scale_factor)
 
     # Annotated assignment instead of cast(): under mypy targeting 3.12+ the
     # numpy stubs type this product precisely, making an explicit cast redundant
@@ -120,16 +131,16 @@ def _norm_matrix(values: NDArray[np.float64], linear: bool) -> NDArray[np.float6
 
 
 def _norm_unequal_series(series: list[NDArray[np.float64]]) -> list[NDArray[np.float64]]:
-    means = np.array([float(np.mean(item)) for item in series])
+    means = np.array([r_mean(item) for item in series])  # R: sapply(X, mean)
     means[means == 0.0] = 1e-10
     ratio_grid = means[:, np.newaxis] * (1.0 / means[np.newaxis, :])
-    scales = np.mean(ratio_grid, axis=0)
+    scales = r_col_means(ratio_grid)
     return [item * scale for item, scale in zip(series, scales, strict=True)]
 
 
 def _scale_factor(values: NDArray[np.float64]) -> NDArray[np.float64]:
     if values.shape[1] < 10:
-        return cast(NDArray[np.float64], np.abs(np.corrcoef(values, rowvar=False)))
+        return np.abs(r_cor_matrix(values))  # R: abs(cor(X_mat))
 
     n_variables = values.shape[1]
     deps = np.eye(n_variables, dtype=np.float64)

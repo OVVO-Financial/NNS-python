@@ -99,5 +99,9 @@ def test_nns_anova_robust_bounds(x: np.ndarray, y: np.ndarray) -> None:
     result = nns_anova(x, y, robust=True, confidence_interval=0.95, random_seed=123)
 
     assert isinstance(result, dict)
-    assert 0.0 <= result["Lower 95% CI"] <= result["Robust Certainty Estimate"] <= 1.0
-    assert result["Robust Certainty Estimate"] <= result["Upper 95% CI"] <= 1.0
+    # The bounds are quantiles of the bootstrap certainties and the estimate is
+    # their NNS.gravity, which R does not confine to the interval: for
+    # x = (-1, 2, ..., 2), y = (-1, 0, ..., 0) and set.seed(123), R returns an
+    # estimate of 1.47e-05 with both bounds at 0.
+    assert 0.0 <= result["Lower 95% CI"] <= result["Upper 95% CI"] <= 1.0
+    assert 0.0 <= result["Robust Certainty Estimate"] <= 1.0

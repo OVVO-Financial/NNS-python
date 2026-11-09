@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from nns._native import native_fn
 from nns.core import _as_degree, _require_finite
+from nns.dependence import _r_pm_terms
 
 Target: TypeAlias = float | Literal["mean"] | NDArray[np.float64] | None
 PMMatrixResult: TypeAlias = dict[str, Any]
@@ -66,34 +67,50 @@ def pm_matrix(
             result["names"] = resolved_names
         return result
 
+    # R's PMMatrix_CPv: deviation components first, then per-pair sequential
+    # double sums scaled by 1 / rows (a multiplication), the population
+    # adjustment, and the upper triangle mirrored (DUPM/DLPM crossed).
     dev_lower = _lower_deviation(values, targets, lpm_degree)
     dev_upper = _upper_deviation(values, targets, upm_degree)
 
-    clpm = (dev_lower.T @ dev_lower) / observations
-    cupm = (dev_upper.T @ dev_upper) / observations
-    dlpm = (dev_upper.T @ dev_lower) / observations
-    dupm = (dev_lower.T @ dev_upper) / observations
+    cupm = _sequential_cross(dev_upper, dev_upper)
+    clpm = _sequential_cross(dev_lower, dev_lower)
+    dupm = _sequential_cross(dev_lower, dev_upper)
+    dlpm = _sequential_cross(dev_upper, dev_lower)
 
-    adjust = observations / (observations - 1) if observations > 1 else 1.0
-    should_adjust = pop_adj and observations > 1 and lpm_degree > 0 and upm_degree > 0
-    if should_adjust:
-        clpm *= adjust
+    inv_rows = 1.0 / float(observations)
+    cupm *= inv_rows
+    clpm *= inv_rows
+    dupm *= inv_rows
+    dlpm *= inv_rows
+
+    if pop_adj and observations > 1 and lpm_degree > 0 and upm_degree > 0:
+        adjust = float(observations) / float(observations - 1)
         cupm *= adjust
-        dlpm *= adjust
+        clpm *= adjust
         dupm *= adjust
+        dlpm *= adjust
 
     if norm:
         total = cupm + dupm + dlpm + clpm
-        np.divide(cupm, total, out=cupm, where=total > 0.0)
-        np.divide(dupm, total, out=dupm, where=total > 0.0)
-        np.divide(dlpm, total, out=dlpm, where=total > 0.0)
-        np.divide(clpm, total, out=clpm, where=total > 0.0)
-        cupm[total <= 0.0] = 0.0
-        dupm[total <= 0.0] = 0.0
-        dlpm[total <= 0.0] = 0.0
-        clpm[total <= 0.0] = 0.0
+        positive = total > 0.0
+        safe_total = np.where(positive, total, 1.0)
+        cupm = np.where(positive, cupm / safe_total, 0.0)
+        dupm = np.where(positive, dupm / safe_total, 0.0)
+        dlpm = np.where(positive, dlpm / safe_total, 0.0)
+        clpm = np.where(positive, clpm / safe_total, 0.0)
 
     cov_matrix = cupm + clpm - dupm - dlpm
+    # R fills only the upper triangle and mirrors it: CUPM, CLPM and the
+    # covariance plainly, DUPM and DLPM crossed (each from the other's transpose).
+    upper = np.triu(np.ones(cupm.shape, dtype=bool))
+    cupm, clpm, dupm, dlpm, cov_matrix = (
+        np.where(upper, cupm, cupm.T),
+        np.where(upper, clpm, clpm.T),
+        np.where(upper, dupm, dlpm.T),
+        np.where(upper, dlpm, dupm.T),
+        np.where(upper, cov_matrix, cov_matrix.T),
+    )
     result = {
         "cupm": cupm,
         "dupm": dupm,
@@ -104,6 +121,20 @@ def pm_matrix(
     if resolved_names is not None:
         result["names"] = resolved_names
     return result
+
+
+def _sequential_cross(
+    left: NDArray[np.float64], right: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """``t(left) %*% right`` summed row by row in double, as R's C++ loop does."""
+    rows, cols = left.shape
+    total = np.zeros((cols, cols), dtype=np.float64)
+    block = max(1, 2_000_000 // max(1, cols * cols))
+    for start in range(0, rows, block):
+        stop = start + block
+        products = left[start:stop, :, np.newaxis] * right[start:stop, np.newaxis, :]
+        total = np.cumsum(np.concatenate((total[np.newaxis], products)), axis=0)[-1]
+    return total
 
 
 def _native_matrix(value: Any, dim: int) -> NDArray[np.float64]:
@@ -129,7 +160,7 @@ def _lower_deviation(
 ) -> NDArray[np.float64]:
     if degree == 0:
         return (values <= targets[np.newaxis, :]).astype(np.float64)
-    return np.maximum(0.0, targets[np.newaxis, :] - values) ** degree
+    return _r_pm_terms(np.maximum(0.0, targets[np.newaxis, :] - values), degree)
 
 
 def _upper_deviation(
@@ -139,7 +170,7 @@ def _upper_deviation(
 ) -> NDArray[np.float64]:
     if degree == 0:
         return (values > targets[np.newaxis, :]).astype(np.float64)
-    return np.maximum(0.0, values - targets[np.newaxis, :]) ** degree
+    return _r_pm_terms(np.maximum(0.0, values - targets[np.newaxis, :]), degree)
 
 
 def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -155,7 +186,8 @@ def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
 
 def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.float64]:
     if target is None or isinstance(target, str):
-        return cast(NDArray[np.float64], np.mean(variable, axis=0))
+        # Rcpp sugar colMeans: a sequential double sum divided by the row count.
+        return cast(NDArray[np.float64], np.cumsum(variable, axis=0)[-1] / variable.shape[0])
 
     targets = np.asarray(target, dtype=np.float64)
     if targets.ndim == 0:

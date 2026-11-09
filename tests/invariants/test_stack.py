@@ -520,7 +520,12 @@ def test_obj_fn_must_return_one_numeric_value() -> None:
         nns_stack(x, y, obj_fn=lambda p, a: (p - a) ** 2, folds=2, method=1)
     with pytest.raises(ValueError, match=r"\[obj.fn\] must return one numeric value"):
         nns_stack(x, y, obj_fn=lambda p, a: "bad", folds=2, method=1)
-    one = nns_stack(x, y, obj_fn=lambda p, a: np.array([np.sum((p - a) ** 2)]), folds=2, method=1)
+    # A length-one array is accepted. The default objective is R's
+    # sum((predicted - actual)^2), whose sum() accumulates in long double, so
+    # the equivalent custom objective uses the same arithmetic (r_sse).
+    from nns._rmean import r_sse
+
+    one = nns_stack(x, y, obj_fn=lambda p, a: np.array([r_sse(p, a)]), folds=2, method=1)
     ref = nns_stack(x, y, folds=2, method=1)
     assert one["OBJfn.reg"] == ref["OBJfn.reg"]
 

@@ -1,0 +1,29 @@
+{
+  "entries": {
+    "04c56bf876b8d84757e8e13071ac2c3e06ad0307719160df94f82fc810e328f7": {
+      "Cluster_1": [
+        "X_5",
+        "X_4"
+      ],
+      "Cluster_2": [
+        "X_2",
+        "X_3",
+        "X_1"
+      ]
+    },
+    "b3ea09279a07037eaf3e1da2c66e9fa74c77514d3ab19d688478eb0e51813383": {
+      "Cluster_1": [
+        "X_5",
+        "X_4"
+      ],
+      "Cluster_2": [
+        "X_2",
+        "X_3"
+      ],
+      "Cluster_3": "X_1"
+    }
+  },
+  "label": "sd14.cluster_min",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

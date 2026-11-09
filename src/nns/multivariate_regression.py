@@ -73,6 +73,7 @@ def nns_m_reg(
     confidence_interval: float | None = None,
     class_levels: list[object] | None = None,
     factor_levels: Any = None,
+    categorical: bool = False,
 ) -> MRegResult:
     """Multivariate regression matching R's ``NNS.M.reg``.
 
@@ -84,7 +85,10 @@ def nns_m_reg(
     [point_est] columns are matched by name. A string, bool or categorical
     response (or one with ``class_levels``) is a classification target, as in
     R; ``class_levels`` fixes the code order. At least two encoded predictor
-    columns are required.
+    columns are required. ``categorical=True`` (R's ``categorical``) fits exact
+    joint cells: maximum order and, unless ``n_best`` is given, one neighbour.
+    As in R, it is not inferred from the predictors here; ``nns_reg`` sets it
+    when every predictor is categorical.
     """
     _warn_unsupported(
         location=location is not None,
@@ -112,6 +116,7 @@ def nns_m_reg(
             class_levels=class_levels,
             factor_levels=factor_levels,
             multivariate_only=True,
+            categorical=bool(categorical),
         ),
     )
     if (plot or residual_plot) and isinstance(result.get("Fitted.xy"), dict):

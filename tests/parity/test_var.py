@@ -380,6 +380,7 @@ def test_public_nns_var_cor_matches_r(
         "multivariate",
         "ensemble",
         "names",
+        "validation",
     }
     assert actual_result["names"] == expected_result["relevant_names"]
     for key in ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble"):
@@ -440,6 +441,7 @@ def test_public_nns_var_nns_dep_matches_r() -> None:
         "multivariate",
         "ensemble",
         "names",
+        "validation",
     }
     assert actual_result["names"] == expected_result["relevant_names"]
     for key in ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble"):
@@ -472,6 +474,7 @@ def test_public_nns_var_nns_caus_matches_r() -> None:
         "multivariate",
         "ensemble",
         "names",
+        "validation",
     }
     assert actual_result["names"] == expected_result["relevant_names"]
     for key in ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble"):
@@ -504,6 +507,7 @@ def test_public_nns_var_all_matches_r() -> None:
         "multivariate",
         "ensemble",
         "names",
+        "validation",
     }
     assert actual_result["names"] == expected_result["relevant_names"]
     for key in ("interpolated_and_extrapolated", "univariate", "multivariate", "ensemble"):

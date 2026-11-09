@@ -1,0 +1,41 @@
+{
+  "entries": {
+    "843bf7f60ae44c000ff3195be4509451217a19c375d1e3468c4c73fe4a6aa246": {
+      "names": [
+        "R2",
+        "SE",
+        "Prediction.Accuracy",
+        "equation",
+        "x.star",
+        "derivative",
+        "Point.est",
+        "pred.int",
+        "Prediction.set",
+        "regression.points",
+        "RPM",
+        "RPM.probabilities",
+        "rhs.partitions",
+        "Fitted.xy",
+        "Fitted",
+        "Fitted.probabilities",
+        "Point.probabilities",
+        "n.best",
+        "class.levels",
+        "class.values"
+      ],
+      "point": [
+        0.0,
+        1.0,
+        1.0
+      ],
+      "probs": [
+        0.329690162411432,
+        0.621997810699811,
+        0.82051282051282
+      ]
+    }
+  },
+  "label": "reg14.mvcall.class",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

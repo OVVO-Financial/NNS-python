@@ -1,0 +1,199 @@
+{
+  "entries": {
+    "1bc0c01b254e4d3b4370eed30a5d0f524503d2d1119c866d62b474bf80d7a51d": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        -0.11666666666666667,
+        0.4222222222222222,
+        0.11428571428571428,
+        0.6386506575185819,
+        0.29220222793487555,
+        0.3286418665161736,
+        0.005138888888889276,
+        1.0726388888888885,
+        0.95
+      ]
+    },
+    "50dd16ad405142cb3396eb5bb6b26c28c2740faffaffab1a68e118576b74cb00": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        0.9005068341976756,
+        0.9761374000055926,
+        0.9322434057545756,
+        0.5166666666666667,
+        0.4888888888888889,
+        0.4735608642161154,
+        -0.31033742607454684,
+        0.8906599261783561,
+        0.95
+      ]
+    },
+    "5e95d2a8283ebd46ef6bc4bf263ba1d6a944dd2d9eb81c4c2a9dba4d63ca6f62": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        0.9005068341976756,
+        0.9761374000055926,
+        0.9322434057545756,
+        0.5166666666666667,
+        0.4888888888888889,
+        0.9199753198398699,
+        -0.31033742607454684,
+        0.8906599261783561,
+        0.95
+      ]
+    },
+    "5fbe70cbb96737a4001e278230f350b7fc462b89bb3b79dafa4411036da4c0a8": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        1.0735808595915728,
+        1.6486449495576585,
+        1.3200368981484665,
+        0.6419592991412439,
+        0.3602957115942067,
+        0.30294050449254184,
+        -0.16458182023784063,
+        1.3862506906093133,
+        0.95
+      ]
+    },
+    "8689c19dd2a8afb0375baf508e55a9d75b5613f9a4b54b93683fba1fb62ab9e6": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.7166666666666667,
+        0.5333333333333333,
+        0.4508795035039696,
+        0.0,
+        1.0,
+        0.95
+      ]
+    },
+    "c8869e871c4eed75b91949895e4cddd707257e1563b38a5d93b1b4b045088844": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        1.0735808595915728,
+        1.6486449495576585,
+        1.3200368981484665,
+        0.6419592991412439,
+        0.3602957115942067,
+        0.4934244205309361,
+        -0.16458182023784063,
+        1.3862506906093133,
+        0.95
+      ]
+    },
+    "cad09aa967fd6a4b701a8388a2678ab88615cb5b7bfd977926827ca6b7ea23fa": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        -0.11666666666666667,
+        0.4222222222222222,
+        0.11428571428571428,
+        0.6386506575185819,
+        0.29220222793487555,
+        0.19742922063198104,
+        0.005138888888889276,
+        1.0726388888888885,
+        0.95
+      ]
+    },
+    "e51f72ffd395db5ebc08651a9739b840f6ca8432fccc8a66db8ba45ef92372c6": {
+      "names": [
+        "Control",
+        "Treatment",
+        "Grand_Statistic",
+        "Control_CDF",
+        "Treatment_CDF",
+        "Certainty",
+        "Effect_Size_LB.2.5%",
+        "Effect_Size_UB.97.5%",
+        "Confidence_Level"
+      ],
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.7166666666666667,
+        0.5333333333333333,
+        0.962267573696145,
+        0.0,
+        1.0,
+        0.95
+      ]
+    }
+  },
+  "label": "anova14.binary",
+  "nns_version": "14.0",
+  "schema_version": 2
+}

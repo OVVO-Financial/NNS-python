@@ -6,6 +6,15 @@ import pytest
 from nns import nns_copula
 
 
+def _disable_native(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run NNS.copula on the NumPy fallbacks of the kernels it calls."""
+    import importlib
+
+    for module in ("nns.core", "nns.pm_matrix"):
+        monkeypatch.setattr(importlib.import_module(module), "native_fn", lambda name: None)
+
+
+
 def test_nns_copula_is_bounded() -> None:
     x = np.linspace(-2.0, 2.0, 200)
     y = np.sin(x)
@@ -66,9 +75,7 @@ def test_nns_copula_is_zero_when_every_margin_is_one_sided(
 ) -> None:
     # R NNS.copula: each pair is then trivially concordant or discordant; these returned 1.
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     g = _grid(range(1, 11), range(1, 11))
     x = np.arange(1.0, 11.0)
     b = np.column_stack([np.tile([0.0, 1.0], 50), np.tile([1.0, 0.0], 50)])
@@ -92,9 +99,7 @@ def test_nns_copula_is_one_for_perfect_dependence_inside_the_data(
     monkeypatch: pytest.MonkeyPatch, native: bool, continuous: bool
 ) -> None:
     if not native:
-        import nns.copula as copula
-
-        monkeypatch.setattr(copula, "native_fn", lambda name: None)
+        _disable_native(monkeypatch)
     x = np.arange(1.0, 11.0)
     assert nns_copula(np.column_stack([x, x]), continuous=continuous) == 1.0
     assert nns_copula(np.column_stack([x, -x]), continuous=continuous) == 1.0

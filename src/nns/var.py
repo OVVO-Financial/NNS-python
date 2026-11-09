@@ -17,6 +17,16 @@ from numpy.typing import NDArray
 
 from nns._helpers import _warn_unsupported
 from nns._native import honours_ncores
+from nns._rmean import (
+    r_cor_matrix,
+    r_cumsum,
+    r_mean,
+    r_pow,
+    r_quantile,
+    r_rank_average,
+    r_round_array,
+    r_sum,
+)
 from nns.core import lpm_ratio, upm_ratio
 
 ObjectiveFn = Callable[[NDArray[np.float64], NDArray[np.float64]], float]
@@ -33,6 +43,7 @@ class VarResult(TypedDict):
     univariate: NotRequired[NDArray[np.float64]]
     multivariate: NotRequired[NDArray[np.float64]]
     ensemble: NotRequired[NDArray[np.float64]]
+    validation: NotRequired[dict[str, Any]]
 
 
 class _LagSpec(TypedDict):
@@ -75,8 +86,12 @@ def nns_var(
 
     ``validation="pipeline"`` (R14 default) rebuilds preprocessing and future
     predictors at the validation origin, before observing the held-out targets.
-    ``validation="conditional"`` retains the older conditional split for an
-    explicitly requested comparison; it is not the default forecasting test.
+    ``validation="observed"`` (R's compatibility option; ``"conditional"`` is
+    accepted as an alias) retains the older conditional split for an explicitly
+    requested comparison; it is not the default forecasting test. As in R, the
+    result's ``validation`` entry records the ``mode``, the validation
+    ``origin`` and ``horizon``, and, in pipeline mode, the count of finite
+    held-out targets per variable (``observed.targets``; ``None`` otherwise).
 
     For ``h == 0`` the result is a dictionary with ``interpolated_and_extrapolated``
     and ``names`` instead of R's bare data frame. ``nowcast`` (row labelling only
@@ -99,16 +114,24 @@ def nns_var(
     if h_value > 0:
         _var_check_sample_size(variables_matrix.shape[0], h_value, lag_spec["max"])
 
-    if validation not in {"pipeline", "conditional"}:
-        raise ValueError("validation must be 'pipeline' or 'conditional'.")
+    # R: validation = c("pipeline", "observed"); "conditional" is the port's
+    # earlier name for "observed" and remains accepted.
+    if validation == "conditional":
+        validation = "observed"
+    if validation not in {"pipeline", "observed"}:
+        raise ValueError("validation must be 'pipeline' or 'observed'.")
+    n_rows = variables_matrix.shape[0]
+    validation_h = (
+        max(2 * h_value, math.ceil(0.2 * (n_rows - lag_spec["max"]))) if h_value > 0 else 0
+    )
+    origin = n_rows - validation_h
+    if h_value > 0 and validation_h >= n_rows - lag_spec["max"]:
+        raise ValueError(
+            "The series is too short for the requested forecast horizon and lagged "
+            "validation window."
+        )
     validation_data = None
     if h_value > 0 and validation == "pipeline":
-        validation_h = max(
-            2 * h_value, math.ceil(0.2 * (variables_matrix.shape[0] - lag_spec["max"]))
-        )
-        origin = variables_matrix.shape[0] - validation_h
-        if validation_h >= variables_matrix.shape[0] - lag_spec["max"]:
-            raise ValueError("The series is too short for the requested lagged validation window.")
         prefix = _var_interpolate_and_extrapolate(
             variables_matrix[:origin],
             validation_h,
@@ -159,6 +182,18 @@ def nns_var(
     )
     ensemble = univariate * uni_weights[np.newaxis, :] + multivariate * multi_weights[np.newaxis, :]
 
+    # R: validation = list(mode, origin, horizon, observed.targets), the last
+    # being colSums(is.finite(held-out targets)) in pipeline mode, else NULL.
+    observed_targets = (
+        None
+        if validation_data is None
+        else {
+            name: float(count)
+            for name, count in zip(
+                names, np.sum(np.isfinite(validation_data[2]), axis=0), strict=True
+            )
+        }
+    )
     return {
         "interpolated_and_extrapolated": interpolated,
         "relevant_variables": relevant_variables,
@@ -166,6 +201,12 @@ def nns_var(
         "multivariate": multivariate,
         "ensemble": ensemble,
         "names": names,
+        "validation": {
+            "mode": validation,
+            "origin": float(origin),
+            "horizon": float(validation_h),
+            "observed.targets": observed_targets,
+        },
     }
 
 
@@ -458,7 +499,7 @@ def _var_index_fit(
     matrix = np.column_stack(
         (nns_rescale(index, 0, 1), nns_rescale(index, 0, 1), nns_rescale(values, 0, 1))
     )
-    dep = (dep + float(nns_copula(matrix))) / 2.0
+    dep = r_mean(np.array([dep, float(nns_copula(matrix))]))  # R: mean(c(dep, copula))
     if not np.isfinite(dep):
         dep = 0.1
     depth = math.floor(dep * 10)
@@ -752,7 +793,6 @@ def _var_relevant(
     """
     from nns.central_tendencies import nns_gravity
     from nns.regression import nns_reg
-    from nns.stack import _spearman_signed
 
     x = np.asarray(ivs_train, dtype=np.float64)
     y = np.asarray(dv_train, dtype=np.float64)
@@ -769,13 +809,18 @@ def _var_relevant(
 
     def coefficients(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> NDArray[np.float64]:
         if dim_red_method == "cor":
-            return _spearman_signed(xs, ys)
+            # R: cor(data.matrix(cbind(y, x)), method = "spearman")[-1, 1], whose
+            # zero-spread columns are NA (kept and then zeroed with the cutoffs).
+            columns = [r_rank_average(ys)]
+            columns += [r_rank_average(xs[:, j]) for j in range(xs.shape[1])]
+            ranks = np.column_stack(columns)
+            return r_cor_matrix(ranks)[1:, 0]
         fit = nns_reg(xs, ys, dim_red_method=dim_red_method, point_only=True, **reg_args)
         return np.asarray(fit["equation"]["Coefficient"], dtype=np.float64)[:n]
 
     def rounded(values: NDArray[np.float64]) -> NDArray[np.float64]:
-        # R abs(round(x, 2)): Python's round() also rounds the exact binary value.
-        return np.array([np.nan if np.isnan(v) else abs(round(float(v), 2)) for v in values])
+        # R abs(round(x, digits = 2)), with R's own rounding rule (nmath fround).
+        return np.abs(r_round_array(np.asarray(values, dtype=np.float64), 2))
 
     split = n_rows - ts_test
     cv_x, cv_x_test = x[:split], x[split:]
@@ -992,7 +1037,8 @@ def _partial_moment_var(
     # for the quantile and the integer-degree inversion.
     lpm_pcts = pcts if lower else 1.0 - pcts
     if degree == 0:
-        out = np.asarray(np.quantile(values, lpm_pcts, method="linear"), dtype=np.float64)
+        # R: stats::quantile(x, percentile) (type 7).
+        out = r_quantile(values, lpm_pcts, 7)
     elif _is_supported_integer_degree(degree):
         solve = _lpm_var_integer_solver(int(degree), values)
         out = np.array([solve(float(p)) for p in lpm_pcts], dtype=np.float64)
@@ -1084,17 +1130,19 @@ def _lpm_var_integer_solver(degree: int, values: NDArray[np.float64]) -> Callabl
     prefix_power[0] = k_break
     total_power[0] = float(n)
     for j in range(1, degree + 1):
-        x_power = x_sorted**j
-        prefix_power[j] = np.cumsum(x_power)[k_break - 1]
-        total_power[j] = float(np.sum(x_power))
+        # R: x_power <- x_sorted^j; cumsum(x_power)[k_break]; sum(x_power) (long double).
+        x_power = r_pow(x_sorted, float(j))
+        prefix_power[j] = r_cumsum(x_power)[k_break - 1]
+        total_power[j] = r_sum(x_power)
 
     lpm = np.zeros(unique_x.size, dtype=np.float64)
     upm = np.zeros(unique_x.size, dtype=np.float64)
     for j in range(degree + 1):
         coef = float(math.comb(degree, j))
-        lpm += coef * (-1.0) ** j * unique_x ** (degree - j) * prefix_power[j]
+        t_power = r_pow(unique_x, float(degree - j))
+        lpm = lpm + coef * float(r_pow(-1.0, float(j))) * t_power * prefix_power[j]
         suffix_power = total_power[j] - prefix_power[j]
-        upm += coef * (-1.0) ** (degree - j) * unique_x ** (degree - j) * suffix_power
+        upm = upm + coef * float(r_pow(-1.0, float(degree - j))) * t_power * suffix_power
 
     with np.errstate(invalid="ignore", divide="ignore"):
         ratio_break = lpm / (lpm + upm)
@@ -1145,9 +1193,10 @@ def _lpm_var_integer_interval(
         upm_raw = 0.0
         for j in range(degree + 1):
             coef = float(math.comb(degree, j))
-            lpm_raw += coef * (-1.0) ** j * t ** (degree - j) * float(interval_prefix[j])
+            t_power = float(r_pow(t, float(degree - j)))
+            lpm_raw += coef * float(r_pow(-1.0, float(j))) * t_power * float(interval_prefix[j])
             suffix = float(total_power[j]) - float(interval_prefix[j])
-            upm_raw += coef * (-1.0) ** (degree - j) * t ** (degree - j) * suffix
+            upm_raw += coef * float(r_pow(-1.0, float(degree - j))) * t_power * suffix
         return lpm_raw, upm_raw
 
     def root_value(t: float) -> float:

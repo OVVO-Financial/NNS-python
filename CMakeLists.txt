@@ -13,16 +13,18 @@ set(NNSCORE_BUILD_TESTS OFF CACHE BOOL "Build NNS-core tests" FORCE)
 set(NNSCORE_BUILD_PYTHON OFF CACHE BOOL "Build NNS-core Python bindings" FORCE)
 add_subdirectory(extern/NNS-core)
 
-# Preserve the accepted NNS-core vendor tree; explicitly overlay the two
-# R14 central-tendency kernels that its R13.3 snapshot does not yet supply.
+# Preserve the accepted NNS-core vendor tree; explicitly overlay the R14
+# central-tendency kernels that its R13.3 snapshot does not yet supply, and the
+# multivariate prediction kernel with R's own nmath densities.
 get_target_property(NNS_CORE_SOURCES nnscore SOURCES)
 set(NNS_R14_CORE_SOURCES "")
 foreach(source IN LISTS NNS_CORE_SOURCES)
-  if(NOT source STREQUAL "src/central_tendencies.cpp")
+  if(NOT source STREQUAL "src/central_tendencies.cpp" AND NOT source STREQUAL "src/mreg_predict.cpp")
     list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/extern/NNS-core/${source}")
   endif()
 endforeach()
 list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_central_tendencies.cpp")
+list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_mreg_predict.cpp")
 set_property(TARGET nnscore PROPERTY SOURCES "${NNS_R14_CORE_SOURCES}")
 
 # The Python extension is a shared object.  The vendored NNS-core target builds

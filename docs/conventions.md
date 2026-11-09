@@ -14,8 +14,9 @@ cached parity tests that way too.
 
 ## Threads
 
-The native kernels (vectorised partial moments, the PM matrix, the n-dimensional
-co-moments and the copula) can use several threads. Inputs below a fixed amount of
+The native kernels (vectorised partial moments, the PM matrix and the
+n-dimensional co-moments, which the copula and the CDF build on) can use several
+threads. Inputs below a fixed amount of
 work always run serially, and results never depend on the thread count.
 `nns.set_num_threads(n)` sets the default; `n=None` restores the automatic choice,
 which is the `NNS_NUM_THREADS` environment variable when it is a positive integer
@@ -69,7 +70,8 @@ check the same rules.
 ## PM Matrix Target Defaults
 
 R `PM.matrix` uses column means when `target` is `NULL` or any non-numeric value.
-NNS Python accepts `None` and `"mean"` for this behavior. NNS Python also broadcasts a
+NNS Python accepts `None` and `"mean"` for this behavior, with Rcpp's `colMeans`
+arithmetic (a row-by-row double sum divided by the row count). NNS Python also broadcasts a
 scalar numeric target across all variables; R requires callers to pass an
 explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
 does not match the number of variables raise `ValueError`.
@@ -82,6 +84,23 @@ values for a bimodal sample). Pass `multi=True` for R's default output; explicit
 `multi` values match R. The Python default is kept because the multi-mode peak
 finder also reports spurious secondary modes on unimodal data (in R as well),
 and the internal callers all ask for a single mode.
+
+## Partial-Moment Arithmetic
+
+The partial moments, co-moments (`co_lpm`, `co_upm`, `d_lpm`, `d_upm`, the
+`_nd` variants) and `pm_matrix` reproduce R's C++ to the last bit, with the
+native kernels and with the NumPy fallback: integer degrees by repeated
+multiplication, fractional degrees by libm `pow`, double sums accumulated
+observation by observation and scaled by `1 / n`. `pm_matrix` fills the upper
+triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
+crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
+`nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
+`mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
+
+Beyond 32 targets R's `LPM`/`UPM` (and so `LPM.ratio`, `UPM.ratio` and
+`NNS.CDF`) switch to a sorted-anchor prefix backend for degrees within `1e-12`
+of an integer up to 32; the NumPy fallback reproduces its recurrence and
+evaluation order, so the many-target results are R's bit for bit too.
 
 ## Classical Moment Normalization
 
@@ -104,9 +123,9 @@ stochastic-dominance tests. It returns `p_gt = P(X > Y)`, `p_tie = P(X = Y)`,
 and `p_star = p_gt + 0.5 * p_tie`. `NaN` values are omitted independently from
 `x` and `y`, matching R's `na.omit` preprocessing. With
 `confidence_interval=True`, intervals are computed through `nns_meboot`,
-`lpm_var`, and `upm_var`; exact bootstrap parity with R is not expected because
-the RNG streams differ. `random_seed` is a NNS Python-only reproducibility
-convenience for that stochastic path.
+`lpm_var`, and `upm_var`: with `random_seed = s` the bounds and `boot_vals` are
+R's after `set.seed(s)`, the replicates of `x` and then of `y` drawn from one
+stream as R draws them.
 
 `nns_sd_cluster` maps to R's `NNS.SD.cluster` default path. It iteratively
 peels `sd_efficient_set` results and returns a dictionary of `Cluster_1`,
@@ -116,6 +135,18 @@ names, or the column names of a DataFrame input. `type="continuous"` is
 supported for first-degree efficient sets, `fsd`, and `fsd_uni`; as in R, an
 unrecognised `type` warns (and `fsd` then runs its continuous branch, while
 `fsd_uni` and the efficient-set routines run the discrete one).
+`sd_efficient_set` returns 0-based column indices in R's output order (R
+returns the column names), and a vector is one column, as with R's `as.matrix`.
+Inputs are checked in R's order and with R's messages: missing values raise
+"You have some missing values, please address.", empty samples "Each sample
+needs at least one observation.". Like R, the `.uni` tests, `sd_efficient_set`
+and `nns_sd_cluster` accept infinite values and compare them as R's C++ test
+does, while `fsd`, `ssd` and `tsd` reject them (R first evaluates the plotted
+partial-moment curves, which check `x` and then the threshold grid).
+`nns_sd_cluster` validates its data in the first efficient-set search, as R
+does, so a matrix with no more than `min_cluster` columns comes back as one
+cluster unchecked, and `min_cluster` is compared as a real number (`1.5` merges
+a trailing single-member cluster into the previous one).
 `dendrogram=True` returns a plain dictionary mirroring R's `hclust` fields:
 `merge`, `height`, `order`, `labels`, `method`, `call`, and `dist.method`.
 With fewer than two clustered variables it warns, as R does, and returns the
@@ -172,7 +203,10 @@ names R returns. Plotting is ignored. As in the patched R (see [parity](parity.m
 values are dropped first (complete rows for a matrix), so the CDF reaches 1, and
 infinite values raise `ValueError`. For `d >= 3` columns the survival, hazard and
 cumulative hazard use the joint survival `P(X_1 > t_1, ..., X_d > t_d)` by
-inclusion-exclusion over all column subsets.
+inclusion-exclusion over all column subsets. The values match R to the last
+bit: `-log` is libm's, the survival's marginal sum is R's long-double
+`rowSums`, and the joint CDF follows R's batch kernel (row-by-row sums scaled
+by `1 / n`).
 
 ## Dependence
 
@@ -181,7 +215,11 @@ is on `x` and the result measures `y` as a function of `x`. `nns_dep(X)` on a 2-
 array or DataFrame returns R's `Correlation` and `Dependence` matrices; with
 `asym=True` entry `[i, j]` is `nns_dep(X[:, i], X[:, j], asym=True)` (row variable
 -> column variable, which is what R returns although its manual states the
-reverse). R's `p.value` option is not implemented. The bivariate path includes `NNS.gravity` handling
+reverse). `p_value=True` runs R's permutation test on the bivariate form: the
+measures of `x` against 100 shuffles of `y` give a two-sided `Correlation p.value`,
+an upper-tail `Dependence p.value` and the shuffled values' 95% partial-moment
+intervals; with `random_seed = s` the shuffles are R's after `set.seed(s)`.
+The bivariate path includes `NNS.gravity` handling
 for zero-range inputs and non-positive or non-finite bin widths. The gravity
 histogram (bin width `IQR / sqrt(n)`) is built from the occupied bins only, so a
 single outlier that makes R allocate millions of empty bins costs nothing and gives
@@ -201,16 +239,32 @@ does; `target` gives the per-column targets of the matrix form. When targets are
 omitted NNS Python uses the column means computed like R's `colMeans` (long-double
 sequential sum), matching R's `target = NULL` to the last bit. The `target_x` and
 `target_y` arguments map to R's two-element target vector. Empty or non-finite
-input raises `ValueError` (R stops on missing values).
+input raises `ValueError` (R stops on missing values). The value is R's to the
+last bit: the upper triangles are summed with R's long-double `sum()` in
+column-major order, the independence anchors use R's long-double `prod()`, and
+the result is `mean(c(...))^(1/2)`, which R evaluates with `pow` rather than
+`sqrt`.
 
 ## Causation
 
-`nns_causation(x, y)` maps to R's `NNS.caus(x, y, tau = 0, p.value = FALSE)`
-numeric-vector path. It returns the two directional components and the named
-signed net log-ratio key selected by R, either `C(x--->y)` or `C(y--->x)`.
-`causal_matrix` maps to R's `NNS.caus` on a matrix (internally `NNS.caus.matrix`):
-an antisymmetric matrix whose entry `[i, j]` is the net causation of column `j` on
-column `i` (positive: `j` causes `i`). A DataFrame input returns a DataFrame labelled with its columns.
+`nns_causation(x, y, tau)` maps to R 14's `NNS.caus(x, y)`: the two directional
+indices `C(x--->y)` and `C(y--->x)` in `[0, 1]`, which sum to one and are 0.5 when
+neither direction dominates. They measure directional lagged association, not
+causal identification. `causal_matrix(X)` (also `nns_causation(X)` with `y=None`,
+as in R) is R's `NNS.caus.matrix`: entry `[i, j]` is `C(column i ---> column j)`,
+so `[i, j] + [j, i] = 1` off the diagonal, which is 0. A DataFrame input returns
+DataFrames labelled with its columns.
+
+`p_value=True` adds R's permutation test, with R's `nperm`, `permute`, `seed` and
+`conf_int` (`conf.int`). For a pair, the signed index `C(x--->y) - C(y--->x)` is
+compared with its null under `permute="auto"` (a circular shift of `y` at least
+`max(tau + 1, n / 10)` steps from alignment for a positive lag, a shuffle of `y`
+otherwise) or an explicit `"y"`, `"x"`, `"both"` or `"shift"`; the result is
+`{"causation": ..., "p.value": {...}}` with R's fields. For a matrix,
+`"auto"` shifts the second column of each pair for time series and shuffles every
+column otherwise, and the result holds R's `causality`, `lower_CI`, `upper_CI`
+and `p.value_matrix`. Every permutation is scored at the lag resolved on the
+observed series, and with `seed = s` the draws are R's after `set.seed(s)`.
 `tau='ts'` uses `nns_seas(... )["periods"]` exactly like installed R: the first
 period not exceeding `sqrt(length(x))` is selected per variable, including
 harmonics when R selects them. Inputs with no eligible selected period follow
@@ -275,14 +329,28 @@ Inputs follow R's data-frame rules (`.nns_reg_encode_predictors`):
   map.
 
 `dist=None` is the default for `nns_reg`, `nns_m_reg`, `nns_stack`, and `nns_boost` and selects the native blended NNS distance, with `dist="NNS"` as the explicit alias. Continuous predictors use range-normalized coordinate differences and sum `abs(z) + z**2` across non-zero-range columns; explicit `dist="L1"`, `dist="L2"`, and `dist="FACTOR"` keep their legacy behavior.
+Multivariate predictions follow R's C++ kernel to the last bit, in the native
+extension and the NumPy fallback alike: the ensemble weights use R's own nmath
+`dt` and `dnorm` densities and libm `exp`, summed in R's order. Classification
+probabilities follow the R-level weights R's classifier uses instead (long-double
+`sum`/`var`, `rowSums` distances). `nns_m_reg(categorical=...)` is the argument
+of R's internal `NNS.M.reg` (default `False`): exact joint cells, maximum order
+and one neighbour; `nns_reg` sets it when every predictor is categorical, as R's
+`NNS.reg` does.
 `smooth=True` follows installed R's ordinary piecewise fallback for univariate
 inputs with fewer than four observations and for univariate `order="max"`; R
-does not call `smooth.spline` there. Spline-eligible inputs use a private
-fixed-`spar` cubic smoothing-spline adapter matching the `stats::smooth.spline`
-subset used by `NNS.reg`: `spar = (dependence + 0.5) / 2`, R's
-`1e-6 * IQR(x)` tie grouping, `.nknots.smspl` knot thinning above 49 unique x,
-the Fortran `sgram` penalty (with its `.3330` constant), R's interior-band
-trace ratio for lambda, and a banded Cholesky solve.
+does not call `smooth.spline` there. Spline-eligible inputs fit
+`stats::smooth.spline(x, y, spar = (dependence + 0.5) / 2)` through a line-by-line
+port of R 4.5.0's smoothing spline (`nns._rsmspline`): R's `1e-6 * IQR(x)` tie
+grouping with long-double group sums, `.nknots.smspl` knot thinning, the Fortran
+`sgram` penalty (with its `.3330` constant), `stxwx`, `bsplvd`, the trace ratio
+and `lambda = ratio * 16^(6 spar - 2)`, LINPACK `dpbfa`/`dpbsl` with the reference
+BLAS, and `bvalue` with `predict`'s linear extrapolation. Fits and predictions
+match R to the last bit (so do `dy_dx` and the smoothed `nns_arma_optim` paths
+that use them), and where R's `smooth.spline` stops (fewer than four unique x
+after grouping, or a zero IQR) `nns_reg` raises the same error. As in R,
+`nns_reg` drops `class.levels` from a numeric multivariate fit, while
+`nns_m_reg` keeps it as `None`.
 With dimension reduction, factor predictors are encoded first (one dummy column
 per level with `factor_2_dummy=True`) and the synthetic `x.star` coefficients
 are computed on the encoded columns, as in R. For callers that want an explicit
@@ -443,15 +511,20 @@ example.
 
 ## Seasonality
 
-`nns_seas` maps to installed R's `NNS.seas`; `plot=True` draws the figure as a
-side effect (see Plotting). Inputs shorter than five observations
-return R's sentinel period `0`. For mean-zero data, R falls back from coefficient
-of variation to `abs(acf1) ** -1`; NNS Python follows the same fallback and
-non-finite handling. Installed R can report harmonics rather than the visually
-obvious period, so NNS Python matches R's candidate-period screening instead of a
-textbook seasonality heuristic. Results are cached by input content and modulo
-arguments with defensive copies on return; this preserves R semantics while
-avoiding repeated reverse-step scans for identical series.
+`nns_seas` maps to R 14's `NNS.seas`; `plot=True` draws the figure as a side
+effect (see Plotting). A period's score is the length-weighted Gini mean
+difference of its component series (relative to the component means when the
+data have one sign), and periods scoring below the whole series are candidates,
+sorted by score. The linear trend is removed first (`detrend=True`), the scan
+covers periods up to `min(n / 2, n / 5)` (or `max_period`), `modulo` adds
+multiples as in R, and the reported period is the fundamental one: the smallest
+plausible divisor of the strongest period within two paired standard errors of
+it. Inputs shorter than five observations return R's sentinel period `0`. The
+scores follow R's arithmetic and agree with R to the last bit. `p_value=True`
+adds R's permutation p-value of each period (`NaN` for period 1): its dispersion
+ratio against the best ratio of each of `nperm` shuffles of the detrended series;
+`periods` then lists the periods with p-value at most 0.05 (else 1). With
+`random_seed = s` the shuffles are R's after `set.seed(s)`.
 
 ## ARMA
 
@@ -460,10 +533,12 @@ intervals it returns a NumPy forecast vector of length `h`; with `pred_int` it
 returns a dict keyed like R's data.table columns (`Estimates`,
 `Lower <percent>% pred.int`, `Upper <percent>% pred.int`). Forecasts are
 recursive: each estimate is appended before the next horizon step. Plot
-arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`; exact
-stochastic parity with R is not expected because RNG streams differ.
-`random_seed` is a NNS Python-only convenience for reproducible interval tests.
-No-`pred_int` deterministic forecasts are parity-tested against R.
+arguments are ignored. Prediction intervals use `nns_mc` / `nns_meboot`: with
+`random_seed = s` they are R's after `set.seed(s)`, bit for bit. As in R 14, a
+one-point or constant forecast path has no dispersion to resample, and its band
+is the path widened by the per-lag spread alone. Forecasts, the seasonal lag
+weights and `nns_seas` scores use R's arithmetic (long-double `mean`/`sum`, R's
+`sd`), so they agree with R to the last bit.
 As in R, `seasonal_factor=True` with a non-`None` `best_periods` is treated as
 `seasonal_factor=False`: it weights the `best_periods` best periods from
 `nns_seas` (the default `best_periods=1` selects the best period).
@@ -527,26 +602,34 @@ returns plain Python dictionaries instead of R's vectorized list-matrix wrapper.
 `rho`, `target_drift` and `target_drift_scale` are vectorized like R's
 `Vectorize`/`mapply`: the given arguments are recycled elementwise (not crossed)
 and a list of result dictionaries is returned in that order; when all of them are
-scalars a single result dictionary is returned. `rho=None` follows installed R's empty
-output behavior, and length-one input returns only `{"x": x}`. When the detrended
+scalars a single result dictionary is returned. With none of the three given there
+is nothing to map over and, as in R, the result is empty; length-one input returns
+only `{"x": x}`. When the detrended
 residuals are all exactly zero (a constant or exactly linear series) `rho` has no
 effect, as in R: the replicates are copies of the trend with their means spread by
 `force_clt`, and a constant series gives constant columns.
 
-Exact replicate parity with R is not expected because NNS Python uses NumPy's random
-number generator and SciPy's optimizer while R uses its global RNG and
-`optim()`. Deterministic diagnostics (`xx`, `z`, `dv`, `dvtrim`, `xmin`,
-`xmax`, `desintxb`, `ordxx`, and `kappa`) are parity-tested exactly. Stochastic
-outputs are tested structurally and statistically. `random_seed` is a NNS Python-only
-convenience for reproducible bootstrap draws.
+With `random_seed = s` the replicates are R's after `set.seed(s)`, bit for bit:
+R draws only through `runif` (one per observation per replicate, then one per
+shrunken column in each `expand.sd` pass), which the port reproduces from R's
+Mersenne-Twister stream, and the deterministic steps follow R's arithmetic,
+including `optimize()` (Brent's `fmin`, with non-finite objective values replaced
+by the largest double as R does) for the `rho` target, `qnorm` for the CLT
+spread and R's trimmed `mean`. Without a seed the stream is seeded from fresh
+entropy. `force_clt` spreads the replicate means by `sd / sqrt(n)` with `n` the
+series length, R 14's correction of meboot's division by the number of
+replicates. Given only `target_drift`/`target_drift_scale` (no `rho`), the
+replicates are drawn without a dependence target, as R's `Vectorize` does;
+`expand_residual_sd` is R's `expand.residual.sd`.
 
 ## Monte Carlo
 
 `nns_mc` maps to R's `NNS.MC` wrapper around `NNS.meboot`. The rho grid and
 exponential rho transformation are parity-tested exactly against installed R.
-As with `nns_meboot`, exact stochastic replicate parity is not expected because
-R and NNS Python use different RNG streams and optimizer implementations.
-`random_seed` is a NNS Python-only convenience passed through to `nns_meboot`.
+With `random_seed = s` the replicates and ensemble are R's after
+`set.seed(s)`. Arguments are validated with R's messages, the ensemble is R's
+long-double `rowMeans`, and the replicate names format each rho as R's
+`as.character` does (`"rho = 1e-04"`).
 
 NNS Python returns `{"ensemble": array, "replicates": dict}`. The `replicates`
 mapping preserves R's names, such as `"rho = 1"` and `"rho = -0.5"`, with each
@@ -563,25 +646,30 @@ more columns.
 
 ## Distance
 
-`nns_distance` and `nns_distance_bulk` map to R's regression-point-matrix
-helpers. NNS Python accepts `rpm` as a finite 2D numeric array with R's `y.hat`
-column in the final position. `nns_distance` applies R's per-target min-max
-rescaling before computing weighted nearest-neighbor predictions. `nns_distance_bulk`
-matches R's compiled bulk helper, including its raw-feature distance convention.
-For `nns_distance` with `k > 1`, NNS Python matches the installed R 13.0 binary:
-the exponential rank-weight family uses the R C API's `Rf_dexp` scale argument
-as `1 / k`. This differs from the nearby source-code comment that describes it
-as a rate.
+`nns_distance` and `nns_distance_bulk` map to R 14's `NNS.distance` and
+`NNS.distance.bulk`. NNS Python accepts `rpm` as a finite 2D numeric array with
+R's `y.hat` column in the final position. Both reproduce R's C++ kernels to the
+last bit: each column is scaled by `1 / range` (the range including the
+target), the distance accumulates `diff^2 + |diff|` column by column, and the
+weights are R's nmath densities summed in R's order.
 
-Classification distance mode returns numeric class codes, not original labels.
-For single-target `nns_distance(..., class_=...)`, installed R uses weighted
-mode with integer replication counts `ceil(100 * weight)`. NNS Python follows that
-behavior. For equal-distance nearest-neighbor ties, NNS Python preserves RPM row order
-to match installed R's first-row tie behavior. Installed R's
-`NNS.distance.bulk(..., class=...)` currently ignores
-the class flag in its compiled bulk helper and returns the same inverse-distance
-numeric weighted average as non-class bulk distance; NNS Python matches the installed
-binary rather than the higher-level classification intent.
+* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows in the order
+  libstdc++'s `std::partial_sort` (or `std::sort` when every row is used)
+  leaves them, which decides where tied distances fall, then the eight weights
+  (uniform, `dt`, inverse distance, `dexp` with scale `k`, reversed
+  `|dlnorm(rank, 0, sd(1:k), log = TRUE)|`, `rank^-2`, `dnorm` and an RBF),
+  normalised and combined.
+* `nns_distance_bulk` is `NNS_distance_path_single_parallel_cpp`, which R's
+  `NNS.distance.bulk` calls: the `k` nearest rows ordered by distance and then
+  row, with unnormalised Student-t and Gaussian kernels, and the weighted sum
+  scaled by `1 / total`.
+
+`k` follows R: `"all"` or an infinite value uses every row; otherwise it is
+truncated to an integer and clamped to `1..nrow(rpm)`, so `k = 0` uses the single
+nearest row. Classification mode (`class_` not `None`) returns numeric class
+codes, not original labels: the weighted mode with `ceil(100 * weight)` votes,
+where equal vote totals go to the smallest class value, as R scans the classes
+in ascending order.
 
 ## Classification
 

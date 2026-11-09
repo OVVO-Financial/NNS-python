@@ -28,11 +28,19 @@
     },
     {
       "path": "src/nns/_r14_dependence.hpp",
-      "sha256": "782ffb312545d722a86ff32994a17c600fba65ba70bc9c7ecf647f37e291e47b",
+      "sha256": "4babec2c922cc5a50396cd2154fff48b0e88c43449de83da46aec4d4e1cf848d",
       "r_source_path": "src/NNS_dep.cpp",
       "r_source_sha256": "2e577f57165fd38d779dcde369eabf4800135eb50e07079069c11be2fedaa115",
       "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
-      "adaptation": "R14 multilevel/null-corrected dependence with vector marshalling, erfc normal probabilities, and long-double binomial hypergeometric initialization. Bound explicitly instead of the untouched vendor dependence estimator."
+      "adaptation": "R14 multilevel/null-corrected dependence with vector marshalling. R::dhyper and R::pnorm are the ports of R's own nmath routines in src/nns/_rnmath.hpp, so the null expectations match R's bit for bit. Bound explicitly instead of the untouched vendor dependence estimator."
+    },
+    {
+      "path": "src/nns/_r14_mreg_predict.cpp",
+      "sha256": "f93147dd754f415aa5d3786578d002b7931c2360d8683ce5770614c946ad038c",
+      "r_source_path": "src/NNS_mreg_predict.cpp",
+      "r_source_sha256": "e0fac52e99f33cd29fbb07b51711ded56c016d9e1a4b4a8eac8a9b4b9ed98571",
+      "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
+      "adaptation": "The vendored NNS-core multivariate prediction kernel (src/mreg_predict.cpp, sha256 c98d3fbb93c3165109870cb3d2cc1a55c8cb0fa35770b3ff0204441fd20e1e04) with its Student-t and normal ensemble weights evaluated by R's own nmath dt and dnorm4 (src/nns/_rnmath.hpp) instead of the vendor's lgamma-based closed form, so the weights and predictions match R's NNS_mreg_predict_v2_cpp bit for bit. CMake replaces only the vendor translation unit."
     }
   ],
   "r_cache_summary": {
@@ -40,5 +48,24 @@
     "shards": 80,
     "entries": 2764,
     "generation": "Pinned live R 14.0 only; no Python-authored expected values."
-  }
+  },
+  "r_nmath_ports": [
+    {
+      "path": "src/nns/_rnmath.hpp",
+      "sha256": "5960df5ce9939e908b8de2645c8cd655aa8901472498d61c73ff6c1412ace083",
+      "python_mirror": "src/nns/_rnmath.py",
+      "r_version": "4.5.0",
+      "r_sources": [
+        "src/nmath/dhyper.c",
+        "src/nmath/dbinom.c",
+        "src/nmath/stirlerr.c",
+        "src/nmath/bd0.c",
+        "src/nmath/pnorm.c",
+        "src/nmath/dnorm.c",
+        "src/nmath/dt.c"
+      ],
+      "license": "GPL-2 or later (R Core Team), redistributed under GPL-3.0-only",
+      "notes": "dhyper/dbinom_raw/stirlerr/bd0/pow1p and the lower tail of pnorm_both, as called by R::dhyper and R::pnorm in src/NNS_dep.cpp; stirlerr follows the R >= 4.4.0 series cutoffs. dt and dnorm4 are the densities R::dt / Rf_dnorm4 behind src/NNS_mreg_predict.cpp's ensemble weights."
+    }
+  ]
 }

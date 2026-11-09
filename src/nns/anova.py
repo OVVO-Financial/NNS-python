@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._rmean import r_mean
+from nns._rmean import r_col_means, r_mean, r_mean_logical, r_median, r_sum
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
 from nns.core import lpm_ratio, upm_ratio
@@ -107,7 +107,7 @@ def _nns_anova(
         raise ValueError("supply both control and treatment or at least two control groups.")
 
     pooled = np.concatenate(groups)
-    grand = float(np.median(pooled)) if medians else r_mean(pooled)
+    grand = r_median(pooled) if medians else r_mean(pooled)
 
     if pairwise:
         out = np.full((len(groups), len(groups)), np.nan, dtype=np.float64)
@@ -126,10 +126,11 @@ def _nns_anova(
                 out[j, i] = certainty
         return out
 
-    upper_25 = float(np.mean([upm_var(0.25, 1, group) for group in groups]))
-    lower_25 = float(np.mean([lpm_var(0.25, 1, group) for group in groups]))
-    upper_125 = float(np.mean([upm_var(0.125, 1, group) for group in groups]))
-    lower_125 = float(np.mean([lpm_var(0.125, 1, group) for group in groups]))
+    # R: mean(sapply(groups, VaR)) with R's mean().
+    upper_25 = r_mean(np.array([upm_var(0.25, 1, group) for group in groups]))
+    lower_25 = r_mean(np.array([lpm_var(0.25, 1, group) for group in groups]))
+    upper_125 = r_mean(np.array([upm_var(0.125, 1, group) for group in groups]))
+    lower_125 = r_mean(np.array([lpm_var(0.125, 1, group) for group in groups]))
 
     certainties = [
         _anova_bin(
@@ -148,7 +149,7 @@ def _nns_anova(
         for i in range(len(groups) - 1)
         for j in range(i + 1, len(groups))
     ]
-    return {"Certainty": float(np.mean(certainties))}
+    return {"Certainty": r_mean(np.asarray(certainties, dtype=np.float64))}
 
 
 def _anova_bin(
@@ -168,10 +169,10 @@ def _anova_bin(
     rng: RRNG | None = None,
 ) -> AnovaResult:
     if mean_of_means is None:
-        control_stat = float(np.median(control) if medians else np.mean(control))
-        treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
+        control_stat = r_median(control) if medians else r_mean(control)
+        treatment_stat = r_median(treatment) if medians else r_mean(treatment)
         if medians:
-            mean_of_means = float(np.median(np.concatenate((control, treatment))))
+            mean_of_means = r_median(np.concatenate((control, treatment)))
         elif (
             control.size > 0
             and treatment.size > 0
@@ -187,18 +188,15 @@ def _anova_bin(
                 control.size + treatment.size
             )
     else:
-        control_stat = float(np.median(control) if medians else np.mean(control))
-        treatment_stat = float(np.median(treatment) if medians else np.mean(treatment))
+        control_stat = r_median(control) if medians else r_mean(control)
+        treatment_stat = r_median(treatment) if medians else r_mean(treatment)
 
     if upper_25_target is None or lower_25_target is None:
-        upper_25_target = float(np.mean([upm_var(0.25, 1, control), upm_var(0.25, 1, treatment)]))
-        lower_25_target = float(np.mean([lpm_var(0.25, 1, control), lpm_var(0.25, 1, treatment)]))
-        upper_125_target = float(
-            np.mean([upm_var(0.125, 1, control), upm_var(0.125, 1, treatment)])
-        )
-        lower_125_target = float(
-            np.mean([lpm_var(0.125, 1, control), lpm_var(0.125, 1, treatment)])
-        )
+        # R: mean(c(UPM.VaR(., 1, control), UPM.VaR(., 1, treatment))), etc.
+        upper_25_target = _mean2(upm_var(0.25, 1, control), upm_var(0.25, 1, treatment))
+        lower_25_target = _mean2(lpm_var(0.25, 1, control), lpm_var(0.25, 1, treatment))
+        upper_125_target = _mean2(upm_var(0.125, 1, control), upm_var(0.125, 1, treatment))
+        lower_125_target = _mean2(lpm_var(0.125, 1, control), lpm_var(0.125, 1, treatment))
     assert upper_25_target is not None
     assert lower_25_target is not None
     assert upper_125_target is not None
@@ -237,10 +235,10 @@ def _anova_bin(
 
     if medians:
         median_distance_1 = max(
-            0.0, float(np.mean(control < mean_of_means)) - 0.5, 0.5 - lpm_ratio_1
+            0.0, r_mean_logical(control < mean_of_means) - 0.5, 0.5 - lpm_ratio_1
         )
         median_distance_2 = max(
-            0.0, float(np.mean(treatment < mean_of_means)) - 0.5, 0.5 - lpm_ratio_2
+            0.0, r_mean_logical(treatment < mean_of_means) - 0.5, 0.5 - lpm_ratio_2
         )
         mad_cdf = max(median_distance_1, median_distance_2)
     else:
@@ -250,18 +248,27 @@ def _anova_bin(
     upper_125_cdf = area_distance(upper_125_ratio_1, upper_125_ratio_2, upper_125_target, 0.125)
     lower_125_cdf = area_distance(lower_125_ratio_1, lower_125_ratio_2, lower_125_target, 0.125)
 
+    # R squares with x * x and adds the five terms with sum(), which
+    # accumulates in long double.
     if means_only:
-        rho = ((0.5 - mad_cdf) ** 2) / 0.25
+        rho = _sq(0.5 - mad_cdf) / 0.25
     else:
         rho = (
-            ((0.5 - mad_cdf) ** 2) / 0.25
-            + 0.5 * (((0.25 - upper_25_cdf) ** 2) / (0.25**2))
-            + 0.5 * (((0.25 - lower_25_cdf) ** 2) / (0.25**2))
-            + 0.25 * (((0.125 - upper_125_cdf) ** 2) / (0.125**2))
-            + 0.25 * (((0.125 - lower_125_cdf) ** 2) / (0.125**2))
-        ) / 2.5
+            r_sum(
+                np.array(
+                    [
+                        _sq(0.5 - mad_cdf) / 0.25,
+                        0.5 * (_sq(0.25 - upper_25_cdf) / _sq(0.25)),
+                        0.5 * (_sq(0.25 - lower_25_cdf) / _sq(0.25)),
+                        0.25 * (_sq(0.125 - upper_125_cdf) / _sq(0.125)),
+                        0.25 * (_sq(0.125 - lower_125_cdf) / _sq(0.125)),
+                    ]
+                )
+            )
+            / 2.5
+        )
 
-    pop_adjustment = ((control.size + treatment.size - 2) / (control.size + treatment.size)) ** 2
+    pop_adjustment = _sq((control.size + treatment.size - 2) / (control.size + treatment.size))
     result = {
         "Control": control_stat,
         "Treatment": treatment_stat,
@@ -367,10 +374,9 @@ def _effect_size_bounds(
     # i.e. column j holds draws j * n .. (j + 1) * n - 1; row j here.
     control_boot = control[_r_boot_indices(rng, control.size, n_boot)]
     treatment_boot = treatment[_r_boot_indices(rng, treatment.size, n_boot)]
-    control_stats = np.median(control_boot, axis=1) if medians else np.mean(control_boot, axis=1)
-    treatment_stats = (
-        np.median(treatment_boot, axis=1) if medians else np.mean(treatment_boot, axis=1)
-    )
+    # R: apply(boot, 2, median) or colMeans(boot) (long-double accumulation).
+    control_stats = _r_column_stats(control_boot, medians)
+    treatment_stats = _r_column_stats(treatment_boot, medians)
     alpha = _ci_alpha(confidence_interval, tails)
 
     # Every tail choice needs both quantiles of both groups (R used
@@ -453,3 +459,20 @@ def _tail(value: str) -> Tail:
     if tail not in {"left", "right", "both"}:
         raise ValueError("tails must be 'left', 'right', or 'both'.")
     return tail  # type: ignore[return-value]
+
+
+def _r_column_stats(boot: NDArray[np.float64], medians: bool) -> NDArray[np.float64]:
+    """Each bootstrap replicate's (row's) R median or R mean."""
+    if medians:
+        return np.array([r_median(row) for row in boot], dtype=np.float64)
+    return r_col_means(boot.T)
+
+
+def _mean2(a: float | NDArray[np.float64], b: float | NDArray[np.float64]) -> float:
+    """R's ``mean(c(a, b))`` of two scalars."""
+    return r_mean(np.array([float(np.asarray(a)), float(np.asarray(b))]))
+
+
+def _sq(value: float) -> float:
+    """R's ``value^2``, which R evaluates as ``value * value``."""
+    return value * value
