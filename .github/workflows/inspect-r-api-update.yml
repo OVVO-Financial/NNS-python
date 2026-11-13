@@ -36,7 +36,8 @@ concurrency:
 
 jobs:
   regenerate-cache:
-    runs-on: ubuntu-latest
+    # The parity oracle's operating system (docs/parity.md): Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     env:
       RGL_USE_NULL: 'true'
       R_KEEP_PKG_SOURCE: 'yes'
@@ -119,11 +120,46 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up R
-        uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: release
-          use-public-rspm: true
+      # The committed cache is R's output under the environment docs/parity.md
+      # pins: CRAN's R 4.5.0 build for Ubuntu 24.04, the reference BLAS and
+      # LAPACK, and Ubuntu's Rcpp, RcppParallel and jsonlite. The current R
+      # release or OpenBLAS (what setup-r installs) moves some results, so a
+      # cache generated under them cannot pass the port's exact parity tests.
+      - name: Set up R 4.5.0 as the parity oracle runs it
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates wget
+          wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc > /dev/null
+          echo "deb https://cloud.r-project.org/bin/linux/ubuntu noble-cran40/" \
+            | sudo tee /etc/apt/sources.list.d/cran-r.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --allow-downgrades \
+            r-base-core=4.5.0-3.2404.0 r-base-dev=4.5.0-3.2404.0 \
+            libblas3 liblapack3 r-cran-rcpp r-cran-rcppparallel r-cran-jsonlite
+          sudo apt-mark hold r-base-core r-base-dev
+          sudo update-alternatives --set libblas.so.3-x86_64-linux-gnu \
+            /usr/lib/x86_64-linux-gnu/blas/libblas.so.3
+          sudo update-alternatives --set liblapack.so.3-x86_64-linux-gnu \
+            /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3
+          mkdir -p "${RUNNER_TEMP}/R-library"
+          echo "R_LIBS_USER=${RUNNER_TEMP}/R-library" >> "${GITHUB_ENV}"
+
+      - name: Confirm the oracle environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          Rscript -e '
+            si <- sessionInfo()
+            cat(R.version.string, "\nBLAS:  ", si$BLAS, "\nLAPACK:", si$LAPACK, "\n")
+            for (p in c("Rcpp", "RcppParallel", "jsonlite")) cat(p, format(packageVersion(p)), "\n")
+            stopifnot(
+              identical(paste(R.version$major, R.version$minor, sep = "."), "4.5.0"),
+              grepl("/blas/libblas[.]so", si$BLAS),
+              grepl("/lapack/liblapack[.]so", si$LAPACK)
+            )'
 
       - name: Install Linux system dependencies
         shell: bash
@@ -158,7 +194,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          Rscript -e "options(repos=c(CRAN='https://cloud.r-project.org')); install.packages(c('remotes','jsonlite','mlbench')); remotes::install_deps('upstream/package', dependencies=NA, upgrade='never')"
+          # jsonlite, Rcpp and RcppParallel stay at the Ubuntu builds installed above.
+          Rscript -e "options(repos=c(CRAN='https://cloud.r-project.org')); install.packages(c('remotes','mlbench')); remotes::install_deps('upstream/package', dependencies=NA, upgrade='never')"
 
       - name: Install exact NNS source package
         shell: bash
@@ -183,7 +220,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python scripts/regenerate_r_cache.py --fresh --allow-ci 2>&1 | tee parity-regeneration.log
+          # tests/invariants also reads the cache, so its entries are regenerated too.
+          python scripts/regenerate_r_cache.py --fresh --allow-ci -- tests/parity tests/invariants 2>&1 | tee parity-regeneration.log
 
       - name: Confirm generated cache version
         if: always()
@@ -231,8 +269,10 @@ jobs:
         env:
           R_COMMIT: ${{ steps.package.outputs.r_commit }}
           R_VERSION: ${{ steps.package.outputs.r_version }}
+          SOURCE_TARBALL: ${{ steps.package.outputs.source_tarball }}
         run: |
           python - <<'PY'
+          import hashlib
           import json
           import os
           from pathlib import Path
@@ -241,6 +281,13 @@ jobs:
           manifest = json.loads(path.read_text(encoding='utf-8'))
           manifest['r_commit'] = os.environ['R_COMMIT']
           manifest['r_version'] = os.environ['R_VERSION']
+          tarball = Path('upstream') / os.environ['SOURCE_TARBALL']
+          if tarball.is_file():
+              manifest['r_source_archive'] = {
+                  'filename': tarball.name,
+                  'sha256': hashlib.sha256(tarball.read_bytes()).hexdigest(),
+                  'repository_commit': os.environ['R_COMMIT'],
+              }
           path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
           print(f"Manifest now records {manifest['r_repo']}@{manifest['r_commit']} "
                 f"(NNS {manifest['r_version']}).")
