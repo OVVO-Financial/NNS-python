@@ -53,6 +53,7 @@ jobs:
             ".github/workflows/docs.yml"
             ".github/workflows/release.yml"
             ".github/workflows/sync-from-nns-core.yml"
+            ".github/workflows/r14-reproduction.yml"
           )
 
           mkdir -p .github/workflows
@@ -75,7 +76,8 @@ jobs:
               ".github/workflows/inspect-r-api-update.yml"|\
               ".github/workflows/docs.yml"|\
               ".github/workflows/release.yml"|\
-              ".github/workflows/sync-from-nns-core.yml")
+              ".github/workflows/sync-from-nns-core.yml"|\
+              ".github/workflows/r14-reproduction.yml")
                 ;;
               *)
                 echo "Removing non-baseline workflow: ${path}"

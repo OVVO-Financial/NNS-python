@@ -92,7 +92,10 @@ def test_native_r14_overlays_have_separate_source_provenance() -> None:
     assert manifest["r_version"] == "14.0"
     assert len(manifest["r14_native_overlays"]) == 4
     for overlay in manifest["r14_native_overlays"]:
-        assert overlay["r_source_commit"] == manifest["r_commit"]
+        # Each overlay names the R commit its source was ported from and the
+        # pinned oracle it was verified against bit for bit.
+        assert overlay["verified_r_commit"] == manifest["r_commit"]
+        assert len(overlay["r_source_commit"]) == 40
         assert not overlay["path"].startswith("extern/")
         actual = hashlib.sha256((root / overlay["path"]).read_bytes()).hexdigest()
         assert actual == overlay["sha256"], overlay["path"]

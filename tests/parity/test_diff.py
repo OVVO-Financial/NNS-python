@@ -16,6 +16,22 @@ from nns import dy_d, dy_dx, nns_diff
 DY_D_PARITY = 5e-2
 
 
+def _r_power(x: Any, n: int) -> Any:
+    """R's ``x^n`` for a whole ``n``: ``R_pow`` (libm ``pow``) for a double, and
+    ``R_cpow_n``'s repeated squaring for a complex number."""
+    if not isinstance(x, complex):
+        return math.pow(x, n)
+    out, base = complex(1.0), x
+    while n > 0:
+        if n & 1:
+            out = out * base
+        if n == 1:
+            break
+        n >>= 1
+        base = base * base
+    return out
+
+
 @pytest.mark.parity
 @pytest.mark.parametrize(
     ("name", "func", "point"),
@@ -28,15 +44,16 @@ DY_D_PARITY = 5e-2
         ("constant", lambda x: 5.0, 2.0),
         ("identity", lambda x: x, 3.0),
         ("square", lambda x: x * x, 3.0),
-        # R uses repeated multiplication for these small integer powers.
-        # libm pow (Python **) differs by one ulp and changes inferred h.
-        ("cube", lambda x: x * x * x, 2.0),
+        # R's x^3 and x^4: libm pow for a double, repeated squaring for a
+        # complex step. x * x * x can differ by an ulp, and at h near 1e-9 that
+        # moves the inferred h.
+        ("cube", lambda x: _r_power(x, 3), 2.0),
         ("log", np.log, 5.0),
         # math.tanh is the C library tanh R uses; np.tanh can differ by an ulp,
         # which changes the bisection path.
         ("tanh", lambda x: cmath.tanh(x) if isinstance(x, complex) else math.tanh(x), 0.5),
         ("abs", abs, -1.0),
-        ("quartic", lambda x: x * x * x * x - 3 * x, -2.0),
+        ("quartic", lambda x: _r_power(x, 4) - 3 * x, -2.0),
     ],
 )
 def test_nns_diff_matches_r(name: str, func: Any, point: float) -> None:

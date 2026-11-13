@@ -3,9 +3,10 @@
 ## Target and status
 
 R NNS 14.0 is the parity target: the source at
-`OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae`
+`OVVO-Financial/NNS@9c8bd21a77b377cb49d43fececc662d62b00a94e`
 (`NNS_14.0.tar.gz`, SHA256
-`5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b`). Every shard
+`754dad65629b95bf3ddca9bf9018ef197f5c346dd12dcfb49e505835920bc5cb`; the same
+archive is still committed at the R repository's later `de5d4fe`). Every shard
 in `tests/_r_cache/` is stamped `nns_version` `14.0`. NNS-core remains the
 native C++ foundation; R 14 kernels it does not carry enter as hashed overlays
 recorded in `sync/nns_source.json`.
@@ -58,6 +59,8 @@ without the native extension:
 | Stochastic dominance (`NNS.FSD`/`SSD`/`TSD`, `.uni`, `NNS.SD.cluster`, `NNS.SD.efficient.set`) | 2,583 |
 | `NNS.meboot`, `NNS.MC`, `NNS.SS` and ARMA intervals under `set.seed` | 502 |
 | Permutation p-values (`NNS.seas`, `NNS.dep`, `NNS.caus`) | 198 |
+| Multivariate `NNS.reg` predictions on 900-1,500 rows (every distance, `n.best`, tied coordinates) | 84 |
+| Paths compiled in the 14.0 update: integer-degree `LPM.VaR`/`UPM.VaR`, `NNS.copula`, `NNS.dep` matrices, classification predictions, mixed `dy.d_` | 110 |
 
 The `*_r14.py` parity tests pin these results with exact cache entries.
 
@@ -88,16 +91,16 @@ python -m build   # packaging check
 
 ## Installing the R NNS 14.0 oracle
 
-Install the pinned R 14.0 source package, never the CRAN release, as the
-`r14-reproduction` workflow does:
+Install the pinned R 14.0 source package, never the CRAN release, into R 4.5.0
+(see the scope note under Bit-level parity):
 
 ```bash
 curl --fail --location -o NNS_14.0.tar.gz \
-  https://raw.githubusercontent.com/OVVO-Financial/NNS/7b07a837c130ba7220dbe16c584221508757d5ae/NNS_14.0.tar.gz
+  https://raw.githubusercontent.com/OVVO-Financial/NNS/9c8bd21a77b377cb49d43fececc662d62b00a94e/NNS_14.0.tar.gz
 ```
 
 ```bash
-echo '5060f6ec426c889501740bf8a585d41f37a746554cb6fdf81f301ca41232cd5b  NNS_14.0.tar.gz' | sha256sum -c -
+echo '754dad65629b95bf3ddca9bf9018ef197f5c346dd12dcfb49e505835920bc5cb  NNS_14.0.tar.gz' | sha256sum -c -
 ```
 
 ```bash
@@ -149,6 +152,13 @@ The committed shards in `tests/_r_cache/` were generated from the pinned R NNS
 package and point `R_LIBS` at its library when regenerating
 (`R_LIBS=<lib> python scripts/regenerate_r_cache.py ...`). The earlier shards,
 generated from a patched R 13.3, have all been regenerated from R 14.0.
+
+The R 14.0 update of 13 November 2026 (`9c8bd21`) moved interpreted loops into
+compiled code. Regenerating every shard from it under R 4.5.0 changed no value
+that the earlier 14.0 build (`7b07a83`) returns: the 37 entries that differ
+from the previous cache reproduce identically on both builds, so they had been
+written by another R installation (an R that evaluates `x^3` as `x * x * x`,
+for one). Generate the cache with R 4.5.0, as the scope note above requires.
 
 ## Automated parity check (with deferred autofix agent)
 
