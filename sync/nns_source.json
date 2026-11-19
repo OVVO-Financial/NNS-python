@@ -46,6 +46,15 @@
       "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
     },
     {
+      "path": "src/nns/_r14_partial_moments.cpp",
+      "sha256": "2b294085d9a736ed1818bff78bc081947306b9768db2b8d72d913f09406fa863",
+      "r_source_path": "src/partial_moments.cpp",
+      "r_source_sha256": "21101bdeb7309070cfa5999ab62a893025a5251cd57469552cba35a8c693d445",
+      "r_source_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e",
+      "adaptation": "The vendored NNS-core partial-moment kernels (src/partial_moments.cpp, sha256 8786f5df1fcd8e29c6ea28d91903fbdbaa93ed93a803d924422a89a19e23bdb0) with d_upm's two mixed-degree branches matched to R's DUPM_C: when exactly one degree is an integer, repeated multiplication goes to that degree's side and pow to the other. The vendor had them swapped, so native D.UPM ignored the fractional degree. CMake replaces only the vendor translation unit.",
+      "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+    },
+    {
       "path": "src/nns/_r14_seas.cpp",
       "sha256": "2b956af7f064a575d1acd1283ec5a6f4ced8e91b227e294634ce3ab7fd83420e",
       "r_source_path": "src/NNS_seas.cpp",
@@ -58,7 +67,7 @@
   "r_cache_summary": {
     "nns_version": "14.0",
     "shards": 149,
-    "entries": 2999,
+    "entries": 3004,
     "generation": "Pinned live R NNS 14.0 under R 4.5.0 (x86-64 Linux, reference BLAS/LAPACK) only; no Python-authored expected values."
   },
   "r_nmath_ports": [
