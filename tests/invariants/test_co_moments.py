@@ -109,7 +109,7 @@ def test_co_moments_and_pm_matrix_reject_non_finite_input() -> None:
     with pytest.raises(ValueError, match="variable must contain only finite values"):
         pm_matrix(1, 1, None, np.column_stack([x, finite]), pop_adj=False)
     with pytest.raises(ValueError, match="target must contain only finite values"):
-        pm_matrix(1, 1, np.nan, np.column_stack([finite, finite]), pop_adj=False)
+        pm_matrix(1, 1, [np.nan, np.nan], np.column_stack([finite, finite]), pop_adj=False)
 
 
 @pytest.mark.parametrize("degree", [np.nan, -1.0])

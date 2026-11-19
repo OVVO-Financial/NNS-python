@@ -6,11 +6,12 @@ from typing import Any, Literal, TypeAlias, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _is_factor
 from nns._native import native_fn
-from nns.core import _as_degree, _require_finite
+from nns.core import _as_degree, _check_numeric_target, _require_finite
 from nns.dependence import _r_pm_terms
 
-Target: TypeAlias = float | Literal["mean"] | NDArray[np.float64] | None
+Target: TypeAlias = float | Literal["mean", "means"] | NDArray[np.float64] | None
 PMMatrixResult: TypeAlias = dict[str, Any]
 
 
@@ -100,6 +101,12 @@ def pm_matrix(
         dlpm = np.where(positive, dlpm / safe_total, 0.0)
         clpm = np.where(positive, clpm / safe_total, 0.0)
 
+        zero = total == 0.0
+        if np.any(zero):
+            pm0 = pm_matrix(0, 0, targets, values, False, True)
+            for key, matrix in (("cupm", cupm), ("dupm", dupm), ("dlpm", dlpm), ("clpm", clpm)):
+                matrix[zero] = pm0[key][zero]
+
     cov_matrix = cupm + clpm - dupm - dlpm
     # R fills only the upper triangle and mirrors it: CUPM, CLPM and the
     # covariance plainly, DUPM and DLPM crossed (each from the other's transpose).
@@ -185,16 +192,22 @@ def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.float64]:
-    if target is None or isinstance(target, str):
+    supplied = np.asarray(target)
+    if supplied.ndim <= 1 and supplied.size == 1 and not _is_factor(target):
+        alias = supplied.item()
+        if isinstance(alias, str) and alias in ("mean", "means"):
+            target = None
+    if target is None:
         # Rcpp sugar colMeans: a sequential double sum divided by the row count.
         return cast(NDArray[np.float64], np.cumsum(variable, axis=0)[-1] / variable.shape[0])
 
+    _check_numeric_target(target)
     targets = np.asarray(target, dtype=np.float64)
     if targets.ndim == 0:
-        targets = np.full(variable.shape[1], float(targets), dtype=np.float64)
+        targets = targets.reshape(1)
     if targets.ndim != 1:
         raise ValueError("target must be 1D.")
     if targets.size != variable.shape[1]:
-        raise ValueError("variable matrix cols != target vector length.")
+        raise ValueError("variable matrix cols != target vector length")
     _require_finite(targets, "target")
     return targets

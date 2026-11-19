@@ -8,6 +8,15 @@ from numpy.typing import NDArray
 from nns._native import external_stacklevel, native_fn
 
 
+def _is_factor(value: object) -> bool:
+    return getattr(getattr(value, "dtype", None), "name", None) == "category"
+
+
+def _reject_factor(value: object, name: str) -> None:
+    if _is_factor(value):
+        raise ValueError(f"{name} must be numeric, not a factor.")
+
+
 def _warn_unsupported(**was_set: bool) -> None:
     """Warn about R-compatibility parameters that have no effect in NNS Python.
 

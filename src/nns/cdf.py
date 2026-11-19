@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _reject_factor
 from nns._native import native_fn
 from nns._rmean import r_row_sums
 from nns._rnmath import libm_log
@@ -32,6 +33,7 @@ def nns_cdf(
     if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
         raise ValueError("invalid type")
 
+    _reject_factor(variable, "`variable`")
     if names is None:
         columns = getattr(variable, "columns", None)
         if columns is not None:
@@ -286,7 +288,7 @@ def _co_lpm_nd_rows(values: NDArray[np.float64], degree: float) -> NDArray[np.fl
 
 
 def _co_lpm_nd_batch(
-    values: NDArray[np.float64], points: NDArray[np.float64], degree: float
+    values: NDArray[np.float64], points: NDArray[np.float64], degree: float, *, strict: bool = False
 ) -> NDArray[np.float64]:
     """R's ``Co.LPM_nD.batch(values, points, degree, norm = TRUE)``: one value per point row."""
     n, d = values.shape
@@ -296,7 +298,7 @@ def _co_lpm_nd_batch(
         flat = np.ascontiguousarray(values.ravel(order="F"))
         flat_points = np.ascontiguousarray(points.ravel(order="F"))
         return np.asarray(
-            native(flat, n, d, flat_points, m, float(degree), True), dtype=np.float64
+            native(flat, n, d, flat_points, m, float(degree), True, strict), dtype=np.float64
         )
     # NumPy fallback reproducing R's CoLPMnDBatchWorker: per-row products of
     # R's lower/upper components (repeated multiplication or libm pow), double
@@ -304,11 +306,12 @@ def _co_lpm_nd_batch(
     out = np.empty(m, dtype=np.float64)
     chunk = max(1, 2_000_000 // max(1, n * d))
     inv_n = 1.0 / float(n)
+    below_target = np.less if strict else np.less_equal
     for start in range(0, m, chunk):
         rows = points[start : start + chunk]
         diff = values[np.newaxis, :, :] - rows[:, np.newaxis, :]
         if degree == 0.0:
-            below = np.all(diff <= 0.0, axis=2)
+            below = np.all(below_target(diff, 0.0), axis=2)
             out[start : start + chunk] = np.count_nonzero(below, axis=1) / float(n)
             continue
         lower_terms = _r_pm_terms(np.maximum(-diff, 0.0), degree)
@@ -316,15 +319,20 @@ def _co_lpm_nd_batch(
         lower_prod = _r_axis2_products(np.where(-diff < 0.0, 0.0, lower_terms))
         upper_prod = _r_axis2_products(np.where(diff < 0.0, 0.0, upper_terms))
         dpm_prod = _r_axis2_products(_r_pm_terms(np.abs(diff), degree))
-        strict = np.all(diff < 0.0, axis=2) | np.all(diff > 0.0, axis=2)
+        same_side = np.all(diff < 0.0, axis=2) | np.all(diff > 0.0, axis=2)
         clpm = np.cumsum(lower_prod, axis=1)[:, -1] * inv_n
         cupm = np.cumsum(upper_prod, axis=1)[:, -1] * inv_n
-        dpm = np.cumsum(np.where(strict, 0.0, dpm_prod), axis=1)[:, -1] * inv_n
+        dpm = np.cumsum(np.where(same_side, 0.0, dpm_prod), axis=1)[:, -1] * inv_n
         total = clpm + cupm + dpm
         positive = total > 0.0
-        out[start : start + chunk] = np.where(
+        block = np.where(
             positive, clpm / np.where(positive, total, 1.0), 0.0
         )
+        zero = total == 0.0
+        if np.any(zero):
+            below = np.all(below_target(diff[zero], 0.0), axis=2)
+            block[zero] = np.count_nonzero(below, axis=1) / float(n)
+        out[start : start + chunk] = block
     return out
 
 
@@ -353,7 +361,7 @@ def _joint_survival(
     computed as ``Co.LPM_nD(-X, -t)``.  Mirrors R NNS.CDF's ``joint.survival``.
     """
     if degree > 0:
-        return _co_lpm_nd_batch(-values, -points, degree)
+        return _co_lpm_nd_batch(-values, -points, degree, strict=True)
     d = values.shape[1]
     if d > 3:
         # Beyond 3 columns the 2^d terms are slow and cancel; count the rows above t.

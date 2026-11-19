@@ -27,6 +27,7 @@ endforeach()
 list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_central_tendencies.cpp")
 list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_mreg_predict.cpp")
 list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_seas.cpp")
+list(APPEND NNS_R14_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/nns/_r14_partial_moments.cpp")
 set_property(TARGET nnscore PROPERTY SOURCES "${NNS_R14_CORE_SOURCES}")
 
 # The Python extension is a shared object.  The vendored NNS-core target builds

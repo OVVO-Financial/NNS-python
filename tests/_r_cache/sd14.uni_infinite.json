@@ -1,0 +1,22 @@
+{
+  "entries": {
+    "318717c01720912e7c06559f883d304593a1b5c80fe0eff332bf3268757f0bf4": [
+      0.0,
+      0.0
+    ],
+    "3dc2c04267783b0abec1065c7bf40143365dfa0b03c6faaa7d51bb8f06a9712b": "You have some infinite values, please address.",
+    "6f5a1d5c194947c8d1c6f60895dba46b7b33d29858261e46dd24f8cd7d931a53": [
+      0.0,
+      0.0
+    ],
+    "7221d6d21b172b9af615576e00cd9273e0bc0578dcafc22c288aa9bda4776e1e": "You have some infinite values, please address.",
+    "8459a57edd513e4cee56e0666205d1707c33c86cdfbb6a7697b4645e2c0edf72": "You have some infinite values, please address.",
+    "d14337e05605f26072dd04e358d655fc35586390407801e20069ed436fff4a12": [
+      0.0,
+      0.0
+    ]
+  },
+  "label": "sd14.uni_infinite",
+  "nns_version": "14.2",
+  "schema_version": 2
+}

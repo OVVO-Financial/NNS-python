@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _reject_factor
 from nns._rmean import r_mean
 from nns._rnmath import libm_pow, r_pow_scalar
 from nns.core import _as_1d_values, lpm, upm
@@ -59,6 +60,7 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
     series has NaN skewness and kurtosis, and the sample (``population=False``)
     estimators need n > 2 (skewness) and n > 3 (kurtosis).
     """
+    _reject_factor(x, "`x`")
     values = _as_1d_values(x)
     # R 14 NNS.moments: central moments with R's mean() (long double), z^2 as
     # z * z and z^3, z^4 through R's ^ (libm pow). float64 scalars give R's IEEE

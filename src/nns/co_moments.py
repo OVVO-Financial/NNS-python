@@ -5,8 +5,9 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _reject_factor
 from nns._native import native_fn
-from nns.core import _as_degree, _as_targets, _is_scalar, _require_finite
+from nns.core import _as_degree, _as_targets, _check_numeric_target, _is_scalar, _require_finite
 
 
 def co_lpm(
@@ -95,7 +96,11 @@ def _co_moment(
     target_x: float | NDArray[np.float64] | None,
     target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
+    _reject_factor(x, "`x`")
+    _reject_factor(y, "`y`")
     x_values, y_values = _as_pair(x, y)
+    _check_numeric_target(target_x)
+    _check_numeric_target(target_y)
     # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
     x_targets = _as_targets(target_x, x_values)
     y_targets = _as_targets(target_y, y_values)

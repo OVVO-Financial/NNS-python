@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+from numbers import Real
 
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _is_factor, _reject_factor
 from nns._native import native_fn
 from nns._rmean import r_mean
 
@@ -28,6 +30,8 @@ def lpm(
     ``target`` has length 1 or ``len(x)`` and the result is the single value
     ``mean(max(target_i - x_i, 0) ** degree)`` (degree 0 counts ``x_i <= target_i``).
     """
+    _reject_factor(target, "`target`")
+    _reject_factor(x, "`variable`")
     if excess_ret:
         return _excess_moment(degree, target, x, lower=True)
     return _moment(degree, target, x, lower=True)
@@ -47,6 +51,8 @@ def upm(
     With ``excess_ret=True`` the target is element-wise (length 1 or ``len(x)``) and
     the result is ``mean(max(x_i - target_i, 0) ** degree)``.
     """
+    _reject_factor(target, "`target`")
+    _reject_factor(x, "`variable`")
     if excess_ret:
         return _excess_moment(degree, target, x, lower=False)
     return _moment(degree, target, x, lower=False)
@@ -260,7 +266,9 @@ def _ratio(
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
+    _reject_factor(x, "`variable`")
     values = _as_1d_values(x)
+    _check_numeric_target(target)
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
     # R's LPM.ratio/UPM.ratio reject a non-finite target as LPM() does.
@@ -345,13 +353,28 @@ def _is_scalar(target: object) -> bool:
     return target is None or np.asarray(target).ndim == 0
 
 
+def _check_numeric_target(target: object) -> None:
+    if target is None:
+        return
+    if not _is_factor(target) and not hasattr(target, "columns"):
+        values = np.asarray(target)
+        if values.dtype.kind in "biuf" or (
+            values.dtype.kind == "O" and all(isinstance(v, (Real, np.bool_)) for v in values.flat)
+        ):
+            return
+    raise ValueError("`target` must be numeric or NULL.")
+
+
 def _as_targets(
     target: float | NDArray[np.float64] | None,
     values: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     if target is None:
         return np.array([r_mean(values)], dtype=np.float64)
-    targets = np.asarray(target, dtype=np.float64)
+    try:
+        targets = np.asarray(target, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("`target` must be finite.") from exc
     if targets.ndim == 0:
         targets = targets.reshape(1)
     if targets.ndim != 1:

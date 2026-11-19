@@ -402,6 +402,8 @@ def _dpm_nd(
     clpm = _clpm_nd(data, target, degree)
     cupm = _cupm_nd(data, target, degree)
     total = clpm + cupm + dpm
+    if total == 0.0:
+        return float(np.mean(discordant))
     return dpm / total if total > 0.0 else 0.0
 
 
@@ -468,6 +470,8 @@ def co_lpm_nd(
     cupm = _cupm_nd(values, target_values, degree)
     dpm = _dpm_nd(values, target_values, degree, norm=False)
     total = clpm + cupm + dpm
+    if total == 0.0:
+        return _clpm_nd(values, target_values, 0.0)
     return clpm / total if total > 0.0 else 0.0
 
 
@@ -485,6 +489,8 @@ def co_upm_nd(
     clpm = _clpm_nd(values, target_values, degree)
     dpm = _dpm_nd(values, target_values, degree, norm=False)
     total = clpm + cupm + dpm
+    if total == 0.0:
+        return _cupm_nd(values, target_values, 0.0)
     return cupm / total if total > 0.0 else 0.0
 
 

@@ -37,12 +37,15 @@ from scipy.cluster.hierarchy import linkage  # type: ignore[import-untyped]
 from scipy.sparse.csgraph import connected_components  # type: ignore[import-untyped]
 from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
+from nns._helpers import _reject_factor
+
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
 # R's native SD test ignores excesses up to 64 * DBL_EPSILON (relative to the data scale).
 _SD_EPS = float(np.finfo(np.float64).eps)
 _SD_EPS64 = 64.0 * _SD_EPS
 # R's own messages: the NA check in every R wrapper and the C++ empty-sample check.
 _MISSING_VALUES = "You have some missing values, please address."
+_INFINITE_VALUES = "You have some infinite values, please address."
 _EMPTY_SAMPLE = "Each sample needs at least one observation."
 
 _P = ParamSpec("_P")
@@ -111,9 +114,9 @@ def fsd_uni(x: NDArray[np.float64], y: NDArray[np.float64], type: str = "discret
     """Unidirectional first-order stochastic dominance: 1 if x dominates y, else 0.
 
     Like R's ``NNS.FSD.uni``, an unrecognised ``type`` warns and runs the discrete
-    test, and infinite values are compared as R's C++ test compares them.
+    test. Only the discrete test accepts infinite values.
     """
-    x_values, y_values = _sd_pair(x, y, finite=False)
+    x_values, y_values = _sd_pair(x, y, finite=False, allow_inf=type.lower() != "continuous")
     discrete = _checked_fsd_type(type) != "continuous"
     return int(_dominates_uni(x_values, y_values, 1, discrete=discrete))
 
@@ -387,7 +390,7 @@ def sd_efficient_set(
     ``as.integer``: 1.5 runs first-order (FSD) and ``"2"`` runs second-order;
     anything that does not truncate to 1, 2 or 3 raises. Validation follows R's
     C++ order (no columns, empty columns, degree, missing values), and infinite
-    values are compared as R's C++ test compares them.
+    values are accepted only for discrete first-order dominance.
     """
     values = _sd_matrix(returns, "returns")
     if values.shape[1] == 0:
@@ -434,6 +437,8 @@ def _validated_sd_matrix(
     if np.isnan(values).any():
         raise ValueError(_MISSING_VALUES)
     type_value = _sd_type_value(degree_int, type)
+    if (degree_int != 1 or type_value == "continuous") and np.isinf(values).any():
+        raise ValueError(_INFINITE_VALUES)
     return degree_int, degree_int != 1 or type_value != "continuous"
 
 
@@ -1094,6 +1099,7 @@ def _lpm_at_target(
 
 def _as_sd_values(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
     """R's ``to_numeric_vector``: single-column objects and any vector shape flatten."""
+    _reject_factor(x, name)
     values = np.asarray(x, dtype=np.float64)
     if values.ndim == 2:
         # R accepts single-column matrices and data frames.
@@ -1104,14 +1110,14 @@ def _as_sd_values(x: NDArray[np.float64], name: str) -> NDArray[np.float64]:
 
 
 def _sd_pair(
-    x: NDArray[np.float64], y: NDArray[np.float64], *, finite: bool
+    x: NDArray[np.float64], y: NDArray[np.float64], *, finite: bool, allow_inf: bool = False
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Both samples, checked in R's order: shape, missing values, finiteness, size.
 
     ``finite`` is for ``NNS.FSD``/``NNS.SSD``/``NNS.TSD``, which evaluate
     ``LPM(.ratio)(degree, sort(c(x, y)), x)`` first: that checks the variable ``x``
     and then the target grid. The ``.uni`` tests go straight to R's C++ test,
-    which accepts infinite values.
+    which accepts infinite values only for discrete first-order dominance.
     """
     x_values = _as_sd_values(x, "x")
     y_values = _as_sd_values(y, "y")
@@ -1122,6 +1128,8 @@ def _sd_pair(
             raise ValueError("`variable` must be finite.")
         if not np.all(np.isfinite(y_values)):
             raise ValueError("`target` must be finite.")
+    elif not allow_inf and (np.isinf(x_values).any() or np.isinf(y_values).any()):
+        raise ValueError(_INFINITE_VALUES)
     if x_values.size == 0 or y_values.size == 0:
         raise ValueError(_EMPTY_SAMPLE)
     return x_values, y_values
