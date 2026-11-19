@@ -674,6 +674,8 @@ def _dominates_uni(
     *,
     discrete: bool,
 ) -> bool:
+    if x.size == 0 or y.size == 0:
+        raise ValueError(_EMPTY_SAMPLE)
     x_sorted = np.sort(x)
     y_sorted = np.sort(y)
     return _dominates_sorted(
@@ -1130,6 +1132,4 @@ def _sd_pair(
             raise ValueError("`target` must be finite.")
     elif not allow_inf and (np.isinf(x_values).any() or np.isinf(y_values).any()):
         raise ValueError(_INFINITE_VALUES)
-    if x_values.size == 0 or y_values.size == 0:
-        raise ValueError(_EMPTY_SAMPLE)
     return x_values, y_values

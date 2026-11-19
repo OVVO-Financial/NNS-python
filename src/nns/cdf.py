@@ -29,10 +29,6 @@ def nns_cdf(
     names: Sequence[str] | None = None,
 ) -> dict[str, object]:
     """Partial-moment CDF wrapper matching R's non-plotting NNS.CDF paths."""
-    type_value = type.lower()
-    if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
-        raise ValueError("invalid type")
-
     _reject_factor(variable, "`variable`")
     if names is None:
         columns = getattr(variable, "columns", None)
@@ -48,13 +44,13 @@ def nns_cdf(
     elif values.ndim == 2:
         values = values[~np.isnan(values).any(axis=1)]
     if values.ndim == 1 or (values.ndim == 2 and values.shape[1] == 1):
-        result = _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
+        result = _univariate_cdf(values.reshape(-1), float(degree), target, type)
         if plot:
             _render_cdf(result, target)
         return result
     if values.ndim == 2:
         # Multivariate CDF has no faithful single-Axes plot; plot is a no-op here.
-        return _multivariate_cdf(values, float(degree), target, type_value, names)
+        return _multivariate_cdf(values, float(degree), target, type, names)
     raise ValueError("variable must be a vector or 2D matrix.")
 
 
@@ -70,6 +66,13 @@ def _render_cdf(result: dict[str, object], target: float | NDArray[np.float64] |
     plot_nns_cdf(result, target=plot_target)
 
 
+def _cdf_type(value: str) -> str:
+    type_value = value.lower()
+    if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
+        raise ValueError("invalid type")
+    return type_value
+
+
 def _univariate_cdf(
     values: NDArray[np.float64],
     degree: float,
@@ -78,9 +81,10 @@ def _univariate_cdf(
 ) -> dict[str, object]:
     if values.size == 0:
         raise ValueError("variable must contain at least one non-missing value.")
+    target_value = _univariate_target(target, values)
+    type_value = _cdf_type(type_value)
     if not np.all(np.isfinite(values)):
         raise ValueError("variable must contain only finite values.")
-    target_value = _univariate_target(target, values)
     x = np.sort(values)
     pval = _r_lpm_ratio(degree, x, values)
     column_name = {
@@ -140,6 +144,8 @@ def _multivariate_cdf(
 ) -> dict[str, object]:
     if values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError("variable must have at least one complete row and one column.")
+    target_values = _multivariate_target(target, values)
+    type_value = _cdf_type(type_value)
     if not np.all(np.isfinite(values)):
         raise ValueError("variable must contain only finite values.")
     # R14 explicitly rejects the joint hazard without a defined multivariate
@@ -155,7 +161,6 @@ def _multivariate_cdf(
         raise ValueError(
             "type = 'cumulative hazard' needs degree = 0 for multivariate variable"
         )
-    target_values = _multivariate_target(target, values)
     column_names = _matrix_names(values.shape[1], names)
 
     cdf = _co_lpm_nd_rows(values, degree)

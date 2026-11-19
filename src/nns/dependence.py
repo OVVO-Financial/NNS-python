@@ -514,12 +514,12 @@ def _as_nd_moment_inputs(
         raise ValueError("data must be a 2D matrix.")
     if values.shape[0] == 0:
         raise ValueError("data must have at least one row.")
-    if target_values.size != values.shape[1]:
-        raise ValueError("target length must match number of columns in data.")
     if not np.all(np.isfinite(values)):
         raise ValueError("data must be finite.")
     if not np.all(np.isfinite(target_values)):
         raise ValueError("target must be finite.")
+    if target_values.size != values.shape[1]:
+        raise ValueError("target length must match number of columns in data.")
     return values, target_values
 
 

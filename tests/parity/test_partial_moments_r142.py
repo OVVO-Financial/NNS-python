@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
+from fractions import Fraction
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,6 +10,7 @@ from _r import nns_frame_call
 
 import nns
 from nns._native import native_fn
+from nns.cdf import _co_lpm_nd_batch
 
 pytestmark = pytest.mark.parity
 
@@ -62,7 +66,13 @@ def test_typed_targets(name, r):
         degrees = (1, 1) if name.startswith("d_") else (1,)
         return (*degrees, x, x, None, t), f"{'1, ' * len(degrees)}x, x, NULL, {rt}"
 
-    for t, rt in [([True, False], "c(TRUE,FALSE)"), (np.array([1, 3]), "c(1L,3L)")]:
+    for t, rt in [
+        ([True, False], "c(TRUE,FALSE)"),
+        (np.array([1, 3]), "c(1L,3L)"),
+        ([Decimal("1"), Decimal("3")], "c(1L,3L)"),
+        (np.array([Fraction(1), Fraction(3)], dtype=object), "c(1L,3L)"),
+        (np.array(["1970-01-02", "1970-01-04"], dtype="datetime64[ns]"), "c(1L,3L)"),
+    ]:
         actual, rexpr = args(t, rt)
         result = fn(*actual)
         suffix = "$clpm" if name == "pm_matrix" else ""
@@ -77,7 +87,7 @@ def test_typed_targets(name, r):
         assert str(caught.value) == expected
     if name == "pm_matrix":
         with pytest.raises(ValueError) as caught:
-            fn(1, 1, True, matrix, False)
+            fn(1, 1, [True], matrix, False)
         assert str(caught.value) == error("PM.matrix(1,1,TRUE,cbind(1:3,1:3),FALSE)")
         for alias in ("mean", "means"):
             expected = oracle(f"x <- c(0,2,4); PM.matrix(1,1,'{alias}',cbind(x,x),FALSE)$clpm")
@@ -184,3 +194,74 @@ def test_zero_total_matrix_cells(degrees):
     )
     for key, value in nns.pm_matrix(*degrees, [2, 2, 1], x, True, True).items():
         np.testing.assert_array_equal(value, expected[key])
+
+
+@pytest.mark.parametrize("alias", [pd.Series(["mean"], index=["cutoff"]), pd.Categorical(["mean"])])
+def test_matrix_rejects_named_and_factor_aliases(alias):
+    with pytest.raises(ValueError, match="must be numeric"):
+        nns.pm_matrix(1, 1, alias, np.eye(2), False)
+
+
+def test_matrix_target_shape_and_broadcast():
+    x = np.arange(12).reshape(3, 4)
+    for target, expected in [
+        (Decimal("2"), [2] * 4),
+        (np.datetime64("1970-01-03"), [2] * 4),
+        (np.array([[1, 3], [2, 4]]), [1, 2, 3, 4]),
+    ]:
+        actual = nns.pm_matrix(1, 1, target, x, False)
+        for key, value in nns.pm_matrix(1, 1, expected, x, False).items():
+            np.testing.assert_array_equal(actual[key], value)
+    with pytest.raises(ValueError, match="cols != target vector length"):
+        nns.pm_matrix(1, 1, np.array([[1]]), x, False)
+
+
+@pytest.mark.parametrize("fn", [nns.lpm_var, nns.upm_var])
+def test_var_one_row_factor_codes(fn):
+    for label, expected in [("b", 6.0), (None, 10.0)]:
+        frame = pd.DataFrame({"a": [10], "b": pd.Categorical([label], categories=["a", "b"])})
+        assert fn(0.5, 1, frame) == expected
+
+
+@pytest.mark.parametrize("excess", [False, True])
+def test_nonfinite_target_before_degree(excess):
+    with pytest.raises(ValueError, match=r"target.*must be finite"):
+        nns.lpm(-1, np.inf, [1, 3], excess)
+
+
+def test_validation_order():
+    factor = pd.Categorical([1, 3])
+    bad = np.array([[1, 1], [3, np.inf]])
+    for fn, args, error in [
+        (nns.lpm_ratio, (-1, 2, factor), "degree"),
+        (nns.lpm_ratio, (0, "2", [1, np.inf]), "target.*must be numeric"),
+        (nns.lpm_ratio, (0, np.datetime64("NaT"), [1, 3]), "target.*must be finite"),
+        (nns.co_lpm, (-1, factor, [1, 3], 2, 2), "degree"),
+        (nns.co_lpm, (0, [1], [1, 3], "2", 2), "target.*must be numeric"),
+        (nns.co_lpm, (0, [1, np.inf], [1, 3], [], 2), "target.*empty"),
+        (nns.pm_matrix, (0, 0, [2], bad, False), "cols != target vector length"),
+        (nns.pm_matrix, (0, 0, "wrong", bad, False), "target.*must be numeric"),
+        (nns.nns_cdf, (factor, 0, None, "bad"), "factor"),
+        (nns.nns_cdf, ([1, 3], 0, 7, "bad"), "out of bounds"),
+        (nns.nns_cdf, (np.eye(2), 0, [7, 7], "hazard"), "out of bounds"),
+        (nns.co_lpm_nd, (bad, [2]), "data must be finite"),
+    ]:
+        with pytest.raises(ValueError, match=error):
+            fn(*args)
+    with pytest.warns(UserWarning, match="type needs"), pytest.raises(ValueError):
+        nns.fsd_uni([], [1, 3], type="bad")
+
+
+def test_batch_degree_zero_tie():
+    x = np.array([[1.0]])
+    np.testing.assert_array_equal(_co_lpm_nd_batch(x, x, 0, strict=True), [0])
+    np.testing.assert_array_equal(_co_lpm_nd_batch(x, x, 0), [1])
+
+
+def test_native_batch_raw():
+    batch = native_fn("clpm_nd_batch")
+    if batch is None:
+        pytest.skip("raw batch requires the native backend")
+    args = (np.array([0.0, 4.0]), 2, 1, np.array([1.0]), 1, 1.0)
+    np.testing.assert_array_equal(batch(*args, False), [0.5])
+    np.testing.assert_array_equal(batch(*args, True), [0.25])

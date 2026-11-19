@@ -1031,8 +1031,22 @@ def _partial_moment_var(
     lower: bool,
 ) -> float | NDArray[np.float64]:
     _reject_factor(x, "`x`")
-    if hasattr(x, "columns") and any(dtype == "category" for dtype in getattr(x, "dtypes", ())):
-        raise ValueError("`x` must be numeric, not a factor.")
+    if (
+        hasattr(x, "items")
+        and x.ndim == 2
+        and any(dtype == "category" for dtype in getattr(x, "dtypes", ()))
+    ):
+        if len(x) != 1:
+            raise ValueError("`x` must be numeric, not a factor.")
+        # A one-row R data.frame coerces each factor to its one-based level code.
+        row = []
+        for _, column in x.items():
+            if column.dtype == "category":
+                code = column.cat.codes.iat[0]
+                row.append(code + 1 if code >= 0 else np.nan)
+            else:
+                row.append(column.to_numpy(dtype=np.float64, na_value=np.nan)[0])
+        x = np.asarray(row)
     values = _finite_values(x)
     requested = np.asarray(percentile, dtype=np.float64)
     pcts = np.clip(requested.reshape(-1), 0.0, 1.0)

@@ -69,12 +69,11 @@ check the same rules.
 
 ## PM Matrix Target Defaults
 
-R `PM.matrix` uses column means when `target` is `NULL` or any non-numeric value.
-NNS Python accepts `None` and `"mean"` for this behavior, with Rcpp's `colMeans`
-arithmetic (a row-by-row double sum divided by the row count). NNS Python also broadcasts a
-scalar numeric target across all variables; R requires callers to pass an
-explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
-does not match the number of variables raise `ValueError`.
+Use `None`, `"mean"` or `"means"` for column means. Python and R sum each column
+row by row in double precision and divide by the row count. Numeric vectors and
+matrices supply one target per variable column. R reads matrix targets in column
+order, and Python does the same. Python also broadcasts a numeric scalar across
+columns. In R, pass an explicit vector such as `rep(0, ncol(variable))`.
 
 ## Mode Default Divergence From R
 
@@ -96,8 +95,6 @@ triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
 crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
 A normalised n-dimensional moment or matrix cell with an exactly zero total takes
 its degree-zero value. In a joint survival calculation, ties are excluded.
-For `pm_matrix`, pass one target per column, or use `None`, `"mean"` or `"means"`
-for the column means.
 `nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
 `mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
 

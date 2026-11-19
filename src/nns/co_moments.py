@@ -96,25 +96,33 @@ def _co_moment(
     target_x: float | NDArray[np.float64] | None,
     target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
+    degree_x = _as_degree(degree_x)
+    degree_y = _as_degree(degree_y)
     _reject_factor(x, "`x`")
     _reject_factor(y, "`y`")
-    x_values, y_values = _as_pair(x, y)
+    x_values = np.asarray(x, dtype=np.float64)
+    y_values = np.asarray(y, dtype=np.float64)
+    if x_values.ndim != 1 or y_values.ndim != 1:
+        raise ValueError("x and y must be 1D.")
     _check_numeric_target(target_x)
     _check_numeric_target(target_y)
     # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
     x_targets = _as_targets(target_x, x_values)
     y_targets = _as_targets(target_y, y_values)
+    if x_values.size != y_values.size:
+        raise ValueError("x and y must have the same length.")
+    if x_values.size == 0:
+        raise ValueError("x and y must be non-empty.")
     if x_targets.size == 0 or y_targets.size == 0:
         raise ValueError("target_x and target_y must be non-empty.")
     if x_targets.size != y_targets.size and 1 not in (x_targets.size, y_targets.size):
         raise ValueError(
             "target_x and target_y must have the same length, or one of them length 1."
         )
-    # As R's Co.LPM/Co.UPM/D.LPM/D.UPM: NaN would be counted in n but in no quadrant.
+    _require_finite(x_values, "x")
+    _require_finite(y_values, "y")
     _require_finite(x_targets, "target_x")
     _require_finite(y_targets, "target_y")
-    degree_x = _as_degree(degree_x)
-    degree_y = _as_degree(degree_y)
 
     native, swap_degrees = _native_co_moment(x_side, y_side)
     if native is not None:
@@ -158,23 +166,6 @@ def _native_co_moment(x_side: object, y_side: object) -> tuple[Any | None, bool]
     if x_side is _upper and y_side is _lower:
         return native_fn("d_lpm_v"), True
     return native_fn("d_upm_v"), False
-
-
-def _as_pair(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    x_values = np.asarray(x, dtype=np.float64)
-    y_values = np.asarray(y, dtype=np.float64)
-    if x_values.ndim != 1 or y_values.ndim != 1:
-        raise ValueError("x and y must be 1D.")
-    if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
-    if x_values.size == 0:
-        raise ValueError("x and y must be non-empty.")
-    _require_finite(x_values, "x")
-    _require_finite(y_values, "y")
-    return x_values, y_values
 
 
 def _deviation(
