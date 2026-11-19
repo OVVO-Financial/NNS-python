@@ -128,6 +128,7 @@
     ],
     "3ae47cc37d972bba96f4b9ac897fa79a9b6615f9c4dfa001602283467342de1a": "`y` must be numeric, not a factor.",
     "3cdb4391e3b65fe5a3da72b8f35121653e1f5acf6f11c0762d6840fc552eef37": "y must be numeric, not a factor.",
+    "4366575647eafa3a49b1223b83b3b9c6265fbd604fb888d06fbb383a12cba800": "`target_y` must be finite.",
     "4451f24a9f626ff709abb3053a1cba078dd32f9b92d5a17dbeae18034154ab29": "`variable` must be numeric, not a factor.",
     "4888e4137d20fa558258799102910e68425c05c4f67741e3047ddfdb22e759f9": "`y` must be numeric, not a factor.",
     "5017823778ea77b7e680371bc1649d84dd051f9b2f3aa729944cc5aaf52c913e": [
@@ -141,12 +142,15 @@
     "62bbe2150ff08b9eb9a71ec754cf074ca0f08b51ea852dd9d5227cd6663eee74": "`variable` must be numeric, not a factor.",
     "65c9a49837728ba9452d1d4677383a84994dc742b5550b6da8f045c66be77c0c": 2.25,
     "65f0dd9d0ee1c3a02cda778603cf4d3a15712fa630bc017b8e5838f97867ec47": "`target` must be numeric, not a factor.",
+    "679a64edf532bdb405d7eeaed63badee8f095a38a6c54b178087ff4c7d0d6cef": "`target_y` must be finite.",
     "6884d341e66a7eb2712503f385430c5405f3c5f8a783896c5d1bfd951373ffc6": [
       0.5,
       0.0,
       0.5
     ],
+    "6b2d9b7525afebc0668b50bf8484772ddea86428092ea65dba1fcdd1292bdd46": "`target_y` must be finite.",
     "6d61ad57fcce562e736bd90f39d2df696ca6286d808e4a43654c2dbdd7207580": 1.5,
+    "6dd1d332d3c34681c888807a313cf72e5ff6d62fe9d76f5f7d3386cb0070815d": "`target` must be finite.",
     "6fe86fe859f95fb5e5c50ab4955bb267fef0a855f0692f7635c4dc2ee751ac9b": [
       [
         0.3333333333333333,
@@ -249,6 +253,7 @@
       0.8,
       0.2
     ],
+    "7765fe877fee8586712997d2cdc66b0ec373ce77c5c248f6776fe486628f54e1": "`target` must be finite.",
     "7c7a0569e369d0e5c8d280fd9e38300205adcd905f162e25f3c0e68a0e37a6fe": "`target` must be numeric, not a factor.",
     "7d2a31641a9fe44a263a51201828501804da17c41a56d85d3afeead971fab484": "`target` must be numeric or NULL.",
     "80e58f547cf9d5ffc24e289184d395e072469b71ff40d22be757d907fecb04bc": "y must be numeric, not a factor.",
@@ -264,6 +269,7 @@
       0.8
     ],
     "9485df3f2cbe340c055cd54663660a5b8fa61d4c2605f54d52360870862ff9a1": "`x` must be numeric, not a factor.",
+    "9489c5b9ec33d57390014e5de210158115992163b50b041093563fdfe1f1acbd": "`target_y` must be finite.",
     "9669199e4366e0b5213f0b482a6426d952da0392ef49b596390f250b916f41d8": "`target` must be numeric or NULL.",
     "9c3c80be7078b485be21cb5e3eecbd3fc3f4dcf7a85dab4bb4f0db3b4438f1a7": 1.5,
     "9d1717c2732fb22f45136b7a19f2c88fbe4068e89088c5a193cf3c33b0f559ed": [
@@ -331,6 +337,7 @@
     ],
     "d74e4e437abc1e67eca941e8e8da431db188a121502c9498334ae19963a28ed3": "`target` must be numeric or NULL.",
     "d7cf922166d9fedebf9b0ac3240036ee9cec95ad88ed86ab8b0a7167f04d97cc": "`target` must be numeric or NULL.",
+    "dad9074751e3777ec4ebd570e1adbc148aa971a9b89efd0563660843f7f28dff": "`target` must be finite.",
     "dafa7dd96ec94e1167dec503c0f042d5e3a94ac33fed6b4057988ce4da38ea27": [
       2.0,
       0.6666666666666666

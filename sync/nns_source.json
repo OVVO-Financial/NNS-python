@@ -67,7 +67,7 @@
   "r_cache_summary": {
     "nns_version": "14.2",
     "shards": 150,
-    "entries": 3087,
+    "entries": 3094,
     "generation": "R NNS 14.2. The cache refresh at b184171c supplies the existing entries. The 4a136836 Git tree under R 4.5.0 supplies the new target, factor, dominance and zero-total cases."
   },
   "r_nmath_ports": [

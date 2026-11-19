@@ -69,7 +69,7 @@ def test_typed_targets(name, r):
         expected = oracle(f"x <- c(0,2,4); {r}({rexpr}){suffix}")
         np.testing.assert_array_equal(result["clpm"] if name == "pm_matrix" else result, expected)
 
-    for t, rt in [("2", "'2'"), (pd.Categorical([2]), "factor(2)")]:
+    for t, rt in [("2", "'2'"), (pd.Categorical([2]), "factor(2)"), ([1, np.nan], "c(1,NA)")]:
         actual, rexpr = args(t, rt)
         expected = error(f"{{x <- c(0,2,4); {r}({rexpr})}}")
         with pytest.raises(ValueError) as caught:

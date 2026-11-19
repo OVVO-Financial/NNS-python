@@ -70,7 +70,7 @@ def _excess_moment(
     At degree 0 the lower moment counts ties (``x_i <= target_i``) as the non-excess
     path does, so ``LPM0 + UPM0 = 1``.
     """
-    values = _as_1d_values(x)
+    values = _as_1d_values(x, "variable")
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
     _require_finite(targets, "target")
@@ -117,11 +117,10 @@ def _moment(
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
+    values = _as_1d_values(x, "variable")
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
-    if not np.all(np.isfinite(targets)):
-        raise ValueError("`target` must be finite.")
+    _require_finite(targets, "target")
 
     native = native_fn("lpm" if lower else "upm")
     if native is not None and targets.size > 0 and _native_safe(values, targets):
@@ -267,7 +266,7 @@ def _ratio(
     lower: bool,
 ) -> float | NDArray[np.float64]:
     _reject_factor(x, "`variable`")
-    values = _as_1d_values(x)
+    values = _as_1d_values(x, "variable")
     _check_numeric_target(target)
     targets = _as_targets(target, values)
     degree = _as_degree(degree)
@@ -331,22 +330,19 @@ def _native_safe(
     return bool(np.all(np.isfinite(values)) and np.all(np.isfinite(targets)))
 
 
-def _as_1d_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
+def _as_1d_values(x: NDArray[np.float64], name: str = "x") -> NDArray[np.float64]:
     values = np.asarray(x, dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be 1D.")
     if values.size == 0:
         raise ValueError("x must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        # Matches R's LPM/UPM ("`variable` must be finite"); NaN would otherwise be
-        # counted in n but in neither tail, so degree-0 moments stop summing to 1.
-        raise ValueError("x must contain only finite values.")
+    _require_finite(values, name)
     return values
 
 
 def _require_finite(values: NDArray[np.float64], name: str) -> None:
     if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
+        raise ValueError(f"`{name}` must be finite.")
 
 
 def _is_scalar(target: object) -> bool:
