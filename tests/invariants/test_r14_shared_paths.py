@@ -90,7 +90,7 @@ def test_native_r14_overlays_have_separate_source_provenance() -> None:
     root = Path(__file__).resolve().parents[2]
     manifest = json.loads((root / "sync/nns_source.json").read_text())
     assert manifest["r_version"] == "14.0"
-    assert len(manifest["r14_native_overlays"]) == 4
+    assert len(manifest["r14_native_overlays"]) == 5
     for overlay in manifest["r14_native_overlays"]:
         # Each overlay names the R commit its source was ported from and the
         # pinned oracle it was verified against bit for bit.
