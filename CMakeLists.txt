@@ -35,6 +35,11 @@ set_property(TARGET nnscore PROPERTY SOURCES "${NNS_R14_CORE_SOURCES}")
 set_target_properties(nnscore PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 nanobind_add_module(_nnscore src/nns/_nnscore_bindings.cpp)
+# The reference loops round the product before adding it to the accumulator.
+if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+  target_compile_options(nnscore PRIVATE -ffp-contract=off)
+  target_compile_options(_nnscore PRIVATE -ffp-contract=off)
+endif()
 target_link_libraries(_nnscore PRIVATE nnscore)
 target_compile_features(_nnscore PRIVATE cxx_std_17)
 install(TARGETS _nnscore LIBRARY DESTINATION nns)
