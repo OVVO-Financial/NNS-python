@@ -97,9 +97,11 @@
       0.0,
       0.5
     ],
+    "0a453d83cb70e0a5775b460d1346ecaa1afba011848c18842ce149a49bee4271": "`x` must be numeric, not a factor.",
     "0ac2e20e8ccd0b3591307e1181ca473ea097ecfa5a00eb919e82d787df27ecb0": "`target` must be numeric or NULL.",
     "12de60d2000a25f790f804c8ce2d170eeffda3d780c37320cef280f313efb724": "`target` must be numeric or NULL.",
     "134fd1b385b8a6521a55eee0bf0f4b4dd213f4a5730358e4c1d2ddf3448df9db": "x must be numeric, not a factor.",
+    "162ff080ff65d23098201a9597a9098a83603b48685dded1295ddb637f08d2e4": "`x` must be numeric, not a factor.",
     "1668cd83c54fdbf26c9b1af6a0187d9df91bf33e3f6a3e062e40ce4d05a4548b": [
       [
         1.3333333333333333,
@@ -120,6 +122,8 @@
       0.0,
       0.5
     ],
+    "273ad496bb15f2ef4d93cb9a412e366c27c1ff547c773775d7ca0131162fdc46": "`x` must be numeric, not a factor.",
+    "28bcef2712651320138d5413a98c45f4beaa8756dabd137180418d623faa7185": "`x` must be numeric, not a factor.",
     "2e12d11bc4435dc5b255e0599f91538ba9112506582685653e09ca277916a9ed": "`target` must be numeric or NULL.",
     "34803fc90551ded683daa9975d432478a7932786f19fcbbdb2ba741023bb83b5": "`y` must be numeric, not a factor.",
     "3981b141fb9aba39dbc7b05df598d31136a0fa201654d4bd9d83c4e8ea11ae9f": [
@@ -131,6 +135,7 @@
     "4366575647eafa3a49b1223b83b3b9c6265fbd604fb888d06fbb383a12cba800": "`target_y` must be finite.",
     "4451f24a9f626ff709abb3053a1cba078dd32f9b92d5a17dbeae18034154ab29": "`variable` must be numeric, not a factor.",
     "4888e4137d20fa558258799102910e68425c05c4f67741e3047ddfdb22e759f9": "`y` must be numeric, not a factor.",
+    "4b3a7e1a1f18fb5a3b0257a7f38acd68e292d3822841fe3c63abb08cf707037a": "`x` must be numeric, not a factor.",
     "5017823778ea77b7e680371bc1649d84dd051f9b2f3aa729944cc5aaf52c913e": [
       0.0,
       0.0
@@ -259,6 +264,7 @@
     "80e58f547cf9d5ffc24e289184d395e072469b71ff40d22be757d907fecb04bc": "y must be numeric, not a factor.",
     "83c9529ece24444f019bdf58cb68e11b304d56634febd5726ccb27ef0219d6a9": "`target` must be numeric or NULL.",
     "87fdb4af06562f9d140fef63c5e19788127a4b1627e5b41866f232207db0a3af": "`x` must be numeric, not a factor.",
+    "8aa87cf3971a6318a4362a34f91f353dec39f2797b04299c5c61ec738c79b817": "`x` must be numeric, not a factor.",
     "8b8d5763fc4d68b455db36d408dadcb7092f8fc9980d11ef271824debc2fdfc0": [
       0.0,
       0.0
@@ -327,6 +333,7 @@
       0.0
     ],
     "d1f53044761e9beb781d921ff564f8b22e8fe2c78ba4ec0dc56c23d98ff05b25": "`y` must be numeric, not a factor.",
+    "d28ad5a827a2b280a3909c3f8961a7d0eab788da82bb7613eac74d27d1fafd28": "`x` must be numeric, not a factor.",
     "d28c8fa3a8165ef9b1fd4595310be2524a4647f673e862f780f0fb7b842eb7cf": "x must be numeric, not a factor.",
     "d3bf6090f36f59c5d3c444d1c39e493fac1217956c927b359659424eba2e3230": [
       0.25,
@@ -342,6 +349,7 @@
       2.0,
       0.6666666666666666
     ],
+    "e05c17f5b19513bce87d898b8948c189995700c637dfd3eae8558753d418dfa6": "`x` must be numeric, not a factor.",
     "e10ed023eb5c9582b54feca4e2f35775de09134f4edcbaa51f7e12565b22eab2": "x must be numeric, not a factor.",
     "e252d1f9bfa871d0901bbfde3f1972d660a90845c443f7a1592c4f5e8e04d9f1": "`variable` must be numeric, not a factor.",
     "e2ca18dcccfeca19b6fc511392fd3080c6d29746c44d00e60508959cbaa8336e": "`target` must be finite.",

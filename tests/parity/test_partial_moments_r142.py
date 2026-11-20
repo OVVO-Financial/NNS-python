@@ -216,11 +216,20 @@ def test_matrix_target_shape_and_broadcast():
         nns.pm_matrix(1, 1, np.array([[1]]), x, False)
 
 
-@pytest.mark.parametrize("fn", [nns.lpm_var, nns.upm_var])
-def test_var_one_row_factor_codes(fn):
-    for label, expected in [("b", 6.0), (None, 10.0)]:
-        frame = pd.DataFrame({"a": [10], "b": pd.Categorical([label], categories=["a", "b"])})
-        assert fn(0.5, 1, frame) == expected
+@pytest.mark.parametrize(("fn", "r"), [(nns.lpm_var, "LPM.VaR"), (nns.upm_var, "UPM.VaR")])
+@pytest.mark.parametrize(
+    ("labels", "r_labels"),
+    [([], "integer(0)"), ([30], "30"), ([None], "NA"), ([10, 30], "c(10,30)")],
+)
+def test_var_factor_column(fn, r, labels, r_labels):
+    factor = pd.Categorical(labels, categories=[10, 30])
+    frame = pd.DataFrame({"a": [10] * len(labels), "b": factor})
+    expected = error(
+        f"{r}(0.5,1,data.frame(a=rep(10,{len(labels)}),b=factor({r_labels},levels=c(10,30))))"
+    )
+    with pytest.raises(ValueError) as caught:
+        fn(0.5, 1, frame)
+    assert str(caught.value) == expected
 
 
 @pytest.mark.parametrize("excess", [False, True])
