@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 
@@ -71,7 +72,9 @@ def test_typed_targets(name, r):
         (np.array([1, 3]), "c(1L,3L)"),
         ([Decimal("1"), Decimal("3")], "c(1L,3L)"),
         (np.array([Fraction(1), Fraction(3)], dtype=object), "c(1L,3L)"),
-        (np.array(["1970-01-02", "1970-01-04"], dtype="datetime64[ns]"), "c(1L,3L)"),
+        ([date(1970, 1, 2), date(1970, 1, 4)], "c(1L,3L)"),
+        ([pd.Timestamp(1, unit="ns"), pd.Timestamp(3, unit="ns")], "c(1L,3L)"),
+        (np.array(["1970-01-02", "1970-01-04"], dtype="datetime64[D]"), "c(1L,3L)"),
     ]:
         actual, rexpr = args(t, rt)
         result = fn(*actual)
@@ -141,6 +144,91 @@ def test_factor_data(name, r, arguments):
     expected = error(f"{{{setup}; {r}({','.join(map(str, arguments))})}}")
     with pytest.raises(ValueError) as caught:
         getattr(nns, name)(*(values.get(a, a) for a in arguments))
+    assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize(
+    ("target", "x"),
+    [
+        (
+            np.datetime64("2020-01-02", "ns"),
+            np.arange("2020-01-01", "2020-01-04", dtype="datetime64[D]").astype("datetime64[ns]"),
+        ),
+        (np.datetime64("1970-01-01T00:00:02"), [0, 2, 4]),
+        (pd.Timestamp(2, unit="ns"), [0, 2, 4]),
+        (pd.Timestamp(np.datetime64("1970-01-01T00:00:02", "s")), [0, 2, 4]),
+        (date(1970, 1, 3), [0, 2, 4]),
+    ],
+)
+def test_datetime_target_uses_its_own_unit(target, x):
+    assert nns.lpm_ratio(1, target, x) == 0.5
+
+
+@pytest.mark.parametrize("target", [[1.0, None], [Decimal("1"), None]])
+def test_missing_numeric_target(target):
+    expected = error("LPM.ratio(1,c(1,NA),c(0,2,4))")
+    with pytest.raises(ValueError) as caught:
+        nns.lpm_ratio(1, target, [0, 2, 4])
+    assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize("alias", [["mean"], pd.Series(["mean"]), pd.Series(["mean"], index=[0])])
+def test_matrix_unnamed_mean_alias(alias):
+    expected = nns.pm_matrix(1, 1, None, np.eye(2), False)
+    actual = nns.pm_matrix(1, 1, alias, np.eye(2), False)
+    for key in expected:
+        np.testing.assert_array_equal(actual[key], expected[key])
+
+
+def test_numeric_frame_is_not_a_matrix_target():
+    with pytest.raises(ValueError) as caught:
+        nns.pm_matrix(1, 1, pd.DataFrame({"a": [1, 2]}), np.eye(2), False)
+    assert str(caught.value) == error("PM.matrix(1,1,data.frame(a=1:2),diag(2),FALSE)")
+
+
+@pytest.mark.parametrize(
+    ("fn", "r", "args"),
+    [
+        (nns.pm_matrix, "PM.matrix(1,1,'mean',f,FALSE)", lambda f: (1, 1, "mean", f, False)),
+        (nns.nns_cdf, "NNS.CDF(f,0,plot=FALSE)", lambda f: (f,)),
+        (nns.nns_cdf, "NNS.CDF(f[,2,drop=FALSE],0,plot=FALSE)", lambda f: (f[["b"]],)),
+        (nns.co_lpm_nd, "Co.LPM_nD(f,c(2,2),1)", lambda f: (f, [2, 2], 1)),
+        (nns.co_upm_nd, "Co.UPM_nD(f,c(2,2),1)", lambda f: (f, [2, 2], 1)),
+        (nns.dpm_nd, "DPM_nD(f,c(2,2),1)", lambda f: (f, [2, 2], 1)),
+        (nns.sd_efficient_set, "NNS.SD.efficient.set(f,1)", lambda f: (f, 1)),
+        (nns.nns_sd_cluster, "NNS.SD.cluster(f)", lambda f: (f,)),
+    ],
+)
+def test_factor_column(fn, r, args):
+    values = [10, 20, 30]
+    frame = pd.DataFrame({"a": values, "b": pd.Categorical(values)})
+    expected = error(f"{{x <- c(10,20,30); f <- data.frame(a=x,b=factor(x)); {r}}}")
+    with pytest.raises(ValueError) as caught:
+        fn(*args(frame))
+    assert str(caught.value) == expected
+
+
+def test_cluster_skips_factor_check_without_an_efficient_set_search():
+    frame = pd.DataFrame({"a": [1, 2], "b": pd.Categorical(["low", "high"])})
+    assert nns.nns_sd_cluster(frame, min_cluster=2)["Clusters"] == {"Cluster_1": ["a", "b"]}
+
+
+@pytest.mark.parametrize(
+    ("fn", "r"),
+    [(nns.co_lpm_nd, "Co.LPM_nD"), (nns.co_upm_nd, "Co.UPM_nD"), (nns.dpm_nd, "DPM_nD")],
+)
+@pytest.mark.parametrize(("degree", "rd"), [(-1, "-1"), (np.nan, "NaN")])
+def test_nd_rejects_invalid_degree(fn, r, degree, rd):
+    expected = error(f"{r}(diag(2),c(2,2),{rd})")
+    with pytest.raises(ValueError) as caught:
+        fn(np.eye(2), [2, 2], degree)
+    assert str(caught.value) == expected
+
+
+def test_cumulative_hazard_rejects_negative_degree():
+    expected = error("NNS.CDF(diag(2),-1,type='cumulative hazard',plot=FALSE)")
+    with pytest.raises(ValueError) as caught:
+        nns.nns_cdf(np.eye(2), -1, type="cumulative hazard")
     assert str(caught.value) == expected
 
 
@@ -244,7 +332,7 @@ def test_validation_order():
     for fn, args, error in [
         (nns.lpm_ratio, (-1, 2, factor), "degree"),
         (nns.lpm_ratio, (0, "2", [1, np.inf]), "target.*must be numeric"),
-        (nns.lpm_ratio, (0, np.datetime64("NaT"), [1, 3]), "target.*must be finite"),
+        (nns.lpm_ratio, (0, np.datetime64("NaT", "ns"), [1, 3]), "target.*must be finite"),
         (nns.co_lpm, (-1, factor, [1, 3], 2, 2), "degree"),
         (nns.co_lpm, (0, [1], [1, 3], "2", 2), "target.*must be numeric"),
         (nns.co_lpm, (0, [1, np.inf], [1, 3], [], 2), "target.*empty"),
@@ -253,7 +341,10 @@ def test_validation_order():
         (nns.nns_cdf, (factor, 0, None, "bad"), "factor"),
         (nns.nns_cdf, ([1, 3], 0, 7, "bad"), "out of bounds"),
         (nns.nns_cdf, (np.eye(2), 0, [7, 7], "hazard"), "out of bounds"),
-        (nns.co_lpm_nd, (bad, [2]), "data must be finite"),
+        (nns.nns_cdf, ([1, np.inf], 0, None, "bad"), "invalid type"),
+        (nns.nns_cdf, (bad, 0, None, "bad"), "invalid type"),
+        (nns.co_lpm_nd, (bad, [2]), "data.*must be finite"),
+        (nns.co_lpm_nd, (np.eye(2), [np.inf]), "target.*must be finite"),
     ]:
         with pytest.raises(ValueError, match=error):
             fn(*args)

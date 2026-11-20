@@ -99,6 +99,7 @@
     ],
     "0a453d83cb70e0a5775b460d1346ecaa1afba011848c18842ce149a49bee4271": "`x` must be numeric, not a factor.",
     "0ac2e20e8ccd0b3591307e1181ca473ea097ecfa5a00eb919e82d787df27ecb0": "`target` must be numeric or NULL.",
+    "1294baca7489094696c9bca9f9aa3bd8e3de7b95381fa7e8377935d9f2ae8453": "Not compatible with requested type: [type=character; target=double].",
     "12de60d2000a25f790f804c8ce2d170eeffda3d780c37320cef280f313efb724": "`target` must be numeric or NULL.",
     "134fd1b385b8a6521a55eee0bf0f4b4dd213f4a5730358e4c1d2ddf3448df9db": "x must be numeric, not a factor.",
     "162ff080ff65d23098201a9597a9098a83603b48685dded1295ddb637f08d2e4": "`x` must be numeric, not a factor.",
@@ -117,14 +118,19 @@
       0.2,
       0.0
     ],
+    "1da0c951aab109aa5b3e00e135bbeba46ffe78338f41ba76e30bd585e51ae56b": "cannot xtfrm data frames",
+    "2410eb3eb04fbb332730d526fd2ed3e923aef9198fc910cc0497c207dcb6d859": "`data` must be finite.",
     "245d1222c28e9b31b08745d9c58f1f2d4bf99e77562a91e4dc32d3507fe29cf9": [
       0.5,
       0.0,
       0.5
     ],
+    "24b3874f473b04f42d74d7ad2b18de3f320bf9a90e0f4e00191977205eca2070": "`target` must be numeric or NULL.",
     "273ad496bb15f2ef4d93cb9a412e366c27c1ff547c773775d7ca0131162fdc46": "`x` must be numeric, not a factor.",
     "28bcef2712651320138d5413a98c45f4beaa8756dabd137180418d623faa7185": "`x` must be numeric, not a factor.",
+    "2b2e8bd3a5fd900c32f69544155f9f1899e71264ff9713b57082cabe8934beb0": "Not compatible with requested type: [type=character; target=double].",
     "2e12d11bc4435dc5b255e0599f91538ba9112506582685653e09ca277916a9ed": "`target` must be numeric or NULL.",
+    "2e593a1aa0b1829ce4ed1e6d95876a4edaa0f3bca3c774ece65a1463e4614522": "'degree' must be a non-negative number",
     "34803fc90551ded683daa9975d432478a7932786f19fcbbdb2ba741023bb83b5": "`y` must be numeric, not a factor.",
     "3981b141fb9aba39dbc7b05df598d31136a0fa201654d4bd9d83c4e8ea11ae9f": [
       0.0,
@@ -132,7 +138,9 @@
     ],
     "3ae47cc37d972bba96f4b9ac897fa79a9b6615f9c4dfa001602283467342de1a": "`y` must be numeric, not a factor.",
     "3cdb4391e3b65fe5a3da72b8f35121653e1f5acf6f11c0762d6840fc552eef37": "y must be numeric, not a factor.",
+    "430037f42da21d597bf5e0b84b4526e7f7ea53a9de328310bf711f59f604ea7c": "'degree' must be a non-negative number",
     "4366575647eafa3a49b1223b83b3b9c6265fbd604fb888d06fbb383a12cba800": "`target_y` must be finite.",
+    "4410bce2224899b78273ad6025e09bef8eb50fb9882b10eff8544322d6cb71f3": "'degree' must be a non-negative number",
     "4451f24a9f626ff709abb3053a1cba078dd32f9b92d5a17dbeae18034154ab29": "`variable` must be numeric, not a factor.",
     "4888e4137d20fa558258799102910e68425c05c4f67741e3047ddfdb22e759f9": "`y` must be numeric, not a factor.",
     "4b3a7e1a1f18fb5a3b0257a7f38acd68e292d3822841fe3c63abb08cf707037a": "`x` must be numeric, not a factor.",
@@ -141,8 +149,10 @@
       0.0
     ],
     "50e0508c446e768a8d0abfbcc1e436032c75f05c846f28592b2ca5374f1e4be7": "`variable` must be numeric, not a factor.",
+    "563b20e1c45d11eedea1c25c26b31351a27e5c4b784fee6f958af69a80a4a7e2": "`data` must be finite.",
     "5c4e7a8259a4f2c03203b09ed8180cab86d3c53d70732ed2585e56b2a70ffdbb": "`target` must be finite.",
     "5d037ac7c28a7a3fb3b33e21c1b5def801b05db402b6df385396ecfe4652f498": "variable matrix cols != target vector length",
+    "5ed2d7b4c2996cebd58000213d4831325df9012bd9590caa3474662deaeeb4f5": "'degree' must be a non-negative number",
     "62212bf4373fdee1f787faee05fa426ac36a35138309eb6a9b231e766472f00e": 0.25,
     "62bbe2150ff08b9eb9a71ec754cf074ca0f08b51ea852dd9d5227cd6663eee74": "`variable` must be numeric, not a factor.",
     "65c9a49837728ba9452d1d4677383a84994dc742b5550b6da8f045c66be77c0c": 2.25,
@@ -154,6 +164,7 @@
       0.5
     ],
     "6b2d9b7525afebc0668b50bf8484772ddea86428092ea65dba1fcdd1292bdd46": "`target_y` must be finite.",
+    "6c57a0c5b188f734ed60a5e820f47272e4eaf70f6c6b4fd292c4e2899a8d626b": "'degree' must be a non-negative number",
     "6d61ad57fcce562e736bd90f39d2df696ca6286d808e4a43654c2dbdd7207580": 1.5,
     "6dd1d332d3c34681c888807a313cf72e5ff6d62fe9d76f5f7d3386cb0070815d": "`target` must be finite.",
     "6fe86fe859f95fb5e5c50ab4955bb267fef0a855f0692f7635c4dc2ee751ac9b": [
@@ -253,6 +264,7 @@
         ]
       ]
     },
+    "711376de4e3fee7db036d2b7fd1777747248895580ea420bd8b0b454cad18cc0": "'degree' must be a non-negative number",
     "729fbafc818f1f2d081418b6ce48ee0e4d9221de6ce035f5be5d5f6a287b72ce": 0.25,
     "73c5c17159c641a1ffdda65f32574df560f4f7b5029820037f44a6c8315adac7": [
       0.8,
@@ -311,6 +323,7 @@
     "bf4cb222fca0e64592bf065532bb034a3bf66604a46551c4fb74f821e381df36": "`target` must be numeric or NULL.",
     "bf6938fd3112797f9e91e924988b3fb727322df2a8b6961b5b9dcc8cabf35121": "x must be numeric, not a factor.",
     "c1500ea7454ca456c4ad1d0b41085bb7cd2e7c406259a20b493f281b96bd5d1f": "`x` must be numeric, not a factor.",
+    "c1df859a829ecf6c272385e2fec77aff1e42f0701a695803ac9c9281ec3a5045": "'degree' must be a non-negative number",
     "c1e097fc93a3cff60dd597b58044d529e888bd400f19c89901457dc54c6374c8": "`target` must be numeric or NULL.",
     "c4175eda067d64795d3bf2a3ce14a4eaf8b124e23dacf461eb1282dce572bb68": [
       [
@@ -322,10 +335,12 @@
         3.333333333333333
       ]
     ],
+    "c747582cdf0769f731652bb291825fae997185ccbb4d2dd3393cfc25f18bc93b": "`target` must be finite.",
     "c77e89342673d3e609431bb36d9e82d1608c34fbddb6b6aeedd93ce9abefae95": [
       0.0,
       0.0
     ],
+    "c93881c8a1741e6c6e7735feb6f2783d13806eca0fc69b3bbdcaacd4dfdca100": "`data` must be finite.",
     "ceb440d0140b984ea3da9f47bb441d473e6019999ccb884c857485c3d1238b1d": "`target` must be numeric or NULL.",
     "cfc408f45003df33851550a7816ec43b5f0099ce8c4b6b47bc03fb64e84b6821": "x must be numeric, not a factor.",
     "d088d9032519cb00917c71e8108cb6c1ff2c674e90e6e582c5c703f4f3881473": [
@@ -443,13 +458,15 @@
     },
     "ee84d590125007c712eb91aaa62f55974b8c711ad8b51734698ecbda0f5db00f": 1.5,
     "f2fb98614b7c015002caec1e72fd793cccf77215080d588f4ba9e4480db00584": "`x` must be numeric, not a factor.",
+    "f86b001958ba0839d97a2448924919e4c6fe95ed050cad847ce5ae02781d8a9e": "`data` must be finite.",
     "f88b163bf1ce3a135162f2a596f427934b43cbc0b4b9f368aa4c6cb2aa3f1de8": "y must be numeric, not a factor.",
     "f9ceee57418edd06f5c0f70d1d48bd06f27b47bd1616a86cdc84f4a789cbff7f": [
       0.5,
       0.0,
       0.5
     ],
-    "fc93541b83a0cc1d4d1701f556bd7a6b47098e31359aae7aaa65c3bb191681c5": "y must be numeric, not a factor."
+    "fc93541b83a0cc1d4d1701f556bd7a6b47098e31359aae7aaa65c3bb191681c5": "y must be numeric, not a factor.",
+    "fe9b77cc7b103fa183c3c57a8b9a4cc0702d0661530ea59b667505702aa74f0c": "Not compatible with requested type: [type=character; target=double]."
   },
   "label": "pm142",
   "nns_version": "14.2",

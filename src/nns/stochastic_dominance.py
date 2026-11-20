@@ -37,7 +37,7 @@ from scipy.cluster.hierarchy import linkage  # type: ignore[import-untyped]
 from scipy.sparse.csgraph import connected_components  # type: ignore[import-untyped]
 from scipy.spatial.distance import squareform  # type: ignore[import-untyped]
 
-from nns._helpers import _reject_factor
+from nns._helpers import _numeric_matrix, _reject_factor
 
 _SD_ORDER_STAT_TARGET_BLOCK_COLUMNS = 64
 # R's native SD test ignores excesses up to 64 * DBL_EPSILON (relative to the data scale).
@@ -200,7 +200,7 @@ def _nns_sd_cluster(
     names: Sequence[str] | None,
 ) -> dict[str, object]:
     column_labels = getattr(data, "columns", None)
-    values = np.asarray(data, dtype=np.float64)
+    values = np.asarray(data)
     if values.ndim != 2:
         raise ValueError("data must be a 2D array.")
     min_cluster = float(min_cluster)
@@ -229,6 +229,7 @@ def _nns_sd_cluster(
             break  # R's efficient set of no columns is empty
         if order_stat_dominance_matrix is None and prefix_precomputed is None:
             # R validates in the first NNS.SD.efficient.set call, on every column.
+            values = _numeric_matrix(data)
             degree_int, discrete = _validated_sd_matrix(values, degree, type)
             if degree_int == 1 and discrete:
                 order_stat_dominance_matrix = _dominance_matrix_from_order_stats(
@@ -419,7 +420,7 @@ def sd_efficient_set(
 
 
 def _sd_matrix(data: object, name: str) -> NDArray[np.float64]:
-    values = np.asarray(data, dtype=np.float64)
+    values = _numeric_matrix(data)
     if values.ndim < 2:
         values = values.reshape(-1, 1)
     if values.ndim != 2:

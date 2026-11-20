@@ -7,7 +7,7 @@ from typing import Any, Literal, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _as_pair
+from nns._helpers import _as_pair, _has_factor_column
 from nns._native import native_fn as native_fn
 from nns._rnmath import libm_pow
 
@@ -462,8 +462,7 @@ def co_lpm_nd(
     degree: float = 0.0,
     norm: bool = True,
 ) -> float:
-    values, target_values = _as_nd_moment_inputs(data, target)
-    degree = float(degree)
+    values, target_values, degree = _as_nd_moment_inputs(data, target, degree)
     clpm = _clpm_nd(values, target_values, degree)
     if not norm or degree == 0.0:
         return clpm
@@ -481,8 +480,7 @@ def co_upm_nd(
     degree: float = 0.0,
     norm: bool = True,
 ) -> float:
-    values, target_values = _as_nd_moment_inputs(data, target)
-    degree = float(degree)
+    values, target_values, degree = _as_nd_moment_inputs(data, target, degree)
     cupm = _cupm_nd(values, target_values, degree)
     if not norm or degree == 0.0:
         return cupm
@@ -500,14 +498,24 @@ def dpm_nd(
     degree: float = 0.0,
     norm: bool = True,
 ) -> float:
-    values, target_values = _as_nd_moment_inputs(data, target)
-    return _dpm_nd(values, target_values, float(degree), norm=bool(norm))
+    values, target_values, degree = _as_nd_moment_inputs(data, target, degree)
+    return _dpm_nd(values, target_values, degree, norm=bool(norm))
+
+
+def _nd_degree(degree: float) -> float:
+    degree = float(degree)
+    if not degree >= 0:
+        raise ValueError("'degree' must be a non-negative number")
+    return degree
 
 
 def _as_nd_moment_inputs(
     data: NDArray[np.float64],
     target: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    degree: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
+    if _has_factor_column(data):
+        raise ValueError("`data` must be finite.")
     values = np.asarray(data, dtype=np.float64)
     target_values = np.asarray(target, dtype=np.float64).reshape(-1)
     if values.ndim != 2:
@@ -515,12 +523,13 @@ def _as_nd_moment_inputs(
     if values.shape[0] == 0:
         raise ValueError("data must have at least one row.")
     if not np.all(np.isfinite(values)):
-        raise ValueError("data must be finite.")
+        raise ValueError("`data` must be finite.")
     if not np.all(np.isfinite(target_values)):
-        raise ValueError("target must be finite.")
+        raise ValueError("`target` must be finite.")
+    degree = _nd_degree(degree)
     if target_values.size != values.shape[1]:
         raise ValueError("target length must match number of columns in data.")
-    return values, target_values
+    return values, target_values, degree
 
 
 def _gravity(x: NDArray[np.float64]) -> float:

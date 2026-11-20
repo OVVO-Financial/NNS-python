@@ -6,7 +6,7 @@ from typing import Any, Literal, TypeAlias, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _is_factor
+from nns._helpers import _is_factor, _numeric_matrix
 from nns._native import native_fn
 from nns.core import _as_degree, _check_numeric_target, _require_finite, _target_doubles
 from nns.dependence import _r_pm_terms
@@ -183,7 +183,7 @@ def _upper_deviation(
 
 
 def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
-    values = np.asarray(variable, dtype=np.float64)
+    values = _numeric_matrix(variable)
     if values.ndim != 2:
         raise ValueError("variable must be 2D.")
     if values.shape[0] == 0 or values.shape[1] == 0:
@@ -199,7 +199,7 @@ def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.floa
         if (
             isinstance(alias, str)
             and alias in ("mean", "means")
-            and (index is None or callable(index) or getattr(index, "start", None) == 0)
+            and (index is None or callable(index) or list(index) == [0])
         ):
             target = None
     if target is None:

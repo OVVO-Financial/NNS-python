@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _reject_factor
+from nns._helpers import _has_factor_column, _reject_factor
 from nns._native import native_fn
 from nns._rmean import r_row_sums
 from nns._rnmath import libm_log
 from nns.core import lpm_ratio
-from nns.dependence import _r_pm_terms, co_lpm_nd
+from nns.dependence import _nd_degree, _r_pm_terms, co_lpm_nd
 from nns.regression import RegResult, nns_reg
 
 if TYPE_CHECKING:
@@ -30,6 +30,11 @@ def nns_cdf(
 ) -> dict[str, object]:
     """Partial-moment CDF wrapper matching R's non-plotting NNS.CDF paths."""
     _reject_factor(variable, "`variable`")
+    if _has_factor_column(variable):
+        _cdf_type(type)
+        if variable.shape[1] == 1:
+            raise ValueError("cannot xtfrm data frames")
+        raise ValueError("`data` must be finite.")
     if names is None:
         columns = getattr(variable, "columns", None)
         if columns is not None:
@@ -296,6 +301,7 @@ def _co_lpm_nd_batch(
     values: NDArray[np.float64], points: NDArray[np.float64], degree: float, *, strict: bool = False
 ) -> NDArray[np.float64]:
     """R's ``Co.LPM_nD.batch(values, points, degree, norm = TRUE)``: one value per point row."""
+    degree = _nd_degree(degree)
     n, d = values.shape
     m = points.shape[0]
     native = native_fn("clpm_nd_batch")

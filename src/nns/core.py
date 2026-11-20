@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 from decimal import Decimal
 from numbers import Real
 
@@ -76,9 +77,7 @@ def _excess_moment(
     _require_finite(targets, "target")
     degree = _as_degree(degree)
     if targets.size not in (1, values.size):
-        raise ValueError(
-            "When excess_ret=True, target must be length 1 or same length as x."
-        )
+        raise ValueError("When excess_ret=True, target must be length 1 or same length as x.")
     diff = targets - values if lower else values - targets
     # R's C++ excess path: one term per element (degree 0 counts ties as
     # lower), then Rcpp's mean(), which is R's two-pass long-double mean.
@@ -362,7 +361,10 @@ def _check_numeric_target(target: object) -> None:
         values = np.asarray(target)
         if values.dtype.kind in "biufM" or (
             values.dtype.kind == "O"
-            and all(isinstance(v, (Real, Decimal, np.bool_)) for v in values.flat)
+            and all(
+                v is None or isinstance(v, (Real, Decimal, np.bool_, date, np.datetime64))
+                for v in values.flat
+            )
         ):
             return
     raise ValueError("`target` must be numeric or NULL.")
@@ -371,9 +373,18 @@ def _check_numeric_target(target: object) -> None:
 def _target_doubles(target: object) -> NDArray[np.float64]:
     values = np.asarray(target)
     if values.dtype.kind == "M":
-        days = values.astype("datetime64[D]")
-        return np.where(np.isnat(days), np.nan, days.astype(np.float64))
-    return np.asarray(target, dtype=np.float64)
+        return np.where(np.isnat(values), np.nan, values.astype(np.float64))
+    if values.dtype.kind == "O" and any(isinstance(v, (date, np.datetime64)) for v in values.flat):
+        counts = []
+        for v in values.flat:
+            if isinstance(v, date):
+                # Timestamp.to_datetime64() preserves the timestamp's resolution.
+                v = v.to_datetime64() if hasattr(v, "to_datetime64") else np.datetime64(v)
+            if isinstance(v, np.datetime64):
+                v = np.nan if np.isnat(v) else v.astype(np.float64)
+            counts.append(v)
+        return np.asarray(counts, dtype=np.float64).reshape(values.shape)
+    return np.asarray(values, dtype=np.float64)
 
 
 def _as_targets(

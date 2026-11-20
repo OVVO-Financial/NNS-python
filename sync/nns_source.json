@@ -67,7 +67,7 @@
   "r_cache_summary": {
     "nns_version": "14.2",
     "shards": 150,
-    "entries": 3102,
+    "entries": 3119,
     "generation": "R NNS 14.2. The cache refresh at b184171c supplies the base entries. R 4.5.0 at NNS 4a136836 supplies the new dominance cases. The pm142 shard was regenerated with R 4.5.0 at NNS 31291970."
   },
   "r_nmath_ports": [

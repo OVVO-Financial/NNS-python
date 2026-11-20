@@ -15,7 +15,7 @@ from typing import Any, NotRequired, TypedDict, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _reject_factor, _warn_unsupported
+from nns._helpers import _has_factor_column, _reject_factor, _warn_unsupported
 from nns._native import honours_ncores
 from nns._rmean import (
     r_cor_matrix,
@@ -1031,7 +1031,7 @@ def _partial_moment_var(
     lower: bool,
 ) -> float | NDArray[np.float64]:
     _reject_factor(x, "`x`")
-    if hasattr(x, "columns") and any(dtype == "category" for dtype in getattr(x, "dtypes", ())):
+    if _has_factor_column(x):
         raise ValueError("`x` must be numeric, not a factor.")
     values = _finite_values(x)
     requested = np.asarray(percentile, dtype=np.float64)
