@@ -139,7 +139,7 @@ def classify_stack_r14(
         select_count: int | None = None,
     ) -> dict[str, Any]:
         encoded = design(train, response, test, component, select_count)
-        return classify_r14(
+        fitted = classify_r14(
             encoded,
             {"y": response, "class_values": values, "class_levels": labels},
             order=order,
@@ -152,6 +152,8 @@ def classify_stack_r14(
             confidence_interval=None,
             dim_count=candidate if component == 2 else None,
         )
+        # R 14.2 keeps the encoded predictor names of each fit.
+        return {**fitted, "variables": list(encoded["encoded_names"])}
 
     def as_probabilities(fitted: dict[str, Any]) -> F:
         prob = fitted.get("Point.probabilities")
@@ -339,6 +341,8 @@ def classify_stack_r14(
         "dim.red.probabilities": dp,
         "weights": weights,
         "class.levels": original,
+        # The encoded predictors of the final multivariate classifier (R 14.2).
+        "NNS.reg.variables": None if reg_final is None else reg_final["variables"],
     }
     if return_fit:
         # The inference API can reconstruct a fitted stack from the original
