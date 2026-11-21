@@ -1,11 +1,11 @@
 {
   "entries": {
     "6f2410ae49ecbf73493e49ad6238cf2095b9c0ca0cf379ad99c233ce7ff83443": [
-      3.15468459007073,
-      3.64986714908955
+      2.66448671875,
+      3.47522869791667
     ]
   },
   "label": "labels.reg.factor_design",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }
