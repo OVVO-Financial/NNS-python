@@ -26,7 +26,9 @@ from nns.central_tendencies import nns_gravity
 def _reference_distances(
     rpm_x: np.ndarray, xtest: np.ndarray, dist: str, mins: np.ndarray, maxs: np.ndarray
 ) -> np.ndarray:
-    """The former (m, n, p) broadcast implementation."""
+    """An (m, n, p) broadcast transcription of R 14.2's kernel: each column's
+    term in double, summed over the columns in order in long double and rounded
+    to double once (src/NNS_mreg_predict.cpp distance())."""
     if dist == "FACTOR":
         return np.mean(rpm_x[None, :, :] != xtest[:, None, :], axis=2, dtype=np.float64)
     ranges = maxs - mins
@@ -34,11 +36,26 @@ def _reference_distances(
     if not np.any(active):
         return np.zeros((xtest.shape[0], rpm_x.shape[0]))
     z = (xtest[:, None, active] - rpm_x[None, :, active]) / ranges[active]
-    if dist == "NNS":
-        return np.sum(np.abs(z) + z * z, axis=2)
-    if dist == "L1":
-        return np.sum(np.abs(z), axis=2)
-    return np.sqrt(np.sum(z * z, axis=2))
+    terms = np.abs(z) + z * z if dist == "NNS" else np.abs(z) if dist == "L1" else z * z
+    acc = np.zeros(terms.shape[:2], dtype=np.longdouble)
+    for j in range(terms.shape[2]):
+        acc += terms[:, :, j]
+    out = np.asarray(acc, dtype=np.float64)
+    return np.sqrt(out) if dist == "L2" else out
+
+
+def _kernel_distance(
+    rpm_row: np.ndarray, test_row: np.ndarray, dist: str, mins: np.ndarray, maxs: np.ndarray
+) -> float:
+    """One distance exactly as R's C++ distance() computes it, scalar by scalar."""
+    ranges = maxs - mins
+    acc = np.longdouble(0.0)
+    for j in np.flatnonzero(np.isfinite(ranges) & (ranges > 0)):
+        z = float((rpm_row[j] - test_row[j]) / ranges[j])
+        term = abs(z) if dist == "L1" else abs(z) + z * z if dist == "NNS" else z * z
+        acc += np.longdouble(term)
+    total = float(acc)
+    return float(np.sqrt(total)) if dist == "L2" else total
 
 
 def _same(a: np.ndarray, b: np.ndarray) -> bool:
@@ -61,6 +78,10 @@ def test_column_wise_distances_match_broadcast_reference(dist: str, p: int) -> N
             _mreg_distances(rpm, xt, dist, mins, maxs),
             _reference_distances(rpm, xt, dist, mins, maxs),
         )
+    if dist != "FACTOR":
+        got = _mreg_distances(rpm, xtest, dist, mins, maxs)
+        for r, i in zip(rng.integers(0, 30, 25), rng.integers(0, 120, 25), strict=True):
+            assert got[r, i] == _kernel_distance(rpm[i], xtest[r], dist, mins, maxs)
 
 
 def test_column_wise_distances_all_constant_columns() -> None:
@@ -84,17 +105,14 @@ def _reference_build_rpm(
         for s, e in zip(starts, ends, strict=True)
     ]
     yhat = [
-        _reduce_value(ys[s:e], noise_reduction, is_class)
-        for s, e in zip(starts, ends, strict=True)
+        _reduce_value(ys[s:e], noise_reduction, is_class) for s, e in zip(starts, ends, strict=True)
     ]
     return np.asarray(rows, dtype=np.float64), np.asarray(yhat, dtype=np.float64)
 
 
 @pytest.mark.parametrize("noise_reduction", ["off", "mean", "median", "mode"])
 @pytest.mark.parametrize("is_class", [False, True])
-def test_rpm_cell_reduction_matches_per_cell_reducer(
-    noise_reduction: str, is_class: bool
-) -> None:
+def test_rpm_cell_reduction_matches_per_cell_reducer(noise_reduction: str, is_class: bool) -> None:
     rng = np.random.default_rng(7)
     for trial in range(40):
         n = int(rng.integers(2, 200))
@@ -115,9 +133,7 @@ def test_rpm_cell_reduction_matches_per_cell_reducer(
 
 
 @pytest.mark.parametrize("noise_reduction", ["off", "mean", "median"])
-def test_order_max_identity_shortcut_matches_k1_distance_rule(
-    noise_reduction: str
-) -> None:
+def test_order_max_identity_shortcut_matches_k1_distance_rule(noise_reduction: str) -> None:
     rng = np.random.default_rng(11)
     x = rng.integers(0, 4, size=(300, 3)).astype(float)  # many duplicate rows
     x[:100] = rng.normal(size=(100, 3))
@@ -127,9 +143,7 @@ def test_order_max_identity_shortcut_matches_k1_distance_rule(
     fit = nns_reg(x, y, order="max", noise_reduction=noise_reduction)
     rpm = fit["RPM"]
     rpm_x = np.column_stack([rpm[k] for k in rpm if k != "y.hat"])
-    expected = _mreg_predict(
-        x, rpm_x, rpm["y.hat"], 1, "NNS", x.min(axis=0), x.max(axis=0), False
-    )
+    expected = _mreg_predict(x, rpm_x, rpm["y.hat"], 1, "NNS", x.min(axis=0), x.max(axis=0), False)
     assert expected is not None
     assert fit["n.best"] == 1
     assert _same(np.asarray(fit["Fitted.xy"]["y.hat"]), expected)
@@ -268,8 +282,14 @@ def _reference_ensemble_weights(dk: np.ndarray) -> np.ndarray:
         normal = normalize([dnorm(v, 0.0, sd) for v in d]) if sd > 0 else [0.0] * k
         rbf = normalize([math.exp(-v / (2.0 * var)) for v in d]) if var > 0 else [0.0] * k
         total = [
-            uniform[i] + student[i] + inverse[i] + exponential[i] + lognormal[i] + power[i]
-            + normal[i] + rbf[i]
+            uniform[i]
+            + student[i]
+            + inverse[i]
+            + exponential[i]
+            + lognormal[i]
+            + power[i]
+            + normal[i]
+            + rbf[i]
             for i in range(k)
         ]
         out[row] = normalize(total)
@@ -315,17 +335,17 @@ def test_stack_rank_average_matches_average_ranks() -> None:
 def _reference_group_reduce(
     keys: np.ndarray, values: np.ndarray, noise_reduction: str, is_class: bool
 ) -> tuple[np.ndarray, np.ndarray]:
-    """The former loop: split on 15-significant-digit key strings (R prints
-    -0 as "0", so signed zeros share a key)."""
-    order = np.argsort(keys, kind="stable")
-    ks, vs = keys[order], values[order]
-    labels = [f"{v + 0.0:.15g}" for v in ks]
-    out_keys, reduced, start = [], [], 0
-    for i in range(1, len(labels) + 1):
-        if i == len(labels) or labels[i] != labels[start]:
-            out_keys.append(float(labels[start]))
-            reduced.append(_reduce_value(vs[start:i], noise_reduction, is_class))
-            start = i
+    """R 14.2's split(values, match(keys, sort(unique(keys)))): exactly equal
+    keys share a group (-0 == 0, keeping the first one's sign), the groups in
+    ascending key order and each group's values in their original order."""
+    unique_keys: list[float] = []
+    for key in keys.tolist():
+        if not any(key == seen for seen in unique_keys):
+            unique_keys.append(key)
+    out_keys, reduced = [], []
+    for key in sorted(unique_keys):
+        out_keys.append(key)
+        reduced.append(_reduce_value(values[keys == key], noise_reduction, is_class))
     return np.asarray(out_keys, dtype=np.float64), np.asarray(reduced, dtype=np.float64)
 
 
@@ -337,7 +357,7 @@ def test_univariate_group_reduce_matches_reference(noise_reduction: str, is_clas
         n = int(rng.integers(1, 150))
         keys = np.round(rng.normal(size=n), int(rng.integers(0, 3)))
         idx = rng.integers(0, n, size=max(1, n // 4))
-        keys[idx] = keys[idx] * (1 + 2e-16)  # equal to 15 significant digits
+        keys[idx] = keys[idx] * (1 + 2e-16)  # equal to 15 digits, distinct doubles
         keys = np.append(keys, [0.1 + 0.2, 0.3])
         values = rng.integers(0, 3, size=keys.size).astype(float)
         if not is_class:

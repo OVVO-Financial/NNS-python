@@ -135,14 +135,29 @@ def test_discrete_efficient_set_and_clusters_accept_infinite_values_like_r() -> 
 
 
 def test_top_level_tests_reject_infinite_values_as_r_does() -> None:
-    # NNS.FSD/SSD/TSD first evaluate LPM(.ratio)(degree, sort(c(x, y)), x), which
-    # checks the variable x and then the target grid.
+    # R 14.2 NNS.SSD/TSD always evaluate LPM(degree, sort(c(x, y)), x), which
+    # checks the variable x and then the target grid. NNS.FSD evaluates its
+    # LPM.ratio curves only for the plot (R's default, plot = TRUE); without one
+    # the verdict is NNS.FSD.uni both ways, whose discrete test takes infinite
+    # values and whose continuous test rejects them.
     x = np.array([1.0, 2.0, 3.0])
-    for function in (nns.fsd, nns.ssd, nns.tsd):
+    for function in (nns.ssd, nns.tsd):
+        for plot in (False, True):
+            with pytest.raises(ValueError, match="`variable` must be finite"):
+                function(np.array([1.0, np.inf]), x, plot=plot)
+            with pytest.raises(ValueError, match="`target` must be finite"):
+                function(x, np.array([-np.inf, 1.0]), plot=plot)
+    for type_ in ("discrete", "continuous"):
         with pytest.raises(ValueError, match="`variable` must be finite"):
-            function(np.array([1.0, np.inf]), x)
+            nns.fsd(np.array([1.0, np.inf]), x, type_, plot=True)
         with pytest.raises(ValueError, match="`target` must be finite"):
-            function(x, np.array([-np.inf, 1.0]))
+            nns.fsd(x, np.array([-np.inf, 1.0]), type_, plot=True)
+    # NNS.FSD(c(1, Inf), 1:3, plot = FALSE) is "NO FSD EXISTS" and
+    # NNS.FSD(1:3, c(-Inf, 1), plot = FALSE) is "X FSD Y".
+    assert nns.fsd(np.array([1.0, np.inf]), x) == 0
+    assert nns.fsd(x, np.array([-np.inf, 1.0])) == 1
+    with pytest.raises(ValueError, match="You have some infinite values, please address"):
+        nns.fsd(np.array([1.0, np.inf]), x, "continuous")
 
 
 def test_validation_follows_r_order_and_messages() -> None:
