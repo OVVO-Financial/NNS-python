@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 from nns._helpers import _fast_lm
 from nns._rmean import (
     r_mean,
+    r_quantile,
     r_rank_average,
     r_round_array,
     r_row_means,
@@ -270,8 +271,10 @@ def _meboot_call(
     z = (xx[1:] + xx[:-1]) / 2.0
     dv = np.abs(np.diff(orig_res))
     dvtrim = r_trimmed_mean(dv, trimval)
-    xmin = xx[0] - dvtrim if xmin_arg is None else float(xmin_arg)
-    xmax = xx[-1] + dvtrim if xmax_arg is None else float(xmax_arg)
+    # R 14.2: xmin and xmax are always the residual tails' endpoints; the
+    # arguments bound the reconstructed levels (the ensemble) instead.
+    xmin = xx[0] - dvtrim
+    xmax = xx[-1] + dvtrim
     if (xmin_arg is not None or xmax_arg is not None) and force_clt:
         # R: if (isTRUE(force.clt)) { expand.sd <- FALSE; force.clt <- FALSE }
         force_clt = False
@@ -302,11 +305,26 @@ def _meboot_call(
 
     # The ME density lives on the residuals, so scale them against their own mean and sd.
     if scl_adjustment and not zero_res:
-        zz = np.concatenate(([xmin], z, [xmax]))
-        v = np.diff(zz * zz) / 12.0
+        # R 14.2: the variance of one draw. The type-7 interior is linear
+        # between order statistics, and each tail has mass 1/n.
+        steps = (
+            [0.0, *[k * (1.0 / (n - 1)) for k in range(1, n - 1)], 1.0] if n > 2 else [0.0, 1.0]
+        )
+        breaks = np.unique(np.asarray([*steps, 1.0 / n, (n - 1) / n], dtype=np.float64))
+        q = r_quantile(xx, breaks)
+        left = np.array(q[:-1], dtype=np.float64)
+        right = np.array(q[1:], dtype=np.float64)
+        left[0], left[-1] = xmin, z[-1]
+        right[0], right[-1] = z[0], xmax
+        mid = (left + right) / 2.0
+        if not reachbnd:
+            mid[0], mid[-1] = desintxb[0], desintxb[n - 1]
+        mass = np.diff(breaks)
+        centre = r_sum(mass * mid)
+        width = right - left
+        spread = mid - centre
+        uv = r_sum(mass * (width * width / 12.0 + spread * spread))
         xb = r_mean(orig_res)
-        s1 = r_sum((desintxb - xb) * (desintxb - xb))
-        uv = (s1 + r_sum(v)) / n
         desired_sd = r_sd(orig_res)
         actual_me_sd = math.sqrt(uv)
         if actual_me_sd <= 0.0:

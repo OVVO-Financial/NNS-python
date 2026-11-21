@@ -462,7 +462,7 @@ def nns_arma(
         and _is_numeric_seasonal(seasonal_factor)
         and lags.size == 1
     ):
-        estimates, component_estimates = _linear_static_numeric_forecast(
+        estimates, lag_path = _linear_static_numeric_forecast(
             values,
             int(lags[0]),
             horizon,
@@ -474,7 +474,11 @@ def nns_arma(
         return _finish(
             _with_prediction_intervals(
                 estimates,
-                lin_residual=_lin_residual(component_estimates) if pred_int is not None else 0.0,
+                # R 14.2: the band reads the lag's estimate at step h, as with
+                # several lags; one lag therefore adds no spread.
+                lin_residual=(
+                    _lin_residual(lag_path[horizon - 1 : horizon]) if pred_int is not None else 0.0
+                ),
                 pred_int=pred_int,
                 random_seed=random_seed,
             )
@@ -1073,8 +1077,8 @@ def _linear_static_numeric_forecast(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Vectorised single-lag linear forecast.
 
-    Returns the forecast and the unweighted per-component regression forecasts in
-    R's component order (``unlist(Lin.Regression.Estimates)``), which R uses for the
+    Returns the forecast and the lag's unweighted forecasts in step order
+    (R's ``unweighted[[lag]]``), whose step-``h`` value R uses for the
     prediction-interval residual.
     """
     generated = _generate_lin_vectors(variable, lag, h)
@@ -1105,7 +1109,7 @@ def _linear_static_numeric_forecast(
         output = (output + means_weighted) / 2.0 if shrink else means_weighted
     if not negative_values:
         output = np.maximum(0.0, output)
-    return output, component_estimates
+    return output, ordered
 
 
 def _linear_forecasts(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -98,25 +99,11 @@ def _nns_diff(
     upper_b = max(b1, b2)
 
     if _r_all_equal(lower_b, upper_b, tolerance=math.sqrt(_DBL_EPS)):
-        slope = r_mean(np.array([left_slope, right_slope]))
-        return _rounded_result(
-            [
-                f_x,
-                b1,
-                slope,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                left_slope,
-                right_slope,
-                slope,
-                np.nan,
-                np.nan,
-                np.nan,
-                np.nan,
-            ],
-            digits,
+        # R 14.2: a collapsed projection gives no bound on the slope at a smaller
+        # step, so the step is refined instead.
+        return _refine_collapsed(
+            f, point, h_value, tol, max_iter_value, digits, f_x, f_lower, f_upper,
+            left_slope, right_slope,
         )
 
     high_b = max(b1, b2)
@@ -214,24 +201,141 @@ def _nns_diff(
     )
 
 
+def _sample_ulp(a: float, b: float) -> float:
+    """R 14.2's ``sample.ulp``: the spacing of doubles at the larger magnitude."""
+    largest = max(abs(a), abs(b), sys.float_info.min)
+    return math.pow(2.0, math.floor(math.log2(largest)) - 52)
+
+
+def _eval_lenient(
+    f: Callable[[float | complex | NDArray[np.float64]], float | complex | NDArray[np.float64]],
+    value: float,
+) -> float:
+    """``f(value)`` as R reads it in the refinement loop: a real scalar, which may
+    be non-finite (the loop then stops)."""
+    result = f(value)
+    if isinstance(result, complex):
+        return result.real if result.imag == 0.0 else math.nan
+    try:
+        return float(np.asarray(result, dtype=np.float64).reshape(-1)[0])
+    except (TypeError, ValueError, IndexError):
+        return math.nan
+
+
+def _refine_collapsed(
+    f: Callable[[float | complex | NDArray[np.float64]], float | complex | NDArray[np.float64]],
+    point: float,
+    h_value: float,
+    tol: float,
+    max_iter: int,
+    digits: int,
+    f_x: float,
+    f_lower: float,
+    f_upper: float,
+    left_slope: float,
+    right_slope: float,
+) -> DiffResult:
+    """R 14.2's ``refine.step`` branch of NNS.diff: halve the step and extrapolate
+    the centred slope (Richardson), stopping when rounding in the samples would
+    exceed the tolerance, when the slope and the left-right gap settle, or at
+    ``max.iter``."""
+    inferred_h = h_value
+    coarse_ulp = _sample_ulp(f_lower, f_upper)
+    steps = (left_slope, right_slope)
+    slope = r_mean(np.array(steps))
+    converged = False
+    termination_code = 2
+    previous_gap = math.nan
+    iteration = 1
+    while iteration >= 1:
+        half = inferred_h / 2.0
+        left = point - half
+        right = point + half
+        if left == point or right == point:
+            break
+        f_left = _eval_lenient(f, left)
+        f_right = _eval_lenient(f, right)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            next_steps = (
+                (f_x - f_left) / (point - left),
+                (f_right - f_x) / (right - point),
+            )
+        if not (math.isfinite(next_steps[0]) and math.isfinite(next_steps[1])):
+            break
+        # For smooth functions the left-right gap has terms in h, h^3, h^5, ...
+        gap = (2.0 * next_steps[1] - steps[1]) - (2.0 * next_steps[0] - steps[0])
+        jump = gap if iteration == 1 else gap + (gap - previous_gap) / 7.0
+        previous_gap = gap
+        previous = slope
+        centered = r_mean(np.array(next_steps))
+        slope = centered + (centered - r_mean(np.array(steps))) / 3.0
+        steps = next_steps
+        inferred_h = half
+        threshold = tol * max(1.0, abs(slope))
+        # Half a ULP per sample, weighted by the centred Richardson coefficients.
+        fine_ulp = _sample_ulp(f_left, f_right)
+        if (8.0 * fine_ulp + coarse_ulp) / (12.0 * half) > threshold:
+            break
+        coarse_ulp = fine_ulp
+        if abs(previous - slope) <= threshold and abs(jump) <= threshold:
+            converged = True
+            termination_code = 0
+            break
+        if iteration >= max_iter:
+            termination_code = 1
+            break
+        iteration += 1
+
+    final_b = f_x - slope * point
+    complex_step = math.nan
+    if math.isfinite(inferred_h) and inferred_h != 0.0:
+        # R keeps f(z) only when it is a complex number and raises no warning.
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                f_z = f(complex(point, inferred_h))
+            if isinstance(f_z, (complex, np.complexfloating)):
+                complex_step = float(np.imag(f_z) / inferred_h)
+        except (ArithmeticError, ValueError, TypeError, OverflowError, Warning):
+            complex_step = math.nan
+
+    initial = _finite_step(f, point, h_value)
+    return _rounded_result(
+        [
+            f_x,
+            final_b,
+            slope,
+            inferred_h,
+            float(iteration),
+            float(int(converged)),
+            float(termination_code),
+            initial[0],
+            initial[1],
+            initial[2],
+            steps[0],
+            steps[1],
+            r_mean(np.array(steps)),
+            complex_step,
+        ],
+        digits,
+    )
+
+
 def dy_dx(
     x: NDArray[Any],
     y: NDArray[Any],
     eval_point: str | float | NDArray[np.float64] | None = None,
 ) -> DyDxResult:
     """Partial derivative wrapper for R's dy.dx paths."""
-    if eval_point is None:
-        # R's dy.dx(x, y) with the default eval.point = NULL also fails, but
-        # deep inside with "undefined columns selected".
-        raise ValueError("eval_point must be provided: a numeric point/vector or 'overall'")
+    points = _derivative_points(eval_point)
     x_values = np.asarray(x, dtype=np.float64).reshape(-1)
     y_values = np.asarray(y, dtype=np.float64).reshape(-1)
     if x_values.size != y_values.size:
         raise ValueError("x and y must have the same length.")
     if np.any(np.isnan(np.column_stack((x_values, y_values)))):
         raise ValueError("You have some missing values, please address.")
-    if isinstance(eval_point, str):
-        # R: any character eval.point requests the overall mean gradient,
+    if points is None:
+        # R: eval.point = "overall" is the mean gradient,
         # mean(NNS.reg(x, y, type = "REG", ...)$Fitted.xy$gradient).
         from nns.regression import nns_reg
 
@@ -246,7 +350,26 @@ def dy_dx(
         if not isinstance(fitted, dict):
             raise TypeError("nns_reg returned an unexpected fitted table.")
         return r_mean(np.asarray(fitted["gradient"], dtype=np.float64))
-    return _dy_dx_numeric(x_values, y_values, np.asarray(eval_point, dtype=np.float64).reshape(-1))
+    return _dy_dx_numeric(x_values, y_values, points)
+
+
+def _derivative_points(eval_point: Any) -> NDArray[np.float64] | None:
+    """R 14.2's ``.nns_derivative_point``: finite numbers, or None for "overall"."""
+    if eval_point is None or (not isinstance(eval_point, str) and np.size(eval_point) == 0):
+        raise ValueError("eval.point must be provided: numeric point(s) or 'overall'")
+    if isinstance(eval_point, str) or (
+        isinstance(eval_point, np.ndarray) and eval_point.dtype.kind in "US"
+    ):
+        if np.size(eval_point) == 1 and str(np.asarray(eval_point).reshape(-1)[0]) == "overall":
+            return None
+        raise ValueError("eval.point must be numeric point(s) or 'overall'")
+    try:
+        values = np.asarray(eval_point, dtype=np.float64).reshape(-1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("eval.point must be numeric point(s) or 'overall'") from exc
+    if np.any(~np.isfinite(values)):
+        raise ValueError("eval.point must contain only finite numeric values")
+    return values
 
 
 def dy_d(
@@ -697,31 +820,30 @@ def _dy_dx_numeric(
     from nns.dependence import _gravity
     from nns.regression import nns_reg
 
-    if eval_points.size == 0:
-        raise ValueError("eval_point must contain at least one value.")
-    if np.any(~np.isfinite(eval_points)):
-        raise ValueError("eval_point must be finite.")
     n = x.size
     root_n = int(np.floor(np.sqrt(n)))
     # R: round(exp(seq(log(2), log(root_n), length.out = 5))), with C exp/log.
     grid = np.linspace(math.log(2.0), math.log(float(root_n)), 5)
     h_s = np.rint(np.array([math.exp(float(v)) for v in grid]))
-    # Typical spacing between neighbouring x values: diff() of x
-    # in row order measured the gap between consecutive rows, so unsorted input
-    # gave steps spanning the whole range and depended on row order.
-    spacing = float(_gravity(np.diff(np.unique(x))))
-    x_min = float(np.min(x))
-    x_max = float(np.max(x))
+    support = np.unique(x)
+    x_min, x_max = float(support[0]), float(support[-1])
+    # Typical spacing between neighbouring x values, independent of row order.
+    spacing = float(_gravity(np.diff(support)))
+    # R 14.2: a point at either end of the support (of at least three values)
+    # takes a one-sided stencil, lo, lo + (hi - lo) / 2, hi.
+    endpoint = np.isin(eval_points, [x_min, x_max]) & (support.size >= 3)
     rows: list[NDArray[np.float64]] = []
     # Every bandwidth position counts, repeated ones too, as in R.
     for h_value in h_s:
-        h_step = spacing * float(h_value)
+        h_step = h_value * spacing
         lower = np.maximum(x_min, eval_points - h_step)
         upper = np.minimum(x_max, eval_points + h_step)
-        rows.append(np.column_stack((lower, eval_points, upper)))
+        nodes = np.column_stack((lower, eval_points, upper))
+        nodes[endpoint, 1] = lower[endpoint] + (upper[endpoint] - lower[endpoint]) / 2.0
+        rows.append(nodes)
 
-    deriv_points = np.vstack(rows)
-    point_est = np.concatenate((deriv_points[:, 0], deriv_points[:, 1], deriv_points[:, 2]))
+    windows = np.vstack(rows)
+    point_est = np.concatenate((windows[:, 0], windows[:, 1], windows[:, 2]))
     reg_output = nns_reg(
         x,
         y,
@@ -733,29 +855,27 @@ def _dy_dx_numeric(
         dist=None,
     )
     estimates = np.asarray(reg_output["Point.est"], dtype=np.float64).reshape(3, -1).T
-    eval_col = deriv_points[:, 1]
-    run_1 = deriv_points[:, 2] - deriv_points[:, 1]
-    run_2 = deriv_points[:, 1] - deriv_points[:, 0]
-
-    rise_1 = estimates[:, 2] - estimates[:, 1]
-    rise_2 = estimates[:, 1] - estimates[:, 0]
-    # At min(x) or max(x) one run is 0: R uses the one-sided slope for the
-    # first derivative and the second derivative is NaN/Inf.
+    left = windows[:, 1] - windows[:, 0]
+    right = windows[:, 2] - windows[:, 1]
+    rise_left = estimates[:, 1] - estimates[:, 0]
+    rise_right = estimates[:, 2] - estimates[:, 1]
     with np.errstate(divide="ignore", invalid="ignore"):
-        first = (rise_1 + rise_2) / (run_1 + run_2)
-        second = (rise_1 / run_1 - rise_2 / run_2) / ((run_1 + run_2) / 2.0)
+        first = (rise_right + rise_left) / (right + left)
+        second = (rise_right / right - rise_left / left) / ((right + left) / 2.0)
 
-    unique_eval = np.array(sorted(set(float(v) for v in eval_col)), dtype=np.float64)
-    first_out = np.empty(unique_eval.size, dtype=np.float64)
-    second_out = np.empty(unique_eval.size, dtype=np.float64)
-    for index, point in enumerate(unique_eval):
-        mask = eval_col == point
-        first_out[index] = r_mean(first[mask])  # R: mean(first.deriv.vec[...])
-        second_out[index] = r_mean(second[mask])
+    # Means over the bandwidths per distinct point, returned in the input order.
+    unique_points: list[float] = []
+    for value in eval_points.tolist():
+        if value not in unique_points:
+            unique_points.append(value)
+    codes = np.tile(np.array([unique_points.index(v) for v in eval_points.tolist()]), h_s.size)
+    first_unique = np.array([r_mean(first[codes == g]) for g in range(len(unique_points))])
+    second_unique = np.array([r_mean(second[codes == g]) for g in range(len(unique_points))])
+    index = np.array([unique_points.index(v) for v in eval_points.tolist()], dtype=np.intp)
     return {
-        "eval.point": unique_eval,
-        "first.derivative": first_out,
-        "second.derivative": second_out,
+        "eval.point": np.asarray(eval_points, dtype=np.float64).copy(),
+        "first.derivative": first_unique[index],
+        "second.derivative": second_unique[index],
     }
 
 
