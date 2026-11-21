@@ -335,9 +335,9 @@ def _var_lags(
 ) -> _LagSpec:
     """Expand ``tau`` to one lag list per variable, mirroring R ``NNS.VAR``.
 
-    ``modulo`` is each variable's ``nns_seas`` modulo, R's ``min(tau_i)``: the
-    smallest lag of the variable's own lag vector for a list ``tau``, and the
-    smallest lag of ``tau`` itself otherwise.
+    ``modulo`` is each variable's ``nns_seas`` modulo, R's ``min(tau_i)`` with
+    ``tau_i = tau[[min(i, length(tau))]]``: the smallest lag of the variable's own
+    lag vector for a list ``tau``, and the variable's own lag for a vector.
     """
     if _is_lag_scalar(tau):
         lag = _var_lag_values(tau)[0]
@@ -361,7 +361,8 @@ def _var_lags(
             _invalid_tau()
         return {
             "lags": [[value] for value in values],
-            "modulo": [min(values)] * n_vars,
+            # R 14.2 reads tau[[i]] for variable i, a vector included.
+            "modulo": list(values),
             "max": max(values),
         }
 
