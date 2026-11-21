@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 
 from nns._helpers import _as_matrix
 from nns._rnmath import dexp, dlnorm_log, dnorm, dt, libm_exp
-from nns._stdsort import heap_select, partial_sort, std_sort
 
 KValue = int | Literal["all"]
 
@@ -24,7 +23,7 @@ def nns_distance(
 
     ``rpm`` is a numeric matrix whose last column is R's ``y.hat`` column.
     The value is R's ``NNS_distance_cpp`` to the last bit: range-scaled
-    distances, libstdc++'s ordering of tied distances, R's nmath ``dt``,
+    distances, equal distances ordered by RPM row, R's nmath ``dt``,
     ``dexp``, ``dlnorm`` and ``dnorm`` weights, and sequential double sums.
     """
     features, y_hat = _split_rpm(rpm)
@@ -36,7 +35,7 @@ def nns_distance(
     col_min = np.minimum(np.min(features, axis=0), dest)
     col_max = np.maximum(np.max(features, axis=0), dest)
     distances = _distances(features, dest, _inverse_ranges(col_min, col_max))
-    order = _cpp_sorted_prefix(distances, k_value)
+    order = _nearest_rows(distances, k_value)
     selected_distances = distances[order]
     selected_y = y_hat[order]
     if k_value == 1:
@@ -57,7 +56,7 @@ def nns_distance_path_single_bulk(
     """Return R's NNS.distance.path.single.bulk predictions for many target rows.
 
     This is R's ``NNS_distance_path_single_parallel_cpp``, which differs from the
-    single-point kernel: it orders the k nearest rows by distance and then row,
+    single-point kernel: it takes the k nearest rows (by distance, then row),
     weights them with unnormalised Student-t and Gaussian kernels and a
     ``sd(1:k)`` lognormal rank weight, and scales the weighted sum by ``1 / total``.
     """
@@ -74,7 +73,7 @@ def nns_distance_path_single_bulk(
     for row_index, dest in enumerate(tests):
         inverse = _inverse_ranges(np.minimum(rpm_min, dest), np.maximum(rpm_max, dest))
         distances = _distances(features, dest, inverse)
-        selected = _cpp_selected_by_row(distances, k_value)
+        selected = _nearest_rows(distances, k_value)
         top_distances = distances[selected]
         top_y = y_hat[selected]
         if k_value == 1:
@@ -122,38 +121,11 @@ def _distances(
     return np.where(acc == 0.0, 1e-10, acc)
 
 
-def _has_ties(values: NDArray[np.float64]) -> bool:
-    return bool(np.unique(values).size != values.size)
-
-
-def _cpp_sorted_prefix(distances: NDArray[np.float64], count: int) -> NDArray[np.intp]:
-    """The first ``count`` rows in R's order: ``std::partial_sort`` when
-    ``count < n``, else ``std::sort``, on ``S[a] < S[b]``."""
-    n = distances.size
-    if not _has_ties(distances):
-        return np.argsort(distances, kind="stable")[:count]
-    order = list(range(n))
-    key = distances.tolist()
-    if count < n:
-        partial_sort(order, key, count)
-    else:
-        std_sort(order, key)
-    return np.asarray(order[:count], dtype=np.intp)
-
-
-def _cpp_selected_by_row(distances: NDArray[np.float64], count: int) -> NDArray[np.intp]:
-    """The bulk kernel's k nearest rows: ``std::partial_sort`` picks them, then a
-    stable sort orders them by distance and row index."""
-    n = distances.size
-    ranked = np.argsort(distances, kind="stable")
-    if count >= n or distances[ranked[count - 1]] < distances[ranked[count]]:
-        return ranked[:count]
-    # A tie straddles the k-th place: which tied rows are kept is libstdc++'s
-    # heap selection.
-    order = list(range(n))
-    heap_select(order, distances.tolist(), count)
-    chosen = np.asarray(order[:count], dtype=np.intp)
-    return chosen[np.lexsort((chosen, distances[chosen]))]
+def _nearest_rows(distances: NDArray[np.float64], count: int) -> NDArray[np.intp]:
+    """The ``count`` nearest rows, nearest first, in R 14.2's total order:
+    distance, then RPM row for equal distances (``nearest_rows`` in
+    src/NNS_distance.cpp, shared by the scalar and the bulk kernels)."""
+    return np.argsort(distances, kind="stable")[:count]
 
 
 def _sequential_sum(values: NDArray[np.float64]) -> float:

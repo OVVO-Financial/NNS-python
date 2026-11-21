@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from nns._helpers import _is_factor, _numeric_matrix
 from nns._native import native_fn
+from nns._rmean import r_mean
 from nns.core import _as_degree, _check_numeric_target, _require_finite, _target_doubles
 from nns.dependence import _r_pm_terms
 
@@ -39,7 +40,7 @@ def pm_matrix(
     lpm_degree = _as_degree(lpm_degree)
     upm_degree = _as_degree(upm_degree)
     values = _as_matrix(variable)
-    targets = _as_target(target, values)
+    values, targets = _as_target(target, values)
     _require_finite(values, "variable")
     _require_finite(targets, "target")
     resolved_names = _resolve_names(names, values.shape[1])
@@ -191,7 +192,17 @@ def _as_matrix(variable: NDArray[np.float64]) -> NDArray[np.float64]:
     return values
 
 
-def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.float64]:
+def _as_target(
+    target: Target, variable: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The data and targets R's PMMatrix_RCPP works with.
+
+    For the column-mean target R 14.2 first moves each column by the end of its
+    range nearest zero (``max(0, min) + min(0, max)``) and takes R's ``mean()``
+    of the moved column, so a one-sign column's deviations stay in range; the
+    moments are then computed on the moved data. Explicit targets leave the
+    data as given.
+    """
     supplied = np.asarray(target)
     if supplied.ndim <= 1 and supplied.size == 1 and not _is_factor(target):
         alias = supplied.item()
@@ -203,8 +214,7 @@ def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.floa
         ):
             target = None
     if target is None:
-        # Rcpp sugar colMeans: a sequential double sum divided by the row count.
-        return cast(NDArray[np.float64], np.cumsum(variable, axis=0)[-1] / variable.shape[0])
+        return _mean_target(variable)
 
     _check_numeric_target(target)
     targets = _target_doubles(target)
@@ -216,4 +226,19 @@ def _as_target(target: Target, variable: NDArray[np.float64]) -> NDArray[np.floa
         raise ValueError("target must be a scalar, vector or matrix.")
     if targets.size != variable.shape[1]:
         raise ValueError("variable matrix cols != target vector length")
-    return targets
+    return variable, targets
+
+
+def _mean_target(variable: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    moved = np.array(variable, dtype=np.float64, order="F", copy=True)
+    targets = np.empty(moved.shape[1], dtype=np.float64)
+    if not np.all(np.isfinite(moved)):
+        # R moves the columns too, then stops on the non-finite values.
+        targets[:] = np.nan
+        return moved, targets
+    for j in range(moved.shape[1]):
+        column = moved[:, j]
+        origin = max(0.0, float(column.min())) + min(0.0, float(column.max()))
+        moved[:, j] = column - origin
+        targets[j] = r_mean(moved[:, j])
+    return moved, targets

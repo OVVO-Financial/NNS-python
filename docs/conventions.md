@@ -657,9 +657,8 @@ last bit: each column is scaled by `1 / range` (the range including the
 target), the distance accumulates `diff^2 + |diff|` column by column, and the
 weights are R's nmath densities summed in R's order.
 
-* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows in the order
-  libstdc++'s `std::partial_sort` (or `std::sort` when every row is used)
-  leaves them, which decides where tied distances fall, then the eight weights
+* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows, equal distances
+  ordered by RPM row as R 14.2's kernels order them, then the eight weights
   (uniform, `dt`, inverse distance, `dexp` with scale `k`, reversed
   `|dlnorm(rank, 0, sd(1:k), log = TRUE)|`, `rank^-2`, `dnorm` and an RBF),
   normalised and combined.

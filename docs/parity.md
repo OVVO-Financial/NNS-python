@@ -35,8 +35,7 @@ reproduces R's arithmetic: long-double `sum`, `mean`, `var`, `prod` and
 `rowSums`; Rcpp's double accumulations and R's C++ operation order; R's `^`;
 libm `exp`, `log` and `pow` in place of NumPy's vectorised versions; R's nmath
 densities and quantiles; `optimize`; the partial sort behind
-`mean(trim = )`; the order libstdc++'s `std::sort` and `std::partial_sort`
-give tied keys; and R's smoothing spline. It does so with the native extension
+`mean(trim = )`; and R's smoothing spline. It does so with the native extension
 and with the NumPy fallback (`NNS_DISABLE_NATIVE=1`). Where R draws random
 numbers, `random_seed = s` (`seed` for `nns_causation`) reproduces R's stream
 after `set.seed(s)`.
