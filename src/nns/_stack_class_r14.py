@@ -18,7 +18,7 @@ from numpy.typing import NDArray
 
 from nns._class_r14 import classify as classify_r14
 from nns._reg_engine import _dependence, _dimred_coefficients
-from nns._rmean import r_seq_by
+from nns._rmean import r_mean, r_seq_by
 
 F = NDArray[np.float64]
 Index = NDArray[np.int64]
@@ -81,26 +81,94 @@ def classify_stack_r14(
     balanced = [balance_indices(y[s["train"]]) for s in splits]
     final_rows = balance_indices(y)
 
-    def choose(probabilities: F, threshold: float = 0.5) -> F:
+    # R 14.2: ties go to the class that appears first in the rows a model was
+    # fitted on - the balanced final rows here, each fold's rows in evaluate().
+    final_seen = list(dict.fromkeys(y[final_rows].tolist()))
+    final_order = np.array([int(np.flatnonzero(values == v)[0]) for v in final_seen])
+
+    def preferred(probabilities: F) -> F:
         if class_count == 2:
-            selected: F = np.where(
-                probabilities[:, tie_order[1]] > threshold,
-                values[tie_order[1]],
-                values[tie_order[0]],
-            )
-            return selected
+            return np.full(probabilities.shape[0], values[final_order[0]], dtype=np.float64)
         return np.asarray(
-            values[tie_order[np.argmax(probabilities[:, tie_order], axis=1)]], dtype=np.float64
+            values[final_order[np.argmax(probabilities[:, final_order], axis=1)]],
+            dtype=np.float64,
         )
 
-    def evaluate(probabilities: F, actual: F) -> tuple[float, float]:
+    def choose(probabilities: F, threshold: float = 0.5, first: F | None = None) -> F:
+        if first is None:
+            first = preferred(probabilities)
+        if class_count != 2:
+            return first
+        p = probabilities[:, tie_order[1]]
+        selected: F = np.where(
+            p == threshold,
+            first,
+            np.where(p > threshold, values[tie_order[1]], values[tie_order[0]]),
+        )
+        return selected
+
+    # Held-out bookkeeping, as R keeps it: rows validated in more than one fold
+    # are pooled, and each row's class priority is the first position of every
+    # class among its fold's training rows (for a pooled row, the earliest
+    # original training row over its folds).
+    validation_rows = np.concatenate([np.asarray(s["validation"], dtype=np.int64) for s in splits])
+    row_counts = np.bincount(validation_rows, minlength=n)
+    valid_rows = row_counts > 0
+    pooled = row_counts > 1
+    priority = np.full((class_count, n), np.inf, dtype=np.float64)
+
+    def first_positions(rows: Index) -> F:
+        response = y[rows]
+        out = np.full(class_count, np.nan, dtype=np.float64)
+        for c, value in enumerate(values):
+            hits = np.flatnonzero(response == value)
+            if hits.size:
+                out[c] = float(hits[0] + 1)
+        return out
+
+    for b, split in enumerate(splits):
+        va = np.asarray(split["validation"], dtype=np.int64)
+        tr = np.asarray(split["train"], dtype=np.int64)[balanced[b]]
+        single = va[~pooled[va]]
+        priority[:, single] = first_positions(tr)[:, None]
+        shared = va[pooled[va]]
+        if shared.size:
+            ordered_rows = np.sort(tr)
+            positions = first_positions(ordered_rows)
+            earliest = np.full(class_count, np.nan, dtype=np.float64)
+            found = ~np.isnan(positions)
+            earliest[found] = (ordered_rows[positions[found].astype(np.int64) - 1] + 1).astype(
+                np.float64
+            )
+            current = priority[:, shared]
+            priority[:, shared] = np.where(
+                np.isnan(current) | np.isnan(earliest[:, None]),
+                np.nan,
+                np.minimum(current, earliest[:, None]),
+            )
+
+    def evaluate(probabilities: F, valid: NDArray[np.bool_]) -> tuple[float, float]:
+        probabilities = probabilities[valid]
+        ranks = priority[:, valid].T.copy()
+        if class_count > 2:
+            largest = probabilities[
+                np.arange(probabilities.shape[0]), np.argmax(probabilities, axis=1)
+            ]
+            ranks[probabilities < largest[:, None]] = np.inf
+        first = np.full(probabilities.shape[0], np.nan, dtype=np.float64)
+        known = ~np.isnan(ranks).any(axis=1)
+        first[known] = values[np.argmin(ranks[known], axis=1)]
+        actual = y[valid]
         thresholds = (
             r_seq_by(0.01, 0.99, 0.01)  # R: seq(.01, .99, .01)
             if class_count == 2 and optimize_threshold
             else np.asarray([0.5])
         )
         losses = np.asarray(
-            [score(decode(choose(probabilities, float(t))), decode(actual)) for t in thresholds],
+            [
+                score(decode(choose(probabilities, float(t), first)), decode(actual))
+                for t in thresholds
+            ],
             dtype=np.float64,
         )
         usable = np.flatnonzero(np.isfinite(losses))
@@ -161,19 +229,28 @@ def classify_stack_r14(
             raise ValueError("R14 class fit did not produce probability vectors.")
         return np.column_stack([np.asarray(prob[label], dtype=np.float64) for label in labels])
 
-    def record(total: F, count: Index, candidate: Any) -> dict[str, Any]:
-        mask = count > 0
-        if not np.any(mask):
+    def record(fold_predictions: list[tuple[Index, F]], candidate: Any) -> dict[str, Any]:
+        if not np.any(valid_rows):
             raise ValueError("The classification candidate has no held-out predictions.")
         probability = np.full((n, class_count), np.nan, dtype=np.float64)
-        probability[mask] = total[mask] / count[mask, None]
-        quality, threshold = evaluate(probability[mask], y[mask])
+        contributions: dict[int, list[F]] = {}
+        for rows, predicted in fold_predictions:
+            for row, values_row in zip(rows.tolist(), predicted, strict=True):
+                contributions.setdefault(row, []).append(values_row)
+        for row, rows_list in contributions.items():
+            if len(rows_list) == 1:
+                probability[row] = rows_list[0]
+            else:
+                # Each class averaged in sorted order, whatever order the folds ran in.
+                stacked = np.vstack(rows_list)
+                probability[row] = [r_mean(np.sort(stacked[:, k])) for k in range(class_count)]
+        quality, threshold = evaluate(probability, valid_rows)
         return {
             "score": quality,
             "threshold": threshold,
             "candidate": candidate,
             "probability": probability,
-            "valid": mask,
+            "valid": valid_rows,
         }
 
     def tune(
@@ -181,15 +258,15 @@ def classify_stack_r14(
     ) -> dict[str, Any]:
         candidates_results = []
         for candidate in candidates:
-            total = np.zeros((n, class_count), dtype=np.float64)
-            count = np.zeros(n, dtype=np.int64)
+            fold_predictions: list[tuple[Index, F]] = []
             for i, split in enumerate(splits):
                 train = split["train"][balanced[i]]
                 validation = split["validation"]
                 fitted = fit(x[train], y[train], x[validation], component, candidate, select_count)
-                total[validation] += as_probabilities(fitted)
-                count[validation] += 1
-            candidates_results.append(record(total, count, candidate))
+                fold_predictions.append(
+                    (np.asarray(validation, dtype=np.int64), as_probabilities(fitted))
+                )
+            candidates_results.append(record(fold_predictions, candidate))
         qualities = np.asarray([r["score"] for r in candidates_results])
         choice = int(np.argmin(qualities) if objective == "min" else np.argmax(qualities))
         return candidates_results[choice]
@@ -219,10 +296,9 @@ def classify_stack_r14(
         weights = {"reg": float(w[0]), "dim.red": float(w[1])}
         valid = reg_fit["valid"] & dim_fit["valid"]
         combined = (
-            weights["reg"] * reg_fit["probability"][valid]
-            + weights["dim.red"] * dim_fit["probability"][valid]
+            weights["reg"] * reg_fit["probability"] + weights["dim.red"] * dim_fit["probability"]
         )
-        _, threshold = evaluate(combined, y[valid])
+        _, threshold = evaluate(combined, valid)
 
     dim_cutoff: float | F = float("nan")
     if dim_fit is not None:
@@ -271,10 +347,9 @@ def classify_stack_r14(
             return None
         sets: list[list[float]] = []
         for row in prob:
-            order_idx = tie_order[np.argsort(-row[tie_order], kind="stable")]
-            take = min(
-                int(np.searchsorted(np.cumsum(row[order_idx]), pred_int - 1e-12)) + 1, class_count
-            )
+            order_idx = final_order[np.argsort(-row[final_order], kind="stable")]
+            mass = np.asarray(np.cumsum(row[order_idx].astype(np.longdouble)), dtype=np.float64)
+            take = min(int(np.searchsorted(mass, pred_int - 1e-12)) + 1, order_idx.size)
             sets.append(decode(values[order_idx[:take]]).tolist())
         return sets
 
