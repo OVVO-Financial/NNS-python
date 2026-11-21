@@ -3,7 +3,7 @@
     "14407300a9f5d228b0b1806861b6078f55f9e1d4420a3a8423ad0cac028ffdd0": {
       "kurtosis": -1.5,
       "mean": 2.33333333333333,
-      "skewness": 0.381801774160606,
+      "skewness": 0.381801774160607,
       "variance": 1.55555555555556
     },
     "2c9fdc1bedd72761348d223bf3f7def86f3bf25c65844cf100cf21da9d37072d": {
@@ -81,7 +81,7 @@
     "9c82e18ea3f8a05642b65a3937ac2c3902b56a84307214f99420e8824dc7b5ad": {
       "kurtosis": NaN,
       "mean": 2.33333333333333,
-      "skewness": 0.935219529582823,
+      "skewness": 0.935219529582825,
       "variance": 2.33333333333333
     },
     "acad28f35907ab7a54f84d43f696e713f999ec0adf5513ada1238310fd80624f": {

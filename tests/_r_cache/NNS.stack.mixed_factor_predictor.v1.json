@@ -10,7 +10,7 @@
       "NNS.dim.red.threshold": 0.755928946018455,
       "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": NaN,
-      "OBJfn.dim.red": 0.000976562500000056,
+      "OBJfn.dim.red": 0.0009765625,
       "OBJfn.reg": NaN,
       "class.levels": {},
       "dim.red": [
@@ -43,7 +43,7 @@
       "NNS.dim.red.threshold": 0.755928946018455,
       "NNS.dim.red.variables": "x",
       "NNS.reg.n.best": 1.0,
-      "OBJfn.dim.red": 0.000976562500000056,
+      "OBJfn.dim.red": 0.0009765625,
       "OBJfn.reg": 0.0,
       "class.levels": {},
       "dim.red": [

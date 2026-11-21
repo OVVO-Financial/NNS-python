@@ -1,0 +1,11 @@
+{
+  "entries": {
+    "d190a3a7569c308db2e3d156f8889bc5c958327489a5939b47c27805dac4c92f": {
+      "obs": "eval.point must be numeric point(s) or 'overall'",
+      "overall": 0.0012889304430775952
+    }
+  },
+  "label": "dydx142.character",
+  "nns_version": "14.2",
+  "schema_version": 2
+}
