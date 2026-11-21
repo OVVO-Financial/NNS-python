@@ -73,7 +73,7 @@ def _variable(t_obs: int, n_variables: int) -> np.ndarray:
 
 def _target(target_kind: str, variable: np.ndarray) -> tuple[PMTarget, object]:
     if target_kind == "zero":
-        return 0.0, [0.0] * variable.shape[1]
+        return np.zeros(variable.shape[1]), [0.0] * variable.shape[1]
     if target_kind == "mean":
         return "mean", None
     return np.linspace(-0.25, 0.25, variable.shape[1]), np.linspace(

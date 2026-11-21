@@ -18,6 +18,7 @@
 
 #include "nns/nns.hpp"
 #include "_r14_dependence.hpp"
+#include "_r14_pm_norm.hpp"
 #include "_r14_seas.hpp"
 
 namespace nb = nanobind;
@@ -180,7 +181,7 @@ nb::dict pm_matrix_dict(double degree_lpm,
   nns::PMMatrixResult result;
   {
     nb::gil_scoped_release release;
-    result = nns::pm_matrix(degree_lpm, degree_upm, target.data(), variable.data(), n, d, pop_adj,
+    result = nns_r14::pm_matrix(degree_lpm, degree_upm, target.data(), variable.data(), n, d, pop_adj,
                             norm, call_threads());
   }
   nb::dict out;
@@ -623,34 +624,39 @@ NB_MODULE(_nnscore, m) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
     nb::gil_scoped_release release;
-    return nns::clpm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
+    return nns_r14::nd_moment(nns::clpm_nd, data.data(), n, d, target.data(), degree, norm,
+                              call_threads());
   });
   m.def("cupm_nd", [](const Vector& data, std::size_t n, std::size_t d, const Vector& target,
                       double degree, bool norm) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
     nb::gil_scoped_release release;
-    return nns::cupm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
+    return nns_r14::nd_moment(nns::cupm_nd, data.data(), n, d, target.data(), degree, norm,
+                              call_threads());
   });
   m.def("dpm_nd", [](const Vector& data, std::size_t n, std::size_t d, const Vector& target,
                     double degree, bool norm) {
     checked_flat_matrix_size(data, n, d, "data");
     if (target.shape(0) != d) throw std::invalid_argument("target length must equal d.");
     nb::gil_scoped_release release;
-    return nns::dpm_nd(data.data(), n, d, target.data(), degree, norm, call_threads());
+    return nns_r14::nd_moment(nns::dpm_nd, data.data(), n, d, target.data(), degree, norm,
+                              call_threads());
   });
   m.def("clpm_nd_batch", [](const Vector& data, std::size_t n, std::size_t d,
-                            const Vector& targets, std::size_t n_targets, double degree, bool norm) {
+                            const Vector& targets, std::size_t n_targets, double degree, bool norm,
+                            bool strict) {
     checked_flat_matrix_size(data, n, d, "data");
     if (targets.shape(0) != n_targets * d) {
       throw std::invalid_argument("targets length must equal n_targets * d.");
     }
     std::vector<double> out(n_targets, 0.0);
     nb::gil_scoped_release release;
-    nns::clpm_nd_batch(data.data(), n, d, targets.data(), n_targets, degree, norm, out.data(),
-                       call_threads());
+    nns_r14::clpm_nd_batch(data.data(), n, d, targets.data(), n_targets, degree, norm, strict,
+                           out.data(), call_threads());
     return out;
-  });
+  }, nb::arg("data"), nb::arg("n"), nb::arg("d"), nb::arg("targets"), nb::arg("n_targets"),
+     nb::arg("degree"), nb::arg("norm"), nb::arg("strict") = false);
   m.def("pm_matrix", &pm_matrix_dict);
 
   m.def(

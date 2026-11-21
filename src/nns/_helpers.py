@@ -8,6 +8,27 @@ from numpy.typing import NDArray
 from nns._native import external_stacklevel, native_fn
 
 
+def _is_factor(value: object) -> bool:
+    return getattr(getattr(value, "dtype", None), "name", None) == "category"
+
+
+def _has_factor_column(value: object) -> bool:
+    return hasattr(value, "columns") and any(
+        dtype == "category" for dtype in getattr(value, "dtypes", ())
+    )
+
+
+def _numeric_matrix(data: object) -> NDArray[np.float64]:
+    if _has_factor_column(data):
+        raise ValueError("Not compatible with requested type: [type=character; target=double].")
+    return np.asarray(data, dtype=np.float64)
+
+
+def _reject_factor(value: object, name: str) -> None:
+    if _is_factor(value):
+        raise ValueError(f"{name} must be numeric, not a factor.")
+
+
 def _warn_unsupported(**was_set: bool) -> None:
     """Warn about R-compatibility parameters that have no effect in NNS Python.
 

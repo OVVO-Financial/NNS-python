@@ -69,12 +69,11 @@ check the same rules.
 
 ## PM Matrix Target Defaults
 
-R `PM.matrix` uses column means when `target` is `NULL` or any non-numeric value.
-NNS Python accepts `None` and `"mean"` for this behavior, with Rcpp's `colMeans`
-arithmetic (a row-by-row double sum divided by the row count). NNS Python also broadcasts a
-scalar numeric target across all variables; R requires callers to pass an
-explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
-does not match the number of variables raise `ValueError`.
+Use `None`, `"mean"` or `"means"` for column means. Python and R sum each column
+row by row in double precision and divide by the row count. Numeric vectors and
+matrices supply one target per variable column. R reads matrix targets in column
+order, and Python does the same. Python also broadcasts a numeric scalar across
+columns. In R, pass an explicit vector such as `rep(0, ncol(variable))`.
 
 ## Mode Default Divergence From R
 
@@ -94,6 +93,8 @@ multiplication, fractional degrees by libm `pow`, double sums accumulated
 observation by observation and scaled by `1 / n`. `pm_matrix` fills the upper
 triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
 crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
+A normalised n-dimensional moment or matrix cell with an exactly zero total takes
+its degree-zero value. In a joint survival calculation, ties are excluded.
 `nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
 `mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
 
@@ -139,10 +140,9 @@ unrecognised `type` warns (and `fsd` then runs its continuous branch, while
 returns the column names), and a vector is one column, as with R's `as.matrix`.
 Inputs are checked in R's order and with R's messages: missing values raise
 "You have some missing values, please address.", empty samples "Each sample
-needs at least one observation.". Like R, the `.uni` tests, `sd_efficient_set`
-and `nns_sd_cluster` accept infinite values and compare them as R's C++ test
-does, while `fsd`, `ssd` and `tsd` reject them (R first evaluates the plotted
-partial-moment curves, which check `x` and then the threshold grid).
+needs at least one observation.". Only discrete first-order comparisons accept infinite values in
+the `.uni` tests, efficient sets and clustering. The top-level `fsd`, `ssd` and
+`tsd` check the partial-moment curves first and reject infinite values.
 `nns_sd_cluster` validates its data in the first efficient-set search, as R
 does, so a matrix with no more than `min_cluster` columns comes back as one
 cluster unchecked, and `min_cluster` is compared as a real number (`1.5` merges

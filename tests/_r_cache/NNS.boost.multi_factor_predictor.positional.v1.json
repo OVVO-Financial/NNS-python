@@ -34,6 +34,6 @@
     }
   },
   "label": "NNS.boost.multi_factor_predictor.positional.v1",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }

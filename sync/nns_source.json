@@ -1,7 +1,7 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e",
-  "r_version": "14.0",
+  "r_commit": "31291970b57cbc2e0791e0d504503111b54d0078",
+  "r_version": "14.2",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
   "core_commit": "a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d",
@@ -11,11 +11,11 @@
   "vendored_r_path": "tools/NNS",
   "vendored_r_tarball": "tools/NNS_13.0.tar.gz",
   "r_cache_path": "tests/_r_cache",
-  "notes": "Behavioral oracle: the exact R14 archive and commit recorded above. The cumulative Python implementation through PR #189 is preserved under draft #192. Native R14 overlays are explicit and hashed separately; extern/NNS-core remains byte-for-byte at the recorded accepted vendor revision. The vendored tools/NNS snapshot, r_src_tree_hash, and tools/NNS_13.0.tar.gz retain their historical lineage and do not identify the live R14 behavioral oracle. Local verification results are recorded in docs/R14_LOCAL_PARITY_REPAIR.md; remote CI/release approval is separate. The R 14.0 update at 9c8bd21 (compiled speed paths; the same archive through de5d4fe) returns the same values as 7b07a837 on every cached input, so overlays ported from 7b07a837 keep that source and record the oracle they were verified against in verified_r_commit.",
+  "notes": "The R oracle is the Git tree at r_commit, archived with git archive --prefix=NNS/ --format=tar.gz. The NNS_14.2.tar.gz stored upstream predates the VaR check for factor columns in plain data frames. The vendored tools/NNS tree, r_src_tree_hash and tools/NNS_13.0.tar.gz identify the historical snapshot. Native overlays are tracked separately from the accepted NNS-core snapshot.",
   "r_source_archive": {
-    "filename": "NNS_14.0.tar.gz",
-    "sha256": "754dad65629b95bf3ddca9bf9018ef197f5c346dd12dcfb49e505835920bc5cb",
-    "repository_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+    "filename": "NNS-31291970.tar.gz",
+    "sha256": "cdb5dfafff603f1fee2f317211f17aff73209565c869d5f48efecf3f59dd968f",
+    "repository_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
   },
   "r14_native_overlays": [
     {
@@ -25,7 +25,7 @@
       "r_source_sha256": "f50530afc3f94e8c7faef14f59bd44bacf64e7a21bd5c2e8b9421404a82bd61d",
       "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
       "adaptation": "R14 gravity/mode port with std::vector marshalling. CMake replaces only the old central-tendency translation unit; vendor rescale behavior is retained.",
-      "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+      "verified_r_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
     },
     {
       "path": "src/nns/_r14_dependence.hpp",
@@ -34,7 +34,7 @@
       "r_source_sha256": "2e577f57165fd38d779dcde369eabf4800135eb50e07079069c11be2fedaa115",
       "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
       "adaptation": "R14 multilevel/null-corrected dependence with vector marshalling. R::dhyper and R::pnorm are the ports of R's own nmath routines in src/nns/_rnmath.hpp, so the null expectations match R's bit for bit. Bound explicitly instead of the untouched vendor dependence estimator.",
-      "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+      "verified_r_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
     },
     {
       "path": "src/nns/_r14_mreg_predict.cpp",
@@ -43,7 +43,7 @@
       "r_source_sha256": "e0fac52e99f33cd29fbb07b51711ded56c016d9e1a4b4a8eac8a9b4b9ed98571",
       "r_source_commit": "7b07a837c130ba7220dbe16c584221508757d5ae",
       "adaptation": "The vendored NNS-core multivariate prediction kernel (src/mreg_predict.cpp, sha256 c98d3fbb93c3165109870cb3d2cc1a55c8cb0fa35770b3ff0204441fd20e1e04) with its Student-t and normal ensemble weights evaluated by R's own nmath dt and dnorm4 (src/nns/_rnmath.hpp) instead of the vendor's lgamma-based closed form, so the weights and predictions match R's NNS_mreg_predict_v2_cpp bit for bit. CMake replaces only the vendor translation unit.",
-      "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+      "verified_r_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
     },
     {
       "path": "src/nns/_r14_partial_moments.cpp",
@@ -61,14 +61,23 @@
       "r_source_sha256": "cf950b8e1b92bc942c132135dfb6a4909ca9f77c60da186e23eac0d30b2ed23e",
       "r_source_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e",
       "adaptation": "R14 NNS.seas lag scan: SeasComponent and seas_score copied verbatim, scored across lags with nns::parallel_for in place of RcppParallel (each lag writes its own slot, so results never depend on the thread count). Built into the NNS-core library target for its Release optimisation; bound as seas_scores_r14.",
-      "verified_r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+      "verified_r_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
+    },
+    {
+      "path": "src/nns/_r14_partial_moments.cpp",
+      "sha256": "6fce096f792f8787afa93a3bc51628769862b7ddb43f6c8c92d1da24d2dfbd35",
+      "r_source_path": "src/partial_moments.cpp",
+      "r_source_sha256": "a7042f715fccea769d1a49416133ee9c258b42e1ff8d3193ece051095853c44d",
+      "r_source_commit": "4a136836dc7a59069829e63ed3f4a721685664f1",
+      "adaptation": "R 14.2 zero-total normalisation for scalar and batched nD moments and PM.matrix. Uses the vendored raw moment and matrix kernels.",
+      "verified_r_commit": "31291970b57cbc2e0791e0d504503111b54d0078"
     }
   ],
   "r_cache_summary": {
-    "nns_version": "14.0",
-    "shards": 149,
-    "entries": 3004,
-    "generation": "Pinned live R NNS 14.0 under R 4.5.0 (x86-64 Linux, reference BLAS/LAPACK) only; no Python-authored expected values."
+    "nns_version": "14.2",
+    "shards": 150,
+    "entries": 3119,
+    "generation": "R NNS 14.2. The cache refresh at b184171c supplies the base entries. R 4.5.0 at NNS 4a136836 supplies the new dominance cases. The pm142 shard was regenerated with R 4.5.0 at NNS 31291970."
   },
   "r_nmath_ports": [
     {

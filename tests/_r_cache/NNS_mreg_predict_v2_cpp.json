@@ -32,6 +32,6 @@
     ]
   },
   "label": "NNS_mreg_predict_v2_cpp",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }
