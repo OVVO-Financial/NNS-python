@@ -6,6 +6,7 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 3.0,
+      "NNS.reg.variables": "V1",
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 0.814285714285714,
       "Prediction.set": null,
@@ -87,6 +88,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 2.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "Prediction.set": null,
@@ -204,6 +210,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "Prediction.set": null,
@@ -743,6 +754,7 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 9.0,
+      "NNS.reg.variables": "V1",
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 0.842857142857143,
       "Prediction.set": null,
@@ -869,6 +881,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 2.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "Prediction.set": [
@@ -1064,6 +1081,7 @@
         "V3"
       ],
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V1",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 0.714285714285714,
       "Prediction.set": null,
@@ -1224,6 +1242,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 0.9,
       "Prediction.set": null,
@@ -1412,6 +1435,7 @@
       "NNS.dim.red.threshold": 0.866359712001401,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": NaN,
+      "NNS.reg.variables": null,
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": NaN,
       "Prediction.set": [
@@ -1553,6 +1577,7 @@
       "NNS.dim.red.threshold": 0.750162813417743,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": NaN,
+      "NNS.reg.variables": null,
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": NaN,
       "Prediction.set": null,
@@ -1737,6 +1762,7 @@
         "V2"
       ],
       "NNS.reg.n.best": NaN,
+      "NNS.reg.variables": null,
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": NaN,
       "Prediction.set": null,
@@ -1920,6 +1946,10 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 4.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 0.875,
       "Prediction.set": null,
@@ -2181,6 +2211,7 @@
       "NNS.dim.red.threshold": 0.750162813417743,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V2",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 1.0,
       "Prediction.set": null,
@@ -2560,6 +2591,7 @@
         "V3"
       ],
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V1",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 0.714285714285714,
       "Prediction.set": [
@@ -2693,6 +2725,7 @@
       "NNS.dim.red.threshold": 0.866359712001401,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V2",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 1.0,
       "Prediction.set": null,
@@ -2879,6 +2912,7 @@
         "V2"
       ],
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V3",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 0.7,
       "Prediction.set": null,
@@ -3021,6 +3055,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "Prediction.set": [
@@ -3156,6 +3195,7 @@
       "NNS.dim.red.threshold": 0.866359712001401,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": NaN,
+      "NNS.reg.variables": null,
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": NaN,
       "Prediction.set": null,
@@ -3278,6 +3318,7 @@
         "V2"
       ],
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V2",
       "OBJfn.dim.red": 0.916666666666667,
       "OBJfn.reg": 0.583333333333333,
       "Prediction.set": null,
@@ -3385,6 +3426,11 @@
       "NNS.dim.red.threshold": NaN,
       "NNS.dim.red.variables": null,
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": [
+        "V1",
+        "V2",
+        "V3"
+      ],
       "OBJfn.dim.red": NaN,
       "OBJfn.reg": 1.0,
       "Prediction.set": null,
@@ -3486,6 +3532,7 @@
       "NNS.dim.red.threshold": 0.866359712001401,
       "NNS.dim.red.variables": "V1",
       "NNS.reg.n.best": 1.0,
+      "NNS.reg.variables": "V2",
       "OBJfn.dim.red": 1.0,
       "OBJfn.reg": 1.0,
       "Prediction.set": [
@@ -3629,6 +3676,6 @@
     }
   },
   "label": "NNS.stack.numeric",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }

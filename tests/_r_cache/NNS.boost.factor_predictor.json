@@ -19,6 +19,6 @@
     }
   },
   "label": "NNS.boost.factor_predictor",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }

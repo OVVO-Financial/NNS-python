@@ -1,7 +1,7 @@
 {
   "r_repo": "OVVO-Financial/NNS",
-  "r_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e",
-  "r_version": "14.0",
+  "r_commit": "bd4d96c159c04844c0a55e988d5e78b94cee8070",
+  "r_version": "14.2",
   "r_src_tree_hash": "1c82fa36a4af3ce6359cc34b3d841afa6bdd1815",
   "core_repo": "OVVO-Financial/NNS-core",
   "core_commit": "a0d3b93b6ac451bd38e5e9375ef06e6d0d314b9d",
@@ -13,9 +13,9 @@
   "r_cache_path": "tests/_r_cache",
   "notes": "Behavioral oracle: the exact R14 archive and commit recorded above. The cumulative Python implementation through PR #189 is preserved under draft #192. Native R14 overlays are explicit and hashed separately; extern/NNS-core remains byte-for-byte at the recorded accepted vendor revision. The vendored tools/NNS snapshot, r_src_tree_hash, and tools/NNS_13.0.tar.gz retain their historical lineage and do not identify the live R14 behavioral oracle. Local verification results are recorded in docs/R14_LOCAL_PARITY_REPAIR.md; remote CI/release approval is separate. The R 14.0 update at 9c8bd21 (compiled speed paths; the same archive through de5d4fe) returns the same values as 7b07a837 on every cached input, so overlays ported from 7b07a837 keep that source and record the oracle they were verified against in verified_r_commit.",
   "r_source_archive": {
-    "filename": "NNS_14.0.tar.gz",
-    "sha256": "754dad65629b95bf3ddca9bf9018ef197f5c346dd12dcfb49e505835920bc5cb",
-    "repository_commit": "9c8bd21a77b377cb49d43fececc662d62b00a94e"
+    "filename": "NNS_14.2.tar.gz",
+    "sha256": "9dc6ca063e1fee2f4259bde7d3a2710cb8f31a47173d531815a309aacd4e2842",
+    "repository_commit": "bd4d96c159c04844c0a55e988d5e78b94cee8070"
   },
   "r14_native_overlays": [
     {
