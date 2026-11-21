@@ -592,24 +592,22 @@ def _group_reduce_sorted(
     noise_reduction: str,
     is_class: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Group values by key exactly as R's ``split(values, keys)`` does.
+    """Group values by exactly equal keys, as R 14.2's
+    ``split(values, match(keys, sort(unique(keys))))`` does.
 
-    R splits on ``as.character(keys)`` (15 significant digits), so keys that
-    agree to 15 digits share a group and the returned key is the string
-    round-trip of the original value. Replicated here for parity. Each group
-    is reduced with ``_reduce_value`` (via the exact vectorised ``_reduce_cells``).
+    The groups come in ascending key order, each keeps its values' original
+    order, and each is reduced with ``_reduce_value`` (via the exact vectorised
+    ``_reduce_cells``). R 14.0 split on ``as.character(keys)``, so keys were
+    rounded to 15 significant digits; R 14.2 matches the doubles themselves.
     """
     order = np.argsort(keys, kind="stable")
     keys_sorted = keys[order]
     values_sorted = np.asarray(values[order], dtype=np.float64)
-    # "+ 0.0": R prints -0 as "0", so -0.0 and 0.0 keys form one group.
-    key_strings = [f"{v + 0.0:.15g}" for v in keys_sorted]
-    if not key_strings:
+    if keys_sorted.size == 0:
         return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
-    labels = np.asarray(key_strings)
-    starts = np.flatnonzero(np.concatenate(([True], labels[1:] != labels[:-1])))
-    counts = np.diff(np.append(starts, labels.size))
-    out_keys = np.asarray([float(key_strings[i]) for i in starts], dtype=np.float64)
+    starts = np.flatnonzero(np.concatenate(([True], keys_sorted[1:] != keys_sorted[:-1])))
+    counts = np.diff(np.append(starts, keys_sorted.size))
+    out_keys = np.asarray(keys_sorted[starts], dtype=np.float64)
     reduced = _reduce_cells(values_sorted, starts, counts, noise_reduction, is_class)
     return out_keys, reduced
 
@@ -1035,11 +1033,8 @@ def _mreg_distances(
     """(m, n) distance matrix under the repaired metric.
 
     Accumulated one predictor column at a time in (m, n) buffers instead of
-    materialising (m, n, p) temporaries. The per-element arithmetic is
-    unchanged and the columns are summed sequentially in column order, which
-    is the order R's kernel uses and the order NumPy used on the former
-    broadcast tensor (its predictor axis had the largest stride, so the
-    reduction ran column by column), so results are bit-for-bit the same.
+    materialising (m, n, p) temporaries, in column order as R's kernel adds
+    them.
     """
     m, n = xtest.shape[0], rpm_x.shape[0]
     if dist == "FACTOR":
@@ -1054,11 +1049,12 @@ def _mreg_distances(
     if active.size == 0:
         return np.zeros((m, n), dtype=np.float64)
 
-    out = np.empty((m, n), dtype=np.float64)
-    buf = np.empty_like(out) if active.size > 1 else out
-    sq = np.empty_like(out) if dist == "NNS" else out
-    for a, j in enumerate(active):
-        z = out if a == 0 else buf
+    # R 14.2's kernel rounds each column's term to double and accumulates the
+    # terms in long double, as rowSums() does, rounding the sum once.
+    total = np.zeros((m, n), dtype=np.longdouble)
+    z = np.empty((m, n), dtype=np.float64)
+    sq = np.empty_like(z) if dist == "NNS" else z
+    for j in active.tolist():
         np.subtract(xtest[:, j, None], rpm_x[None, :, j], out=z)
         z /= ranges[j]
         if dist == "NNS":
@@ -1069,8 +1065,8 @@ def _mreg_distances(
             np.abs(z, out=z)
         else:
             np.multiply(z, z, out=z)
-        if a:
-            out += z
+        total += z
+    out = np.asarray(total, dtype=np.float64)
     if dist == "L2":
         np.sqrt(out, out=out)
     return out
@@ -1479,7 +1475,8 @@ def _mreg_default_nbest(x: NDArray[np.float64], y: NDArray[np.float64], rpm_rows
         dep = float("nan")
     if not math.isfinite(dep):
         dep = 0.5
-    k = max(1, math.floor((1.0 - dep) * math.sqrt(x.shape[0])))
+    # R 14.2: k counts regression points, so it scales with their number.
+    k = max(1, math.floor((1.0 - dep) * math.sqrt(rpm_rows)))
     return min(k, rpm_rows)
 
 

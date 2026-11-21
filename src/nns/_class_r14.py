@@ -212,7 +212,8 @@ def _class_base(
     elif order == "max" or categorical:
         k = 1
     else:
-        k = max(1, math.floor((1.0 - r_mean(strength)) * math.sqrt(n)))
+        # R 14.2: k scales with the number of cells, not of observations.
+        k = max(1, math.floor((1.0 - r_mean(strength)) * math.sqrt(centres.shape[0])))
     k = max(1, min(k, centres.shape[0]))
 
     def predict(query: F | None) -> F | None:
