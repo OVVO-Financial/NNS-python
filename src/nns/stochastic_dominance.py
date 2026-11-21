@@ -96,11 +96,16 @@ def fsd(
     in ``lpm_ratio`` and the patched R. ``plot=True`` also draws R's FSD figure
     (``nns.plotting.plot_fsd``); R's default is ``plot = TRUE``.
 
-    As in R, missing values raise, and so do infinite ones (R evaluates the
-    plotted ``LPM.ratio`` curves, which reject them, before the verdict).
+    As in R, missing values raise. Without a plot the verdict is R 14.2's
+    ``NNS.FSD.uni`` both ways, so the discrete test accepts infinite values and
+    the continuous one rejects them; with a plot R first evaluates the plotted
+    ``LPM.ratio`` curves, which reject them.
     """
     discrete = _checked_fsd_type(type) == "discrete"
-    x_values, y_values = _sd_pair(x, y, finite=True)
+    if plot:
+        x_values, y_values = _sd_pair(x, y, finite=True)
+    else:
+        x_values, y_values = _sd_pair(x, y, finite=False, allow_inf=discrete)
     result = _sd_result(x_values, y_values, 1, discrete=discrete)
     if plot:
         from nns.plotting.dominance import plot_fsd
