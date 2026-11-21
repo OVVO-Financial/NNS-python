@@ -122,6 +122,12 @@ def _dep_p_value(
     deps = np.array([result["Dependence"] for result in null], dtype=np.float64)
     cor = float(observed["Correlation"])
     dep = float(observed["Dependence"])
+    # R 14.2: a shuffle that reproduces the observed joint table scores the
+    # observed values (Correlation reversed when it reflects a binary table).
+    same = _perm_matches(x, y, permutations, asym)
+    matched = same != 0
+    cors[matched] = same[matched] * cor
+    deps[matched] = dep
     tails = min(1 + int(np.count_nonzero(cors <= cor)), 1 + int(np.count_nonzero(cors >= cor)))
     return {
         "Correlation": cor,
@@ -136,6 +142,49 @@ def _dep_p_value(
             [float(lpm_var(0.025, 0.0, deps)), float(upm_var(0.025, 0.0, deps))]
         ),
     }
+
+
+def _perm_matches(
+    x: NDArray[np.float64], y: NDArray[np.float64], perms: list[Any], asym: bool
+) -> NDArray[np.int64]:
+    """R 14.2's ``.nns_dep_perm_matches``: 1 where a shuffle of ``y`` gives the
+    observed joint table, -1 where it gives the reflected table of a balanced
+    binary margin, 0 otherwise."""
+    count = len(perms)
+    if np.all(x == x[0]) or np.all(y == y[0]):
+        return np.ones(count, dtype=np.int64)
+    n = x.size
+    if np.unique(x).size == 2 and np.unique(y).size == 2:
+        high_x = x == np.max(x)
+        high_y = y == np.max(y)
+        overlap = int(np.count_nonzero(high_x & high_y))
+        draws = np.array([int(np.count_nonzero(high_y[p] & high_x)) for p in perms])
+        reflected = (
+            (int(np.count_nonzero(high_x)) * 2 == n)
+            & (draws == int(np.count_nonzero(high_y)) - overlap)
+        ) | (
+            (int(np.count_nonzero(high_y)) * 2 == n)
+            & (draws == int(np.count_nonzero(high_x)) - overlap)
+        )
+        return np.where(draws == overlap, 1, np.where(reflected, -1, 0)).astype(np.int64)
+    # order(a, b) is a stable sort on a, then b.
+    transposed = (
+        x[np.lexsort((x, y))]
+        if not asym and np.array_equal(np.sort(x), np.sort(y))
+        else None
+    )
+    if np.unique(x).size == n and transposed is None:
+        return np.zeros(count, dtype=np.int64)
+    observed = y[np.lexsort((y, x))]
+    out = np.zeros(count, dtype=np.int64)
+    for k, p in enumerate(perms):
+        draw = y[p]
+        key = draw[np.lexsort((draw, x))]
+        if np.array_equal(key, observed) or (
+            transposed is not None and np.array_equal(key, transposed)
+        ):
+            out[k] = 1
+    return out
 
 
 def _dep_matrix(x: Any, asym: bool) -> dict[str, Any]:
@@ -162,8 +211,15 @@ def _dep_matrix(x: Any, asym: bool) -> dict[str, Any]:
             else:
                 rhos[i, j] = rhos[j, i] = upper["Correlation"]
                 deps[i, j] = deps[j, i] = upper["Dependence"]
-    np.fill_diagonal(rhos, 1.0)
-    np.fill_diagonal(deps, 1.0)
+    if asym:
+        # R 14.2 fills the directional diagonal with each column's own measure.
+        for i in range(n_vars):
+            own = nns_dep(values[:, i], values[:, i], asym=True)
+            rhos[i, i] = own["Correlation"]
+            deps[i, i] = own["Dependence"]
+    else:
+        np.fill_diagonal(rhos, 1.0)
+        np.fill_diagonal(deps, 1.0)
     return {
         "Correlation": _labelled_matrix(rhos, labels),
         "Dependence": _labelled_matrix(deps, labels),
