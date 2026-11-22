@@ -8,8 +8,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._caus_r14 import _rho, index, predictor_weight
-from nns._helpers import _as_matrix, _as_pair
-from nns.dependence import _column_labels, _is_constant, _labelled_matrix
+from nns._helpers import _as_matrix
+from nns._inputs import causation_pair
+from nns.dependence import _column_labels, _labelled_matrix
 from nns.seasonality import nns_seas
 
 CausationResult = dict[str, float]
@@ -84,7 +85,7 @@ def _caus_p_value(
     from nns.var import lpm_var, upm_var
 
     rng = r_rng(seed)
-    x_values, y_values = _as_pair(x, y)
+    x_values, y_values = causation_pair(x, y)
     observed = float(cp["C(x--->y)"] - cp["C(y--->x)"])
     # One numeric lag for the observed statistic and every permutation (#96).
     if isinstance(tau, str) and tau == "ts":
@@ -133,16 +134,19 @@ def _caus_p_value(
 
 
 def _shift_offsets(n: int, tau: int) -> list[int]:
-    """R ``.nns_caus_shift_offsets``: shifts at least max(tau + 1, n / 10) from alignment."""
+    """R ``.nns_caus_shift_offsets``: shifts at least max(tau + 1, n / 10) from
+    alignment. R 14.2 admits none when the series is too short for them."""
     m = max(int(tau) + 1, math.ceil(n / 10))
     if n - 2 * m >= 0:
         return list(range(m, n - m + 1))
-    return list(range(1, n))
+    return []
 
 
 def _shift_draw(n: int, tau: int, nperm: int, rng: Any) -> list[int]:
     """R ``.nns_caus_shift_draw``: distinct offsets, ``sample.int``-drawn when too many."""
     offsets = _shift_offsets(n, tau)
+    if not offsets:
+        raise ValueError(f"No admissible circular shift for n = {n} and tau = {tau}.")
     if len(offsets) <= nperm:
         return offsets
     return [offsets[int(i) - 1] for i in rng.sample_int(len(offsets), nperm)]
@@ -155,8 +159,8 @@ def _shift(values: NDArray[np.float64], k: int) -> NDArray[np.float64]:
 
 def _caus_core(x: Any, y: Any, tau: int | str) -> CausationResult:
     """R ``NNS.caus_core`` for a pair of variables."""
-    x_values, y_values = _as_pair(x, y)
-    if _is_constant(x_values) or _is_constant(y_values):
+    x_values, y_values = causation_pair(x, y)
+    if np.unique(x_values).size < 2 or np.unique(y_values).size < 2:
         raise ValueError(
             "x and y must not be constant: causation is undefined for a variable with no variation."
         )
@@ -313,7 +317,7 @@ def _tau_value(tau: object, n: int | None = None) -> int:
     """Validate a non-"ts" tau like R NNS.caus: "cs" or an integer in [0, n - 3]."""
     if isinstance(tau, str) and tau == "cs":
         return 0
-    message = 'tau must be "cs", "ts" or a single non-negative integer smaller than len(x) - 2.'
+    message = 'tau must be "cs", "ts" or a single non-negative integer smaller than length(x) - 2.'
     if isinstance(tau, bool) or not isinstance(tau, numbers.Real):
         raise ValueError(message)
     tau_float = float(tau)

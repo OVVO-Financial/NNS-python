@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import math
+from datetime import date
+from decimal import Decimal
+from numbers import Real
 
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _is_factor, _reject_factor
+from nns._inputs import native_vector
 from nns._native import native_fn
 from nns._rmean import r_mean
 
@@ -28,6 +33,8 @@ def lpm(
     ``target`` has length 1 or ``len(x)`` and the result is the single value
     ``mean(max(target_i - x_i, 0) ** degree)`` (degree 0 counts ``x_i <= target_i``).
     """
+    _reject_factor(target, "`target`")
+    _reject_factor(x, "`variable`")
     if excess_ret:
         return _excess_moment(degree, target, x, lower=True)
     return _moment(degree, target, x, lower=True)
@@ -47,6 +54,8 @@ def upm(
     With ``excess_ret=True`` the target is element-wise (length 1 or ``len(x)``) and
     the result is ``mean(max(x_i - target_i, 0) ** degree)``.
     """
+    _reject_factor(target, "`target`")
+    _reject_factor(x, "`variable`")
     if excess_ret:
         return _excess_moment(degree, target, x, lower=False)
     return _moment(degree, target, x, lower=False)
@@ -64,14 +73,12 @@ def _excess_moment(
     At degree 0 the lower moment counts ties (``x_i <= target_i``) as the non-excess
     path does, so ``LPM0 + UPM0 = 1``.
     """
-    values = _as_1d_values(x)
+    values = _as_1d_values(x, "variable")
     targets = _as_targets(target, values)
-    degree = _as_degree(degree)
     _require_finite(targets, "target")
+    degree = _as_degree(degree)
     if targets.size not in (1, values.size):
-        raise ValueError(
-            "When excess_ret=True, target must be length 1 or same length as x."
-        )
+        raise ValueError("When excess_ret=True, target must be length 1 or same length as x.")
     diff = targets - values if lower else values - targets
     # R's C++ excess path: one term per element (degree 0 counts ties as
     # lower), then Rcpp's mean(), which is R's two-pass long-double mean.
@@ -111,11 +118,10 @@ def _moment(
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
+    values = _as_1d_values(x, "variable")
     targets = _as_targets(target, values)
+    _require_finite(targets, "target")
     degree = _as_degree(degree)
-    if not np.all(np.isfinite(targets)):
-        raise ValueError("`target` must be finite.")
 
     native = native_fn("lpm" if lower else "upm")
     if native is not None and targets.size > 0 and _native_safe(values, targets):
@@ -260,10 +266,12 @@ def _ratio(
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
-    values = _as_1d_values(x)
-    targets = _as_targets(target, values)
     degree = _as_degree(degree)
-    # R's LPM.ratio/UPM.ratio reject a non-finite target as LPM() does.
+    # R 14.2 .nns_native_sample(variable, "variable").
+    values = _as_1d_array(native_vector(x, "variable"))
+    _check_numeric_target(target)
+    targets = _as_targets(target, values)
+    _require_finite(values, "variable")
     _require_finite(targets, "target")
 
     native = native_fn("lpm_ratio_v" if lower else "upm_ratio_v")
@@ -278,10 +286,10 @@ def _ratio(
         return _result_for_target(ratio, target)
 
     if degree == 0:
-        return _moment(degree, target, x, lower=lower)
+        return _moment(degree, target, values, lower=lower)
 
-    lower_moment = np.asarray(lpm(degree, target, x))
-    upper_moment = np.asarray(upm(degree, target, x))
+    lower_moment = np.asarray(lpm(degree, target, values))
+    upper_moment = np.asarray(upm(degree, target, values))
     numerator = lower_moment if lower else upper_moment
     with np.errstate(invalid="ignore", divide="ignore"):
         ratio = np.asarray(numerator / (lower_moment + upper_moment)).reshape(-1)
@@ -323,26 +331,61 @@ def _native_safe(
     return bool(np.all(np.isfinite(values)) and np.all(np.isfinite(targets)))
 
 
-def _as_1d_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
+def _as_1d_array(x: NDArray[np.float64]) -> NDArray[np.float64]:
     values = np.asarray(x, dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be 1D.")
     if values.size == 0:
         raise ValueError("x must be non-empty.")
-    if not np.all(np.isfinite(values)):
-        # Matches R's LPM/UPM ("`variable` must be finite"); NaN would otherwise be
-        # counted in n but in neither tail, so degree-0 moments stop summing to 1.
-        raise ValueError("x must contain only finite values.")
+    return values
+
+
+def _as_1d_values(x: NDArray[np.float64], name: str = "x") -> NDArray[np.float64]:
+    values = _as_1d_array(x)
+    _require_finite(values, name)
     return values
 
 
 def _require_finite(values: NDArray[np.float64], name: str) -> None:
     if not np.all(np.isfinite(values)):
-        raise ValueError(f"{name} must contain only finite values.")
+        raise ValueError(f"`{name}` must be finite.")
 
 
 def _is_scalar(target: object) -> bool:
     return target is None or np.asarray(target).ndim == 0
+
+
+def _check_numeric_target(target: object) -> None:
+    if target is None:
+        return
+    if not _is_factor(target) and not hasattr(target, "columns"):
+        values = np.asarray(target)
+        if values.dtype.kind in "biufM" or (
+            values.dtype.kind == "O"
+            and all(
+                v is None or isinstance(v, (Real, Decimal, np.bool_, date, np.datetime64))
+                for v in values.flat
+            )
+        ):
+            return
+    raise ValueError("`target` must be numeric or NULL.")
+
+
+def _target_doubles(target: object) -> NDArray[np.float64]:
+    values = np.asarray(target)
+    if values.dtype.kind == "M":
+        return np.where(np.isnat(values), np.nan, values.astype(np.float64))
+    if values.dtype.kind == "O" and any(isinstance(v, (date, np.datetime64)) for v in values.flat):
+        counts = []
+        for v in values.flat:
+            if isinstance(v, date):
+                # Timestamp.to_datetime64() preserves the timestamp's resolution.
+                v = v.to_datetime64() if hasattr(v, "to_datetime64") else np.datetime64(v)
+            if isinstance(v, np.datetime64):
+                v = np.nan if np.isnat(v) else v.astype(np.float64)
+            counts.append(v)
+        return np.asarray(counts, dtype=np.float64).reshape(values.shape)
+    return np.asarray(values, dtype=np.float64)
 
 
 def _as_targets(
@@ -351,7 +394,10 @@ def _as_targets(
 ) -> NDArray[np.float64]:
     if target is None:
         return np.array([r_mean(values)], dtype=np.float64)
-    targets = np.asarray(target, dtype=np.float64)
+    try:
+        targets = _target_doubles(target)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("`target` must be finite.") from exc
     if targets.ndim == 0:
         targets = targets.reshape(1)
     if targets.ndim != 1:

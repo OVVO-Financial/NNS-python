@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._inputs import seasonal_series
 from nns._native import native_fn
 from nns._rmean import r_cumsum, r_mean, r_sum
 from nns._rrng import RRNG
@@ -197,12 +198,17 @@ def r14_seasonality(
     rng: RRNG | None = None,
 ) -> dict[str, object]:
     """R14 NNS.seas public result, with R's permutation p-values on request."""
-    x = _as_float_series(values, dispersion, detrend)
-    n = int(x.size)
+    # R 14.2 .nns_seasonal_series(variable, "variable"), then the argument checks,
+    # then the compiled scan's empty-series check.
+    values = seasonal_series(values, "variable")
     if max_period is not None and (max_period < 1 or not np.isfinite(max_period)):
         raise ValueError("max.period must be NULL or a single number >= 1.")
     if p_value and (not np.isfinite(nperm) or nperm < 1):
         raise ValueError("nperm must be a single number >= 1.")
+    if values.size == 0:
+        raise ValueError("Variable must be numeric and non-empty")
+    x = _as_float_series(values, dispersion, detrend)
+    n = int(x.size)
     mp = None if max_period is None else int(max_period)
 
     def result(periods: IntArray, scores: F, cov: float) -> dict[str, object]:

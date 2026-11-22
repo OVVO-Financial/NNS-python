@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import no_factor
 from nns._native import native_fn as native_fn
 from nns.dependence import (
     _gravity_python,
@@ -24,6 +25,7 @@ def nns_rescale(
     type: str = "Terminal",
 ) -> NDArray[np.float64]:
     """Rescale a vector using R's NNS.rescale conventions."""
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     method_l = method.lower()
     type_l = type.lower()
@@ -32,12 +34,18 @@ def nns_rescale(
         finite = values[np.isfinite(values)]
         if finite.size == 0 or float(np.min(finite)) == float(np.max(finite)):
             warnings.warn("All x identical: returning midpoint values", UserWarning, stacklevel=2)
-            return np.full(values.shape, (a + b) / 2.0, dtype=np.float64)
+            # R 14.2 keeps a missing value missing.
+            return np.where(np.isnan(values), values, (a + b) / 2.0)
         xmin = float(np.min(finite))
         xmax = float(np.max(finite))
         return a + (b - a) * ((values - xmin) / (xmax - xmin))
 
     if method_l == "riskneutral":
+        # R 14.2 accepts any leading part of "terminal" or "discounted".
+        terminal = "terminal".startswith(type_l)
+        discounted = "discounted".startswith(type_l)
+        if terminal == discounted:
+            raise ValueError("Invalid type: use 'Terminal' or 'Discounted'")
         if time_to_maturity is None:
             raise ValueError("time_to_maturity must be provided for riskneutral method.")
         if not a > 0.0:
@@ -51,7 +59,7 @@ def nns_rescale(
         )
         if not np.isfinite(mean_x) or mean_x <= 0.0:
             raise ValueError("Mean(x) must be positive/finite for riskneutral scaling.")
-        target = a if type_l == "discounted" else a * math.exp(b * time_to_maturity)
+        target = a if discounted else a * math.exp(b * time_to_maturity)
         theta = math.log(target / mean_x)
         return values * math.exp(theta)
 
@@ -74,6 +82,7 @@ def nns_mode(
     while ``nns_mode`` defaults to ``multi=False`` (one value). Pass
     ``multi=True`` for R's default output. Explicit ``multi`` matches R.
     """
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     finite = values[np.isfinite(values)]
     n = finite.size
@@ -90,6 +99,7 @@ def nns_mode(
 
 def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     """Alternative central tendency matching R's NNS.gravity."""
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     finite = np.sort(values[np.isfinite(values)])
     n = finite.size
@@ -125,7 +135,7 @@ def _discrete_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float
 
 
 def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.float64]:
-    """R 14.0 NNS_mode_cpp: discrete-valued peaks and observed-bin centers."""
+    """R 14.2 NNS_mode_cpp: discrete-valued peaks and observed-bin centers."""
     n = values.size
     if n <= 3:
         return np.array([_small_median(values)], dtype=np.float64)
@@ -186,39 +196,40 @@ def _continuous_mode(values: NDArray[np.float64], multi: bool) -> NDArray[np.flo
         return float(np.cumsum(vals)[-1] / np.longdouble(e - a))
 
     cs = _smooth_counts_tri7(counts)
-    candidates: list[int] = []
-    if lz >= 7:
-        max_height = float(np.max(cs))
-        for i in range(lz):
-            height = float(cs[i])
-            if height <= 0.0:
-                continue
-            if (i < 3 or i > lz - 4) and height < max_height:
-                continue
-            left_max = max((cs[i - d] for d in (1, 2, 3) if i - d >= 0), default=-math.inf)
-            right_max = max((cs[i + d] for d in (1, 2, 3) if i + d < lz), default=-math.inf)
-            if not (height > left_max and height > right_max):
-                continue
-            left = cs[i - 1] if i > 0 else cs[i + 1]
-            right = cs[i + 1] if i + 1 < lz else cs[i - 1]
-            if left - 2.0 * height + right < 0.0:
-                candidates.append(i)
+    # R 14.2's peaks: above both neighbours, the tallest bin within three bins
+    # and, within three bins of either end, the tallest bin of the histogram.
+    # An equally tall bin in the window disqualifies a peak unless it is a
+    # peak too.
+    max_height = float(np.max(cs)) if lz else 0.0
 
-    if candidates:
-        # Stable highest-first ordering, suppress peaks within three bins.
-        ranked = sorted(candidates, key=lambda i: -cs[i])
-        kept: list[int] = []
-        for i in ranked:
-            if all(abs(i - j) > 3 for j in kept):
-                kept.append(i)
+    def is_peak(i: int) -> bool:
+        height = float(cs[i])
+        if (i > 0 and cs[i - 1] >= height) or (i + 1 < lz and cs[i + 1] >= height):
+            return False
+        if (i < 3 or i > lz - 4) and height < max_height:
+            return False
+        return bool(np.max(cs[max(0, i - 3) : min(lz - 1, i + 3) + 1]) == height)
+
+    peaks: list[int] = []
+    if lz >= 7:
+        for i in range(lz):
+            if not is_peak(i):
+                continue
+            tied = [
+                j for j in range(max(0, i - 3), min(lz - 1, i + 3) + 1) if j != i and cs[j] == cs[i]
+            ]
+            if not tied or any(is_peak(j) for j in tied):
+                peaks.append(i)
+
+    if peaks:
         centers = np.array(
-            [observed_center(max(0, i - 3), min(lz - 1, i + 3)) for i in kept],
+            [observed_center(max(0, i - 3), min(lz - 1, i + 3)) for i in peaks],
             dtype=np.float64,
         )
         if multi:
-            return np.sort(centers)
-        highest = max(cs[i] for i in kept)
-        top = centers[np.array([cs[i] == highest for i in kept])]
+            return np.unique(centers)
+        highest = max(cs[i] for i in peaks)
+        top = centers[np.array([cs[i] == highest for i in peaks])]
         gravity = nns_gravity(ordered)
         return np.asarray([sorted(top, key=lambda v: (abs(v - gravity), v))[0]], dtype=np.float64)
 
@@ -292,19 +303,6 @@ def _smooth_counts_tri7(counts: NDArray[np.int64]) -> NDArray[np.float64]:
     weights = np.array([1, 2, 3, 4, 3, 2, 1], dtype=np.int64)
     acc = np.sum(counts[index].astype(np.int64) * weights[None, :], axis=1)
     return np.asarray(acc, dtype=np.float64) / 16.0
-
-
-def _peak_indices(smoothed: NDArray[np.float64]) -> NDArray[np.int64]:
-    n = smoothed.size
-    if n < 7:
-        return np.zeros(0, dtype=np.int64)
-    i = np.arange(3, n - 3)
-    center = smoothed[i]
-    left = np.maximum(np.maximum(smoothed[i - 1], smoothed[i - 2]), smoothed[i - 3])
-    right = np.maximum(np.maximum(smoothed[i + 1], smoothed[i + 2]), smoothed[i + 3])
-    curvature = smoothed[i - 1] - 2.0 * center + smoothed[i + 1]
-    peak = (center > 0.0) & (center > left) & (center > right) & (curvature < 0.0)
-    return np.asarray(i[peak], dtype=np.int64)
 
 
 def _nearest_int_half_up(value: float) -> float:

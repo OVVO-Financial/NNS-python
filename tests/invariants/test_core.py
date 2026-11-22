@@ -169,9 +169,9 @@ def test_partial_moment_ratios_reject_non_finite_targets(function: object) -> No
     # Patched R: LPM.ratio/UPM.ratio stop on a non-finite target or variable.
     x = np.array([1.0, 2.0, 3.0])
     for target in (np.nan, np.array([1.0, np.inf])):
-        with pytest.raises(ValueError, match="target must contain only finite values"):
+        with pytest.raises(ValueError, match="`target` must be finite"):
             function(1, target, x)  # type: ignore[operator]
-    with pytest.raises(ValueError, match="x must contain only finite values"):
+    with pytest.raises(ValueError, match="`variable` must be finite"):
         function(0, 2.0, np.array([1.0, np.nan]))  # type: ignore[operator]
 
 

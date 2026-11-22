@@ -178,8 +178,9 @@ def test_dy_dx_numeric_does_not_depend_on_row_order() -> None:
 
 @pytest.mark.parity
 def test_dy_dx_numeric_boundary_eval_points_match_r() -> None:
-    # At min(x) and max(x) one run is 0: R uses the one-sided slope and the
-    # second derivative is NaN.
+    # At min(x) and max(x) one run is 0: R uses the one-sided slope, and with at
+    # least three distinct x values R 14.2's second difference uses the midpoint
+    # of the one-sided interval, so the second derivative is finite there too.
     rng = np.random.default_rng(7)
     x = np.sort(rng.uniform(0.0, 2.0 * np.pi, 120))
     y = np.cos(x)
@@ -187,7 +188,7 @@ def test_dy_dx_numeric_boundary_eval_points_match_r() -> None:
     expected = _dict_array(dy_dx_numeric(x.tolist(), y.tolist(), eval_point))
     actual = dy_dx(x, y, eval_point=np.asarray(eval_point, dtype=np.float64))
     assert isinstance(actual, dict)
-    assert np.isnan(actual["second.derivative"][[0, 2]]).all()
+    assert np.isfinite(actual["second.derivative"]).all()
     for key in actual:
         np.testing.assert_allclose(actual[key], expected[key], atol=COMPOUND, equal_nan=True)
 

@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 _CACHE_DIR = Path(__file__).with_name("_r_cache")
 _LOCK_PATH = Path(__file__).with_name("_r_cache.lock")
 _SCHEMA_VERSION = 2
-_NNS_VERSION = '14.0'
+_NNS_VERSION = '14.2'
 _KEY_SEPARATOR = "|"
 JsonValue: TypeAlias = str | float | list["JsonValue"] | dict[str, "JsonValue"] | None
 RValue: TypeAlias = (
@@ -1598,7 +1598,7 @@ def _call_r_meboot_diagnostics(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
-        "f <- get('FUN', envir = environment(NNS::NNS.meboot))\n"
+        "f <- NNS:::.nns_meboot_draw\n"
         "set.seed(as.integer(args$seed))\n"
         "nullify <- function(v) if (length(v) == 0) NULL else as.numeric(v)\n"
         "result <- f("
@@ -1632,7 +1632,7 @@ def _call_r_meboot_stat_summary(args: dict[str, Any]) -> RValue:
         "library(NNS)\n"
         "args <- jsonlite::fromJSON(paste(readLines('stdin'), collapse = '\\n'), "
         "simplifyVector = FALSE)\n"
-        "f <- get('FUN', envir = environment(NNS::NNS.meboot))\n"
+        "f <- NNS:::.nns_meboot_draw\n"
         "set.seed(as.integer(args$seed))\n"
         "result <- f(x = as.numeric(unlist(args$x)), reps = as.integer(args$reps), "
         "rho = as.numeric(args$rho), drift = !isFALSE(args$drift), "

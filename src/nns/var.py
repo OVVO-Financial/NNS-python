@@ -15,7 +15,7 @@ from typing import Any, NotRequired, TypedDict, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _warn_unsupported
+from nns._helpers import _has_factor_column, _reject_factor, _warn_unsupported
 from nns._native import honours_ncores
 from nns._rmean import (
     r_cor_matrix,
@@ -335,9 +335,9 @@ def _var_lags(
 ) -> _LagSpec:
     """Expand ``tau`` to one lag list per variable, mirroring R ``NNS.VAR``.
 
-    ``modulo`` is each variable's ``nns_seas`` modulo, R's ``min(tau_i)``: the
-    smallest lag of the variable's own lag vector for a list ``tau``, and the
-    smallest lag of ``tau`` itself otherwise.
+    ``modulo`` is each variable's ``nns_seas`` modulo, R's ``min(tau_i)`` with
+    ``tau_i = tau[[min(i, length(tau))]]``: the smallest lag of the variable's own
+    lag vector for a list ``tau``, and the variable's own lag for a vector.
     """
     if _is_lag_scalar(tau):
         lag = _var_lag_values(tau)[0]
@@ -361,7 +361,8 @@ def _var_lags(
             _invalid_tau()
         return {
             "lags": [[value] for value in values],
-            "modulo": [min(values)] * n_vars,
+            # R 14.2 reads tau[[i]] for variable i, a vector included.
+            "modulo": list(values),
             "max": max(values),
         }
 
@@ -1030,6 +1031,9 @@ def _partial_moment_var(
     *,
     lower: bool,
 ) -> float | NDArray[np.float64]:
+    _reject_factor(x, "`x`")
+    if _has_factor_column(x):
+        raise ValueError("`x` must be numeric, not a factor.")
     values = _finite_values(x)
     requested = np.asarray(percentile, dtype=np.float64)
     pcts = np.clip(requested.reshape(-1), 0.0, 1.0)
@@ -1237,6 +1241,9 @@ _VAR_RATIO_TOL = float(np.finfo(float).eps ** 0.75)
 
 def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
     values = np.asarray(x, dtype=np.float64)
+    if np.isnan(values).all():
+        # R 14.2 .nns_var_sample: missing values are dropped before this check.
+        raise ValueError("x must contain at least one non-NA numeric value.")
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         raise ValueError("x must contain at least one finite value.")

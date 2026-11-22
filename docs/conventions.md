@@ -60,6 +60,33 @@ NNS Python raises `ValueError`.
 
 Rationale: empty arrays in Python are upstream bugs, and NumPy convention is to warn or fail on empty reductions rather than silently produce a meaningful statistic.
 
+## Input Validation
+
+R NNS 14.2 checks every data argument through one input layer (`R/inputs.R`),
+and NNS Python follows it (`nns._inputs`): the same inputs are accepted and the
+same `ValueError` messages raised, in R's order. Python inputs stand for R types:
+a pandas `Categorical` (or categorical `Series`) is a factor, a `DataFrame` a
+data.frame, a 2-D array a matrix, a string array a character vector and a
+boolean array a logical vector. So, as in R, a factor is rejected with
+``"`x` must be numeric, not a factor."``, a character or logical vector passed to
+a partial-moment ratio or co-moment with ``"x should be numeric vector, or data
+table"``, and `nns_seas`, `nns_arma`, `nns_meboot`, `nns_mc`, `nns_ss`,
+`nns_dep`, `nns_part`, `nns_causation`, `nns_copula`, `nns_reg`, `dy_dx` and
+`nns_anova` give R's messages for missing, infinite, mis-shaped and too-short
+inputs. A one-column `DataFrame` or 2-D array is read as its column.
+
+`scripts/live_parity/fz_inputs.py` checks this against R. Beyond the empty-input
+rule above, the differences it reports as documented are:
+
+- A matrix with several columns is rejected (R flattens it into one vector).
+- A one-column `DataFrame` is accepted where R fails converting the data frame
+  (`"'list' object cannot be coerced to type 'double'"`).
+- Infinite values: R's `LPM.VaR`/`UPM.VaR` and `NNS.ANOVA` stop with internal
+  errors (`"missing value where TRUE/FALSE needed"`), and R 14.2's `NNS.MC`
+  crashes the R session; NNS Python computes or raises its own message.
+- `nns_copula(x, y)` takes the two variables separately, so R's recycling of
+  unequal columns in `NNS.copula(cbind(x, y))` does not arise.
+
 ## Co-Moment Lengths
 
 `co_lpm`, `co_upm`, `d_lpm` and `d_upm` raise `ValueError` unless `x` and `y` are
@@ -69,12 +96,11 @@ check the same rules.
 
 ## PM Matrix Target Defaults
 
-R `PM.matrix` uses column means when `target` is `NULL` or any non-numeric value.
-NNS Python accepts `None` and `"mean"` for this behavior, with Rcpp's `colMeans`
-arithmetic (a row-by-row double sum divided by the row count). NNS Python also broadcasts a
-scalar numeric target across all variables; R requires callers to pass an
-explicit vector such as `rep(0, ncol(variable))`. Target vectors whose length
-does not match the number of variables raise `ValueError`.
+Use `None`, `"mean"` or `"means"` for column means. Python and R sum each column
+row by row in double precision and divide by the row count. Numeric vectors and
+matrices supply one target per variable column. R reads matrix targets in column
+order, and Python does the same. Python also broadcasts a numeric scalar across
+columns. In R, pass an explicit vector such as `rep(0, ncol(variable))`.
 
 ## Mode Default Divergence From R
 
@@ -94,6 +120,8 @@ multiplication, fractional degrees by libm `pow`, double sums accumulated
 observation by observation and scaled by `1 / n`. `pm_matrix` fills the upper
 triangle and mirrors it (CUPM, CLPM and the covariance plainly, DUPM and DLPM
 crossed), normalising each cell by `CUPM + DUPM + DLPM + CLPM` in that order.
+A normalised n-dimensional moment or matrix cell with an exactly zero total takes
+its degree-zero value. In a joint survival calculation, ties are excluded.
 `nns_moments` is R 14's `NNS.moments`: deviations from R's `mean()`,
 `mean(z^3)` and `mean(z^4)` with R's `^`, and the variance raised by `^1.5`.
 
@@ -139,10 +167,9 @@ unrecognised `type` warns (and `fsd` then runs its continuous branch, while
 returns the column names), and a vector is one column, as with R's `as.matrix`.
 Inputs are checked in R's order and with R's messages: missing values raise
 "You have some missing values, please address.", empty samples "Each sample
-needs at least one observation.". Like R, the `.uni` tests, `sd_efficient_set`
-and `nns_sd_cluster` accept infinite values and compare them as R's C++ test
-does, while `fsd`, `ssd` and `tsd` reject them (R first evaluates the plotted
-partial-moment curves, which check `x` and then the threshold grid).
+needs at least one observation.". Only discrete first-order comparisons accept infinite values in
+the `.uni` tests, efficient sets and clustering. The top-level `fsd`, `ssd` and
+`tsd` check the partial-moment curves first and reject infinite values.
 `nns_sd_cluster` validates its data in the first efficient-set search, as R
 does, so a matrix with no more than `min_cluster` columns comes back as one
 cluster unchecked, and `min_cluster` is compared as a real number (`1.5` merges
@@ -657,9 +684,8 @@ last bit: each column is scaled by `1 / range` (the range including the
 target), the distance accumulates `diff^2 + |diff|` column by column, and the
 weights are R's nmath densities summed in R's order.
 
-* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows in the order
-  libstdc++'s `std::partial_sort` (or `std::sort` when every row is used)
-  leaves them, which decides where tied distances fall, then the eight weights
+* `nns_distance` is `NNS_distance_cpp`: the `k` nearest rows, equal distances
+  ordered by RPM row as R 14.2's kernels order them, then the eight weights
   (uniform, `dt`, inverse distance, `dexp` with scale `k`, reversed
   `|dlnorm(rank, 0, sd(1:k), log = TRUE)|`, `rank^-2`, `dnorm` and an RBF),
   normalised and combined.

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import cmath
 import math
+import re
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -70,16 +71,24 @@ def test_nns_diff_matches_r_exactly(
     np.testing.assert_array_equal(values, np.asarray(expected, dtype=np.float64))
 
 
-def test_dy_dx_any_character_eval_point_is_the_overall_gradient() -> None:
+def test_dy_dx_only_overall_names_the_overall_gradient() -> None:
+    # R 14.0 read any character eval.point as "overall"; R 14.2 accepts only
+    # "overall" and rejects other strings.
     rng = np.random.default_rng(51)
     x = np.sort(rng.uniform(-3, 3, 120))
     y = np.sin(2 * x)
     expected = nns_frame_call(
-        "dydx14.character", "c(dy.dx(x, y, eval.point = 'obs'), dy.dx(x, y, 'overall'))",
-        {"x": _num(x), "y": _num(y)}, exact=True,
+        "dydx142.character",
+        "list(obs = tryCatch(dy.dx(x, y, eval.point = 'obs'), "
+        "error = function(e) conditionMessage(e)), overall = dy.dx(x, y, 'overall'))",
+        {"x": _num(x), "y": _num(y)},
+        exact=True,
     )
-    actual = [nns.dy_dx(x, y, eval_point="obs"), nns.dy_dx(x, y, eval_point="overall")]
-    np.testing.assert_array_equal(actual, np.asarray(expected, dtype=np.float64))
+    message = str(np.asarray(expected["obs"]).ravel()[0])
+    assert message == "eval.point must be numeric point(s) or 'overall'"
+    with pytest.raises(ValueError, match=re.escape(message)):
+        nns.dy_dx(x, y, eval_point="obs")
+    assert nns.dy_dx(x, y, eval_point="overall") == float(np.asarray(expected["overall"]))
 
 
 def test_dy_dx_two_valued_response_is_a_regression_as_in_r() -> None:

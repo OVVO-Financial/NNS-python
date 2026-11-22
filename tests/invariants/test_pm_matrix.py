@@ -10,7 +10,7 @@ from nns import pm_matrix
 def test_pm_matrix_reconstructs_cov_matrix() -> None:
     variable = _variable()
 
-    result = pm_matrix(2, 3, 0.0, variable, pop_adj=True)
+    result = pm_matrix(2, 3, np.zeros(variable.shape[1]), variable, pop_adj=True)
 
     np.testing.assert_allclose(
         result["clpm"] + result["cupm"] - result["dlpm"] - result["dupm"],

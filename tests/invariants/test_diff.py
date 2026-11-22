@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import cast
 
 import numpy as np
@@ -30,10 +31,11 @@ def test_nns_diff_smooth_function_derivative_has_bounded_error() -> None:
 def test_dy_dx_without_eval_point_raises_clear_error() -> None:
     x = np.linspace(0.0, 1.0, 30)
 
-    with pytest.raises(ValueError, match="eval_point must be provided"):
+    # R 14.2's message, raised before any input checks or fitting work.
+    message = re.escape("eval.point must be provided: numeric point(s) or 'overall'")
+    with pytest.raises(ValueError, match=message):
         dy_dx(x, x**2)
-    # Raised before any input checks or fitting work.
-    with pytest.raises(ValueError, match="eval_point must be provided"):
+    with pytest.raises(ValueError, match=message):
         dy_dx(x, x[:-1])
 
 
@@ -209,7 +211,8 @@ def test_dy_d_is_deterministic() -> None:
 
 
 def test_dy_d_matches_pinned_values() -> None:
-    # Verified with pinned R14 7b07a837c130ba7220dbe16c584221508757d5ae.
+    # Verified with pinned R NNS 14.2 (f0387ed857de3d3bf047fa581b854dc5e3d0c3a6):
+    # dy.d_(x, y, wrt = 1:3, eval.points = matrix(0, 1, 3)) agrees to every digit.
     # The fitted derivative is not the exact slope of the generating equation.
     from nns import dy_d
 
@@ -220,7 +223,7 @@ def test_dy_d_matches_pinned_values() -> None:
 
     np.testing.assert_allclose(
         np.ravel(result["First"]),
-        np.array([0.5552936444351168, 1.4747889156529164, -0.6454516118551835]),
+        np.array([0.4499489404485725, 1.0201240542776646, 0.2583028150692175]),
         rtol=0.0,
         atol=1e-4,
     )

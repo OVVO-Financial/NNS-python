@@ -8,10 +8,10 @@
         "wt",
         "y.hat"
       ],
-      "r2": 0.731161385675825
+      "r2": 0.851954280763182
     }
   },
   "label": "labels.reg.numeric_strings",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }

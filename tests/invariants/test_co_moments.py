@@ -95,21 +95,21 @@ def test_co_moments_and_pm_matrix_reject_non_finite_input() -> None:
     x = np.array([1.0, 2.0, 3.0, np.nan, 5.0])
     finite = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     for function in (co_lpm, co_upm):
-        with pytest.raises(ValueError, match="x must contain only finite values"):
+        with pytest.raises(ValueError, match="`x` must be finite"):
             function(0, x, finite, 6.0, 6.0)
-        with pytest.raises(ValueError, match="y must contain only finite values"):
+        with pytest.raises(ValueError, match="`y` must be finite"):
             function(0, finite, x, 6.0, 6.0)
-        with pytest.raises(ValueError, match="target_x must contain only finite values"):
+        with pytest.raises(ValueError, match="`target_x` must be finite"):
             function(0, finite, finite, np.nan, 6.0)
     for function in (d_lpm, d_upm):
-        with pytest.raises(ValueError, match="x must contain only finite values"):
+        with pytest.raises(ValueError, match="`x` must be finite"):
             function(1, 1, x, finite, 0.0, 0.0)
-        with pytest.raises(ValueError, match="target_y must contain only finite values"):
+        with pytest.raises(ValueError, match="`target_y` must be finite"):
             function(1, 1, finite, finite, 0.0, np.inf)
-    with pytest.raises(ValueError, match="variable must contain only finite values"):
+    with pytest.raises(ValueError, match="`variable` must be finite"):
         pm_matrix(1, 1, None, np.column_stack([x, finite]), pop_adj=False)
-    with pytest.raises(ValueError, match="target must contain only finite values"):
-        pm_matrix(1, 1, np.nan, np.column_stack([finite, finite]), pop_adj=False)
+    with pytest.raises(ValueError, match="`target` must be finite"):
+        pm_matrix(1, 1, [np.nan, np.nan], np.column_stack([finite, finite]), pop_adj=False)
 
 
 @pytest.mark.parametrize("degree", [np.nan, -1.0])
@@ -156,7 +156,7 @@ def test_co_moments_reject_unequal_lengths_empty_input_and_recycled_targets(
         with pytest.raises(ValueError, match="same length"):
             function(x, y, tx, ty)
     for tx, ty in [(0.0, 0.0), (None, None)]:
-        with pytest.raises(ValueError, match="x and y must be non-empty"):
+        with pytest.raises(ValueError, match="`x` and `y` must not be empty"):
             function(empty, empty, tx, ty)
     for tx, ty in [(empty, 0.0), (0.0, empty), (empty, empty)]:
         with pytest.raises(ValueError, match="target_x and target_y must be non-empty"):

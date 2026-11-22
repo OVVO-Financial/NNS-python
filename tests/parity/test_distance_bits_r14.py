@@ -1,10 +1,8 @@
 """R 14.0 parity, to the last bit, for NNS.distance and NNS.distance.bulk.
 
 Both follow R's C++ kernels: ``1 / range`` column scaling, distances summed
-column by column, R's nmath densities and sequential sums. Tied distances fall
-where libstdc++'s ``std::partial_sort``/``std::sort`` leave them, which the port
-replays (``nns._stdsort``); the fixtures below were produced by compiled
-libstdc++.
+column by column, R's nmath densities and sequential sums. Equal distances are
+ordered by RPM row, as in R 14.2's kernels.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ import pytest
 from _r import nns_frame_call, r_column
 
 import nns
-from nns._stdsort import partial_sort, std_sort
 
 pytestmark = pytest.mark.parity
 
@@ -91,36 +88,3 @@ def test_continuous_distances_match_r_bitwise() -> None:
     single = nns.nns_distance(rpm, dest, k=6)
     bulk = nns.nns_distance_bulk(rpm, dest.reshape(1, -1), k=6)
     np.testing.assert_array_equal([single, bulk[0]], np.asarray(expected, dtype=np.float64))
-
-
-# Orders printed by compiled libstdc++ (g++ -O2) for these keys.
-_ALL_TIED = [0] * 52
-_ALL_TIED_SORT = [
-    39, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 26, 40, 41, 42, 43, 44, 45, 46, 47, 48,
-    49, 50, 51, 13, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-    23, 24, 25,
-]
-_BINARY = [
-    1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1,
-]
-_BINARY_SORT = [
-    35, 31, 29, 28, 27, 26, 25, 24, 23, 22, 21, 32, 19, 33, 17, 36, 13, 11, 10, 7, 4, 2, 43, 34,
-    37, 38, 39, 40, 41, 42, 0, 30, 20, 18, 16, 15, 14, 12, 9, 8, 6, 5, 3, 1,
-]
-_BINARY_PARTIAL_10 = [17, 4, 13, 7, 10, 19, 21, 22, 11, 2]
-
-
-def test_sort_replay_matches_libstdcxx_on_ties() -> None:
-    order = list(range(52))
-    std_sort(order, [float(v) for v in _ALL_TIED])
-    assert order == _ALL_TIED_SORT
-    order = list(range(52))
-    partial_sort(order, [float(v) for v in _ALL_TIED], 4)
-    assert order[:4] == [1, 3, 0, 2]
-    order = list(range(44))
-    std_sort(order, [float(v) for v in _BINARY])
-    assert order == _BINARY_SORT
-    order = list(range(44))
-    partial_sort(order, [float(v) for v in _BINARY], 10)
-    assert order[:10] == _BINARY_PARTIAL_10

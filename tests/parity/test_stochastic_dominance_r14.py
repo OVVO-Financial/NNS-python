@@ -1,12 +1,10 @@
-"""R 14.0 parity for the stochastic-dominance contracts beyond the pairwise verdict.
+"""R 14 parity for the stochastic-dominance contracts beyond the pairwise verdict.
 
 * ``NNS.SD.efficient.set`` lists its columns by ``LPM(degree, max, column)``,
   which R's C++ forms by repeated multiplication and a row-order sum; columns
   whose keys tie in exact arithmetic (permutations, duplicates) keep their tie
   and R's index tie break.
-* R's ``.uni`` tests, efficient set and SD clustering accept infinite values
-  (only ``NNS.FSD``/``NNS.SSD``/``NNS.TSD`` reject them, through the plotted
-  partial-moment curves), comparing them as R's C++ does.
+* Discrete first-order comparisons accept infinite values.
 * Inputs are validated in R's order and with R's messages, and
   ``NNS.SD.cluster`` compares ``min_cluster`` as a real number.
 """
@@ -71,9 +69,7 @@ def test_uni_tests_compare_infinite_values_as_r_does(x_inf: str, y_inf: str) -> 
     )
     expected = nns_frame_call(
         "sd14.uni_infinite",
-        setup + "c(NNS.FSD.uni(x, y), NNS.FSD.uni(y, x), "
-        "NNS.FSD.uni(x, y, type = 'continuous'), NNS.FSD.uni(y, x, type = 'continuous'), "
-        "NNS.SSD.uni(x, y), NNS.SSD.uni(y, x), NNS.TSD.uni(x, y), NNS.TSD.uni(y, x))",
+        setup + "c(NNS.FSD.uni(x, y), NNS.FSD.uni(y, x))",
         {
             "xv": _num(np.where(np.isfinite(x), x, 0.0)),
             "yv": _num(np.where(np.isfinite(y), y, 0.0)),
@@ -81,21 +77,44 @@ def test_uni_tests_compare_infinite_values_as_r_does(x_inf: str, y_inf: str) -> 
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
-        actual = [
-            nns.fsd_uni(x, y),
-            nns.fsd_uni(y, x),
-            nns.fsd_uni(x, y, type="continuous"),
-            nns.fsd_uni(y, x, type="continuous"),
-            nns.ssd_uni(x, y),
-            nns.ssd_uni(y, x),
-            nns.tsd_uni(x, y),
-            nns.tsd_uni(y, x),
-        ]
+        actual = [nns.fsd_uni(x, y), nns.fsd_uni(y, x)]
     assert actual == [int(v) for v in np.asarray(expected)]
 
 
-@pytest.mark.parametrize(("degree", "type_"), [(1, "discrete"), (1, "continuous"), (2, "discrete")])
-def test_efficient_set_and_clusters_accept_infinite_values_like_r(degree: int, type_: str) -> None:
+@pytest.mark.parametrize(("degree", "type_"), [(1, "continuous"), (2, "discrete"), (3, "discrete")])
+def test_sd_rejects_infinities(degree, type_):
+    uni = (nns.fsd_uni, nns.ssd_uni, nns.tsd_uni)[degree - 1]
+    r = ("NNS.FSD.uni", "NNS.SSD.uni", "NNS.TSD.uni")[degree - 1]
+    extra = ", 'continuous'" if degree == 1 else ""
+    expected = nns_frame_call(
+        "sd14.uni_infinite", f"tryCatch({r}(c(0,Inf),1:2{extra}), error=conditionMessage)", {}
+    )
+    y = [0, 1]
+    for inf in (-np.inf, np.inf):
+        x = [0, inf]
+        for args in ((x, y), (y, x)):
+            with pytest.raises(ValueError) as caught:
+                uni(*args, **({"type": type_} if degree == 1 else {}))
+            assert str(caught.value) == expected
+
+
+@pytest.mark.parametrize(("degree", "type_"), [(1, "continuous"), (2, "discrete"), (3, "discrete")])
+@pytest.mark.parametrize(("fn", "r"), [
+    (nns.sd_efficient_set, "NNS.SD.efficient.set"), (nns.nns_sd_cluster, "NNS.SD.cluster"),
+])
+def test_matrix_search_rejects_infinities(fn, r, degree, type_):
+    expected = nns_frame_call(
+        "sd14.matrix_infinite",
+        f"tryCatch({r}(cbind(c(0,Inf),1:2), {degree}, '{type_}'), error=conditionMessage)", {}
+    )
+    for inf in (-np.inf, np.inf):
+        with pytest.raises(ValueError) as caught:
+            fn(np.column_stack(([0, inf], [1, 2])), degree=degree, type=type_)
+        assert str(caught.value) == expected
+
+
+def test_discrete_efficient_set_and_clusters_accept_infinite_values_like_r() -> None:
+    degree, type_ = 1, "discrete"
     rng = np.random.default_rng(93)
     m = rng.normal(size=(30, 6)) + rng.uniform(-0.5, 0.5, 6)
     m[3, 1] = np.inf
@@ -116,14 +135,29 @@ def test_efficient_set_and_clusters_accept_infinite_values_like_r(degree: int, t
 
 
 def test_top_level_tests_reject_infinite_values_as_r_does() -> None:
-    # NNS.FSD/SSD/TSD first evaluate LPM(.ratio)(degree, sort(c(x, y)), x), which
-    # checks the variable x and then the target grid.
+    # R 14.2 NNS.SSD/TSD always evaluate LPM(degree, sort(c(x, y)), x), which
+    # checks the variable x and then the target grid. NNS.FSD evaluates its
+    # LPM.ratio curves only for the plot (R's default, plot = TRUE); without one
+    # the verdict is NNS.FSD.uni both ways, whose discrete test takes infinite
+    # values and whose continuous test rejects them.
     x = np.array([1.0, 2.0, 3.0])
-    for function in (nns.fsd, nns.ssd, nns.tsd):
+    for function in (nns.ssd, nns.tsd):
+        for plot in (False, True):
+            with pytest.raises(ValueError, match="`variable` must be finite"):
+                function(np.array([1.0, np.inf]), x, plot=plot)
+            with pytest.raises(ValueError, match="`target` must be finite"):
+                function(x, np.array([-np.inf, 1.0]), plot=plot)
+    for type_ in ("discrete", "continuous"):
         with pytest.raises(ValueError, match="`variable` must be finite"):
-            function(np.array([1.0, np.inf]), x)
+            nns.fsd(np.array([1.0, np.inf]), x, type_, plot=True)
         with pytest.raises(ValueError, match="`target` must be finite"):
-            function(x, np.array([-np.inf, 1.0]))
+            nns.fsd(x, np.array([-np.inf, 1.0]), type_, plot=True)
+    # NNS.FSD(c(1, Inf), 1:3, plot = FALSE) is "NO FSD EXISTS" and
+    # NNS.FSD(1:3, c(-Inf, 1), plot = FALSE) is "X FSD Y".
+    assert nns.fsd(np.array([1.0, np.inf]), x) == 0
+    assert nns.fsd(x, np.array([-np.inf, 1.0])) == 1
+    with pytest.raises(ValueError, match="You have some infinite values, please address"):
+        nns.fsd(np.array([1.0, np.inf]), x, "continuous")
 
 
 def test_validation_follows_r_order_and_messages() -> None:

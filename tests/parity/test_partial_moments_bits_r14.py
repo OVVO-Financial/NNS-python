@@ -21,6 +21,7 @@ import pytest
 from _r import nns_frame_call, r_column
 
 import nns
+from nns._native import native_fn
 
 pytestmark = pytest.mark.parity
 
@@ -48,7 +49,11 @@ def test_nns_moments_match_r_bitwise(population: bool, flag: str) -> None:
 
 
 @pytest.mark.parametrize("native", [True, False])
-@pytest.mark.parametrize(("degree_x", "degree_y"), [(3, 1), (0.5, 1.5), (2, 0)])
+# Exactly one integer degree takes a separate branch in R's D.LPM/D.UPM kernels.
+@pytest.mark.parametrize(
+    ("degree_x", "degree_y"),
+    [(3, 1), (0.5, 1.5), (2, 0), (1, 1.5), (1.5, 1), (2, 0.5), (0.5, 1), (0, 0.5)],
+)
 def test_bivariate_co_moments_match_r_bitwise(
     monkeypatch: pytest.MonkeyPatch, native: bool, degree_x: float, degree_y: float
 ) -> None:
@@ -75,6 +80,10 @@ def test_bivariate_co_moments_match_r_bitwise(
     }
     for key, value in expected.items():
         np.testing.assert_array_equal(np.atleast_1d(actual[key]), np.atleast_1d(value), key)
+    if native and native_fn("d_upm") is not None:
+        args = (degree_x, degree_y, x, y, tx[0], ty[0])
+        assert native_fn("d_lpm")(*args) == expected["dlpm"][0]
+        assert native_fn("d_upm")(*args) == expected["dupm"][0]
 
 
 @pytest.mark.parametrize("degree", [2, 0.5, 3])

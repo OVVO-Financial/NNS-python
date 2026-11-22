@@ -7,6 +7,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _as_pair
+from nns._inputs import MISSING, _has_missing
+from nns._inputs import column as _column
 from nns._rmean import r_mean, r_prod, r_sum
 from nns._rnmath import r_pow_scalar
 from nns.core import lpm, lpm_ratio
@@ -171,6 +173,15 @@ def _prepare(
 
     if target is not None:
         raise ValueError("Use target_x/target_y (not target) with the bivariate (x, y) form.")
+    # R 14.2 NNS.copula: missing values first, then infinite ones. A one-column
+    # data frame is its column.
+    x, y = _column(x), _column(y)
+    if _has_missing(x) or _has_missing(y):
+        raise ValueError(MISSING)
+    if np.isinf(np.asarray(x, dtype=np.float64)).any() or np.isinf(
+        np.asarray(y, dtype=np.float64)
+    ).any():
+        raise ValueError("`variable` must be finite.")
     x_values, y_values = _as_pair(x, y)
     values = np.column_stack((x_values, y_values))
     targets = _r_col_means(values)
@@ -191,8 +202,10 @@ def _as_matrix(x: NDArray[np.float64]) -> NDArray[np.float64]:
         raise ValueError("copula input must be non-empty.")
     if values.shape[1] < 2:
         raise ValueError("copula requires at least two variables (columns).")
+    if np.isnan(values).any():
+        raise ValueError(MISSING)
     if not np.all(np.isfinite(values)):
-        raise ValueError("copula input must contain only finite values.")
+        raise ValueError("`variable` must be finite.")
     return values
 
 

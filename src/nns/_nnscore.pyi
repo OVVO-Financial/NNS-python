@@ -167,6 +167,7 @@ def clpm_nd_batch(
     n_targets: int,
     degree: float,
     norm: bool,
+    strict: bool = False,
 ) -> Sequence[float]: ...
 def pm_matrix(
     degree_lpm: float,

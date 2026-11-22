@@ -125,7 +125,7 @@ uv run python examples/run_all_vignettes.py
 
 ## Design boundaries
 
-NNS Python prioritizes stable public behavior from R NNS 14.0, matched to the
+NNS Python prioritizes stable public behavior from R NNS 14.2, matched to the
 last bit where verified (see the parity page), not private helper parity. The
 package returns NumPy arrays and plain dictionaries rather than R `data.table`
 objects and uses explicit Python errors for unsafe R coercions.

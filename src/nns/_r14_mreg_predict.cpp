@@ -357,16 +357,21 @@ class PredictKernel {
   // Range-normalised distance of training row i to query r. The 1-D path uses
   // it too, so it selects neighbours and ties exactly as the generic path does.
   double distance(int i, std::size_t r) const {
-    double acc = 0.0;
+    // R 14.2 rounds each term to double and accumulates the terms in long
+    // double, as rowSums() does, rounding the sum once.
+    long double acc = 0.0L;
     for (std::size_t a = 0; a < active_.size(); ++a) {
       const int j = active_[a];
       // Divide as R's reference does; a precomputed 1/range can flip exact ties.
       const double z = (rx(i, j) - xt(r, j)) / col_range_[a];
-      if (dist_code_ == kMregDistL1) acc += std::fabs(z);
-      else if (dist_code_ == kMregDistNNS) acc += std::fabs(z) + z * z;
-      else acc += z * z;
+      double term;
+      if (dist_code_ == kMregDistL1) term = std::fabs(z);
+      else if (dist_code_ == kMregDistNNS) term = std::fabs(z) + z * z;
+      else term = z * z;
+      acc += term;
     }
-    return dist_code_ == kMregDistL2 ? std::sqrt(acc) : acc;
+    const double sum = static_cast<double>(acc);
+    return dist_code_ == kMregDistL2 ? std::sqrt(sum) : sum;
   }
 
   // distance() is non-decreasing in |coord - t|, so walking outward in that

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _reject_factor
 from nns._rmean import r_mean
 from nns._rnmath import libm_pow, r_pow_scalar
 from nns.core import _as_1d_values, lpm, upm
@@ -59,6 +60,7 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
     series has NaN skewness and kurtosis, and the sample (``population=False``)
     estimators need n > 2 (skewness) and n > 3 (kurtosis).
     """
+    _reject_factor(x, "`x`")
     values = _as_1d_values(x)
     # R 14 NNS.moments: central moments with R's mean() (long double), z^2 as
     # z * z and z^3, z^4 through R's ^ (libm pow). float64 scalars give R's IEEE
@@ -66,6 +68,10 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
     n = np.float64(values.size)
     mean = r_mean(values)
     z = values - mean
+    # R 14.2: the mean can round onto an observation when the spread is small,
+    # so the deviations are centred once more on their own mean.
+    if np.all(np.isfinite(z)):
+        z = z - r_mean(z)
     variance = np.float64(r_mean(z * z))
     skew_base = np.float64(r_mean(libm_pow(z, 3.0)))
     kurt_base = np.float64(r_mean(libm_pow(z, 4.0)))
@@ -78,9 +84,13 @@ def nns_moments(x: NDArray[np.float64], population: bool = True) -> dict[str, fl
             # Adjusted Fisher-Pearson G1: n/((n-1)(n-2)) * sum(z^3) / s^3 with s the
             # sample (n-1) standard deviation, as in the kurtosis branch below.
             scaled = variance * (n / (n - 1))
-            skewness = float(
-                (n / ((n - 1) * (n - 2)))
-                * ((n * skew_base) / np.float64(r_pow_scalar(float(scaled), 1.5)))
+            skewness = (
+                float("nan")
+                if n < 3
+                else float(
+                    (n / ((n - 1) * (n - 2)))
+                    * ((n * skew_base) / np.float64(r_pow_scalar(float(scaled), 1.5)))
+                )
             )
             kurtosis = float(
                 ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3)))

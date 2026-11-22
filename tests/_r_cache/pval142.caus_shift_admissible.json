@@ -1,0 +1,15 @@
+{
+  "entries": {
+    "77936b82cc493f368e2d5d84a504f4c8d52c2253842866e114900d184bb5baf9": {
+      "ok": "no error",
+      "short": "No admissible circular shift for n = 20 and tau = 10."
+    },
+    "c6b9ee06bbd2fd2a2061c7bc90156d6a61e78b80e7a9a57e86d8d1a1b682f5b8": {
+      "ok": "no error",
+      "short": "No admissible circular shift for n = 20 and tau = 10."
+    }
+  },
+  "label": "pval142.caus_shift_admissible",
+  "nns_version": "14.2",
+  "schema_version": 2
+}

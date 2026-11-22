@@ -525,7 +525,7 @@
         1.78175786251273
       ],
       "dvtrim": 3.14282334201261,
-      "kappa": 0.00981679944992031,
+      "kappa": -0.00784233906920473,
       "ordxx": [
         56.0,
         12.0,
@@ -778,6 +778,6 @@
     }
   },
   "label": "NNS.meboot.diagnostics",
-  "nns_version": "14.0",
+  "nns_version": "14.2",
   "schema_version": 2
 }

@@ -8,11 +8,13 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._helpers import _has_factor_column, _reject_factor
+from nns._inputs import is_frame, r_typeof
 from nns._native import native_fn
 from nns._rmean import r_row_sums
 from nns._rnmath import libm_log
 from nns.core import lpm_ratio
-from nns.dependence import _r_pm_terms, co_lpm_nd
+from nns.dependence import _nd_degree, _r_pm_terms, co_lpm_nd
 from nns.regression import RegResult, nns_reg
 
 if TYPE_CHECKING:
@@ -28,10 +30,15 @@ def nns_cdf(
     names: Sequence[str] | None = None,
 ) -> dict[str, object]:
     """Partial-moment CDF wrapper matching R's non-plotting NNS.CDF paths."""
-    type_value = type.lower()
-    if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
-        raise ValueError("invalid type")
-
+    _reject_factor(variable, "`variable`")
+    if _has_factor_column(variable):
+        _cdf_type(type)
+        if variable.shape[1] == 1:
+            raise ValueError("cannot xtfrm data frames")
+        raise ValueError("`data` must be finite.")
+    if not is_frame(variable) and r_typeof(variable) not in ("double", "integer"):
+        # R 14.2: character and logical variables fail LPM.ratio's input check.
+        raise ValueError("variable should be numeric vector, or data table")
     if names is None:
         columns = getattr(variable, "columns", None)
         if columns is not None:
@@ -46,13 +53,13 @@ def nns_cdf(
     elif values.ndim == 2:
         values = values[~np.isnan(values).any(axis=1)]
     if values.ndim == 1 or (values.ndim == 2 and values.shape[1] == 1):
-        result = _univariate_cdf(values.reshape(-1), float(degree), target, type_value)
+        result = _univariate_cdf(values.reshape(-1), float(degree), target, type)
         if plot:
             _render_cdf(result, target)
         return result
     if values.ndim == 2:
         # Multivariate CDF has no faithful single-Axes plot; plot is a no-op here.
-        return _multivariate_cdf(values, float(degree), target, type_value, names)
+        return _multivariate_cdf(values, float(degree), target, type, names)
     raise ValueError("variable must be a vector or 2D matrix.")
 
 
@@ -68,6 +75,13 @@ def _render_cdf(result: dict[str, object], target: float | NDArray[np.float64] |
     plot_nns_cdf(result, target=plot_target)
 
 
+def _cdf_type(value: str) -> str:
+    type_value = value.lower()
+    if type_value not in {"cdf", "survival", "hazard", "cumulative hazard"}:
+        raise ValueError("invalid type")
+    return type_value
+
+
 def _univariate_cdf(
     values: NDArray[np.float64],
     degree: float,
@@ -76,9 +90,10 @@ def _univariate_cdf(
 ) -> dict[str, object]:
     if values.size == 0:
         raise ValueError("variable must contain at least one non-missing value.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError("variable must contain only finite values.")
     target_value = _univariate_target(target, values)
+    type_value = _cdf_type(type_value)
+    if not np.all(np.isfinite(values)):
+        raise ValueError("`variable` must be finite.")
     x = np.sort(values)
     pval = _r_lpm_ratio(degree, x, values)
     column_name = {
@@ -138,8 +153,10 @@ def _multivariate_cdf(
 ) -> dict[str, object]:
     if values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError("variable must have at least one complete row and one column.")
+    target_values = _multivariate_target(target, values)
+    type_value = _cdf_type(type_value)
     if not np.all(np.isfinite(values)):
-        raise ValueError("variable must contain only finite values.")
+        raise ValueError("`data` must be finite.")
     # R14 explicitly rejects the joint hazard without a defined multivariate
     # density or coordinate-hazard construction. At positive degree, its
     # normalized co-partial moments are not a joint CDF and cannot be used
@@ -153,7 +170,6 @@ def _multivariate_cdf(
         raise ValueError(
             "type = 'cumulative hazard' needs degree = 0 for multivariate variable"
         )
-    target_values = _multivariate_target(target, values)
     column_names = _matrix_names(values.shape[1], names)
 
     cdf = _co_lpm_nd_rows(values, degree)
@@ -286,9 +302,10 @@ def _co_lpm_nd_rows(values: NDArray[np.float64], degree: float) -> NDArray[np.fl
 
 
 def _co_lpm_nd_batch(
-    values: NDArray[np.float64], points: NDArray[np.float64], degree: float
+    values: NDArray[np.float64], points: NDArray[np.float64], degree: float, *, strict: bool = False
 ) -> NDArray[np.float64]:
     """R's ``Co.LPM_nD.batch(values, points, degree, norm = TRUE)``: one value per point row."""
+    degree = _nd_degree(degree)
     n, d = values.shape
     m = points.shape[0]
     native = native_fn("clpm_nd_batch")
@@ -296,7 +313,7 @@ def _co_lpm_nd_batch(
         flat = np.ascontiguousarray(values.ravel(order="F"))
         flat_points = np.ascontiguousarray(points.ravel(order="F"))
         return np.asarray(
-            native(flat, n, d, flat_points, m, float(degree), True), dtype=np.float64
+            native(flat, n, d, flat_points, m, float(degree), True, strict), dtype=np.float64
         )
     # NumPy fallback reproducing R's CoLPMnDBatchWorker: per-row products of
     # R's lower/upper components (repeated multiplication or libm pow), double
@@ -304,11 +321,12 @@ def _co_lpm_nd_batch(
     out = np.empty(m, dtype=np.float64)
     chunk = max(1, 2_000_000 // max(1, n * d))
     inv_n = 1.0 / float(n)
+    below_target = np.less if strict else np.less_equal
     for start in range(0, m, chunk):
         rows = points[start : start + chunk]
         diff = values[np.newaxis, :, :] - rows[:, np.newaxis, :]
         if degree == 0.0:
-            below = np.all(diff <= 0.0, axis=2)
+            below = np.all(below_target(diff, 0.0), axis=2)
             out[start : start + chunk] = np.count_nonzero(below, axis=1) / float(n)
             continue
         lower_terms = _r_pm_terms(np.maximum(-diff, 0.0), degree)
@@ -316,15 +334,20 @@ def _co_lpm_nd_batch(
         lower_prod = _r_axis2_products(np.where(-diff < 0.0, 0.0, lower_terms))
         upper_prod = _r_axis2_products(np.where(diff < 0.0, 0.0, upper_terms))
         dpm_prod = _r_axis2_products(_r_pm_terms(np.abs(diff), degree))
-        strict = np.all(diff < 0.0, axis=2) | np.all(diff > 0.0, axis=2)
+        same_side = np.all(diff < 0.0, axis=2) | np.all(diff > 0.0, axis=2)
         clpm = np.cumsum(lower_prod, axis=1)[:, -1] * inv_n
         cupm = np.cumsum(upper_prod, axis=1)[:, -1] * inv_n
-        dpm = np.cumsum(np.where(strict, 0.0, dpm_prod), axis=1)[:, -1] * inv_n
+        dpm = np.cumsum(np.where(same_side, 0.0, dpm_prod), axis=1)[:, -1] * inv_n
         total = clpm + cupm + dpm
         positive = total > 0.0
-        out[start : start + chunk] = np.where(
+        block = np.where(
             positive, clpm / np.where(positive, total, 1.0), 0.0
         )
+        zero = total == 0.0
+        if np.any(zero):
+            below = np.all(below_target(diff[zero], 0.0), axis=2)
+            block[zero] = np.count_nonzero(below, axis=1) / float(n)
+        out[start : start + chunk] = block
     return out
 
 
@@ -353,7 +376,7 @@ def _joint_survival(
     computed as ``Co.LPM_nD(-X, -t)``.  Mirrors R NNS.CDF's ``joint.survival``.
     """
     if degree > 0:
-        return _co_lpm_nd_batch(-values, -points, degree)
+        return _co_lpm_nd_batch(-values, -points, degree, strict=True)
     d = values.shape[1]
     if d > 3:
         # Beyond 3 columns the 2^d terms are slow and cancel; count the rows above t.
