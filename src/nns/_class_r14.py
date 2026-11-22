@@ -1,6 +1,6 @@
-"""NNS 14.0 empirical-frequency nominal classification.
+"""NNS 14 empirical-frequency nominal classification.
 
-Reference: OVVO-Financial/NNS@7b07a837c130ba7220dbe16c584221508757d5ae,
+Reference: OVVO-Financial/NNS@f0387ed857de3d3bf047fa581b854dc5e3d0c3a6 (NNS 14.2),
 R/Classification.R. Class codes identify indicator columns only; numeric
 interpolation is never performed on ordinalized class labels.
 """

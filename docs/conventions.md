@@ -60,6 +60,33 @@ NNS Python raises `ValueError`.
 
 Rationale: empty arrays in Python are upstream bugs, and NumPy convention is to warn or fail on empty reductions rather than silently produce a meaningful statistic.
 
+## Input Validation
+
+R NNS 14.2 checks every data argument through one input layer (`R/inputs.R`),
+and NNS Python follows it (`nns._inputs`): the same inputs are accepted and the
+same `ValueError` messages raised, in R's order. Python inputs stand for R types:
+a pandas `Categorical` (or categorical `Series`) is a factor, a `DataFrame` a
+data.frame, a 2-D array a matrix, a string array a character vector and a
+boolean array a logical vector. So, as in R, a factor is rejected with
+``"`x` must be numeric, not a factor."``, a character or logical vector passed to
+a partial-moment ratio or co-moment with ``"x should be numeric vector, or data
+table"``, and `nns_seas`, `nns_arma`, `nns_meboot`, `nns_mc`, `nns_ss`,
+`nns_dep`, `nns_part`, `nns_causation`, `nns_copula`, `nns_reg`, `dy_dx` and
+`nns_anova` give R's messages for missing, infinite, mis-shaped and too-short
+inputs. A one-column `DataFrame` or 2-D array is read as its column.
+
+`scripts/live_parity/fz_inputs.py` checks this against R. Beyond the empty-input
+rule above, the differences it reports as documented are:
+
+- A matrix with several columns is rejected (R flattens it into one vector).
+- A one-column `DataFrame` is accepted where R fails converting the data frame
+  (`"'list' object cannot be coerced to type 'double'"`).
+- Infinite values: R's `LPM.VaR`/`UPM.VaR` and `NNS.ANOVA` stop with internal
+  errors (`"missing value where TRUE/FALSE needed"`), and R 14.2's `NNS.MC`
+  crashes the R session; NNS Python computes or raises its own message.
+- `nns_copula(x, y)` takes the two variables separately, so R's recycling of
+  unequal columns in `NNS.copula(cbind(x, y))` does not arise.
+
 ## Co-Moment Lengths
 
 `co_lpm`, `co_upm`, `d_lpm` and `d_upm` raise `ValueError` unless `x` and `y` are

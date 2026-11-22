@@ -1,7 +1,7 @@
-"""NNS 14.0 classification stack: probability-vector CV, never coded regression.
+"""NNS 14.2 classification stack: probability-vector CV, never coded regression.
 
 Source of truth: OVVO-Financial/NNS R/Classification_Stack.R at
-7b07a837c130ba7220dbe16c584221508757d5ae.  R's method-1 neighbour
+f0387ed857de3d3bf047fa581b854dc5e3d0c3a6 (NNS 14.2).  R's method-1 neighbour
 counts and method-2 class-indicator dimensions are selected from out-of-fold
 probability matrices.  Synthetic class indices describe feature engineering
 only; using them as ordinal target values changes the model.
