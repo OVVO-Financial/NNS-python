@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._inputs import column, series_values
 from nns._native import honours_ncores, native_fn
 from nns._rmean import r_mean, r_sd, r_sum
 from nns.co_moments import co_lpm, co_upm
@@ -389,8 +390,6 @@ def nns_arma(
     """Autoregressive NNS forecast matching R's installed NNS.ARMA behavior."""
     del seasonal_plot  # R plotting side effect; NNS Python returns data instead.
 
-    horizon = _arma_horizon(h)
-    values = _as_variable(variable)
     if seasonal_factor is None:
         # R: !is.numeric(NULL) with a non-NULL best.periods turns seasonal.factor into FALSE.
         seasonal_factor = False
@@ -420,11 +419,16 @@ def nns_arma(
             '"dynamic = FALSE"'
         )
 
+    # R 14.2 order: .nns_forecast_series(variable), the horizon, the method.
+    values = _as_variable(variable)
+    horizon = _arma_horizon(h)
     method_l = method.lower()
     if method_l not in {"lin", "nonlin", "both", "means"}:
-        raise ValueError("method must be one of 'lin', 'nonlin', 'both', or 'means'.")
+        raise ValueError("[method] must be one of 'lin', 'nonlin', 'both' or 'means'.")
     if method_l == "means":
         shrink = False
+    if np.any(np.isinf(values)):
+        raise ValueError("Infinite values not allowed")
 
     if training_set is not None:
         train_n = int(training_set)
@@ -435,16 +439,19 @@ def nns_arma(
         values = values[:train_n].astype(np.float64, copy=True)
     else:
         values = values.astype(np.float64, copy=True)
-    if float(np.min(values)) < 0.0:
+    if values.size and float(np.min(values)) < 0.0:
         negative_values = True
+    if not _is_numeric_seasonal(seasonal_factor) and values.size < 5:
+        # R 14.2: NNS.seas rejects an empty series and returns period 0 below five
+        # observations, which .arma_check_periods rejects.
+        if values.size == 0:
+            raise ValueError("Variable must be numeric and non-empty")
+        raise ValueError(
+            "NNS.seas returns 0 when the history is too short to scan for a period. "
+            "Pass a positive lag supported by the training data, e.g. seasonal.factor = 1."
+        )
     if values.size < 2:
         raise ValueError("[y] must contain at least two observations.")
-    if not _is_numeric_seasonal(seasonal_factor) and values.size < 5:
-        # NNS.seas needs 5 observations; below that R returns NaN, 0 or an error.
-        raise ValueError(
-            "Automatic seasonality detection needs at least 5 observations; "
-            "pass a numeric seasonal_factor for shorter series."
-        )
 
     estimates = np.zeros(horizon, dtype=np.float64)
     lags, lag_weights = _resolve_lags_and_weights(
@@ -774,14 +781,9 @@ def _smooth_regressed_variable(values: NDArray[np.float64]) -> NDArray[np.float6
 
 
 def _as_variable(variable: NDArray[np.float64]) -> NDArray[np.float64]:
-    values = np.asarray(variable, dtype=np.float64).reshape(-1)
-    if values.size == 0:
-        raise ValueError("variable must be non-empty.")
-    if np.any(np.isnan(values)):
-        raise ValueError("You have some missing values, please address.")
-    if np.any(np.isinf(values)):
-        raise ValueError("Infinite values not allowed")
-    return values
+    """R 14.2 ``.nns_forecast_series``: one column, no factor, no missing values."""
+    series_values(variable, "variable")
+    return np.asarray(column(variable), dtype=np.float64).reshape(-1)
 
 
 def _lin_residual(lin_regression_estimates: NDArray[np.float64]) -> float:

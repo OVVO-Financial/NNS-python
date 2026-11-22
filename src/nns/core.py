@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _is_factor, _reject_factor
+from nns._inputs import native_vector
 from nns._native import native_fn
 from nns._rmean import r_mean
 
@@ -266,8 +267,8 @@ def _ratio(
     lower: bool,
 ) -> float | NDArray[np.float64]:
     degree = _as_degree(degree)
-    _reject_factor(x, "`variable`")
-    values = _as_1d_array(x)
+    # R 14.2 .nns_native_sample(variable, "variable").
+    values = _as_1d_array(native_vector(x, "variable"))
     _check_numeric_target(target)
     targets = _as_targets(target, values)
     _require_finite(values, "variable")
@@ -285,10 +286,10 @@ def _ratio(
         return _result_for_target(ratio, target)
 
     if degree == 0:
-        return _moment(degree, target, x, lower=lower)
+        return _moment(degree, target, values, lower=lower)
 
-    lower_moment = np.asarray(lpm(degree, target, x))
-    upper_moment = np.asarray(upm(degree, target, x))
+    lower_moment = np.asarray(lpm(degree, target, values))
+    upper_moment = np.asarray(upm(degree, target, values))
     numerator = lower_moment if lower else upper_moment
     with np.errstate(invalid="ignore", divide="ignore"):
         ratio = np.asarray(numerator / (lower_moment + upper_moment)).reshape(-1)

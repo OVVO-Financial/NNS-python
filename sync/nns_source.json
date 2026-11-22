@@ -75,8 +75,8 @@
   ],
   "r_cache_summary": {
     "nns_version": "14.2",
-    "shards": 150,
-    "entries": 3124,
+    "shards": 151,
+    "entries": 3126,
     "generation": "Every entry regenerated with scripts/regenerate_r_cache.py --fresh from live R 4.5.0 (CRAN r-base-core 4.5.0-3.2404.0, reference BLAS/LAPACK) with NNS_14.2.tar.gz at f0387ed. The entries shared with the builder's regeneration at bb05d3d (automation/r-cache-nns-14.2) are byte-identical."
   },
   "r_nmath_ports": [

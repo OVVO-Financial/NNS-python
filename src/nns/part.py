@@ -7,6 +7,7 @@ from typing import Any, Literal, TypeAlias, TypedDict, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import partition_pair
 from nns._native import native_fn as native_fn
 from nns._rmean import r_group_means_no_na, r_mean, r_mean_no_na
 from nns.central_tendencies import nns_mode
@@ -46,22 +47,9 @@ def _part_pair(
     x: NDArray[np.float64],
     y: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Equal-length 1D pair with complete-case NA handling; infinities kept."""
-    x_values = np.asarray(x, dtype=np.float64)
-    y_values = np.asarray(y, dtype=np.float64)
-    if x_values.ndim != 1 or y_values.ndim != 1:
-        raise ValueError("x and y must be 1D.")
-    if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
-    if x_values.size == 0:
-        raise ValueError("x and y must be non-empty.")
-    complete = ~(np.isnan(x_values) | np.isnan(y_values))
-    if not np.all(complete):
-        x_values = x_values[complete]
-        y_values = y_values[complete]
-    if x_values.size == 0:
-        raise ValueError("x and y must contain at least one complete (non-missing) pair.")
-    return x_values, y_values
+    """R 14.2 ``.nns_partition_pair``: one column each, equal non-zero length,
+    a factor ``x`` by its level codes, complete pairs only (infinities kept)."""
+    return partition_pair(x, y)
 
 
 def _part_max(

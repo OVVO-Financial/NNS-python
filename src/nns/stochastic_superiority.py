@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import superiority_sample
 from nns._native import native_fn
 from nns._rrng import RRNG, r_rng
 from nns.meboot import _nns_meboot
@@ -25,8 +26,9 @@ def nns_ss(
     after ``set.seed(s)``, the replicates of ``x`` and then of ``y`` drawn from
     one stream as R draws them.
     """
-    x_values = _omit_nan_numeric(x)
-    y_values = _omit_nan_numeric(y)
+    # R 14.2 .nns_superiority_sample: factors rejected, missing values dropped.
+    x_values = superiority_sample(x, "x")
+    y_values = superiority_sample(y, "y")
     if x_values.size == 0 or y_values.size == 0:
         raise ValueError("x and y must both contain at least one non-missing value.")
     if not isinstance(confidence_interval, (bool, np.bool_)):
@@ -88,11 +90,6 @@ def _stoch_superiority(
         "p_tie": p_tie,
         "p_star": p_gt + 0.5 * p_tie,
     }
-
-
-def _omit_nan_numeric(x: NDArray[np.float64]) -> NDArray[np.float64]:
-    values = np.asarray(x, dtype=np.float64).reshape(-1)
-    return np.asarray(values[~np.isnan(values)], dtype=np.float64)
 
 
 def _bootstrap(

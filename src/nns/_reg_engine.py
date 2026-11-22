@@ -29,6 +29,7 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import _has_missing
 from nns._labels import (
     Columns,
     as_float,
@@ -468,14 +469,14 @@ def _encode_predictors(
         else:
             tr = as_float(z).reshape(-1, 1)
             if not np.all(np.isfinite(tr)):
-                raise ValueError(f"Predictor {j + 1} must contain only finite numeric values.")
+                raise ValueError(f"Predictor '{nm}' must contain only finite numeric values.")
             train_parts.append(tr)
             encoded_names.append(nm)
             if zp is not None and point_parts is not None:
                 pt = as_float(zp).reshape(-1, 1)
                 if not np.all(np.isfinite(pt)):
                     raise ValueError(
-                        f"[point.est] predictor {j + 1} must contain only finite numeric values."
+                        f"[point.est] predictor '{nm}' must contain only finite numeric values."
                     )
                 point_parts.append(pt)
             metadata.append({"categorical": False, "levels": None})
@@ -1662,6 +1663,8 @@ def nns_reg_engine(
     y_raw, y_categories = _response_vector(y)
     if y_raw.size < 2:
         raise ValueError("[y] must contain at least two observations.")
+    if y_categories is None and _has_missing(y_raw):
+        raise ValueError("[y] contains missing values.")
     task = _task(type, y_raw, y_categories, class_levels)
     y_numeric = cast(NDArray[np.float64], task["y"])
     if not np.all(np.isfinite(y_numeric)):

@@ -7,7 +7,8 @@ from typing import Any, Literal, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _as_pair, _has_factor_column
+from nns._helpers import _has_factor_column
+from nns._inputs import dependence_pair
 from nns._native import native_fn as native_fn
 from nns._rnmath import libm_pow
 
@@ -81,11 +82,11 @@ def nns_dep(
     if p_value:
         if y is None:
             raise ValueError("p.value = TRUE requires both x and y.")
-        x_values, y_values = _as_pair(x, y)
+        x_values, y_values = dependence_pair(x, y)
         return _dep_p_value(x_values, y_values, asym, random_seed)
     if y is None:
         return _dep_matrix(x, asym)
-    x_values, y_values = _as_pair(x, y)
+    x_values, y_values = dependence_pair(x, y)
 
     # Only use the versioned R14 adapter, never a stale R13 native statistic.
     native = native_fn("nns_dep_pair_r14")

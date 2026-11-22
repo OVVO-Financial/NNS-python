@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import MISSING, _has_missing, column, has_factor, is_frame, is_numeric, ncol
 from nns._rblas import RSingularError, r_solve
 from nns._rmean import (
     r_col_means,
@@ -102,8 +103,17 @@ def _nns_diff(
         # R 14.2: a collapsed projection gives no bound on the slope at a smaller
         # step, so the step is refined instead.
         return _refine_collapsed(
-            f, point, h_value, tol, max_iter_value, digits, f_x, f_lower, f_upper,
-            left_slope, right_slope,
+            f,
+            point,
+            h_value,
+            tol,
+            max_iter_value,
+            digits,
+            f_x,
+            f_lower,
+            f_upper,
+            left_slope,
+            right_slope,
         )
 
     high_b = max(b1, b2)
@@ -328,12 +338,7 @@ def dy_dx(
 ) -> DyDxResult:
     """Partial derivative wrapper for R's dy.dx paths."""
     points = _derivative_points(eval_point)
-    x_values = np.asarray(x, dtype=np.float64).reshape(-1)
-    y_values = np.asarray(y, dtype=np.float64).reshape(-1)
-    if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
-    if np.any(np.isnan(np.column_stack((x_values, y_values)))):
-        raise ValueError("You have some missing values, please address.")
+    x_values, y_values = _dy_dx_inputs(x, y)
     if points is None:
         # R: eval.point = "overall" is the mean gradient,
         # mean(NNS.reg(x, y, type = "REG", ...)$Fitted.xy$gradient).
@@ -351,6 +356,32 @@ def dy_dx(
             raise TypeError("nns_reg returned an unexpected fitted table.")
         return r_mean(np.asarray(fitted["gradient"], dtype=np.float64))
     return _dy_dx_numeric(x_values, y_values, points)
+
+
+def _dy_dx_inputs(x: Any, y: Any) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """R 14.2 dy.dx's inputs: missing values first, then the checks of
+    ``NNS.reg(x, y, type = "REG")`` on the response, the predictor and their
+    lengths. A single regressor only (R's dy.dx would fit a matrix ``x`` jointly)."""
+    x_in = column(x)
+    if _has_missing(x_in) or _has_missing(y):
+        raise ValueError(MISSING)
+    if is_frame(y) or (not has_factor(y) and np.ndim(y) == 2):
+        if ncol(y) != 1:
+            raise ValueError("[y] must be a vector or one-column object.")
+        y = column(y)
+    if np.size(y) < 2:
+        raise ValueError("[y] must contain at least two observations.")
+    if not is_numeric(y):
+        raise ValueError("[type = 'REG'] requires a numeric response.")
+    y_values = np.asarray(y, dtype=np.float64).reshape(-1)
+    if not np.all(np.isfinite(y_values)):
+        raise ValueError("[y] must contain finite values.")
+    x_values = np.asarray(x_in, dtype=np.float64).reshape(-1)
+    if not np.all(np.isfinite(x_values)):
+        raise ValueError("Predictor 'x' must contain only finite numeric values.")
+    if x_values.size != y_values.size:
+        raise ValueError(f"[x] has {x_values.size} rows but [y] has {y_values.size} values.")
+    return x_values, y_values
 
 
 def _derivative_points(eval_point: Any) -> NDArray[np.float64] | None:
@@ -569,7 +600,6 @@ def _r14_fd_weights(nodes: NDArray[np.float64], at: float, degree: int) -> NDArr
     except RSingularError:
         return np.full(n, np.nan)
     return np.asarray(weights / _r_pow(np.array([scale]), float(degree))[0], dtype=np.float64)
-
 
 
 def _r_pow(values: NDArray[np.float64], exponent: float) -> NDArray[np.float64]:

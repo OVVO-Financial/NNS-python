@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import bootstrap_series, r_typeof
 from nns._rmean import r_pow, r_row_means, r_seq_by
 from nns._rrng import r_rng
 from nns.meboot import _nns_meboot
@@ -56,7 +57,13 @@ def nns_mc(
     for name, value in (("target_drift", target_drift), ("target_drift_scale", target_drift_scale)):
         if value is not None and np.asarray(value).size > exp_rhos.size:
             raise ValueError(f"{name} must not have more elements than the rho grid.")
-    values = np.asarray(x, dtype=np.float64)
+    # R 14.2: NNS.MC hands x to NNS.meboot over the rho grid.
+    series = bootstrap_series(x, "x")
+    if np.size(series) < 2:
+        raise ValueError("`x` must contain at least two observations.")
+    if r_typeof(series) == "character":
+        raise ValueError("Not compatible with requested type: [type=character; target=double].")
+    values = np.asarray(series, dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be a 1D numeric vector.")
     meboot_args: dict[str, Any] = {

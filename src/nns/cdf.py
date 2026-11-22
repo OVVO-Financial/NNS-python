@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _has_factor_column, _reject_factor
+from nns._inputs import is_frame, r_typeof
 from nns._native import native_fn
 from nns._rmean import r_row_sums
 from nns._rnmath import libm_log
@@ -35,6 +36,9 @@ def nns_cdf(
         if variable.shape[1] == 1:
             raise ValueError("cannot xtfrm data frames")
         raise ValueError("`data` must be finite.")
+    if not is_frame(variable) and r_typeof(variable) not in ("double", "integer"):
+        # R 14.2: character and logical variables fail LPM.ratio's input check.
+        raise ValueError("variable should be numeric vector, or data table")
     if names is None:
         columns = getattr(variable, "columns", None)
         if columns is not None:
@@ -89,7 +93,7 @@ def _univariate_cdf(
     target_value = _univariate_target(target, values)
     type_value = _cdf_type(type_value)
     if not np.all(np.isfinite(values)):
-        raise ValueError("variable must contain only finite values.")
+        raise ValueError("`variable` must be finite.")
     x = np.sort(values)
     pval = _r_lpm_ratio(degree, x, values)
     column_name = {
@@ -152,7 +156,7 @@ def _multivariate_cdf(
     target_values = _multivariate_target(target, values)
     type_value = _cdf_type(type_value)
     if not np.all(np.isfinite(values)):
-        raise ValueError("variable must contain only finite values.")
+        raise ValueError("`data` must be finite.")
     # R14 explicitly rejects the joint hazard without a defined multivariate
     # density or coordinate-hazard construction. At positive degree, its
     # normalized co-partial moments are not a joint CDF and cannot be used

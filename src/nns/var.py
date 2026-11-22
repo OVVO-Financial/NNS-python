@@ -1241,6 +1241,9 @@ _VAR_RATIO_TOL = float(np.finfo(float).eps ** 0.75)
 
 def _finite_values(x: NDArray[np.float64]) -> NDArray[np.float64]:
     values = np.asarray(x, dtype=np.float64)
+    if np.isnan(values).all():
+        # R 14.2 .nns_var_sample: missing values are dropped before this check.
+        raise ValueError("x must contain at least one non-NA numeric value.")
     finite = values[np.isfinite(values)]
     if finite.size == 0:
         raise ValueError("x must contain at least one finite value.")

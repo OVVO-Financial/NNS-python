@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import no_factor
 from nns._native import native_fn as native_fn
 from nns.dependence import (
     _gravity_python,
@@ -24,6 +25,7 @@ def nns_rescale(
     type: str = "Terminal",
 ) -> NDArray[np.float64]:
     """Rescale a vector using R's NNS.rescale conventions."""
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     method_l = method.lower()
     type_l = type.lower()
@@ -80,6 +82,7 @@ def nns_mode(
     while ``nns_mode`` defaults to ``multi=False`` (one value). Pass
     ``multi=True`` for R's default output. Explicit ``multi`` matches R.
     """
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     finite = values[np.isfinite(values)]
     n = finite.size
@@ -96,6 +99,7 @@ def nns_mode(
 
 def nns_gravity(x: NDArray[np.float64], discrete: bool = False) -> float:
     """Alternative central tendency matching R's NNS.gravity."""
+    no_factor(x, "x")  # R 14.2 .nns_sample(x, "x")
     values = np.asarray(x, dtype=np.float64)
     finite = np.sort(values[np.isfinite(values)])
     n = finite.size

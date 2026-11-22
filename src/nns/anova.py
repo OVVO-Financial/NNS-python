@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from nns._inputs import column, has_factor, no_factor, r_typeof
 from nns._rmean import r_col_means, r_mean, r_mean_logical, r_median, r_sum
 from nns._rrng import RRNG
 from nns.central_tendencies import nns_gravity
@@ -55,7 +56,7 @@ def nns_anova(
         from nns.plotting.anova import plot_nns_anova
 
         if treatment is not None:
-            groups = [_as_group(control, "control"), _as_group(treatment, "treatment")]
+            groups = list(_two_sample_groups(control, treatment))
         else:
             groups = _as_groups(control)
         plot_nns_anova(groups, medians=medians)
@@ -77,8 +78,7 @@ def _nns_anova(
 ) -> AnovaResult | NDArray[np.float64]:
     tail = _tail(tails)
     if treatment is not None:
-        control_values = _as_group(control, "control")
-        treatment_values = _as_group(treatment, "treatment")
+        control_values, treatment_values = _two_sample_groups(control, treatment)
         rng = _r_rng(random_seed)
         if robust:
             return _anova_robust(
@@ -429,6 +429,41 @@ def _quantile_var(percentile: float, *, upper: bool, values: NDArray[np.float64]
     if finite.size == 0:
         return float("nan")
     return upm_var(percentile, 0, finite) if upper else lpm_var(percentile, 0, finite)
+
+
+def _observed(value: object) -> Any:
+    """R ``.nns_observed``: a group without its missing values."""
+    value = column(value)
+    if has_factor(value):
+        return value
+    arr = np.asarray(value)
+    if arr.dtype.kind == "f":
+        return arr[~np.isnan(arr)]
+    if arr.dtype.kind == "O":
+        keep = [not (v is None or (isinstance(v, float) and v != v)) for v in arr.ravel().tolist()]
+        return arr.ravel()[np.asarray(keep, dtype=bool)]
+    return arr
+
+
+def _two_sample_groups(
+    control: object, treatment: object
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """R 14.2's two-sample NNS.ANOVA inputs. Each group loses its missing values;
+    the first internal R call to reject a group sets the message: LPM.VaR on the
+    control, then on the treatment (factors, empty groups), then LPM.ratio (a
+    non-numeric group; a character treatment first turns the target into NA)."""
+    c_raw, t_raw = _observed(control), _observed(treatment)
+    for raw in (c_raw, t_raw):
+        no_factor(raw, "x")
+        if np.size(raw) == 0:
+            raise ValueError("x must contain at least one non-NA numeric value.")
+    if r_typeof(c_raw) not in ("double", "integer"):
+        raise ValueError("variable should be numeric vector, or data table")
+    if r_typeof(t_raw) == "character":
+        raise ValueError("`target` must be finite.")
+    if r_typeof(t_raw) not in ("double", "integer"):
+        raise ValueError("variable should be numeric vector, or data table")
+    return _as_group(c_raw, "control"), _as_group(t_raw, "treatment")
 
 
 def _as_group(value: object, name: str) -> NDArray[np.float64]:

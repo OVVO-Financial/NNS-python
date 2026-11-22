@@ -25,11 +25,12 @@ def test_nns_meboot_rho_none_matches_installed_r_empty_behavior() -> None:
 
 
 @pytest.mark.parity
-def test_nns_meboot_length_one_returns_x_only() -> None:
-    result = nns_meboot(np.array([5.0]), rho=0.0)
-
-    assert set(result) == {"x"}
-    np.testing.assert_array_equal(result["x"], np.array([5.0]))
+def test_nns_meboot_length_one_needs_two_observations_as_in_r() -> None:
+    # R 14.2: NNS.meboot(5, rho = 0) stops. Without rho, target_drift or
+    # target_drift_scale there is nothing to map over and R returns list().
+    with pytest.raises(ValueError, match="`x` must contain at least two observations"):
+        nns_meboot(np.array([5.0]), rho=0.0)
+    assert nns_meboot(np.array([5.0]), reps=3) == {}
 
 
 @pytest.mark.parity

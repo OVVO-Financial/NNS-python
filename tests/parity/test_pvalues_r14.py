@@ -1,4 +1,4 @@
-"""R 14.0 parity for the permutation p-values of NNS.seas, NNS.dep and NNS.caus.
+"""R 14 parity for the permutation p-values of NNS.seas, NNS.dep and NNS.caus.
 
 R draws every permutation with ``sample()``/``sample.int()``, which the port
 reproduces from R's Mersenne-Twister stream: with ``random_seed = s`` (``seed``
@@ -8,6 +8,7 @@ intervals are R's after ``set.seed(s)``, bit for bit.
 
 from __future__ import annotations
 
+import re
 import warnings
 from typing import Any
 
@@ -23,6 +24,15 @@ pytestmark = pytest.mark.parity
 
 def _num(values: Any) -> dict[str, Any]:
     return r_column([float(v) for v in np.asarray(values, dtype=np.float64).ravel()], "numeric")
+
+
+def _frame(data: np.ndarray) -> dict[str, Any]:
+    return {
+        "frame": [
+            r_column([float(v) for v in data[:, j]], "numeric", name=f"X{j + 1}")
+            for j in range(data.shape[1])
+        ]
+    }
 
 
 def _seasonal(seed: int, n: int) -> np.ndarray:
@@ -117,9 +127,12 @@ def test_nns_caus_matrix_p_values_match_r(tau: int, permute: str) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         actual = causal_matrix(m, tau=tau, p_value=True, nperm=10, permute=permute, seed=7)
-        assert nns.nns_causation(m, tau=tau, p_value=True, nperm=10, permute=permute, seed=7)[
-            "p.value_matrix"
-        ].tolist() == actual["p.value_matrix"].tolist()
+        assert (
+            nns.nns_causation(m, tau=tau, p_value=True, nperm=10, permute=permute, seed=7)[
+                "p.value_matrix"
+            ].tolist()
+            == actual["p.value_matrix"].tolist()
+        )
     assert set(actual) == set(expected)
     for key, rows in expected.items():
         np.testing.assert_array_equal(actual[key], np.asarray(rows, dtype=np.float64), key)
@@ -133,3 +146,32 @@ def test_permute_accepts_r_partial_matching() -> None:
     assert full["p.value"]["permute"] == partial["p.value"]["permute"] == "shift"
     with pytest.raises(ValueError, match="'arg' should be one of"):
         nns.nns_causation(x, y, p_value=True, permute="bogus")
+
+
+@pytest.mark.parametrize("matrix", [False, True])
+def test_nns_caus_shift_null_needs_an_admissible_offset_as_in_r(matrix: bool) -> None:
+    # R 14.2: a circular shift must move the series at least max(tau + 1, n / 10)
+    # steps both ways. With n = 20 and tau = 10 no offset qualifies and R stops;
+    # R 14.0 fell back to every offset 1, ..., n - 1. tau = 9 still admits one.
+    rng = np.random.default_rng(306)
+    data = rng.normal(size=(20, 3))
+    x = data if matrix else data[:, 0]
+    y = None if matrix else data[:, 1]
+    call = "NNS.caus(x, tau = {tau}, p.value = TRUE, nperm = 20, seed = 1)"
+    if not matrix:
+        call = "NNS.caus(x, y, tau = {tau}, p.value = TRUE, nperm = 20, seed = 1)"
+    expected = nns_frame_call(
+        "pval142.caus_shift_admissible",
+        "list(short = tryCatch({ "
+        + call.format(tau=10)
+        + "; 'no error' }, error = function(e) conditionMessage(e)), "
+        "ok = tryCatch({ " + call.format(tau=9) + "; 'no error' }, "
+        "error = function(e) conditionMessage(e)))",
+        {"x": _frame(data)} if matrix else {"x": _num(x), "y": _num(y)},
+    )
+    message = str(np.asarray(expected["short"]).ravel()[0])
+    assert message == "No admissible circular shift for n = 20 and tau = 10."
+    assert str(np.asarray(expected["ok"]).ravel()[0]) == "no error"
+    with pytest.raises(ValueError, match=re.escape(message)):
+        nns.nns_causation(x, y, tau=10, p_value=True, nperm=20, seed=1)
+    nns.nns_causation(x, y, tau=9, p_value=True, nperm=20, seed=1)

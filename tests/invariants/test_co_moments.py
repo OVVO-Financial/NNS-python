@@ -156,7 +156,7 @@ def test_co_moments_reject_unequal_lengths_empty_input_and_recycled_targets(
         with pytest.raises(ValueError, match="same length"):
             function(x, y, tx, ty)
     for tx, ty in [(0.0, 0.0), (None, None)]:
-        with pytest.raises(ValueError, match="x and y must be non-empty"):
+        with pytest.raises(ValueError, match="`x` and `y` must not be empty"):
             function(empty, empty, tx, ty)
     for tx, ty in [(empty, 0.0), (0.0, empty), (empty, empty)]:
         with pytest.raises(ValueError, match="target_x and target_y must be non-empty"):

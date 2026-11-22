@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from nns._helpers import _reject_factor
+from nns._inputs import native_vector
 from nns._native import native_fn
 from nns.core import _as_degree, _as_targets, _check_numeric_target, _is_scalar, _require_finite
 
@@ -97,22 +97,22 @@ def _co_moment(
     target_y: float | NDArray[np.float64] | None,
 ) -> float | NDArray[np.float64]:
     degree_x = _as_degree(degree_x)
-    degree_y = _as_degree(degree_y)
-    _reject_factor(x, "`x`")
-    _reject_factor(y, "`y`")
-    x_values = np.asarray(x, dtype=np.float64)
-    y_values = np.asarray(y, dtype=np.float64)
+    # R 14.2 .nns_moment_pair: numeric vectors and one-column data frames;
+    # character and logical vectors and factors are rejected with R's messages.
+    x_values = native_vector(x, "x")
+    y_values = native_vector(y, "y")
     if x_values.ndim != 1 or y_values.ndim != 1:
         raise ValueError("x and y must be 1D.")
     _check_numeric_target(target_x)
     _check_numeric_target(target_y)
+    degree_y = _as_degree(degree_y)
     # ``None`` targets default to the variable means, as in R's Co.LPM/D.LPM wrappers.
     x_targets = _as_targets(target_x, x_values)
     y_targets = _as_targets(target_y, y_values)
     if x_values.size != y_values.size:
-        raise ValueError("x and y must have the same length.")
+        raise ValueError("`x` and `y` must have the same length.")
     if x_values.size == 0:
-        raise ValueError("x and y must be non-empty.")
+        raise ValueError("`x` and `y` must not be empty.")
     if x_targets.size == 0 or y_targets.size == 0:
         raise ValueError("target_x and target_y must be non-empty.")
     if x_targets.size != y_targets.size and 1 not in (x_targets.size, y_targets.size):

@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from nns._helpers import _fast_lm
+from nns._inputs import bootstrap_series
 from nns._rmean import (
     r_mean,
     r_quantile,
@@ -100,9 +101,13 @@ def nns_meboot(
     series) there is nothing to align and ``rho`` has no effect.
     """
     del elaps  # R elapsed-time printout flag; NNS Python emits no console output.
-    values = np.asarray(x, dtype=np.float64)
+    # R 14.2 .nns_bootstrap_series(x, "x"): one column, no factor, no missing values.
+    values = np.asarray(bootstrap_series(x, "x"), dtype=np.float64)
     if values.ndim != 1:
         raise ValueError("x must be a 1D numeric vector.")
+    scenarios = [v for v in (rho, target_drift, target_drift_scale) if v is not None]
+    if values.size < 2 and scenarios and all(np.size(v) > 0 for v in scenarios):
+        raise ValueError("`x` must contain at least two observations.")
     return _nns_meboot(
         values,
         reps,
