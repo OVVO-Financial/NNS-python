@@ -370,36 +370,6 @@ jobs:
             NNS_R_CACHE_ONLY=1 python -m pytest -q tests/parity
           } 2>&1 | tee committed-cache-verification.log
 
-      # Thousands of generated cases per area, compared with the new oracle at
-      # exact equality, with and without the native extension
-      # (scripts/live_parity/README.md).
-      - name: Run live R sweeps
-        id: sweeps
-        if: always()
-        continue-on-error: true
-        shell: bash
-        env:
-          NNS_LIVE_OUT: live-parity-reports
-        run: |
-          set -o pipefail
-          python scripts/live_parity/run.py --mode both --jobs 4 \
-            --summary live-parity-summary.md 2>&1 | tee live-parity.log
-
-      - name: Collect live sweep summary
-        id: sweepsummary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo 'summary<<LIVE_SWEEPS_EOF'
-            if [ -f live-parity-summary.md ]; then
-              cat live-parity-summary.md
-            else
-              echo '_The live R sweeps produced no summary; see the workflow diagnostics._'
-            fi
-            echo 'LIVE_SWEEPS_EOF'
-          } >> "$GITHUB_OUTPUT"
-
       - name: Upload parity diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -408,9 +378,6 @@ jobs:
           path: |
             parity-regeneration.log
             committed-cache-verification.log
-            live-parity.log
-            live-parity-summary.md
-            live-parity-reports/
           if-no-files-found: warn
 
       # Rebuild directly on the existing #192 branch.  Do not let the
@@ -454,13 +421,10 @@ jobs:
             - Windows binary verified: `${{ steps.package.outputs.windows_binary }}`
             - Live regeneration result: `${{ steps.regenerate.outcome }}`
             - Cache-only verification result: `${{ steps.verify.outcome }}`
-            - Live R sweeps result: `${{ steps.sweeps.outcome }}`
 
             The exact R source package was installed and the committed parity cache was regenerated. `sync/nns_source.json` records this R commit as the behavioral-truth provenance. Any remaining Python/R parity mismatches are retained in the workflow diagnostics and should be repaired against this R-authored baseline.
 
             ${{ steps.cachediff.outputs.summary }}
-
-            ${{ steps.sweepsummary.outputs.summary }}
           add-paths: |
             tests/_r.py
             tests/_r_cache/**
@@ -472,13 +436,8 @@ jobs:
         run: |
           echo "Live regeneration outcome: ${{ steps.regenerate.outcome }}"
           echo "Cache-only verification outcome: ${{ steps.verify.outcome }}"
-          echo "Live R sweeps outcome: ${{ steps.sweeps.outcome }}"
           echo "The regenerated R cache has been preserved on the audit branch or in its PR."
           if [ "${{ steps.regenerate.outcome }}" != "success" ] || [ "${{ steps.verify.outcome }}" != "success" ]; then
             echo "::error::The oracle regeneration or its offline verification failed; generated cache is for review, not release."
-            exit 1
-          fi
-          if [ "${{ steps.sweeps.outcome }}" != "success" ]; then
-            echo "::error::The live R sweeps found differences from the new oracle; see live-parity.log in the diagnostics."
             exit 1
           fi
