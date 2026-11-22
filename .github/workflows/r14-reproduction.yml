@@ -25,8 +25,8 @@ jobs:
           git archive --format=tar.gz --output=reproduction/python-source.tar.gz HEAD
           git rev-parse HEAD > reproduction/python-commit.txt
           curl --fail --location --retry 3 \
-            https://raw.githubusercontent.com/OVVO-Financial/NNS/9c8bd21a77b377cb49d43fececc662d62b00a94e/NNS_14.0.tar.gz \
-            --output reproduction/NNS_14.0.tar.gz
+            https://raw.githubusercontent.com/OVVO-Financial/NNS/f0387ed857de3d3bf047fa581b854dc5e3d0c3a6/NNS_14.2.tar.gz \
+            --output reproduction/NNS_14.2.tar.gz
           sha256sum reproduction/*.tar.gz > reproduction/SHA256SUMS
           python -m pip download --only-binary=:all: --dest reproduction/wheels \
             hypothesis pytest-benchmark pytest-xdist nanobind scikit-build-core ruff mypy
@@ -50,12 +50,12 @@ jobs:
             ca-certificates curl r-base-core r-base-dev r-cran-rcpp \
             r-cran-rcppparallel r-cran-jsonlite r-cran-mass r-cran-mlbench
           curl --fail --location --retry 3 \
-            https://raw.githubusercontent.com/OVVO-Financial/NNS/9c8bd21a77b377cb49d43fececc662d62b00a94e/NNS_14.0.tar.gz \
-            --output /tmp/NNS_14.0.tar.gz
-          echo '754dad65629b95bf3ddca9bf9018ef197f5c346dd12dcfb49e505835920bc5cb  /tmp/NNS_14.0.tar.gz' | sha256sum -c -
-          MAKEFLAGS=-j2 R CMD INSTALL /tmp/NNS_14.0.tar.gz
+            https://raw.githubusercontent.com/OVVO-Financial/NNS/f0387ed857de3d3bf047fa581b854dc5e3d0c3a6/NNS_14.2.tar.gz \
+            --output /tmp/NNS_14.2.tar.gz
+          echo 'a4e04b26b3ea01aeae1d6676448194b275bdd3f2aacbafd78b82ba5c2a649201  /tmp/NNS_14.2.tar.gz' | sha256sum -c -
+          MAKEFLAGS=-j2 R CMD INSTALL /tmp/NNS_14.2.tar.gz
           mkdir -p oracle-runtime/dependent-libraries
-          Rscript -e 'library(NNS); stopifnot(packageVersion("NNS") == "14.0"); sessionInfo()' > oracle-runtime/session-info.txt
+          Rscript -e 'library(NNS); stopifnot(packageVersion("NNS") == "14.2"); sessionInfo()' > oracle-runtime/session-info.txt
           find /usr/lib/R /usr/local/lib/R -name '*.so' -print0 | \
             xargs -0 -r ldd 2>/dev/null | awk '/=> \/.* \(/{print $3}' | sort -u > oracle-runtime/library-paths.txt
           while IFS= read -r lib; do
